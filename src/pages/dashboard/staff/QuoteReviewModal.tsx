@@ -1,12 +1,15 @@
 // QuoteReviewModal: full detail view for one quote request, with an
-// editable proposed rate + payment terms, and Approve/Reject actions.
+// editable proposed rate, payment terms, and estimated trip distance
+// (bookings.estimated_distance_km is required), plus Approve/Reject
+// actions.
 //
-// Approve does 4 steps in order: create a `clients` row from the quote's
-// free-text client info, create 2 `places` rows from the free-text
-// pickup/delivery text, then update the quote_request and create the
-// `bookings` row using those new IDs. If a later step fails, earlier
-// ones have already been saved (no rollback) -- fine for now, but worth
-// moving into a single database function later for atomicity.
+// Approve does 4 steps in order: reuse an existing `clients` row by
+// email if one matches (clients.email is unique) or create one from the
+// quote's free-text client info, create 2 `places` rows from the
+// free-text pickup/delivery text, then update the quote_request and
+// create the `bookings` row using those IDs. If a later step fails,
+// earlier ones have already been saved (no rollback) -- fine for now,
+// but worth moving into a single database function later for atomicity.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { QuoteRequest } from './QuoteRequestsSection'
@@ -39,6 +42,7 @@ function QuoteReviewModal({
     quote.proposed_rate?.toString() ?? '',
   )
   const [paymentTerms, setPaymentTerms] = useState(quote.payment_terms)
+  const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
@@ -51,24 +55,74 @@ function QuoteReviewModal({
       return
     }
 
+    const distanceValue = Number(estimatedDistanceKm)
+    if (!estimatedDistanceKm || distanceValue <= 0) {
+      setError('Enter the estimated trip distance before approving.')
+      return
+    }
+
     setSubmitting(true)
     setError(null)
 
-    // 1. Create a client record from the quote's free-text client info.
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
-      .insert({
-        client_name: quote.client_name,
-        email: quote.contact_email,
-        phone_number: quote.contact_number,
-      })
-      .select('client_id')
-      .single()
+    // 1. Reuse an existing client if this email already has one (clients.email
+    // is unique -- inserting a duplicate would fail), otherwise create one
+    // from the quote's free-text client info.
+    let clientId: number
 
-    if (clientError || !client) {
-      setError(clientError?.message ?? 'Could not create client record.')
-      setSubmitting(false)
-      return
+    if (quote.contact_email) {
+      const { data: existingClient, error: existingClientError } =
+        await supabase
+          .from('clients')
+          .select('client_id')
+          .eq('email', quote.contact_email)
+          .maybeSingle()
+
+      if (existingClientError) {
+        setError(existingClientError.message)
+        setSubmitting(false)
+        return
+      }
+
+      if (existingClient) {
+        clientId = existingClient.client_id
+      } else {
+        const { data: newClient, error: clientError } = await supabase
+          .from('clients')
+          .insert({
+            client_name: quote.client_name,
+            email: quote.contact_email,
+            phone_number: quote.contact_number,
+          })
+          .select('client_id')
+          .single()
+
+        if (clientError || !newClient) {
+          setError(clientError?.message ?? 'Could not create client record.')
+          setSubmitting(false)
+          return
+        }
+
+        clientId = newClient.client_id
+      }
+    } else {
+      // No email on this quote -- can't match an existing client, so
+      // always create a new one.
+      const { data: newClient, error: clientError } = await supabase
+        .from('clients')
+        .insert({
+          client_name: quote.client_name,
+          phone_number: quote.contact_number,
+        })
+        .select('client_id')
+        .single()
+
+      if (clientError || !newClient) {
+        setError(clientError?.message ?? 'Could not create client record.')
+        setSubmitting(false)
+        return
+      }
+
+      clientId = newClient.client_id
     }
 
     // 2. Create place records from the free-text pickup/delivery text.
@@ -104,7 +158,7 @@ function QuoteReviewModal({
         request_status: 'Approved',
         proposed_rate: rateValue,
         payment_terms: paymentTerms,
-        client_id: client.client_id,
+        client_id: clientId,
         place_of_pickup_id: pickupPlace.place_id,
         place_of_delivery_id: deliveryPlace.place_id,
       })
@@ -119,7 +173,7 @@ function QuoteReviewModal({
     // 4. Create the booking itself.
     const { error: bookingError } = await supabase.from('bookings').insert({
       quote_request_id: quote.quote_request_id,
-      client_id: client.client_id,
+      client_id: clientId,
       place_of_pickup_id: pickupPlace.place_id,
       place_of_delivery_id: deliveryPlace.place_id,
       cargo_type: quote.cargo_type,
@@ -129,6 +183,7 @@ function QuoteReviewModal({
       payment_terms: paymentTerms,
       booking_status: 'Draft',
       booking_date: quote.preferred_pickup_date,
+      estimated_distance_km: distanceValue,
     })
 
     setSubmitting(false)
@@ -239,6 +294,18 @@ function QuoteReviewModal({
               <option value="14Days">14 days</option>
               <option value="30Days">30 days</option>
             </select>
+          </label>
+
+          <label className={labelClasses}>
+            Estimated distance (km)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={estimatedDistanceKm}
+              onChange={(e) => setEstimatedDistanceKm(e.target.value)}
+              className={fieldClasses}
+            />
           </label>
         </div>
 
