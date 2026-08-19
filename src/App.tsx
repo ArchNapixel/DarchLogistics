@@ -1,40 +1,26 @@
-import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabaseClient'
-import './App.css'
+// App: defines the app's routes. "/dashboard/*" covers the dashboard and
+// all its role-specific sub-pages -- see DashboardRouter for how those
+// are picked based on the logged-in user's role.
+import { Routes, Route } from 'react-router-dom'
+import LandingPage from './pages/LandingPage'
+import LoginPage from './pages/LoginPage'
+import DashboardRouter from './pages/dashboard/DashboardRouter'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
-  const [status, setStatus] = useState<'checking' | 'ready' | 'error'>('checking')
-  const [message, setMessage] = useState('Checking Supabase connection...')
-
-  useEffect(() => {
-    const checkConnection = async () => {
-      const { error } = await supabase.auth.getSession()
-
-      if (error) {
-        setStatus('error')
-        setMessage(error.message)
-        return
-      }
-
-      setStatus('ready')
-      setMessage('Supabase client is configured and reachable.')
-    }
-
-    void checkConnection()
-  }, [])
-
   return (
-    <main id="connection-screen">
-      <section className={`status-card status-${status}`}>
-        <p className="eyebrow">Supabase connection</p>
-        <h1>{status === 'error' ? 'Connection needs attention' : 'Supabase is wired up'}</h1>
-        <p className="status-message">{message}</p>
-        <div className="env-lines">
-          <span>VITE_SUPABASE_URL is loaded from .env.local</span>
-          <span>VITE_SUPABASE_ANON_KEY is loaded from .env.local</span>
-        </div>
-      </section>
-    </main>
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/dashboard/*"
+        element={
+          <ProtectedRoute>
+            <DashboardRouter />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   )
 }
 
