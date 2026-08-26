@@ -9,12 +9,18 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { isStaff, isEmployee } from '../../lib/roles'
 import DashboardLayout from '../../components/DashboardLayout'
-import ComingSoonPage from '../../components/ComingSoonPage'
 import StaffDashboard from './StaffDashboard'
 import EmployeeDashboard from './EmployeeDashboard'
 import ClientDashboard from './ClientDashboard'
 import QuoteRequestsSection from './staff/QuoteRequestsSection'
 import ClientsSection from './staff/ClientsSection'
+import BookingsSection from './staff/BookingsSection'
+import DispatchBoardSection from './staff/DispatchBoardSection'
+import FleetSection from './staff/FleetSection'
+import EmployeesSection from './staff/EmployeesSection'
+import PayrollSection from './staff/PayrollSection'
+import ReportsSection from './staff/ReportsSection'
+import HistorySection from './employee/HistorySection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -58,22 +64,13 @@ function DashboardRouter() {
         <Route element={<DashboardLayout sidebarLinks={staffLinks} />}>
           <Route index element={<StaffDashboard />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
-          <Route
-            path="bookings"
-            element={<ComingSoonPage title="Bookings" />}
-          />
+          <Route path="bookings" element={<BookingsSection />} />
           <Route path="clients" element={<ClientsSection />} />
-          <Route
-            path="dispatch"
-            element={<ComingSoonPage title="Dispatch Board" />}
-          />
-          <Route path="fleet" element={<ComingSoonPage title="Fleet" />} />
-          <Route
-            path="employees"
-            element={<ComingSoonPage title="Employees" />}
-          />
-          <Route path="payroll" element={<ComingSoonPage title="Payroll" />} />
-          <Route path="reports" element={<ComingSoonPage title="Reports" />} />
+          <Route path="dispatch" element={<DispatchBoardSection />} />
+          <Route path="fleet" element={<FleetSection />} />
+          <Route path="employees" element={<EmployeesSection />} />
+          <Route path="payroll" element={<PayrollSection />} />
+          <Route path="reports" element={<ReportsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
@@ -85,10 +82,7 @@ function DashboardRouter() {
       <Routes>
         <Route element={<DashboardLayout sidebarLinks={employeeLinks} />}>
           <Route index element={<EmployeeDashboard />} />
-          <Route
-            path="history"
-            element={<ComingSoonPage title="My History" />}
-          />
+          <Route path="history" element={<HistorySection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

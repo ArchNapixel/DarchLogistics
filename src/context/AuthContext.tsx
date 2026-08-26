@@ -121,9 +121,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Temporary: log the real Supabase error so we can see exactly
-        // why the role lookup failed (RLS, wrong column, no match, etc).
-        console.error('Role lookup failed:', error)
         setState({
           session,
           role: null,

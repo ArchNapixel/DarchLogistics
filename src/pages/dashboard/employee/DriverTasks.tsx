@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import UpdateStatusControl from './UpdateStatusControl'
+import ReportIssueModal from './ReportIssueModal'
+import AddExpenseModal from './AddExpenseModal'
 
 type Trip = {
   itinerary_id: number
@@ -39,6 +41,8 @@ function DriverTasks() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showReportIssue, setShowReportIssue] = useState(false)
+  const [expenseTripId, setExpenseTripId] = useState<number | null>(null)
 
   useEffect(() => {
     if (employeeId) loadTrips(employeeId)
@@ -127,18 +131,6 @@ function DriverTasks() {
     setLoading(false)
   }
 
-  if (loading) {
-    return <p className="text-slate-500">Loading your trips...</p>
-  }
-
-  if (error) {
-    return <p className="text-red-700">{error}</p>
-  }
-
-  if (trips.length === 0) {
-    return <p className="text-slate-500">Nothing assigned yet.</p>
-  }
-
   // Called by UpdateStatusControl after a successful status change.
   // "Delivered" trips drop out of this list entirely (matches the
   // Delivered/Cancelled exclusion in loadTrips); other changes just
@@ -157,30 +149,73 @@ function DriverTasks() {
     )
   }
 
-  return (
-    <div className="grid gap-4">
-      {trips.map((trip) => (
-        <div
-          key={trip.itinerary_id}
-          className="rounded-xl border border-slate-200 p-5"
-        >
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-slate-900">
-              {trip.pickup_place_name} → {trip.delivery_place_name}
+  // "Report Issue" isn't tied to a specific trip, so it's available no
+  // matter what the trip list below is showing (loading/error/empty/list).
+  let tripListContent
+  if (loading) {
+    tripListContent = <p className="text-slate-500">Loading your trips...</p>
+  } else if (error) {
+    tripListContent = <p className="text-red-700">{error}</p>
+  } else if (trips.length === 0) {
+    tripListContent = <p className="text-slate-500">Nothing assigned yet.</p>
+  } else {
+    tripListContent = (
+      <div className="grid gap-4">
+        {trips.map((trip) => (
+          <div
+            key={trip.itinerary_id}
+            className="rounded-xl border border-slate-200 p-5"
+          >
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-slate-900">
+                {trip.pickup_place_name} → {trip.delivery_place_name}
+              </p>
+              <StatusBadge status={trip.itinerary_status} />
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              {trip.trip_date_from}
+              {trip.trip_date_to ? ` – ${trip.trip_date_to}` : ''}
             </p>
-            <StatusBadge status={trip.itinerary_status} />
+            <UpdateStatusControl
+              itineraryId={trip.itinerary_id}
+              currentStatus={trip.itinerary_status}
+              onStatusChanged={handleStatusChanged}
+            />
+            <button
+              onClick={() => setExpenseTripId(trip.itinerary_id)}
+              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Add Expense
+            </button>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
-            {trip.trip_date_from}
-            {trip.trip_date_to ? ` – ${trip.trip_date_to}` : ''}
-          </p>
-          <UpdateStatusControl
-            itineraryId={trip.itinerary_id}
-            currentStatus={trip.itinerary_status}
-            onStatusChanged={handleStatusChanged}
-          />
-        </div>
-      ))}
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={() => setShowReportIssue(true)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        >
+          Report Issue
+        </button>
+      </div>
+
+      {tripListContent}
+
+      {showReportIssue && (
+        <ReportIssueModal onClose={() => setShowReportIssue(false)} />
+      )}
+
+      {expenseTripId !== null && (
+        <AddExpenseModal
+          itineraryId={expenseTripId}
+          onClose={() => setExpenseTripId(null)}
+        />
+      )}
     </div>
   )
 }
