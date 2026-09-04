@@ -1,86 +1,85 @@
 // EmployeesSection: lists employees in a table, with an "Add Employee"
-// button that opens a form.
-//
-// MOCK DATA -- replace with real Supabase query later. Nothing on this
-// page reads from or writes to the database yet.
-import { useState } from 'react'
+// button that opens a form. The list reads real data from `employees`;
+// employment_status_id has no foreign key at the database level, so the
+// status name is looked up separately and merged in here (same pattern
+// as place-name lookups in DriverTasks.tsx / MyBookingsSection.tsx).
+import { useEffect, useState } from 'react'
+import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal from './AddEmployeeModal'
-
-type EmploymentStatus = 'Active' | 'On Leave' | 'Terminated'
 
 type Employee = {
   employee_id: number
   name: string
   position: string
-  status: EmploymentStatus
+  status: string
   hire_date: string
 }
 
-// MOCK DATA -- replace with real Supabase query later.
-const MOCK_EMPLOYEES: Employee[] = [
-  {
-    employee_id: 1,
-    name: 'Ramon Cruz',
-    position: 'Driver',
-    status: 'Active',
-    hire_date: '2022-03-14',
-  },
-  {
-    employee_id: 2,
-    name: 'Ariel Santos',
-    position: 'Driver',
-    status: 'Active',
-    hire_date: '2021-11-02',
-  },
-  {
-    employee_id: 3,
-    name: 'Ben Villareal',
-    position: 'Driver',
-    status: 'On Leave',
-    hire_date: '2023-06-19',
-  },
-  {
-    employee_id: 4,
-    name: 'Carlo Reyes',
-    position: 'Mechanic',
-    status: 'Active',
-    hire_date: '2020-09-30',
-  },
-  {
-    employee_id: 5,
-    name: 'Diego Fernandez',
-    position: 'Mechanic',
-    status: 'Terminated',
-    hire_date: '2019-01-08',
-  },
-  {
-    employee_id: 6,
-    name: 'Elena Torres',
-    position: 'Dispatcher',
-    status: 'Active',
-    hire_date: '2024-02-26',
-  },
-]
-
-const STATUS_STYLES: Record<EmploymentStatus, string> = {
+const STATUS_STYLES: Record<string, string> = {
   Active: 'bg-green-100 text-green-700',
   'On Leave': 'bg-orange-100 text-orange-700',
   Terminated: 'bg-red-100 text-red-700',
 }
 
-function EmploymentStatusBadge({ status }: { status: EmploymentStatus }) {
+function EmploymentStatusBadge({ status }: { status: string }) {
+  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}
-    >
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
       {status}
     </span>
   )
 }
 
 function EmployeesSection() {
-  const [employees] = useState<Employee[]>(MOCK_EMPLOYEES)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showAddEmployee, setShowAddEmployee] = useState(false)
+
+  useEffect(() => {
+    loadEmployees()
+  }, [])
+
+  async function loadEmployees() {
+    setLoading(true)
+
+    const { data: employeeRows, error: employeeError } = await supabase
+      .from('employees')
+      .select('employee_id, full_name, position, hire_date, employment_status_id')
+      .order('full_name', { ascending: true })
+
+    if (employeeError) {
+      setError(employeeError.message)
+      setLoading(false)
+      return
+    }
+
+    const { data: statuses, error: statusError } = await supabase
+      .from('employment_status')
+      .select('status_id, status_name')
+
+    if (statusError) {
+      setError(statusError.message)
+      setLoading(false)
+      return
+    }
+
+    const statusNameById = new Map(
+      statuses.map((s) => [s.status_id, s.status_name]),
+    )
+
+    setEmployees(
+      employeeRows.map((row) => ({
+        employee_id: row.employee_id,
+        name: row.full_name,
+        position: row.position,
+        status: statusNameById.get(row.employment_status_id) ?? '—',
+        hire_date: row.hire_date,
+      })),
+    )
+    setError(null)
+    setLoading(false)
+  }
 
   return (
     <div>
@@ -94,37 +93,45 @@ function EmployeesSection() {
         </button>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Position</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Hire Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((employee) => (
-              <tr
-                key={employee.employee_id}
-                className="border-b border-slate-100 last:border-0"
-              >
-                <td className="px-4 py-3 text-slate-900">{employee.name}</td>
-                <td className="px-4 py-3 text-slate-600">
-                  {employee.position}
-                </td>
-                <td className="px-4 py-3">
-                  <EmploymentStatusBadge status={employee.status} />
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {employee.hire_date}
-                </td>
+      {loading && <p className="mt-4 text-slate-500">Loading employees...</p>}
+      {error && <p className="mt-4 text-red-700">{error}</p>}
+      {!loading && !error && employees.length === 0 && (
+        <p className="mt-4 text-slate-500">No employees yet.</p>
+      )}
+
+      {!loading && !error && employees.length > 0 && (
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-slate-200 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Position</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Hire Date</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {employees.map((employee) => (
+                <tr
+                  key={employee.employee_id}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="px-4 py-3 text-slate-900">{employee.name}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {employee.position}
+                  </td>
+                  <td className="px-4 py-3">
+                    <EmploymentStatusBadge status={employee.status} />
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {employee.hire_date}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showAddEmployee && (
         <AddEmployeeModal onClose={() => setShowAddEmployee(false)} />
