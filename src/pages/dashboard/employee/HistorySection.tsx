@@ -1,9 +1,15 @@
 // HistorySection: "My History" page for Driver/Mechanic -- a table of
 // past trips (drivers) or work orders (mechanics).
 //
-// MOCK DATA -- replace with real Supabase query later. Nothing on this
-// page reads from or writes to the database yet.
-import { useState } from 'react'
+// Drivers: reads real completed/cancelled itineraries via
+// itinerary_crews (same lookup pattern as DriverTasks.tsx), joined with
+// places for the pickup/delivery names.
+// Mechanics: work_orders doesn't exist in the database yet (pending
+// decision from earlier), so this shows an honest "not available yet"
+// message instead of fake data.
+import { useEffect, useState } from 'react'
+import { useAuth } from '../../../context/AuthContext'
+import { supabase } from '../../../lib/supabaseClient'
 
 type HistoryStatus = 'Completed' | 'Cancelled'
 
@@ -13,40 +19,6 @@ type HistoryEntry = {
   description: string
   status: HistoryStatus
 }
-
-// MOCK DATA -- replace with real Supabase query later.
-const MOCK_HISTORY: HistoryEntry[] = [
-  {
-    history_id: 1,
-    date: '2026-08-20',
-    description: 'Cavite Warehouse → Batangas Port',
-    status: 'Completed',
-  },
-  {
-    history_id: 2,
-    date: '2026-08-18',
-    description: 'Replaced brake pads — Truck NGP 4521',
-    status: 'Completed',
-  },
-  {
-    history_id: 3,
-    date: '2026-08-15',
-    description: 'Manila South Harbor → Laguna Distribution Center',
-    status: 'Completed',
-  },
-  {
-    history_id: 4,
-    date: '2026-08-12',
-    description: 'Bulacan Cold Storage → Manila Pier 15',
-    status: 'Cancelled',
-  },
-  {
-    history_id: 5,
-    date: '2026-08-09',
-    description: 'Engine oil change — Truck NGP 8873',
-    status: 'Completed',
-  },
-]
 
 const STATUS_STYLES: Record<HistoryStatus, string> = {
   Completed: 'bg-green-100 text-green-700',
@@ -64,15 +36,116 @@ function HistoryStatusBadge({ status }: { status: HistoryStatus }) {
 }
 
 function HistorySection() {
-  const [history] = useState<HistoryEntry[]>(MOCK_HISTORY)
+  const { role, employeeId } = useAuth()
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (role === 'Driver' && employeeId) {
+      loadDriverHistory(employeeId)
+    } else {
+      setLoading(false)
+    }
+  }, [role, employeeId])
+
+  async function loadDriverHistory(driverEmployeeId: number) {
+    setLoading(true)
+
+    const { data: crewRows, error: crewError } = await supabase
+      .from('itinerary_crews')
+      .select('itinerary_id')
+      .eq('employee_id', driverEmployeeId)
+      .eq('crew_role', 'Driver')
+
+    if (crewError) {
+      setError(crewError.message)
+      setLoading(false)
+      return
+    }
+
+    const itineraryIds = crewRows.map((row) => row.itinerary_id)
+    if (itineraryIds.length === 0) {
+      setHistory([])
+      setError(null)
+      setLoading(false)
+      return
+    }
+
+    const { data: itineraries, error: itineraryError } = await supabase
+      .from('itineraries')
+      .select(
+        'itinerary_id, trip_date_from, trip_date_to, itinerary_status, place_of_pickup_id, place_of_delivery_id',
+      )
+      .in('itinerary_id', itineraryIds)
+      .in('itinerary_status', ['Delivered', 'Cancelled'])
+      .order('trip_date_from', { ascending: false })
+
+    if (itineraryError) {
+      setError(itineraryError.message)
+      setLoading(false)
+      return
+    }
+
+    const placeIds = Array.from(
+      new Set(
+        itineraries.flatMap((trip) => [
+          trip.place_of_pickup_id,
+          trip.place_of_delivery_id,
+        ]),
+      ),
+    )
+
+    const { data: places, error: placesError } =
+      placeIds.length > 0
+        ? await supabase
+            .from('places')
+            .select('place_id, place_name')
+            .in('place_id', placeIds)
+        : { data: [], error: null }
+
+    if (placesError) {
+      setError(placesError.message)
+      setLoading(false)
+      return
+    }
+
+    const placeNameById = new Map(
+      places.map((place) => [place.place_id, place.place_name]),
+    )
+
+    setHistory(
+      itineraries.map((trip) => ({
+        history_id: trip.itinerary_id,
+        date: trip.trip_date_to ?? trip.trip_date_from,
+        description: `${placeNameById.get(trip.place_of_pickup_id) ?? '—'} → ${placeNameById.get(trip.place_of_delivery_id) ?? '—'}`,
+        status: trip.itinerary_status === 'Delivered' ? 'Completed' : 'Cancelled',
+      })),
+    )
+    setError(null)
+    setLoading(false)
+  }
 
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">My History</h2>
 
-      {history.length === 0 ? (
+      {role === 'Mechanic' && (
+        <p className="mt-4 text-slate-500">
+          Work order history isn't available yet.
+        </p>
+      )}
+
+      {role === 'Driver' && loading && (
+        <p className="mt-4 text-slate-500">Loading your history...</p>
+      )}
+      {role === 'Driver' && error && (
+        <p className="mt-4 text-red-700">{error}</p>
+      )}
+
+      {role === 'Driver' && !loading && !error && history.length === 0 ? (
         <p className="mt-4 text-slate-500">No past trips or work orders yet.</p>
-      ) : (
+      ) : role === 'Driver' && !loading && !error && (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
