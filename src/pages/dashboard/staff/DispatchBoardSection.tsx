@@ -1,78 +1,39 @@
-// DispatchBoardSection: board of active deliveries with a per-row status
-// dropdown. The dropdown is visually functional (opens, shows the full
-// flow) but only updates local component state -- nothing is saved, so
-// refreshing the page resets it.
+// DispatchBoardSection: board of active itineraries (not yet Delivered or
+// Cancelled) for staff to advance status and assign a driver.
 //
-// MOCK DATA -- replace with real Supabase query later. Nothing on this
-// page reads from or writes to the database yet.
-import { useState } from 'react'
+// Status changes write directly to itineraries.itinerary_status and log
+// to dispatch_status_logs (same pattern as the Driver's own
+// UpdateStatusControl.tsx). Driver assignment writes to itinerary_crews:
+// assigning a new driver deactivates the previous active "Driver" crew row
+// (is_active: false, completed_at set) instead of deleting it, so there's
+// a history of who was assigned when. Driver names come from `employees`
+// (full_name) -- the employee_id list of who counts as a "driver" comes
+// from `users` where user_role = 'Driver', since that's the same role
+// value already used everywhere else in the app (isEmployee(), RoleBadge).
+import { useEffect, useState } from 'react'
+import { useAuth } from '../../../context/AuthContext'
+import { supabase } from '../../../lib/supabaseClient'
 
-type DeliveryStatus =
-  | 'Awaiting'
-  | 'Dispatched'
-  | 'PickedUp'
-  | 'InTransit'
-  | 'Delivered'
-
-type ActiveDelivery = {
+type DispatchRow = {
+  itinerary_id: number
   booking_id: number
-  driver_name: string
   pickup_location: string
   delivery_location: string
-  pickup_date: string
-  delivery_date: string
-  status: DeliveryStatus
+  trip_date_from: string
+  trip_date_to: string | null
+  status: string
+  assigned_employee_id: number | null
+  assigned_driver_name: string | null
 }
 
-// MOCK DATA -- replace with real Supabase query later.
-const MOCK_DELIVERIES: ActiveDelivery[] = [
-  {
-    booking_id: 1042,
-    driver_name: 'Ramon Cruz',
-    pickup_location: 'Cavite Warehouse',
-    delivery_location: 'Batangas Port',
-    pickup_date: '2026-08-28',
-    delivery_date: '2026-08-28',
-    status: 'Dispatched',
-  },
-  {
-    booking_id: 1037,
-    driver_name: 'Ariel Santos',
-    pickup_location: 'Manila South Harbor',
-    delivery_location: 'Laguna Distribution Center',
-    pickup_date: '2026-08-26',
-    delivery_date: '2026-08-27',
-    status: 'InTransit',
-  },
-  {
-    booking_id: 1035,
-    driver_name: 'Ben Villareal',
-    pickup_location: 'Bulacan Cold Storage',
-    delivery_location: 'Manila Pier 15',
-    pickup_date: '2026-08-26',
-    delivery_date: '2026-08-26',
-    status: 'PickedUp',
-  },
-  {
-    booking_id: 1033,
-    driver_name: 'Ramon Cruz',
-    pickup_location: 'Rizal Aggregates Yard',
-    delivery_location: 'Quezon City Site B',
-    pickup_date: '2026-08-25',
-    delivery_date: '2026-08-25',
-    status: 'Awaiting',
-  },
-]
+type DriverOption = {
+  employee_id: number
+  full_name: string
+}
 
-const STATUS_FLOW: DeliveryStatus[] = [
-  'Awaiting',
-  'Dispatched',
-  'PickedUp',
-  'InTransit',
-  'Delivered',
-]
+const STATUS_FLOW = ['Awaiting', 'Dispatched', 'PickedUp', 'InTransit', 'Delivered']
 
-const STATUS_LABELS: Record<DeliveryStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   Awaiting: 'Awaiting',
   Dispatched: 'Dispatched',
   PickedUp: 'Picked Up',
@@ -80,7 +41,7 @@ const STATUS_LABELS: Record<DeliveryStatus, string> = {
   Delivered: 'Delivered',
 }
 
-const STATUS_STYLES: Record<DeliveryStatus, string> = {
+const STATUS_STYLES: Record<string, string> = {
   Awaiting: 'bg-gray-100 text-gray-700',
   Dispatched: 'bg-blue-100 text-blue-700',
   PickedUp: 'bg-purple-100 text-purple-700',
@@ -88,29 +49,272 @@ const STATUS_STYLES: Record<DeliveryStatus, string> = {
   Delivered: 'bg-green-100 text-green-700',
 }
 
-function DispatchStatusBadge({ status }: { status: DeliveryStatus }) {
+function DispatchStatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700'
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}
-    >
-      {STATUS_LABELS[status]}
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${style}`}>
+      {STATUS_LABELS[status] ?? status}
     </span>
   )
 }
 
 function DispatchBoardSection() {
-  const [deliveries, setDeliveries] = useState<ActiveDelivery[]>(
-    MOCK_DELIVERIES,
-  )
+  const { employeeId } = useAuth()
+  const [rows, setRows] = useState<DispatchRow[]>([])
+  const [drivers, setDrivers] = useState<DriverOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<number | null>(null)
 
-  // Local-only -- doesn't persist anywhere. A page refresh resets it back
-  // to the mock data above.
-  function handleStatusChange(bookingId: number, newStatus: DeliveryStatus) {
-    setDeliveries((prev) =>
-      prev.map((delivery) =>
-        delivery.booking_id === bookingId
-          ? { ...delivery, status: newStatus }
-          : delivery,
+  useEffect(() => {
+    loadDispatchBoard()
+  }, [])
+
+  async function loadDispatchBoard() {
+    setLoading(true)
+
+    // 1. Active itineraries -- anything not finished or cancelled yet.
+    const { data: itineraryRows, error: itineraryError } = await supabase
+      .from('itineraries')
+      .select(
+        'itinerary_id, booking_id, trip_date_from, trip_date_to, place_of_pickup_id, place_of_delivery_id, itinerary_status',
+      )
+      .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+      .order('trip_date_from', { ascending: true })
+
+    if (itineraryError) {
+      setError(itineraryError.message)
+      setLoading(false)
+      return
+    }
+
+    if (itineraryRows.length === 0) {
+      setRows([])
+      setDrivers([])
+      setError(null)
+      setLoading(false)
+      return
+    }
+
+    const itineraryIds = itineraryRows.map((r) => r.itinerary_id)
+    const placeIds = Array.from(
+      new Set(
+        itineraryRows.flatMap((r) => [
+          r.place_of_pickup_id,
+          r.place_of_delivery_id,
+        ]),
+      ),
+    )
+
+    // 2. Place names, current driver assignments, and every employee_id
+    // that counts as a Driver -- in parallel.
+    const [placesResult, crewResult, driverUsersResult] = await Promise.all([
+      supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
+      supabase
+        .from('itinerary_crews')
+        .select('itinerary_id, employee_id')
+        .eq('crew_role', 'Driver')
+        .eq('is_active', true)
+        .in('itinerary_id', itineraryIds),
+      supabase
+        .from('users')
+        .select('employee_id')
+        .eq('user_role', 'Driver')
+        .not('employee_id', 'is', null),
+    ])
+
+    if (placesResult.error) {
+      setError(placesResult.error.message)
+      setLoading(false)
+      return
+    }
+    if (crewResult.error) {
+      setError(crewResult.error.message)
+      setLoading(false)
+      return
+    }
+    if (driverUsersResult.error) {
+      setError(driverUsersResult.error.message)
+      setLoading(false)
+      return
+    }
+
+    const placeNameById = new Map(
+      placesResult.data.map((p) => [p.place_id, p.place_name]),
+    )
+    const assignedEmployeeIdByItinerary = new Map(
+      crewResult.data.map((c) => [c.itinerary_id, c.employee_id as number]),
+    )
+
+    // 3. Employee names, for every assignable driver plus whoever's
+    // currently assigned (in case their `users` role ever changed).
+    const employeeIds = new Set<number>(
+      driverUsersResult.data.map((u) => u.employee_id as number),
+    )
+    crewResult.data.forEach((c) => employeeIds.add(c.employee_id as number))
+
+    const { data: employeeRows, error: employeeError } =
+      employeeIds.size > 0
+        ? await supabase
+            .from('employees')
+            .select('employee_id, full_name')
+            .in('employee_id', Array.from(employeeIds))
+        : { data: [], error: null }
+
+    if (employeeError) {
+      setError(employeeError.message)
+      setLoading(false)
+      return
+    }
+
+    const employeeNameById = new Map(
+      employeeRows.map((e) => [e.employee_id, e.full_name]),
+    )
+    const driverEmployeeIds = new Set(
+      driverUsersResult.data.map((u) => u.employee_id as number),
+    )
+
+    setDrivers(
+      employeeRows
+        .filter((e) => driverEmployeeIds.has(e.employee_id))
+        .map((e) => ({ employee_id: e.employee_id, full_name: e.full_name }))
+        .sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    )
+
+    setRows(
+      itineraryRows.map((it) => {
+        const assignedEmployeeId =
+          assignedEmployeeIdByItinerary.get(it.itinerary_id) ?? null
+        return {
+          itinerary_id: it.itinerary_id,
+          booking_id: it.booking_id,
+          pickup_location: placeNameById.get(it.place_of_pickup_id) ?? '—',
+          delivery_location:
+            placeNameById.get(it.place_of_delivery_id) ?? '—',
+          trip_date_from: it.trip_date_from,
+          trip_date_to: it.trip_date_to,
+          status: it.itinerary_status ?? 'Awaiting',
+          assigned_employee_id: assignedEmployeeId,
+          assigned_driver_name:
+            assignedEmployeeId !== null
+              ? employeeNameById.get(assignedEmployeeId) ?? '—'
+              : null,
+        }
+      }),
+    )
+    setError(null)
+    setLoading(false)
+  }
+
+  async function handleStatusChange(
+    itineraryId: number,
+    previousStatus: string,
+    newStatus: string,
+  ) {
+    setSavingId(itineraryId)
+    setError(null)
+
+    const { error: updateError } = await supabase
+      .from('itineraries')
+      .update({ itinerary_status: newStatus })
+      .eq('itinerary_id', itineraryId)
+
+    if (updateError) {
+      setError(updateError.message)
+      setSavingId(null)
+      return
+    }
+
+    const { error: logError } = await supabase
+      .from('dispatch_status_logs')
+      .insert({
+        itinerary_id: itineraryId,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        changed_by: employeeId,
+      })
+
+    setSavingId(null)
+
+    if (logError) {
+      setError(logError.message)
+      return
+    }
+
+    if (newStatus === 'Delivered') {
+      // Matches the load filter (Delivered/Cancelled excluded) -- drop it
+      // off the board instead of showing a status it'll never leave.
+      setRows((prev) => prev.filter((r) => r.itinerary_id !== itineraryId))
+      return
+    }
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
+      ),
+    )
+  }
+
+  async function handleDriverChange(
+    itineraryId: number,
+    previousEmployeeId: number | null,
+    newEmployeeId: number | null,
+  ) {
+    setSavingId(itineraryId)
+    setError(null)
+
+    // 1. Deactivate the current assignment, if there is one -- kept as a
+    // history row instead of deleted.
+    if (previousEmployeeId !== null) {
+      const { error: deactivateError } = await supabase
+        .from('itinerary_crews')
+        .update({ is_active: false, completed_at: new Date().toISOString() })
+        .eq('itinerary_id', itineraryId)
+        .eq('employee_id', previousEmployeeId)
+        .eq('crew_role', 'Driver')
+        .eq('is_active', true)
+
+      if (deactivateError) {
+        setError(deactivateError.message)
+        setSavingId(null)
+        return
+      }
+    }
+
+    // 2. Assign the new driver, unless "Unassigned" was picked.
+    if (newEmployeeId !== null) {
+      const { error: assignError } = await supabase
+        .from('itinerary_crews')
+        .insert({
+          itinerary_id: itineraryId,
+          employee_id: newEmployeeId,
+          crew_role: 'Driver',
+        })
+
+      if (assignError) {
+        setError(assignError.message)
+        setSavingId(null)
+        return
+      }
+    }
+
+    setSavingId(null)
+
+    const newDriverName =
+      newEmployeeId !== null
+        ? drivers.find((d) => d.employee_id === newEmployeeId)?.full_name ??
+          '—'
+        : null
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.itinerary_id === itineraryId
+          ? {
+              ...r,
+              assigned_employee_id: newEmployeeId,
+              assigned_driver_name: newDriverName,
+            }
+          : r,
       ),
     )
   }
@@ -119,62 +323,94 @@ function DispatchBoardSection() {
     <div>
       <h2 className="text-xl font-bold text-slate-900">Dispatch Board</h2>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Booking ID</th>
-              <th className="px-4 py-3 font-medium">Driver</th>
-              <th className="px-4 py-3 font-medium">Origin → Destination</th>
-              <th className="px-4 py-3 font-medium">Pickup → Delivery Date</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Update Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {deliveries.map((delivery) => (
-              <tr
-                key={delivery.booking_id}
-                className="border-b border-slate-100 last:border-0"
-              >
-                <td className="px-4 py-3 text-slate-900">
-                  #{delivery.booking_id}
-                </td>
-                <td className="px-4 py-3 text-slate-900">
-                  {delivery.driver_name}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {delivery.pickup_location} → {delivery.delivery_location}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {delivery.pickup_date} → {delivery.delivery_date}
-                </td>
-                <td className="px-4 py-3">
-                  <DispatchStatusBadge status={delivery.status} />
-                </td>
-                <td className="px-4 py-3">
-                  <select
-                    value={delivery.status}
-                    onChange={(e) =>
-                      handleStatusChange(
-                        delivery.booking_id,
-                        e.target.value as DeliveryStatus,
-                      )
-                    }
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
-                  >
-                    {STATUS_FLOW.map((status) => (
-                      <option key={status} value={status}>
-                        {STATUS_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </td>
+      {error && (
+        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <p className="mt-4 text-slate-500">Loading dispatch board...</p>
+      ) : rows.length === 0 ? (
+        <p className="mt-4 text-slate-500">No active trips right now.</p>
+      ) : (
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-slate-200 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Booking</th>
+                <th className="px-4 py-3 font-medium">Origin → Destination</th>
+                <th className="px-4 py-3 font-medium">Trip Date</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Driver</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.itinerary_id}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="px-4 py-3 text-slate-900">
+                    #{row.booking_id}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.pickup_location} → {row.delivery_location}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.trip_date_from}
+                    {row.trip_date_to ? ` – ${row.trip_date_to}` : ''}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-1.5">
+                      <DispatchStatusBadge status={row.status} />
+                      <select
+                        value={row.status}
+                        disabled={savingId === row.itinerary_id}
+                        onChange={(e) =>
+                          handleStatusChange(
+                            row.itinerary_id,
+                            row.status,
+                            e.target.value,
+                          )
+                        }
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                      >
+                        {STATUS_FLOW.map((status) => (
+                          <option key={status} value={status}>
+                            {STATUS_LABELS[status]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={row.assigned_employee_id ?? ''}
+                      disabled={savingId === row.itinerary_id}
+                      onChange={(e) =>
+                        handleDriverChange(
+                          row.itinerary_id,
+                          row.assigned_employee_id,
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {drivers.map((driver) => (
+                        <option key={driver.employee_id} value={driver.employee_id}>
+                          {driver.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

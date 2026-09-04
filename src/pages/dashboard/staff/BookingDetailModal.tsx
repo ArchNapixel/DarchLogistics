@@ -1,8 +1,12 @@
 // BookingDetailModal: read-only detail view for a single booking row.
-//
-// MOCK DATA -- all fields come from the row clicked in BookingsSection.
+// All fields come from the row clicked in BookingsSection, which already
+// loaded them from Supabase.
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
+
+function formatMoney(value: number | null): string {
+  return value !== null ? `₱${value.toLocaleString()}` : '—'
+}
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -46,11 +50,19 @@ function BookingDetailModal({
           <InfoRow label="Date" value={booking.date} />
           <InfoRow label="Origin" value={booking.pickup_location} />
           <InfoRow label="Destination" value={booking.delivery_location} />
+          <InfoRow label="Rate" value={formatMoney(booking.rate)} />
           <InfoRow
-            label="Rate"
-            value={`₱${booking.rate.toLocaleString()}`}
+            label="Amount to pay"
+            value={formatMoney(booking.amount_to_pay)}
           />
-          <InfoRow label="Payment status" value={booking.payment_status} />
+          <InfoRow
+            label="Amount paid"
+            value={formatMoney(booking.amount_paid)}
+          />
+          <InfoRow
+            label="Balance due"
+            value={formatMoney(booking.balance_due)}
+          />
         </div>
 
         <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">

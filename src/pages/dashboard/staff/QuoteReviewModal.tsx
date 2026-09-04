@@ -1,15 +1,20 @@
 // QuoteReviewModal: full detail view for one quote request, with an
-// editable proposed rate, payment terms, and estimated trip distance
-// (bookings.estimated_distance_km is required), plus Approve/Reject
-// actions.
+// editable proposed rate, payment terms, estimated trip distance
+// (bookings.estimated_distance_km is required), and trip start date,
+// plus Approve/Reject actions.
 //
-// Approve does 4 steps in order: reuse an existing `clients` row by
+// Approve does 5 steps in order: reuse an existing `clients` row by
 // email if one matches (clients.email is unique) or create one from the
 // quote's free-text client info, create 2 `places` rows from the
-// free-text pickup/delivery text, then update the quote_request and
-// create the `bookings` row using those IDs. If a later step fails,
+// free-text pickup/delivery text, update the quote_request, create the
+// `bookings` row using those IDs, then create a matching `itineraries`
+// row (status 'Awaiting') linked to that booking. If a later step fails,
 // earlier ones have already been saved (no rollback) -- fine for now,
 // but worth moving into a single database function later for atomicity.
+// The booking->itinerary step is the one most likely to leave things
+// half-done (quote Approved + booking created, but no itinerary), so
+// that failure is surfaced with an explicit "needs manual review"
+// message instead of a generic one.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { QuoteRequest } from './QuoteRequestsSection'
@@ -43,10 +48,16 @@ function QuoteReviewModal({
   )
   const [paymentTerms, setPaymentTerms] = useState(quote.payment_terms)
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
+  const [tripDateFrom, setTripDateFrom] = useState(
+    quote.preferred_pickup_date ?? '',
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [approvedBookingId, setApprovedBookingId] = useState<number | null>(
+    null,
+  )
 
   async function handleApprove() {
     const rateValue = Number(proposedRate)
@@ -58,6 +69,11 @@ function QuoteReviewModal({
     const distanceValue = Number(estimatedDistanceKm)
     if (!estimatedDistanceKm || distanceValue <= 0) {
       setError('Enter the estimated trip distance before approving.')
+      return
+    }
+
+    if (!tripDateFrom) {
+      setError('Enter a trip start date before approving.')
       return
     }
 
@@ -170,30 +186,64 @@ function QuoteReviewModal({
       return
     }
 
-    // 4. Create the booking itself.
-    const { error: bookingError } = await supabase.from('bookings').insert({
-      quote_request_id: quote.quote_request_id,
-      client_id: clientId,
-      place_of_pickup_id: pickupPlace.place_id,
-      place_of_delivery_id: deliveryPlace.place_id,
-      cargo_type: quote.cargo_type,
-      cargo_description: quote.cargo_description,
-      weight: quote.weight,
-      container_type: quote.container_type,
-      payment_terms: paymentTerms,
-      booking_status: 'Draft',
-      booking_date: quote.preferred_pickup_date,
-      estimated_distance_km: distanceValue,
-    })
+    // 4. Create the booking itself. .select().single() so we get the new
+    // booking_id back -- the itinerary in step 5 needs it.
+    const { data: newBooking, error: bookingError } = await supabase
+      .from('bookings')
+      .insert({
+        quote_request_id: quote.quote_request_id,
+        client_id: clientId,
+        place_of_pickup_id: pickupPlace.place_id,
+        place_of_delivery_id: deliveryPlace.place_id,
+        cargo_type: quote.cargo_type,
+        cargo_description: quote.cargo_description,
+        weight: quote.weight,
+        container_type: quote.container_type,
+        payment_terms: paymentTerms,
+        booking_status: 'Draft',
+        booking_date: quote.preferred_pickup_date,
+        estimated_distance_km: distanceValue,
+        rate_of_delivery_service: rateValue,
+      })
+      .select('booking_id')
+      .single()
 
-    setSubmitting(false)
-
-    if (bookingError) {
-      setError(bookingError.message)
+    if (bookingError || !newBooking) {
+      setSubmitting(false)
+      setError(bookingError?.message ?? 'Could not create booking.')
       return
     }
 
-    onResolved(quote.quote_request_id)
+    // 5. Create the itinerary linked to that booking. By this point the
+    // quote is already Approved and the booking already exists -- if
+    // this insert fails, don't fail silently. The error message below
+    // says exactly that, so staff know there's a booking with no
+    // itinerary that needs manual follow-up instead of just retrying
+    // "Approve" (which would create a duplicate booking).
+    const { error: itineraryError } = await supabase
+      .from('itineraries')
+      .insert({
+        booking_id: newBooking.booking_id,
+        place_of_pickup_id: pickupPlace.place_id,
+        place_of_delivery_id: deliveryPlace.place_id,
+        trip_date_from: tripDateFrom,
+        itinerary_status: 'Awaiting',
+      })
+
+    setSubmitting(false)
+
+    if (itineraryError) {
+      setError(
+        `Booking #${newBooking.booking_id} was created, but its itinerary ` +
+          `could not be created (${itineraryError.message}). The quote is ` +
+          `already marked Approved and the booking already exists -- this ` +
+          `needs manual review. Don't click Approve again, it would create ` +
+          `a duplicate booking.`,
+      )
+      return
+    }
+
+    setApprovedBookingId(newBooking.booking_id)
   }
 
   async function handleReject() {
@@ -244,115 +294,147 @@ function QuoteReviewModal({
           </p>
         )}
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <InfoRow label="Client name" value={quote.client_name} />
-          <InfoRow
-            label="Contact"
-            value={
-              [quote.contact_number, quote.contact_email]
-                .filter(Boolean)
-                .join(' / ') || '—'
-            }
-          />
-          <InfoRow label="Origin" value={quote.pickup_location_text} />
-          <InfoRow label="Destination" value={quote.delivery_location_text} />
-          <InfoRow label="Cargo type" value={quote.cargo_type} />
-          <InfoRow label="Trailer type" value={quote.container_type} />
-          <InfoRow label="Weight (tons)" value={String(quote.weight)} />
-          <InfoRow
-            label="Preferred pickup date"
-            value={quote.preferred_pickup_date ?? '—'}
-          />
-          <InfoRow
-            label="Cargo description"
-            value={quote.cargo_description}
-          />
-        </div>
-
-        <div className="mt-6 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
-          <label className={labelClasses}>
-            Proposed rate
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={proposedRate}
-              onChange={(e) => setProposedRate(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
-
-          <label className={labelClasses}>
-            Payment terms
-            <select
-              value={paymentTerms}
-              onChange={(e) => setPaymentTerms(e.target.value)}
-              className={fieldClasses}
-            >
-              <option value="Cash">Cash</option>
-              <option value="7Days">7 days</option>
-              <option value="14Days">14 days</option>
-              <option value="30Days">30 days</option>
-            </select>
-          </label>
-
-          <label className={labelClasses}>
-            Estimated distance (km)
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={estimatedDistanceKm}
-              onChange={(e) => setEstimatedDistanceKm(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
-        </div>
-
-        {showRejectForm ? (
-          <div className="mt-6 border-t border-slate-200 pt-4">
-            <label className={labelClasses}>
-              Reason for rejection
-              <textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                rows={3}
-                className={fieldClasses}
-              />
-            </label>
-            <div className="mt-4 flex justify-end gap-3">
+        {approvedBookingId !== null ? (
+          <>
+            <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+              Quote approved. Booking #{approvedBookingId} and its itinerary
+              (status "Awaiting") have both been created.
+            </p>
+            <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
               <button
-                onClick={() => setShowRejectForm(false)}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                onClick={() => onResolved(quote.quote_request_id)}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={submitting}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
-              >
-                {submitting ? 'Rejecting...' : 'Confirm Reject'}
+                Done
               </button>
             </div>
-          </div>
+          </>
         ) : (
-          <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
-            <button
-              onClick={() => setShowRejectForm(true)}
-              disabled={submitting}
-              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-            >
-              Reject
-            </button>
-            <button
-              onClick={handleApprove}
-              disabled={submitting}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {submitting ? 'Approving...' : 'Approve'}
-            </button>
-          </div>
+          <>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <InfoRow label="Client name" value={quote.client_name} />
+              <InfoRow
+                label="Contact"
+                value={
+                  [quote.contact_number, quote.contact_email]
+                    .filter(Boolean)
+                    .join(' / ') || '—'
+                }
+              />
+              <InfoRow label="Origin" value={quote.pickup_location_text} />
+              <InfoRow
+                label="Destination"
+                value={quote.delivery_location_text}
+              />
+              <InfoRow label="Cargo type" value={quote.cargo_type} />
+              <InfoRow label="Trailer type" value={quote.container_type} />
+              <InfoRow label="Weight (tons)" value={String(quote.weight)} />
+              <InfoRow
+                label="Preferred pickup date"
+                value={quote.preferred_pickup_date ?? '—'}
+              />
+              <InfoRow
+                label="Cargo description"
+                value={quote.cargo_description}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
+              <label className={labelClasses}>
+                Proposed rate
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={proposedRate}
+                  onChange={(e) => setProposedRate(e.target.value)}
+                  className={fieldClasses}
+                />
+              </label>
+
+              <label className={labelClasses}>
+                Payment terms
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className={fieldClasses}
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="7Days">7 days</option>
+                  <option value="14Days">14 days</option>
+                  <option value="30Days">30 days</option>
+                </select>
+              </label>
+
+              <label className={labelClasses}>
+                Estimated distance (km)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={estimatedDistanceKm}
+                  onChange={(e) => setEstimatedDistanceKm(e.target.value)}
+                  className={fieldClasses}
+                />
+              </label>
+
+              <label className={labelClasses}>
+                Trip start date
+                <input
+                  type="date"
+                  value={tripDateFrom}
+                  onChange={(e) => setTripDateFrom(e.target.value)}
+                  className={fieldClasses}
+                />
+              </label>
+            </div>
+
+            {showRejectForm ? (
+              <div className="mt-6 border-t border-slate-200 pt-4">
+                <label className={labelClasses}>
+                  Reason for rejection
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    rows={3}
+                    className={fieldClasses}
+                  />
+                </label>
+                <div className="mt-4 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowRejectForm(false)}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReject}
+                    disabled={submitting}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  >
+                    {submitting ? 'Rejecting...' : 'Confirm Reject'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
+                <button
+                  onClick={() => setShowRejectForm(true)}
+                  disabled={submitting}
+                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={submitting}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Approving...' : 'Approve'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
