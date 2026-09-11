@@ -384,9 +384,9 @@ function StaffDashboard() {
           )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 max-h-96 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-slate-500">
+              <thead className="sticky top-0 border-b border-slate-200 bg-white text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">From</th>
                   <th className="px-4 py-3 font-medium">To</th>
