@@ -11,6 +11,15 @@
 // saves it to route_cache so the next quote on that same route reuses
 // it instead of asking again.
 //
+// Profitability estimate: a side panel that appears once a distance is
+// entered, using `app_settings` (diesel_price_per_liter,
+// driver_commission_rate, driver_per_trip_fee) to estimate diesel cost
+// (price/liter * km), driver commission cost (commission% * proposed
+// rate), and a flat driver per-trip fee. If the three combined reach
+// 50% of the rate, a warning is shown -- this never blocks or
+// auto-rejects anything, it's just information for staff to weigh
+// before clicking Approve.
+//
 // Approve does 5 steps in order: reuse an existing `clients` row by
 // email if one matches (clients.email is unique) or create one from the
 // quote's free-text client info, reuse existing `places` rows by name
@@ -144,6 +153,57 @@ function QuoteReviewModal({
     null,
   )
   const [itinerariesCreated, setItinerariesCreated] = useState(0)
+  const [dieselPricePerLiter, setDieselPricePerLiter] = useState<number | null>(
+    null,
+  )
+  const [driverCommissionRate, setDriverCommissionRate] = useState<
+    number | null
+  >(null)
+  const [driverPerTripFee, setDriverPerTripFee] = useState<number | null>(
+    null,
+  )
+
+  // Load the settings the profitability panel needs. If any aren't
+  // configured yet, that value stays null and the panel shows a note
+  // instead of numbers.
+  useEffect(() => {
+    async function loadSettings() {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', [
+          'diesel_price_per_liter',
+          'driver_commission_rate',
+          'driver_per_trip_fee',
+        ])
+
+      if (!data) {
+        return
+      }
+
+      const dieselSetting = data.find(
+        (setting) => setting.setting_key === 'diesel_price_per_liter',
+      )
+      const commissionSetting = data.find(
+        (setting) => setting.setting_key === 'driver_commission_rate',
+      )
+      const perTripFeeSetting = data.find(
+        (setting) => setting.setting_key === 'driver_per_trip_fee',
+      )
+
+      if (dieselSetting) {
+        setDieselPricePerLiter(dieselSetting.setting_value)
+      }
+      if (commissionSetting) {
+        setDriverCommissionRate(commissionSetting.setting_value)
+      }
+      if (perTripFeeSetting) {
+        setDriverPerTripFee(perTripFeeSetting.setting_value)
+      }
+    }
+
+    loadSettings()
+  }, [])
 
   // If both pickup and delivery text already match known places, check
   // whether this route has a cached distance from a previous approval.
@@ -400,9 +460,32 @@ function QuoteReviewModal({
     onResolved(quote.quote_request_id)
   }
 
+  const rateForCalc = Number(proposedRate)
+  const distanceForCalc = Number(estimatedDistanceKm)
+  const settingsLoaded =
+    dieselPricePerLiter !== null &&
+    driverCommissionRate !== null &&
+    driverPerTripFee !== null
+  const canCalculateProfitability =
+    settingsLoaded && rateForCalc > 0 && distanceForCalc > 0
+
+  const dieselCost = canCalculateProfitability
+    ? dieselPricePerLiter! * distanceForCalc
+    : 0
+  const driverCommissionCost = canCalculateProfitability
+    ? (driverCommissionRate! / 100) * rateForCalc
+    : 0
+  const perTripFeeCost = canCalculateProfitability ? driverPerTripFee! : 0
+  const totalCost = dieselCost + driverCommissionCost + perTripFeeCost
+  const costRatio = canCalculateProfitability ? totalCost / rateForCalc : 0
+  const isLowMargin = canCalculateProfitability && costRatio >= 0.5
+
+  const showProfitabilityPanel = approvedBookingId === null && distanceForCalc > 0
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-4 py-8">
+      <div className="flex w-full max-w-4xl flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-center">
+      <div className="max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-lg lg:max-w-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             Quote #{quote.quote_request_id}
@@ -579,6 +662,101 @@ function QuoteReviewModal({
             )}
           </>
         )}
+      </div>
+
+      {showProfitabilityPanel && (
+        <div className="w-full overflow-y-auto rounded-xl bg-white p-6 shadow-lg lg:max-w-xs">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+            Profitability Estimate
+          </h3>
+
+          {!settingsLoaded && (
+            <p className="mt-3 text-sm text-slate-500">
+              Set diesel price and driver commission rate under Settings to
+              see this estimate.
+            </p>
+          )}
+
+          {settingsLoaded && rateForCalc <= 0 && (
+            <p className="mt-3 text-sm text-slate-500">
+              Enter a proposed rate to calculate.
+            </p>
+          )}
+
+          {canCalculateProfitability && (
+            <div className="mt-4 flex flex-col gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Diesel cost</span>
+                <span className="font-medium text-slate-900">
+                  ₱{dieselCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Driver commission</span>
+                <span className="font-medium text-slate-900">
+                  ₱
+                  {driverCommissionCost.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Driver per-trip fee</span>
+                <span className="font-medium text-slate-900">
+                  ₱
+                  {perTripFeeCost.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                <span className="text-slate-500">Total cost</span>
+                <span className="font-bold text-slate-900">
+                  ₱{totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Cost vs. rate</span>
+                  <span
+                    className={`font-bold ${
+                      isLowMargin
+                        ? 'text-red-600'
+                        : costRatio >= 0.4
+                          ? 'text-amber-600'
+                          : 'text-green-700'
+                    }`}
+                  >
+                    {(costRatio * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ease-out ${
+                      isLowMargin
+                        ? 'bg-red-500'
+                        : costRatio >= 0.4
+                          ? 'bg-amber-400'
+                          : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min(costRatio * 100, 100)}%` }}
+                  />
+                  {/* Marker at the 50% rejection-review threshold. */}
+                  <div className="absolute inset-y-0 left-1/2 w-px bg-slate-400/70" />
+                </div>
+              </div>
+
+              {isLowMargin && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                  Costs are at or above 50% of the rate -- this trip may not
+                  be worth approving as priced. This is informational only;
+                  Approve/Reject is still your call.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       </div>
     </div>
   )
