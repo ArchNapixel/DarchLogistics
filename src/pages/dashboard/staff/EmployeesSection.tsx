@@ -134,7 +134,13 @@ function EmployeesSection() {
       )}
 
       {showAddEmployee && (
-        <AddEmployeeModal onClose={() => setShowAddEmployee(false)} />
+        <AddEmployeeModal
+          onClose={() => setShowAddEmployee(false)}
+          onAdded={() => {
+            setShowAddEmployee(false)
+            loadEmployees()
+          }}
+        />
       )}
     </div>
   )
