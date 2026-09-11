@@ -3,10 +3,19 @@
 // (bookings.estimated_distance_km is required), and trip start date,
 // plus Approve/Reject actions.
 //
+// Distance reuse: `route_cache` stores one distance per unique place
+// pair (place_id_a always the lower id, so direction doesn't matter).
+// On open, if both the pickup and delivery text already match known
+// places AND that pair has a cached distance, the field is pre-filled
+// automatically. Otherwise staff type it in manually once, and Approve
+// saves it to route_cache so the next quote on that same route reuses
+// it instead of asking again.
+//
 // Approve does 5 steps in order: reuse an existing `clients` row by
 // email if one matches (clients.email is unique) or create one from the
-// quote's free-text client info, create 2 `places` rows from the
-// free-text pickup/delivery text, update the quote_request, create the
+// quote's free-text client info, reuse existing `places` rows by name
+// (trimmed, case-insensitive -- same idea as the client email check) or
+// create them if this is a new location, update the quote_request, create the
 // `bookings` row using those IDs, then create ONE `itinerary` per
 // delivery order (quote.delivery_order_count) linked to that booking --
 // a booking can cover multiple deliverables (e.g. several containers),
@@ -19,13 +28,84 @@
 // leave things half-done (quote Approved + booking created, but zero or
 // partial itineraries), so that failure is surfaced with an explicit
 // "needs manual review" message instead of a generic one.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { QuoteRequest } from './QuoteRequestsSection'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+
+// Looks up an existing place by name (trimmed, case-insensitive) before
+// creating a new one -- a database-level unique index on
+// lower(trim(place_name)) backs this up in case some other code path
+// ever skips this check.
+async function findOrCreatePlace(
+  rawName: string,
+): Promise<{ placeId: number } | { error: string }> {
+  const trimmedName = rawName.trim()
+
+  const { data: existingPlace, error: existingPlaceError } = await supabase
+    .from('places')
+    .select('place_id')
+    .ilike('place_name', trimmedName)
+    .maybeSingle()
+
+  if (existingPlaceError) {
+    return { error: existingPlaceError.message }
+  }
+
+  if (existingPlace) {
+    return { placeId: existingPlace.place_id }
+  }
+
+  const { data: newPlace, error: insertError } = await supabase
+    .from('places')
+    .insert({ place_name: trimmedName })
+    .select('place_id')
+    .single()
+
+  if (insertError || !newPlace) {
+    return { error: insertError?.message ?? 'Could not create location.' }
+  }
+
+  return { placeId: newPlace.place_id }
+}
+
+// Read-only version of the lookup above -- used just to preview whether
+// a cached distance exists before Approve is clicked. Never creates a
+// place, since the quote might still get Rejected.
+async function findPlaceIdByName(rawName: string): Promise<number | null> {
+  const { data } = await supabase
+    .from('places')
+    .select('place_id')
+    .ilike('place_name', rawName.trim())
+    .maybeSingle()
+
+  return data?.place_id ?? null
+}
+
+// route_cache stores each pair with the lower place_id first, so a
+// route reads the same regardless of pickup/delivery direction.
+function orderPlacePair(placeIdA: number, placeIdB: number): [number, number] {
+  return placeIdA < placeIdB ? [placeIdA, placeIdB] : [placeIdB, placeIdA]
+}
+
+async function findCachedDistance(
+  placeIdA: number,
+  placeIdB: number,
+): Promise<number | null> {
+  const [lowId, highId] = orderPlacePair(placeIdA, placeIdB)
+
+  const { data } = await supabase
+    .from('route_cache')
+    .select('distance_km')
+    .eq('place_id_a', lowId)
+    .eq('place_id_b', highId)
+    .maybeSingle()
+
+  return data?.distance_km ?? null
+}
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -52,6 +132,7 @@ function QuoteReviewModal({
   )
   const [paymentTerms, setPaymentTerms] = useState(quote.payment_terms)
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
+  const [distanceIsCached, setDistanceIsCached] = useState(false)
   const [tripDateFrom, setTripDateFrom] = useState(
     quote.preferred_pickup_date ?? '',
   )
@@ -63,6 +144,27 @@ function QuoteReviewModal({
     null,
   )
   const [itinerariesCreated, setItinerariesCreated] = useState(0)
+
+  // If both pickup and delivery text already match known places, check
+  // whether this route has a cached distance from a previous approval.
+  useEffect(() => {
+    async function preloadCachedDistance() {
+      const pickupId = await findPlaceIdByName(quote.pickup_location_text)
+      const deliveryId = await findPlaceIdByName(quote.delivery_location_text)
+
+      if (pickupId === null || deliveryId === null) {
+        return
+      }
+
+      const cachedKm = await findCachedDistance(pickupId, deliveryId)
+      if (cachedKm !== null) {
+        setEstimatedDistanceKm(String(cachedKm))
+        setDistanceIsCached(true)
+      }
+    }
+
+    preloadCachedDistance()
+  }, [quote.pickup_location_text, quote.delivery_location_text])
 
   async function handleApprove() {
     const rateValue = Number(proposedRate)
@@ -146,30 +248,42 @@ function QuoteReviewModal({
       clientId = newClient.client_id
     }
 
-    // 2. Create place records from the free-text pickup/delivery text.
-    const { data: pickupPlace, error: pickupError } = await supabase
-      .from('places')
-      .insert({ place_name: quote.pickup_location_text })
-      .select('place_id')
-      .single()
-
-    if (pickupError || !pickupPlace) {
-      setError(pickupError?.message ?? 'Could not create pickup location.')
+    // 2. Reuse an existing place by name if one matches (trimmed,
+    // case-insensitive -- "Davao Port" and "davao port " are the same
+    // place), otherwise create it from the free-text pickup/delivery
+    // text. Without this, every approval created brand-new places rows
+    // even for locations already booked before, fragmenting the same
+    // real-world place across many IDs.
+    const pickupResult = await findOrCreatePlace(quote.pickup_location_text)
+    if ('error' in pickupResult) {
+      setError(pickupResult.error)
       setSubmitting(false)
       return
     }
+    const pickupPlace = { place_id: pickupResult.placeId }
 
-    const { data: deliveryPlace, error: deliveryError } = await supabase
-      .from('places')
-      .insert({ place_name: quote.delivery_location_text })
-      .select('place_id')
-      .single()
-
-    if (deliveryError || !deliveryPlace) {
-      setError(deliveryError?.message ?? 'Could not create delivery location.')
+    const deliveryResult = await findOrCreatePlace(quote.delivery_location_text)
+    if ('error' in deliveryResult) {
+      setError(deliveryResult.error)
       setSubmitting(false)
       return
     }
+    const deliveryPlace = { place_id: deliveryResult.placeId }
+
+    // 2.5. Save this route's distance for reuse next time (upsert so it
+    // also corrects a previously cached value if staff edited it). Best
+    // effort -- the cache is a convenience, not core data, so a failure
+    // here shouldn't block the approval itself.
+    const [lowPlaceId, highPlaceId] = orderPlacePair(
+      pickupPlace.place_id,
+      deliveryPlace.place_id,
+    )
+    await supabase
+      .from('route_cache')
+      .upsert(
+        { place_id_a: lowPlaceId, place_id_b: highPlaceId, distance_km: distanceValue },
+        { onConflict: 'place_id_a,place_id_b' },
+      )
 
     // 3. Update the quote request: approved, with the final rate/terms
     // and links to the client/place records just created.
@@ -393,9 +507,18 @@ function QuoteReviewModal({
                   min="0"
                   step="0.01"
                   value={estimatedDistanceKm}
-                  onChange={(e) => setEstimatedDistanceKm(e.target.value)}
+                  onChange={(e) => {
+                    setEstimatedDistanceKm(e.target.value)
+                    setDistanceIsCached(false)
+                  }}
                   className={fieldClasses}
                 />
+                {distanceIsCached && (
+                  <span className="text-xs font-normal text-slate-500">
+                    Pulled from a previous trip on this route -- edit if
+                    it's changed.
+                  </span>
+                )}
               </label>
 
               <label className={labelClasses}>

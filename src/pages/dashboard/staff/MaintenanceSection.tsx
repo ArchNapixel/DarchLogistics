@@ -61,10 +61,6 @@ function MaintenanceSection() {
   const [showCreate, setShowCreate] = useState(false)
 
   useEffect(() => {
-    setActiveTab(requestedTab === 'Completed' ? 'Completed' : 'Active')
-  }, [requestedTab])
-
-  useEffect(() => {
     loadData()
   }, [])
 

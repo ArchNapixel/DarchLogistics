@@ -67,10 +67,6 @@ function FleetSection() {
     loadFleet()
   }, [])
 
-  useEffect(() => {
-    setActiveTab(requestedTab === 'Trailers' ? 'Trailers' : 'Trucks')
-  }, [requestedTab])
-
   async function handleDeleteTruck(truck: Truck) {
     if (!window.confirm(`Delete truck ${truck.plate_number}? This cannot be undone.`)) {
       return
