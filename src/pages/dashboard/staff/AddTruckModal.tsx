@@ -1,23 +1,38 @@
-// AddTruckModal: form for adding a truck, inserting into the real
-// truck_profiles table. current_status defaults to 'Available' at the
-// database level, so it's not asked for here.
+// AddTruckModal: form for adding OR editing a truck in the real
+// truck_profiles table. Pass a `truck` prop to edit that row (fields
+// pre-filled, submit does an UPDATE); omit it to add a new one (submit
+// does an INSERT). plate_number is the table's primary key (and is
+// referenced by work_orders), so it's locked/read-only while editing --
+// only model/year can change.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+const disabledFieldClasses =
+  'rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-slate-500'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
+export type EditableTruck = {
+  plate_number: string
+  model: string | null
+  year: number | null
+}
+
 function AddTruckModal({
+  truck,
   onClose,
   onSaved,
 }: {
+  truck?: EditableTruck
   onClose: () => void
   onSaved: () => void
 }) {
-  const [plateNumber, setPlateNumber] = useState('')
-  const [model, setModel] = useState('')
-  const [year, setYear] = useState('')
+  const isEditing = !!truck
+
+  const [plateNumber, setPlateNumber] = useState(truck?.plate_number ?? '')
+  const [model, setModel] = useState(truck?.model ?? '')
+  const [year, setYear] = useState(truck?.year != null ? String(truck.year) : '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,16 +45,24 @@ function AddTruckModal({
     setSubmitting(true)
     setError(null)
 
-    const { error: insertError } = await supabase.from('truck_profiles').insert({
-      plate_number: plateNumber.trim(),
+    const values = {
       model: model.trim() || null,
       year: year ? Number(year) : null,
-    })
+    }
+
+    const { error: saveError } = isEditing
+      ? await supabase
+          .from('truck_profiles')
+          .update(values)
+          .eq('plate_number', truck.plate_number)
+      : await supabase
+          .from('truck_profiles')
+          .insert({ ...values, plate_number: plateNumber.trim() })
 
     setSubmitting(false)
 
-    if (insertError) {
-      setError(insertError.message)
+    if (saveError) {
+      setError(saveError.message)
       return
     }
 
@@ -50,7 +73,9 @@ function AddTruckModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">Add Truck</h3>
+          <h3 className="text-lg font-bold text-slate-900">
+            {isEditing ? 'Edit Truck' : 'Add Truck'}
+          </h3>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700"
@@ -72,7 +97,8 @@ function AddTruckModal({
               type="text"
               value={plateNumber}
               onChange={(e) => setPlateNumber(e.target.value)}
-              className={fieldClasses}
+              disabled={isEditing}
+              className={isEditing ? disabledFieldClasses : fieldClasses}
             />
           </label>
 
@@ -109,7 +135,13 @@ function AddTruckModal({
             disabled={submitting}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {submitting ? 'Adding...' : 'Add Truck'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save Changes'
+                : 'Add Truck'}
           </button>
         </div>
       </div>

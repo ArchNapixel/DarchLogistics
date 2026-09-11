@@ -1,6 +1,9 @@
-// AddTrailerModal: form for adding a trailer, inserting into the real
-// trailers table. current_status defaults to 'Available' at the
-// database level, so it's not asked for here.
+// AddTrailerModal: form for adding OR editing a trailer in the real
+// trailers table. Pass a `trailer` prop to edit that row (fields
+// pre-filled, submit does an UPDATE); omit it to add a new one (submit
+// does an INSERT). trailer_id (not shown here) is the actual primary
+// key, so plate_number is freely editable, unlike plate_number on
+// trucks.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -8,38 +11,52 @@ const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
+const TRAILER_TYPES = ['Flatbed', 'Lowbed', 'Skeletal'] as const
+
+export type EditableTrailer = {
+  trailer_id: number
+  trailer_type: (typeof TRAILER_TYPES)[number]
+  plate_number: string | null
+}
+
 function AddTrailerModal({
+  trailer,
   onClose,
   onSaved,
 }: {
+  trailer?: EditableTrailer
   onClose: () => void
   onSaved: () => void
 }) {
-  const [trailerType, setTrailerType] = useState('')
-  const [plateNumber, setPlateNumber] = useState('')
-  const [registrationNumber, setRegistrationNumber] = useState('')
+  const isEditing = !!trailer
+
+  const [trailerType, setTrailerType] = useState<(typeof TRAILER_TYPES)[number]>(
+    trailer?.trailer_type ?? 'Flatbed',
+  )
+  const [plateNumber, setPlateNumber] = useState(trailer?.plate_number ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit() {
-    if (!trailerType.trim()) {
-      setError('Enter a trailer type.')
-      return
-    }
-
     setSubmitting(true)
     setError(null)
 
-    const { error: insertError } = await supabase.from('trailers').insert({
-      trailer_type: trailerType.trim(),
+    const values = {
+      trailer_type: trailerType,
       plate_number: plateNumber.trim() || null,
-      registration_number: registrationNumber.trim() || null,
-    })
+    }
+
+    const { error: saveError } = isEditing
+      ? await supabase
+          .from('trailers')
+          .update(values)
+          .eq('trailer_id', trailer.trailer_id)
+      : await supabase.from('trailers').insert(values)
 
     setSubmitting(false)
 
-    if (insertError) {
-      setError(insertError.message)
+    if (saveError) {
+      setError(saveError.message)
       return
     }
 
@@ -50,7 +67,9 @@ function AddTrailerModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">Add Trailer</h3>
+          <h3 className="text-lg font-bold text-slate-900">
+            {isEditing ? 'Edit Trailer' : 'Add Trailer'}
+          </h3>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700"
@@ -68,13 +87,19 @@ function AddTrailerModal({
         <div className="mt-4 grid gap-4">
           <label className={labelClasses}>
             Trailer type
-            <input
-              type="text"
+            <select
               value={trailerType}
-              onChange={(e) => setTrailerType(e.target.value)}
-              placeholder="e.g. Flatbed, Van, 40ft Container"
+              onChange={(e) =>
+                setTrailerType(e.target.value as (typeof TRAILER_TYPES)[number])
+              }
               className={fieldClasses}
-            />
+            >
+              {TRAILER_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className={labelClasses}>
@@ -83,16 +108,6 @@ function AddTrailerModal({
               type="text"
               value={plateNumber}
               onChange={(e) => setPlateNumber(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
-
-          <label className={labelClasses}>
-            Registration number
-            <input
-              type="text"
-              value={registrationNumber}
-              onChange={(e) => setRegistrationNumber(e.target.value)}
               className={fieldClasses}
             />
           </label>
@@ -110,7 +125,13 @@ function AddTrailerModal({
             disabled={submitting}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {submitting ? 'Adding...' : 'Add Trailer'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save Changes'
+                : 'Add Trailer'}
           </button>
         </div>
       </div>

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 import AddTruckModal from './AddTruckModal'
-import AddTrailerModal from './AddTrailerModal'
+import AddTrailerModal, { type EditableTrailer } from './AddTrailerModal'
 
 type Truck = {
   plate_number: string
   model: string | null
+  year: number | null
   current_status: string | null
   last_service_date: string | null
 }
@@ -52,10 +53,61 @@ function FleetSection() {
   )
   const [showAddTruck, setShowAddTruck] = useState(false)
   const [showAddTrailer, setShowAddTrailer] = useState(false)
+  const [editingTruck, setEditingTruck] = useState<Truck | null>(null)
+  const [editingTrailer, setEditingTrailer] = useState<Trailer | null>(null)
+  const [deletingKey, setDeletingKey] = useState<string | null>(null)
 
   useEffect(() => {
     loadFleet()
   }, [])
+
+  async function handleDeleteTruck(truck: Truck) {
+    if (!window.confirm(`Delete truck ${truck.plate_number}? This cannot be undone.`)) {
+      return
+    }
+
+    setDeletingKey(truck.plate_number)
+
+    const { error: deleteError } = await supabase
+      .from('truck_profiles')
+      .delete()
+      .eq('plate_number', truck.plate_number)
+
+    setDeletingKey(null)
+
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+
+    loadFleet()
+  }
+
+  async function handleDeleteTrailer(trailer: Trailer) {
+    if (
+      !window.confirm(
+        `Delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+
+    setDeletingKey(`trailer-${trailer.trailer_id}`)
+
+    const { error: deleteError } = await supabase
+      .from('trailers')
+      .delete()
+      .eq('trailer_id', trailer.trailer_id)
+
+    setDeletingKey(null)
+
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+
+    loadFleet()
+  }
 
   async function loadFleet() {
     try {
@@ -64,7 +116,7 @@ function FleetSection() {
 
       const { data: truckData, error: truckError } = await supabase
         .from('truck_profiles')
-        .select('plate_number, model, current_status, last_service_date')
+        .select('plate_number, model, year, current_status, last_service_date')
         .order('plate_number', { ascending: true })
 
       if (truckError) throw truckError
@@ -158,17 +210,32 @@ function FleetSection() {
                     {truck.last_service_date || 'N/A'}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() =>
-                        setWorkOrderVehicle({
-                          type: 'truck',
-                          plateNumber: truck.plate_number,
-                        })
-                      }
-                      className="font-medium text-slate-600 hover:text-slate-900"
-                    >
-                      Create Work Order
-                    </button>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() =>
+                          setWorkOrderVehicle({
+                            type: 'truck',
+                            plateNumber: truck.plate_number,
+                          })
+                        }
+                        className="font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Create Work Order
+                      </button>
+                      <button
+                        onClick={() => setEditingTruck(truck)}
+                        className="font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTruck(truck)}
+                        disabled={deletingKey === truck.plate_number}
+                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        {deletingKey === truck.plate_number ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -204,17 +271,34 @@ function FleetSection() {
                     <FleetStatusBadge status={trailer.current_status} />
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() =>
-                        setWorkOrderVehicle({
-                          type: 'trailer',
-                          trailerId: trailer.trailer_id,
-                        })
-                      }
-                      className="font-medium text-slate-600 hover:text-slate-900"
-                    >
-                      Create Work Order
-                    </button>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() =>
+                          setWorkOrderVehicle({
+                            type: 'trailer',
+                            trailerId: trailer.trailer_id,
+                          })
+                        }
+                        className="font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Create Work Order
+                      </button>
+                      <button
+                        onClick={() => setEditingTrailer(trailer)}
+                        className="font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTrailer(trailer)}
+                        disabled={deletingKey === `trailer-${trailer.trailer_id}`}
+                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        {deletingKey === `trailer-${trailer.trailer_id}`
+                          ? 'Deleting...'
+                          : 'Delete'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -231,21 +315,38 @@ function FleetSection() {
         />
       )}
 
-      {showAddTruck && (
+      {(showAddTruck || editingTruck) && (
         <AddTruckModal
-          onClose={() => setShowAddTruck(false)}
+          truck={editingTruck ?? undefined}
+          onClose={() => {
+            setShowAddTruck(false)
+            setEditingTruck(null)
+          }}
           onSaved={() => {
             setShowAddTruck(false)
+            setEditingTruck(null)
             loadFleet()
           }}
         />
       )}
 
-      {showAddTrailer && (
+      {(showAddTrailer || editingTrailer) && (
         <AddTrailerModal
-          onClose={() => setShowAddTrailer(false)}
+          trailer={
+            editingTrailer
+              ? {
+                  ...editingTrailer,
+                  trailer_type: editingTrailer.trailer_type as EditableTrailer['trailer_type'],
+                }
+              : undefined
+          }
+          onClose={() => {
+            setShowAddTrailer(false)
+            setEditingTrailer(null)
+          }}
           onSaved={() => {
             setShowAddTrailer(false)
+            setEditingTrailer(null)
             loadFleet()
           }}
         />
