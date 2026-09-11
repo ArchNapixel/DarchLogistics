@@ -22,6 +22,7 @@ import InventorySection from './staff/InventorySection'
 import EmployeesSection from './staff/EmployeesSection'
 import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
+import SettingsSection from './staff/SettingsSection'
 import HistorySection from './employee/HistorySection'
 
 const staffLinks = [
@@ -92,6 +93,7 @@ function DashboardRouter() {
           <Route path="employees" element={<EmployeesSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="reports" element={<ReportsSection />} />
+          <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

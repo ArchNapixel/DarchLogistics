@@ -5,6 +5,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
+import { isStaff } from '../lib/roles'
 import RoleBadge from './RoleBadge'
 
 type SidebarLink = {
@@ -59,8 +60,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
       <div className="flex flex-1">
         {sidebarLinks.length > 0 && (
-          <aside className="w-56 border-r border-slate-200 bg-white p-4">
-            <nav className="flex flex-col gap-1">
+          <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
+            <nav className="flex flex-1 flex-col gap-1">
               {sidebarLinks.map((link) =>
                 link.children ? (
                   <div key={link.label} className="group relative">
@@ -107,6 +108,15 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                 ),
               )}
             </nav>
+
+            {isStaff(role) && (
+              <Link
+                to="/dashboard/settings"
+                className="mt-4 rounded-lg border-t border-slate-200 px-3 pt-4 text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                ⚙ Settings
+              </Link>
+            )}
           </aside>
         )}
 
