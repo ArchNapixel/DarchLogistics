@@ -25,28 +25,29 @@ import HistorySection from './employee/HistorySection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Quotations', to: '/dashboard/quotations' },
-  { label: 'Bookings', to: '/dashboard/bookings' },
-  { label: 'Clients', to: '/dashboard/clients' },
-  { label: 'Dispatch Board', to: '/dashboard/dispatch' },
   {
-    label: 'Fleet',
-    to: '/dashboard/fleet',
+    label: 'Operations',
     children: [
-      { label: 'Trucks', to: '/dashboard/fleet?tab=Trucks' },
-      { label: 'Trailers', to: '/dashboard/fleet?tab=Trailers' },
+      { label: 'Quotations', to: '/dashboard/quotations' },
+      { label: 'Bookings', to: '/dashboard/bookings' },
+      { label: 'Clients', to: '/dashboard/clients' },
+      { label: 'Dispatch Board', to: '/dashboard/dispatch' },
+    ],
+  },
+  {
+    label: 'Human Resource',
+    children: [
+      { label: 'Employees', to: '/dashboard/employees' },
+      { label: 'Payroll', to: '/dashboard/payroll' },
     ],
   },
   {
     label: 'Maintenance',
-    to: '/dashboard/maintenance',
     children: [
-      { label: 'Active', to: '/dashboard/maintenance?tab=Active' },
-      { label: 'Completed', to: '/dashboard/maintenance?tab=Completed' },
+      { label: 'Fleet', to: '/dashboard/fleet' },
+      { label: 'Maintenance', to: '/dashboard/maintenance' },
     ],
   },
-  { label: 'Employees', to: '/dashboard/employees' },
-  { label: 'Payroll', to: '/dashboard/payroll' },
   { label: 'Reports', to: '/dashboard/reports' },
 ]
 

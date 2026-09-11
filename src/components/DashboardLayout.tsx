@@ -9,7 +9,10 @@ import RoleBadge from './RoleBadge'
 
 type SidebarLink = {
   label: string
-  to: string
+  // A category header (e.g. "Operations") has children but no page of
+  // its own -- to is left out for those, and the label itself isn't a
+  // link, just the thing that reveals the flyout on hover.
+  to?: string
   children?: { label: string; to: string }[]
 }
 
@@ -60,16 +63,28 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             <nav className="flex flex-col gap-1">
               {sidebarLinks.map((link) =>
                 link.children ? (
-                  <div key={link.to} className="group relative">
-                    <Link
-                      to={link.to}
-                      className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      {link.label}
-                      <span className="text-xs text-slate-400">›</span>
-                    </Link>
+                  <div key={link.label} className="group relative">
+                    {link.to ? (
+                      <Link
+                        to={link.to}
+                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      >
+                        {link.label}
+                        <span className="text-xs text-slate-400">›</span>
+                      </Link>
+                    ) : (
+                      <span className="flex cursor-default items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 group-hover:bg-slate-100 group-hover:text-slate-900">
+                        {link.label}
+                        <span className="text-xs text-slate-400">›</span>
+                      </span>
+                    )}
 
-                    <div className="absolute left-full top-0 z-10 ml-1 hidden min-w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-lg group-hover:block">
+                    {/* No gap between the trigger and this panel (left-full,
+                    no margin) -- a gap here would be a dead zone where
+                    moving the mouse diagonally toward a lower item drops
+                    the hover state and closes the menu before it can be
+                    clicked. */}
+                    <div className="absolute left-full top-0 z-10 hidden min-w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-lg group-hover:block">
                       {link.children.map((child) => (
                         <Link
                           key={child.to}
@@ -84,7 +99,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                 ) : (
                   <Link
                     key={link.to}
-                    to={link.to}
+                    to={link.to!}
                     className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   >
                     {link.label}
