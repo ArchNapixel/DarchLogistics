@@ -18,6 +18,7 @@ import BookingsSection from './staff/BookingsSection'
 import DispatchBoardSection from './staff/DispatchBoardSection'
 import FleetSection from './staff/FleetSection'
 import MaintenanceSection from './staff/MaintenanceSection'
+import InventorySection from './staff/InventorySection'
 import EmployeesSection from './staff/EmployeesSection'
 import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
@@ -46,6 +47,7 @@ const staffLinks = [
     children: [
       { label: 'Fleet', to: '/dashboard/fleet' },
       { label: 'Maintenance', to: '/dashboard/maintenance' },
+      { label: 'Inventory', to: '/dashboard/inventory' },
     ],
   },
   { label: 'Reports', to: '/dashboard/reports' },
@@ -86,6 +88,7 @@ function DashboardRouter() {
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="fleet" element={<FleetSection />} />
           <Route path="maintenance" element={<MaintenanceSection />} />
+          <Route path="inventory" element={<InventorySection />} />
           <Route path="employees" element={<EmployeesSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="reports" element={<ReportsSection />} />
