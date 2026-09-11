@@ -24,11 +24,22 @@ type DispatchRow = {
   status: string
   assigned_employee_id: number | null
   assigned_driver_name: string | null
+  plate_number: string | null
+  trailer_id: number | null
 }
 
 type DriverOption = {
   employee_id: number
   full_name: string
+}
+
+type TruckOption = {
+  plate_number: string
+}
+
+type TrailerOption = {
+  trailer_id: number
+  plate_number: string | null
 }
 
 const STATUS_FLOW = ['Awaiting', 'Dispatched', 'PickedUp', 'InTransit', 'Delivered']
@@ -62,6 +73,8 @@ function DispatchBoardSection() {
   const { employeeId } = useAuth()
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
+  const [trucks, setTrucks] = useState<TruckOption[]>([])
+  const [trailers, setTrailers] = useState<TrailerOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -77,7 +90,7 @@ function DispatchBoardSection() {
     const { data: itineraryRows, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
-        'itinerary_id, booking_id, trip_date_from, trip_date_to, place_of_pickup_id, place_of_delivery_id, itinerary_status',
+        'itinerary_id, booking_id, trip_date_from, trip_date_to, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
       )
       .not('itinerary_status', 'in', '(Delivered,Cancelled)')
       .order('trip_date_from', { ascending: true })
@@ -87,6 +100,28 @@ function DispatchBoardSection() {
       setLoading(false)
       return
     }
+
+    // Trucks/trailers to populate the assignment dropdowns -- needed
+    // even when there are no active itineraries yet, so load them
+    // regardless.
+    const [trucksResult, trailersResult] = await Promise.all([
+      supabase.from('truck_profiles').select('plate_number').order('plate_number'),
+      supabase.from('trailers').select('trailer_id, plate_number').order('trailer_id'),
+    ])
+
+    if (trucksResult.error) {
+      setError(trucksResult.error.message)
+      setLoading(false)
+      return
+    }
+    if (trailersResult.error) {
+      setError(trailersResult.error.message)
+      setLoading(false)
+      return
+    }
+
+    setTrucks(trucksResult.data)
+    setTrailers(trailersResult.data)
 
     if (itineraryRows.length === 0) {
       setRows([])
@@ -199,6 +234,8 @@ function DispatchBoardSection() {
             assignedEmployeeId !== null
               ? employeeNameById.get(assignedEmployeeId) ?? '—'
               : null,
+          plate_number: it.plate_number,
+          trailer_id: it.trailer_id,
         }
       }),
     )
@@ -319,6 +356,56 @@ function DispatchBoardSection() {
     )
   }
 
+  // Truck/trailer assignment: a plain overwrite on the itinerary row --
+  // unlike driver assignment, no history is kept of previous
+  // assignments (itinerary_crews tracks driver history; there's no
+  // equivalent table for trucks/trailers).
+  async function handleTruckChange(itineraryId: number, plateNumber: string | null) {
+    setSavingId(itineraryId)
+    setError(null)
+
+    const { error: updateError } = await supabase
+      .from('itineraries')
+      .update({ plate_number: plateNumber })
+      .eq('itinerary_id', itineraryId)
+
+    setSavingId(null)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.itinerary_id === itineraryId ? { ...r, plate_number: plateNumber } : r,
+      ),
+    )
+  }
+
+  async function handleTrailerChange(itineraryId: number, trailerId: number | null) {
+    setSavingId(itineraryId)
+    setError(null)
+
+    const { error: updateError } = await supabase
+      .from('itineraries')
+      .update({ trailer_id: trailerId })
+      .eq('itinerary_id', itineraryId)
+
+    setSavingId(null)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setRows((prev) =>
+      prev.map((r) =>
+        r.itinerary_id === itineraryId ? { ...r, trailer_id: trailerId } : r,
+      ),
+    )
+  }
+
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Dispatch Board</h2>
@@ -343,6 +430,8 @@ function DispatchBoardSection() {
                 <th className="px-4 py-3 font-medium">Trip Date</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Driver</th>
+                <th className="px-4 py-3 font-medium">Truck</th>
+                <th className="px-4 py-3 font-medium">Trailer</th>
               </tr>
             </thead>
             <tbody>
@@ -401,6 +490,46 @@ function DispatchBoardSection() {
                       {drivers.map((driver) => (
                         <option key={driver.employee_id} value={driver.employee_id}>
                           {driver.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={row.plate_number ?? ''}
+                      disabled={savingId === row.itinerary_id}
+                      onChange={(e) =>
+                        handleTruckChange(
+                          row.itinerary_id,
+                          e.target.value || null,
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {trucks.map((truck) => (
+                        <option key={truck.plate_number} value={truck.plate_number}>
+                          {truck.plate_number}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={row.trailer_id ?? ''}
+                      disabled={savingId === row.itinerary_id}
+                      onChange={(e) =>
+                        handleTrailerChange(
+                          row.itinerary_id,
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {trailers.map((trailer) => (
+                        <option key={trailer.trailer_id} value={trailer.trailer_id}>
+                          {trailer.plate_number ?? `#${trailer.trailer_id}`}
                         </option>
                       ))}
                     </select>

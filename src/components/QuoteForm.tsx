@@ -21,6 +21,7 @@ type QuoteFormData = {
   proposedRate: string
   isLastDayOfPortStorage: 'No' | 'Yes'
   preferredDeliveryDate: string
+  deliveryOrderCount: string
 }
 
 const emptyForm: QuoteFormData = {
@@ -38,6 +39,7 @@ const emptyForm: QuoteFormData = {
   proposedRate: '',
   isLastDayOfPortStorage: 'No',
   preferredDeliveryDate: '',
+  deliveryOrderCount: '',
 }
 
 // Shared Tailwind classes so every input/select looks the same.
@@ -81,6 +83,7 @@ function QuoteForm() {
       is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
       preferred_delivery_date:
         form.isLastDayOfPortStorage === 'Yes' ? null : form.preferredDeliveryDate,
+      delivery_order_count: Number(form.deliveryOrderCount),
       request_status: 'Pending',
     })
 
@@ -249,6 +252,21 @@ function QuoteForm() {
           required
           min="0"
           step="0.01"
+          className={fieldClasses}
+        />
+      </label>
+
+      <label className={labelClasses}>
+        Number of deliveries
+        <input
+          type="number"
+          name="deliveryOrderCount"
+          value={form.deliveryOrderCount}
+          onChange={handleChange}
+          required
+          min="1"
+          step="1"
+          placeholder="e.g. 3"
           className={fieldClasses}
         />
       </label>

@@ -7,14 +7,18 @@
 // email if one matches (clients.email is unique) or create one from the
 // quote's free-text client info, create 2 `places` rows from the
 // free-text pickup/delivery text, update the quote_request, create the
-// `bookings` row using those IDs, then create a matching `itineraries`
-// row (status 'Awaiting') linked to that booking. If a later step fails,
-// earlier ones have already been saved (no rollback) -- fine for now,
-// but worth moving into a single database function later for atomicity.
-// The booking->itinerary step is the one most likely to leave things
-// half-done (quote Approved + booking created, but no itinerary), so
-// that failure is surfaced with an explicit "needs manual review"
-// message instead of a generic one.
+// `bookings` row using those IDs, then create ONE `itinerary` per
+// delivery order (quote.delivery_order_count) linked to that booking --
+// a booking can cover multiple deliverables (e.g. several containers),
+// each needing its own truck+trailer+driver, so each one gets its own
+// itinerary row (status 'Awaiting', no truck/trailer/driver assigned
+// yet -- that happens later on the Dispatch Board). If a later step
+// fails, earlier ones have already been saved (no rollback) -- fine for
+// now, but worth moving into a single database function later for
+// atomicity. The booking->itinerary step is the one most likely to
+// leave things half-done (quote Approved + booking created, but zero or
+// partial itineraries), so that failure is surfaced with an explicit
+// "needs manual review" message instead of a generic one.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { QuoteRequest } from './QuoteRequestsSection'
@@ -58,6 +62,7 @@ function QuoteReviewModal({
   const [approvedBookingId, setApprovedBookingId] = useState<number | null>(
     null,
   )
+  const [itinerariesCreated, setItinerariesCreated] = useState(0)
 
   async function handleApprove() {
     const rateValue = Number(proposedRate)
@@ -214,34 +219,42 @@ function QuoteReviewModal({
       return
     }
 
-    // 5. Create the itinerary linked to that booking. By this point the
-    // quote is already Approved and the booking already exists -- if
-    // this insert fails, don't fail silently. The error message below
-    // says exactly that, so staff know there's a booking with no
-    // itinerary that needs manual follow-up instead of just retrying
-    // "Approve" (which would create a duplicate booking).
+    // 5. Create one itinerary per delivery order (a booking can cover
+    // multiple deliverables -- e.g. several containers -- each needing
+    // its own truck+trailer+driver later). By this point the quote is
+    // already Approved and the booking already exists -- if this insert
+    // fails, don't fail silently. The error message below says exactly
+    // that, so staff know there's a booking with no itineraries that
+    // needs manual follow-up instead of just retrying "Approve" (which
+    // would create a duplicate booking).
+    const deliveryCount = quote.delivery_order_count ?? 1
+    const itineraryRows = Array.from({ length: deliveryCount }, () => ({
+      booking_id: newBooking.booking_id,
+      place_of_pickup_id: pickupPlace.place_id,
+      place_of_delivery_id: deliveryPlace.place_id,
+      trip_date_from: tripDateFrom,
+      itinerary_status: 'Awaiting',
+    }))
+
     const { error: itineraryError } = await supabase
       .from('itineraries')
-      .insert({
-        booking_id: newBooking.booking_id,
-        place_of_pickup_id: pickupPlace.place_id,
-        place_of_delivery_id: deliveryPlace.place_id,
-        trip_date_from: tripDateFrom,
-        itinerary_status: 'Awaiting',
-      })
+      .insert(itineraryRows)
 
     setSubmitting(false)
 
     if (itineraryError) {
       setError(
-        `Booking #${newBooking.booking_id} was created, but its itinerary ` +
-          `could not be created (${itineraryError.message}). The quote is ` +
-          `already marked Approved and the booking already exists -- this ` +
-          `needs manual review. Don't click Approve again, it would create ` +
-          `a duplicate booking.`,
+        `Booking #${newBooking.booking_id} was created, but its ` +
+          `${deliveryCount} itinerary row(s) could not be created ` +
+          `(${itineraryError.message}). The quote is already marked ` +
+          `Approved and the booking already exists -- this needs manual ` +
+          `review. Don't click Approve again, it would create a ` +
+          `duplicate booking.`,
       )
       return
     }
+
+    setItinerariesCreated(deliveryCount)
 
     setApprovedBookingId(newBooking.booking_id)
   }
@@ -297,8 +310,11 @@ function QuoteReviewModal({
         {approvedBookingId !== null ? (
           <>
             <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-              Quote approved. Booking #{approvedBookingId} and its itinerary
-              (status "Awaiting") have both been created.
+              Quote approved. Booking #{approvedBookingId} was created with{' '}
+              {itinerariesCreated}{' '}
+              {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'}{' '}
+              (status "Awaiting") -- assign a truck, trailer, and driver to
+              each from the Dispatch Board.
             </p>
             <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
               <button
@@ -329,6 +345,10 @@ function QuoteReviewModal({
               <InfoRow label="Cargo type" value={quote.cargo_type} />
               <InfoRow label="Trailer type" value={quote.container_type} />
               <InfoRow label="Weight (tons)" value={String(quote.weight)} />
+              <InfoRow
+                label="Number of deliveries"
+                value={String(quote.delivery_order_count ?? 1)}
+              />
               <InfoRow
                 label="Preferred pickup date"
                 value={quote.preferred_pickup_date ?? '—'}

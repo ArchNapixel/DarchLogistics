@@ -5,6 +5,24 @@ import { supabase } from '../../lib/supabaseClient'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
+const ITINERARY_STATUS_STYLES: Record<string, string> = {
+  Awaiting: 'bg-gray-100 text-gray-700',
+  Dispatched: 'bg-blue-100 text-blue-700',
+  PickedUp: 'bg-purple-100 text-purple-700',
+  InTransit: 'bg-orange-100 text-orange-700',
+  Delivered: 'bg-green-100 text-green-700',
+  Cancelled: 'bg-red-100 text-red-700',
+}
+
+function ItineraryStatusBadge({ status }: { status: string }) {
+  const styles = ITINERARY_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
+      {status}
+    </span>
+  )
+}
+
 const REVENUE_RANGES = [
   { value: '1M', label: '1 Month', months: 1 },
   { value: '3M', label: '3 Months', months: 3 },
@@ -16,6 +34,16 @@ function getCutoffDate(months: number) {
   const cutoff = new Date()
   cutoff.setMonth(cutoff.getMonth() - months)
   return cutoff.toISOString().slice(0, 10)
+}
+
+type TodayDelivery = {
+  itinerary_id: number
+  from: string
+  to: string
+  rate: number | null
+  truckPlateNumber: string | null
+  trailerPlateNumber: string | null
+  status: string
 }
 
 function StaffDashboard() {
@@ -35,6 +63,8 @@ function StaffDashboard() {
     useState<(typeof REVENUE_RANGES)[number]['value']>('1M')
   const [revenue, setRevenue] = useState(0)
   const [revenueLoading, setRevenueLoading] = useState(true)
+  const [todayDeliveryRows, setTodayDeliveryRows] = useState<TodayDelivery[]>([])
+  const [todayDeliveriesLoading, setTodayDeliveriesLoading] = useState(true)
 
   useEffect(() => {
     async function loadSummary() {
@@ -52,9 +82,9 @@ function StaffDashboard() {
               .select('booking_id', { count: 'exact', head: true })
               .in('booking_status', ['Confirmed', 'Dispatched', 'InProgress']),
             supabase
-              .from('bookings')
-              .select('booking_id', { count: 'exact', head: true })
-              .eq('booking_date', today),
+              .from('itineraries')
+              .select('itinerary_id', { count: 'exact', head: true })
+              .eq('trip_date_from', today),
             supabase
               .from('truck_profiles')
               .select('plate_number', { count: 'exact', head: true }),
@@ -124,7 +154,7 @@ function StaffDashboard() {
 
       const { data, error } = await supabase
         .from('bookings')
-        .select('amount_to_pay')
+        .select('rate_of_delivery_service')
         .neq('booking_status', 'Cancelled')
         .gte('booking_date', cutoffDate)
 
@@ -135,13 +165,108 @@ function StaffDashboard() {
       }
 
       setRevenue(
-        data.reduce((sum, row) => sum + (row.amount_to_pay ?? 0), 0),
+        data.reduce((sum, row) => sum + (row.rate_of_delivery_service ?? 0), 0),
       )
       setRevenueLoading(false)
     }
 
     loadRevenue()
   }, [revenueRange])
+
+  useEffect(() => {
+    async function loadTodayDeliveries() {
+      setTodayDeliveriesLoading(true)
+
+      const today = new Date().toISOString().slice(0, 10)
+
+      const { data: itineraryRows, error: itineraryError } = await supabase
+        .from('itineraries')
+        .select(
+          'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
+        )
+        .eq('trip_date_from', today)
+
+      if (itineraryError) {
+        console.error('Failed to load today\'s deliveries', itineraryError)
+        setTodayDeliveriesLoading(false)
+        return
+      }
+
+      if (itineraryRows.length === 0) {
+        setTodayDeliveryRows([])
+        setTodayDeliveriesLoading(false)
+        return
+      }
+
+      const placeIds = Array.from(
+        new Set(
+          itineraryRows.flatMap((row) => [
+            row.place_of_pickup_id,
+            row.place_of_delivery_id,
+          ]),
+        ),
+      )
+      const bookingIds = Array.from(
+        new Set(itineraryRows.map((row) => row.booking_id)),
+      )
+
+      const trailerIds = Array.from(
+        new Set(
+          itineraryRows
+            .map((row) => row.trailer_id)
+            .filter((id): id is number => id !== null),
+        ),
+      )
+
+      const [placesResult, bookingsResult, trailersResult] = await Promise.all([
+        supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
+        supabase
+          .from('bookings')
+          .select('booking_id, rate_of_delivery_service')
+          .in('booking_id', bookingIds),
+        trailerIds.length > 0
+          ? supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      if (placesResult.error || bookingsResult.error || trailersResult.error) {
+        console.error(
+          'Failed to load today\'s deliveries',
+          placesResult.error ?? bookingsResult.error ?? trailersResult.error,
+        )
+        setTodayDeliveriesLoading(false)
+        return
+      }
+
+      const placeNameById = new Map(
+        placesResult.data.map((p) => [p.place_id, p.place_name]),
+      )
+      const rateByBookingId = new Map(
+        bookingsResult.data.map((b) => [b.booking_id, b.rate_of_delivery_service]),
+      )
+      const trailerPlateById = new Map(
+        trailersResult.data.map((t) => [t.trailer_id, t.plate_number]),
+      )
+
+      setTodayDeliveryRows(
+        itineraryRows.map((row) => ({
+          itinerary_id: row.itinerary_id,
+          from: placeNameById.get(row.place_of_pickup_id) ?? '—',
+          to: placeNameById.get(row.place_of_delivery_id) ?? '—',
+          rate: rateByBookingId.get(row.booking_id) ?? null,
+          truckPlateNumber: row.plate_number,
+          trailerPlateNumber:
+            row.trailer_id !== null
+              ? trailerPlateById.get(row.trailer_id) ?? `#${row.trailer_id}`
+              : null,
+          status: row.itinerary_status ?? 'Awaiting',
+        })),
+      )
+      setTodayDeliveriesLoading(false)
+    }
+
+    loadTodayDeliveries()
+  }, [])
 
   const summaryCards = [
     { label: 'Pending Quotes', value: summary.pendingQuotes },
@@ -197,6 +322,73 @@ function StaffDashboard() {
             </p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-8">
+        <h2 className="text-lg font-bold text-slate-900">
+          Today's Deliveries
+        </h2>
+
+        {todayDeliveriesLoading && (
+          <p className="mt-4 text-slate-500">Loading today's deliveries...</p>
+        )}
+        {!todayDeliveriesLoading && todayDeliveryRows.length === 0 && (
+          <p className="mt-4 text-slate-500">
+            No deliveries scheduled for today.
+          </p>
+        )}
+
+        {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">From</th>
+                  <th className="px-4 py-3 font-medium">To</th>
+                  <th className="px-4 py-3 font-medium">Rate</th>
+                  <th className="px-4 py-3 font-medium">Truck Assigned</th>
+                  <th className="px-4 py-3 font-medium">Trailer Assigned</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayDeliveryRows.map((row) => (
+                  <tr
+                    key={row.itinerary_id}
+                    className="border-b border-slate-100 last:border-0"
+                  >
+                    <td className="px-4 py-3 text-slate-900">{row.from}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.to}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.rate != null ? `₱${row.rate.toLocaleString()}` : 'N/A'}
+                    </td>
+                    <td
+                      className={
+                        row.truckPlateNumber
+                          ? 'px-4 py-3 text-slate-600'
+                          : 'px-4 py-3 text-slate-400'
+                      }
+                    >
+                      {row.truckPlateNumber ?? 'Unassigned'}
+                    </td>
+                    <td
+                      className={
+                        row.trailerPlateNumber
+                          ? 'px-4 py-3 text-slate-600'
+                          : 'px-4 py-3 text-slate-400'
+                      }
+                    >
+                      {row.trailerPlateNumber ?? 'Unassigned'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ItineraryStatusBadge status={row.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

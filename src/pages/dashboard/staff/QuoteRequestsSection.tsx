@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import QuoteReviewModal from './QuoteReviewModal'
+import NewQuoteRequestModal from './NewQuoteRequestModal'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -21,6 +22,7 @@ export type QuoteRequest = {
   payment_terms: string
   proposed_rate: number | null
   preferred_pickup_date: string | null
+  delivery_order_count: number | null
   created_at: string
 }
 
@@ -31,6 +33,7 @@ function QuoteRequestsSection() {
   const [selectedQuote, setSelectedQuote] = useState<QuoteRequest | null>(
     null,
   )
+  const [showNewQuote, setShowNewQuote] = useState(false)
 
   useEffect(() => {
     loadQuotes()
@@ -74,9 +77,17 @@ function QuoteRequestsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">
-        Pending Quote Requests
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-slate-900">
+          Pending Quote Requests
+        </h2>
+        <button
+          onClick={() => setShowNewQuote(true)}
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          New Quote
+        </button>
+      </div>
 
       {quotes.length === 0 ? (
         <p className="mt-4 text-slate-500">No pending quote requests.</p>
@@ -89,6 +100,7 @@ function QuoteRequestsSection() {
                 <th className="px-4 py-3 font-medium">Cargo Type</th>
                 <th className="px-4 py-3 font-medium">Origin → Destination</th>
                 <th className="px-4 py-3 font-medium">Pickup Date</th>
+                <th className="px-4 py-3 font-medium">Deliveries</th>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
@@ -110,6 +122,9 @@ function QuoteRequestsSection() {
                   <td className="px-4 py-3 text-slate-600">
                     {quote.preferred_pickup_date ?? '—'}
                   </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {quote.delivery_order_count ?? '—'}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => setSelectedQuote(quote)}
@@ -130,6 +145,16 @@ function QuoteRequestsSection() {
           quote={selectedQuote}
           onClose={() => setSelectedQuote(null)}
           onResolved={handleResolved}
+        />
+      )}
+
+      {showNewQuote && (
+        <NewQuoteRequestModal
+          onClose={() => setShowNewQuote(false)}
+          onCreated={() => {
+            setShowNewQuote(false)
+            loadQuotes()
+          }}
         />
       )}
     </div>

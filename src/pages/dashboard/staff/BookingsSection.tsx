@@ -1,15 +1,15 @@
-// BookingsSection: lists real bookings in a table, with a "New Booking"
-// button and a click-through detail view for each row.
+// BookingsSection: lists real bookings in a table, with a click-through
+// detail view for each row.
 //
 // Reads from `bookings`, then looks up client/place names separately from
 // `clients` and `places` (same pattern as DriverTasks.tsx) since Supabase
-// doesn't auto-join related tables. "New Booking" still doesn't create
-// anything yet -- creating bookings for real happens via the Quotations
-// Approve flow (QuoteReviewModal); this button is a placeholder for a
-// possible manual-entry flow later.
+// doesn't auto-join related tables. Bookings only ever get created via
+// the Quotations Approve flow (QuoteReviewModal) -- staff wanting to log
+// a booking that didn't come through the public form uses "New Quote"
+// on the Quotations page instead, so it goes through the same tested
+// approve logic rather than a separate manual-entry path.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import NewBookingModal from './NewBookingModal'
 import BookingDetailModal from './BookingDetailModal'
 
 export type Booking = {
@@ -45,12 +45,49 @@ function BookingsSection() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showNewBooking, setShowNewBooking] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   useEffect(() => {
     loadBookings()
   }, [])
+
+  async function handleDelete(booking: Booking) {
+    if (
+      !window.confirm(
+        `Delete booking #${booking.booking_id}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+
+    setDeletingId(booking.booking_id)
+
+    const { error: deleteError } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('booking_id', booking.booking_id)
+
+    setDeletingId(null)
+
+    if (deleteError) {
+      // itineraries has a foreign key to bookings with no cascade rule,
+      // so deleting a booking that still has itineraries fails here --
+      // translate that into something staff can actually act on.
+      if (deleteError.message.includes('itineraries')) {
+        setError(
+          `Can't delete booking #${booking.booking_id} -- it still has ` +
+            `itineraries attached. Remove those first (Dispatch Board or ` +
+            `directly in Supabase), then try again.`,
+        )
+      } else {
+        setError(deleteError.message)
+      }
+      return
+    }
+
+    setBookings((prev) => prev.filter((b) => b.booking_id !== booking.booking_id))
+  }
 
   async function loadBookings() {
     setLoading(true)
@@ -131,15 +168,7 @@ function BookingsSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Bookings</h2>
-        <button
-          onClick={() => setShowNewBooking(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          New Booking
-        </button>
-      </div>
+      <h2 className="text-xl font-bold text-slate-900">Bookings</h2>
 
       {loading ? (
         <p className="mt-4 text-slate-500">Loading bookings...</p>
@@ -158,6 +187,7 @@ function BookingsSection() {
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Rate</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -185,15 +215,23 @@ function BookingsSection() {
                       ? `₱${booking.rate.toLocaleString()}`
                       : '—'}
                   </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(booking)
+                      }}
+                      disabled={deletingId === booking.booking_id}
+                      className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                    >
+                      {deletingId === booking.booking_id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-
-      {showNewBooking && (
-        <NewBookingModal onClose={() => setShowNewBooking(false)} />
       )}
 
       {selectedBooking && (
