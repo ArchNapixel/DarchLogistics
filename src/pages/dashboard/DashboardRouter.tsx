@@ -17,6 +17,7 @@ import ClientsSection from './staff/ClientsSection'
 import BookingsSection from './staff/BookingsSection'
 import DispatchBoardSection from './staff/DispatchBoardSection'
 import FleetSection from './staff/FleetSection'
+import MaintenanceSection from './staff/MaintenanceSection'
 import EmployeesSection from './staff/EmployeesSection'
 import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
@@ -29,6 +30,7 @@ const staffLinks = [
   { label: 'Clients', to: '/dashboard/clients' },
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
   { label: 'Fleet', to: '/dashboard/fleet' },
+  { label: 'Maintenance', to: '/dashboard/maintenance' },
   { label: 'Employees', to: '/dashboard/employees' },
   { label: 'Payroll', to: '/dashboard/payroll' },
   { label: 'Reports', to: '/dashboard/reports' },
@@ -68,6 +70,7 @@ function DashboardRouter() {
           <Route path="clients" element={<ClientsSection />} />
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="fleet" element={<FleetSection />} />
+          <Route path="maintenance" element={<MaintenanceSection />} />
           <Route path="employees" element={<EmployeesSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="reports" element={<ReportsSection />} />

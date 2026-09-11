@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import CreateWorkOrderModal from './CreateWorkOrderModal'
 
 type Truck = {
   plate_number: string
@@ -43,6 +44,7 @@ function FleetSection() {
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [workOrderTruck, setWorkOrderTruck] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadFleet() {
@@ -114,6 +116,7 @@ function FleetSection() {
                 <th className="px-4 py-3 font-medium">Model</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Last Service Date</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -129,6 +132,14 @@ function FleetSection() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {truck.last_service_date || 'N/A'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setWorkOrderTruck(truck.plate_number)}
+                      className="font-medium text-slate-600 hover:text-slate-900"
+                    >
+                      Create Work Order
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -165,6 +176,14 @@ function FleetSection() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {workOrderTruck && (
+        <CreateWorkOrderModal
+          plateNumber={workOrderTruck}
+          onClose={() => setWorkOrderTruck(null)}
+          onCreated={() => setWorkOrderTruck(null)}
+        />
       )}
     </div>
   )
