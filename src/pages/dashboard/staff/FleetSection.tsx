@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
+import AddTruckModal from './AddTruckModal'
+import AddTrailerModal from './AddTrailerModal'
 
 type Truck = {
   plate_number: string
@@ -48,45 +50,64 @@ function FleetSection() {
   const [workOrderVehicle, setWorkOrderVehicle] = useState<PreselectedVehicle | null>(
     null,
   )
+  const [showAddTruck, setShowAddTruck] = useState(false)
+  const [showAddTrailer, setShowAddTrailer] = useState(false)
 
   useEffect(() => {
-    async function loadFleet() {
-      try {
-        setLoading(true)
-        setError('')
-
-        const { data: truckData, error: truckError } = await supabase
-          .from('truck_profiles')
-          .select('plate_number, model, current_status, last_service_date')
-          .order('plate_number', { ascending: true })
-
-        if (truckError) throw truckError
-
-        const { data: trailerData, error: trailerError } = await supabase
-          .from('trailers')
-          .select(
-            'trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date'
-          )
-          .order('trailer_id', { ascending: true })
-
-        if (trailerError) throw trailerError
-
-        setTrucks((truckData ?? []) as Truck[])
-        setTrailers((trailerData ?? []) as Trailer[])
-      } catch (err) {
-        console.error('Failed to load fleet:', err)
-        setError('Something went wrong while loading the fleet.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
     loadFleet()
   }, [])
 
+  async function loadFleet() {
+    try {
+      setLoading(true)
+      setError('')
+
+      const { data: truckData, error: truckError } = await supabase
+        .from('truck_profiles')
+        .select('plate_number, model, current_status, last_service_date')
+        .order('plate_number', { ascending: true })
+
+      if (truckError) throw truckError
+
+      const { data: trailerData, error: trailerError } = await supabase
+        .from('trailers')
+        .select(
+          'trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date'
+        )
+        .order('trailer_id', { ascending: true })
+
+      if (trailerError) throw trailerError
+
+      setTrucks((truckData ?? []) as Truck[])
+      setTrailers((trailerData ?? []) as Trailer[])
+    } catch (err) {
+      console.error('Failed to load fleet:', err)
+      setError('Something went wrong while loading the fleet.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Fleet</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-slate-900">Fleet</h2>
+        {activeTab === 'Trucks' ? (
+          <button
+            onClick={() => setShowAddTruck(true)}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            Add Truck
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowAddTrailer(true)}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            Add Trailer
+          </button>
+        )}
+      </div>
 
       <div className="mt-4 flex gap-2 border-b border-slate-200">
         {TABS.map((tab) => (
@@ -207,6 +228,26 @@ function FleetSection() {
           vehicle={workOrderVehicle}
           onClose={() => setWorkOrderVehicle(null)}
           onCreated={() => setWorkOrderVehicle(null)}
+        />
+      )}
+
+      {showAddTruck && (
+        <AddTruckModal
+          onClose={() => setShowAddTruck(false)}
+          onSaved={() => {
+            setShowAddTruck(false)
+            loadFleet()
+          }}
+        />
+      )}
+
+      {showAddTrailer && (
+        <AddTrailerModal
+          onClose={() => setShowAddTrailer(false)}
+          onSaved={() => {
+            setShowAddTrailer(false)
+            loadFleet()
+          }}
         />
       )}
     </div>
