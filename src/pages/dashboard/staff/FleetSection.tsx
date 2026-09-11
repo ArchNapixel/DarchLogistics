@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
-type FleetStatus = 'Available' | 'In Transit' | 'Under Maintenance' | 'Out of Service' | string
-
 type Truck = {
   plate_number: string
   model: string | null
