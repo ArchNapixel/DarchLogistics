@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import CreateWorkOrderModal from './CreateWorkOrderModal'
+import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 
 type Truck = {
   plate_number: string
@@ -11,6 +11,7 @@ type Truck = {
 
 type Trailer = {
   trailer_id: number
+  plate_number: string | null
   trailer_type: string
   registration_number: string | null
   current_status: string | null
@@ -44,7 +45,9 @@ function FleetSection() {
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [workOrderTruck, setWorkOrderTruck] = useState<string | null>(null)
+  const [workOrderVehicle, setWorkOrderVehicle] = useState<PreselectedVehicle | null>(
+    null,
+  )
 
   useEffect(() => {
     async function loadFleet() {
@@ -62,7 +65,7 @@ function FleetSection() {
         const { data: trailerData, error: trailerError } = await supabase
           .from('trailers')
           .select(
-            'trailer_id, trailer_type, registration_number, current_status, last_maintenance_date'
+            'trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date'
           )
           .order('trailer_id', { ascending: true })
 
@@ -135,7 +138,12 @@ function FleetSection() {
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => setWorkOrderTruck(truck.plate_number)}
+                      onClick={() =>
+                        setWorkOrderVehicle({
+                          type: 'truck',
+                          plateNumber: truck.plate_number,
+                        })
+                      }
                       className="font-medium text-slate-600 hover:text-slate-900"
                     >
                       Create Work Order
@@ -151,10 +159,11 @@ function FleetSection() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-medium">Trailer ID</th>
+                <th className="px-4 py-3 font-medium">Plate Number</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Registration</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -163,13 +172,28 @@ function FleetSection() {
                   key={trailer.trailer_id}
                   className="border-b border-slate-100 last:border-0"
                 >
-                  <td className="px-4 py-3 text-slate-900">{trailer.trailer_id}</td>
+                  <td className="px-4 py-3 text-slate-900">
+                    {trailer.plate_number || 'N/A'}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{trailer.trailer_type}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {trailer.registration_number || 'N/A'}
                   </td>
                   <td className="px-4 py-3">
                     <FleetStatusBadge status={trailer.current_status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() =>
+                        setWorkOrderVehicle({
+                          type: 'trailer',
+                          trailerId: trailer.trailer_id,
+                        })
+                      }
+                      className="font-medium text-slate-600 hover:text-slate-900"
+                    >
+                      Create Work Order
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -178,11 +202,11 @@ function FleetSection() {
         </div>
       )}
 
-      {workOrderTruck && (
+      {workOrderVehicle && (
         <CreateWorkOrderModal
-          plateNumber={workOrderTruck}
-          onClose={() => setWorkOrderTruck(null)}
-          onCreated={() => setWorkOrderTruck(null)}
+          vehicle={workOrderVehicle}
+          onClose={() => setWorkOrderVehicle(null)}
+          onCreated={() => setWorkOrderVehicle(null)}
         />
       )}
     </div>
