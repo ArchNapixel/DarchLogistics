@@ -1,6 +1,8 @@
-// AddEmployeeModal: form for adding an employee, inserting into the
-// real `employees` table. rate_type determines which single rate
-// column actually gets filled in (daily_rate / commission_per_trip /
+// AddEmployeeModal: form for adding OR editing an employee in the real
+// `employees` table. Pass an `employee` prop to edit that row (fields
+// pre-filled, submit does an UPDATE); omit it to add a new one (submit
+// does an INSERT). rate_type determines which single rate column
+// actually gets filled in (daily_rate / commission_per_trip /
 // monthly_salary / hourly_rate) -- the other three stay null.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
@@ -9,28 +11,44 @@ const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-const RATE_TYPES = [
+export const RATE_TYPES = [
   { value: 'Daily Fixed', label: 'Daily rate', column: 'daily_rate' },
   { value: 'Commission Per Trip', label: 'Commission per trip', column: 'commission_per_trip' },
   { value: 'Monthly Salary', label: 'Monthly salary', column: 'monthly_salary' },
   { value: 'Hourly', label: 'Hourly rate', column: 'hourly_rate' },
 ] as const
 
+export type EditableEmployee = {
+  employee_id: number
+  first_name: string
+  last_name: string
+  position: string
+  rate_type: (typeof RATE_TYPES)[number]['value']
+  rate_amount: number | null
+  hire_date: string
+}
+
 function AddEmployeeModal({
+  employee,
   onClose,
-  onAdded,
+  onSaved,
 }: {
+  employee?: EditableEmployee
   onClose: () => void
-  onAdded: () => void
+  onSaved: () => void
 }) {
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [position, setPosition] = useState('Driver')
+  const isEditing = !!employee
+
+  const [firstName, setFirstName] = useState(employee?.first_name ?? '')
+  const [lastName, setLastName] = useState(employee?.last_name ?? '')
+  const [position, setPosition] = useState(employee?.position ?? 'Driver')
   const [rateType, setRateType] = useState<(typeof RATE_TYPES)[number]['value']>(
-    'Daily Fixed',
+    employee?.rate_type ?? 'Daily Fixed',
   )
-  const [rateAmount, setRateAmount] = useState('')
-  const [hireDate, setHireDate] = useState('')
+  const [rateAmount, setRateAmount] = useState(
+    employee?.rate_amount != null ? String(employee.rate_amount) : '',
+  )
+  const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,31 +67,44 @@ function AddEmployeeModal({
     setSubmitting(true)
     setError(null)
 
-    const { error: insertError } = await supabase.from('employees').insert({
+    const values = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       full_name: `${firstName.trim()} ${lastName.trim()}`,
       position,
       rate_type: rateType,
       hire_date: hireDate,
+      daily_rate: null,
+      commission_per_trip: null,
+      monthly_salary: null,
+      hourly_rate: null,
       [selectedRateType.column]: rateAmount ? Number(rateAmount) : null,
-    })
+    }
+
+    const { error: saveError } = isEditing
+      ? await supabase
+          .from('employees')
+          .update(values)
+          .eq('employee_id', employee.employee_id)
+      : await supabase.from('employees').insert(values)
 
     setSubmitting(false)
 
-    if (insertError) {
-      setError(insertError.message)
+    if (saveError) {
+      setError(saveError.message)
       return
     }
 
-    onAdded()
+    onSaved()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">Add Employee</h3>
+          <h3 className="text-lg font-bold text-slate-900">
+            {isEditing ? 'Edit Employee' : 'Add Employee'}
+          </h3>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700"
@@ -175,7 +206,13 @@ function AddEmployeeModal({
             disabled={submitting}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {submitting ? 'Adding...' : 'Add Employee'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save Changes'
+                : 'Add Employee'}
           </button>
         </div>
       </div>

@@ -5,7 +5,7 @@
 // as place-name lookups in DriverTasks.tsx / MyBookingsSection.tsx).
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import AddEmployeeModal from './AddEmployeeModal'
+import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
 
 type Employee = {
   employee_id: number
@@ -13,6 +13,14 @@ type Employee = {
   position: string
   status: string
   hire_date: string
+  editable: EditableEmployee
+}
+
+function extractRateAmount(row: Record<string, unknown>, rateType: string) {
+  const rateInfo = RATE_TYPES.find((r) => r.value === rateType)
+  if (!rateInfo) return null
+  const value = row[rateInfo.column]
+  return typeof value === 'number' ? value : null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -35,17 +43,43 @@ function EmployeesSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddEmployee, setShowAddEmployee] = useState(false)
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   useEffect(() => {
     loadEmployees()
   }, [])
+
+  async function handleDelete(employee: Employee) {
+    if (!window.confirm(`Delete ${employee.name}? This cannot be undone.`)) {
+      return
+    }
+
+    setDeletingId(employee.employee_id)
+
+    const { error: deleteError } = await supabase
+      .from('employees')
+      .delete()
+      .eq('employee_id', employee.employee_id)
+
+    setDeletingId(null)
+
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+
+    loadEmployees()
+  }
 
   async function loadEmployees() {
     setLoading(true)
 
     const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
-      .select('employee_id, full_name, position, hire_date, employment_status_id')
+      .select(
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, employment_status_id, daily_rate, commission_per_trip, monthly_salary, hourly_rate',
+      )
       .order('full_name', { ascending: true })
 
     if (employeeError) {
@@ -75,6 +109,15 @@ function EmployeesSection() {
         position: row.position,
         status: statusNameById.get(row.employment_status_id) ?? '—',
         hire_date: row.hire_date,
+        editable: {
+          employee_id: row.employee_id,
+          first_name: row.first_name,
+          last_name: row.last_name,
+          position: row.position,
+          rate_type: row.rate_type,
+          rate_amount: extractRateAmount(row, row.rate_type),
+          hire_date: row.hire_date,
+        },
       })),
     )
     setError(null)
@@ -108,6 +151,7 @@ function EmployeesSection() {
                 <th className="px-4 py-3 font-medium">Position</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Hire Date</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -126,6 +170,25 @@ function EmployeesSection() {
                   <td className="px-4 py-3 text-slate-600">
                     {employee.hire_date}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setEditingEmployee(employee)}
+                        className="font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(employee)}
+                        disabled={deletingId === employee.employee_id}
+                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        {deletingId === employee.employee_id
+                          ? 'Deleting...'
+                          : 'Delete'}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -133,11 +196,16 @@ function EmployeesSection() {
         </div>
       )}
 
-      {showAddEmployee && (
+      {(showAddEmployee || editingEmployee) && (
         <AddEmployeeModal
-          onClose={() => setShowAddEmployee(false)}
-          onAdded={() => {
+          employee={editingEmployee?.editable}
+          onClose={() => {
             setShowAddEmployee(false)
+            setEditingEmployee(null)
+          }}
+          onSaved={() => {
+            setShowAddEmployee(false)
+            setEditingEmployee(null)
             loadEmployees()
           }}
         />
