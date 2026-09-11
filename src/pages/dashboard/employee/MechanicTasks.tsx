@@ -69,7 +69,7 @@ function MechanicTasks() {
 
   async function advanceStatus(order: WorkOrder) {
     const currentIndex = STATUS_FLOW.indexOf(order.work_order_status)
-    const nextStatus = STATUS_FLOW[currentIndex + 1]
+    const nextStatus = currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
     if (!nextStatus) return
 
     setUpdatingId(order.work_order_id)
@@ -115,7 +115,7 @@ function MechanicTasks() {
     <div className="grid gap-4">
       {orders.map((order) => {
         const currentIndex = STATUS_FLOW.indexOf(order.work_order_status)
-        const nextStatus = STATUS_FLOW[currentIndex + 1]
+        const nextStatus = currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
 
         return (
           <div

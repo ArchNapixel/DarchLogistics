@@ -59,12 +59,17 @@ function StaffDashboard() {
     underMaintenance: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
   const [revenueRange, setRevenueRange] =
     useState<(typeof REVENUE_RANGES)[number]['value']>('1M')
   const [revenue, setRevenue] = useState(0)
   const [revenueLoading, setRevenueLoading] = useState(true)
+  const [revenueError, setRevenueError] = useState<string | null>(null)
   const [todayDeliveryRows, setTodayDeliveryRows] = useState<TodayDelivery[]>([])
   const [todayDeliveriesLoading, setTodayDeliveriesLoading] = useState(true)
+  const [todayDeliveriesError, setTodayDeliveriesError] = useState<string | null>(
+    null,
+  )
 
   useEffect(() => {
     async function loadSummary() {
@@ -105,9 +110,21 @@ function StaffDashboard() {
           trailers.error ||
           activeWorkOrders.error
         ) {
-          console.error('Failed to load dashboard summary')
+          const firstError =
+            quotes.error ??
+            bookings.error ??
+            deliveries.error ??
+            trucks.error ??
+            trailers.error ??
+            activeWorkOrders.error!
+          console.error('Failed to load dashboard summary', firstError)
+          setSummaryError(
+            `Couldn't load the dashboard summary (${firstError.message}). Try refreshing the page.`,
+          )
           return
         }
+
+        setSummaryError(null)
 
         // A truck/trailer can have more than one active work order -- count
         // distinct vehicles, not distinct work orders.
@@ -137,6 +154,9 @@ function StaffDashboard() {
         })
       } catch (error) {
         console.error('Failed to load dashboard summary', error)
+        setSummaryError(
+          "Couldn't load the dashboard summary. Try refreshing the page.",
+        )
       } finally {
         setLoading(false)
       }
@@ -160,10 +180,12 @@ function StaffDashboard() {
 
       if (error) {
         console.error('Failed to load revenue', error)
+        setRevenueError(`Couldn't load revenue (${error.message}).`)
         setRevenueLoading(false)
         return
       }
 
+      setRevenueError(null)
       setRevenue(
         data.reduce((sum, row) => sum + (row.rate_of_delivery_service ?? 0), 0),
       )
@@ -188,12 +210,16 @@ function StaffDashboard() {
 
       if (itineraryError) {
         console.error('Failed to load today\'s deliveries', itineraryError)
+        setTodayDeliveriesError(
+          `Couldn't load today's deliveries (${itineraryError.message}).`,
+        )
         setTodayDeliveriesLoading(false)
         return
       }
 
       if (itineraryRows.length === 0) {
         setTodayDeliveryRows([])
+        setTodayDeliveriesError(null)
         setTodayDeliveriesLoading(false)
         return
       }
@@ -230,13 +256,17 @@ function StaffDashboard() {
       ])
 
       if (placesResult.error || bookingsResult.error || trailersResult.error) {
-        console.error(
-          'Failed to load today\'s deliveries',
-          placesResult.error ?? bookingsResult.error ?? trailersResult.error,
+        const combinedError =
+          placesResult.error ?? bookingsResult.error ?? trailersResult.error!
+        console.error('Failed to load today\'s deliveries', combinedError)
+        setTodayDeliveriesError(
+          `Couldn't load today's deliveries (${combinedError.message}).`,
         )
         setTodayDeliveriesLoading(false)
         return
       }
+
+      setTodayDeliveriesError(null)
 
       const placeNameById = new Map(
         placesResult.data.map((p) => [p.place_id, p.place_name]),
@@ -288,6 +318,12 @@ function StaffDashboard() {
         <RoleBadge role={role} />
       </div>
 
+      {summaryError && (
+        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {summaryError}
+        </p>
+      )}
+
       <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">Total Revenue</p>
@@ -305,9 +341,13 @@ function StaffDashboard() {
             ))}
           </select>
         </div>
-        <p className="mt-2 text-3xl font-bold text-slate-900">
-          {revenueLoading ? '--' : `₱${revenue.toLocaleString()}`}
-        </p>
+        {revenueError ? (
+          <p className="mt-2 text-sm text-red-700">{revenueError}</p>
+        ) : (
+          <p className="mt-2 text-3xl font-bold text-slate-900">
+            {revenueLoading ? '--' : `₱${revenue.toLocaleString()}`}
+          </p>
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -332,11 +372,16 @@ function StaffDashboard() {
         {todayDeliveriesLoading && (
           <p className="mt-4 text-slate-500">Loading today's deliveries...</p>
         )}
-        {!todayDeliveriesLoading && todayDeliveryRows.length === 0 && (
-          <p className="mt-4 text-slate-500">
-            No deliveries scheduled for today.
-          </p>
+        {!todayDeliveriesLoading && todayDeliveriesError && (
+          <p className="mt-4 text-red-700">{todayDeliveriesError}</p>
         )}
+        {!todayDeliveriesLoading &&
+          !todayDeliveriesError &&
+          todayDeliveryRows.length === 0 && (
+            <p className="mt-4 text-slate-500">
+              No deliveries scheduled for today.
+            </p>
+          )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
           <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -61,6 +61,7 @@ function FleetSection() {
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null)
   const [editingTrailer, setEditingTrailer] = useState<Trailer | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     loadFleet()
@@ -76,6 +77,7 @@ function FleetSection() {
     }
 
     setDeletingKey(truck.plate_number)
+    setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('truck_profiles')
@@ -85,7 +87,19 @@ function FleetSection() {
     setDeletingKey(null)
 
     if (deleteError) {
-      setError(deleteError.message)
+      // '23503' is Postgres's error code for a foreign key violation --
+      // e.g. this truck is still referenced by a work order or itinerary.
+      // Uses a separate actionError state (not the page-load `error`) so
+      // a failed delete shows a banner without hiding the whole list.
+      if (deleteError.code === '23503') {
+        setActionError(
+          `Can't delete truck ${truck.plate_number} -- it's still ` +
+            `referenced elsewhere (e.g. a work order or itinerary). ` +
+            `Remove those first, then try again.`,
+        )
+      } else {
+        setActionError(deleteError.message)
+      }
       return
     }
 
@@ -102,6 +116,7 @@ function FleetSection() {
     }
 
     setDeletingKey(`trailer-${trailer.trailer_id}`)
+    setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('trailers')
@@ -111,7 +126,19 @@ function FleetSection() {
     setDeletingKey(null)
 
     if (deleteError) {
-      setError(deleteError.message)
+      // '23503' is Postgres's error code for a foreign key violation --
+      // e.g. this trailer is still referenced by a work order or itinerary.
+      // Uses a separate actionError state (not the page-load `error`) so
+      // a failed delete shows a banner without hiding the whole list.
+      if (deleteError.code === '23503') {
+        setActionError(
+          `Can't delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`} -- ` +
+            `it's still referenced elsewhere (e.g. a work order or ` +
+            `itinerary). Remove those first, then try again.`,
+        )
+      } else {
+        setActionError(deleteError.message)
+      }
       return
     }
 
@@ -169,6 +196,12 @@ function FleetSection() {
           </button>
         )}
       </div>
+
+      {actionError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
 
       <div className="mt-4 flex gap-2 border-b border-slate-200">
         {TABS.map((tab) => (

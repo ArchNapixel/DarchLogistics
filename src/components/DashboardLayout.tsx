@@ -18,7 +18,20 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   const navigate = useNavigate()
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      // Sign-out failed -- the session may still be valid, which matters
+      // on a shared computer. Tell the person plainly instead of quietly
+      // sending them to the login screen as if it worked.
+      console.error('Sign out failed', error)
+      window.alert(
+        "Logging out didn't fully complete. If you're on a shared " +
+          'computer, please close the browser to be safe, then try ' +
+          'logging out again.',
+      )
+    }
+
     navigate('/')
   }
 

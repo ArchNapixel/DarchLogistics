@@ -65,12 +65,18 @@ function UpdateStatusControl({
 
     setUpdating(false)
 
-    if (logError) {
-      setError(logError.message)
-      return
-    }
-
+    // The status update above already succeeded even if the log insert
+    // fails -- tell the parent about the real status change either way,
+    // and only use the log failure to show a warning.
     onStatusChanged(itineraryId, newStatus)
+
+    if (logError) {
+      setError(
+        `Status was updated to "${newStatus}", but recording it in the ` +
+          `dispatch log failed (${logError.message}). The status change ` +
+          `itself went through.`,
+      )
+    }
   }
 
   function handleSelectChange(e: ChangeEvent<HTMLSelectElement>) {

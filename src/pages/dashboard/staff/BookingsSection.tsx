@@ -47,6 +47,7 @@ function BookingsSection() {
   const [error, setError] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     loadBookings()
@@ -62,6 +63,7 @@ function BookingsSection() {
     }
 
     setDeletingId(booking.booking_id)
+    setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('bookings')
@@ -73,15 +75,20 @@ function BookingsSection() {
     if (deleteError) {
       // itineraries has a foreign key to bookings with no cascade rule,
       // so deleting a booking that still has itineraries fails here --
-      // translate that into something staff can actually act on.
-      if (deleteError.message.includes('itineraries')) {
-        setError(
+      // translate that into something staff can actually act on. '23503'
+      // is Postgres's error code for a foreign key violation -- checking
+      // the code instead of guessing from the message text so this still
+      // works no matter how Postgres phrases the message. This uses a
+      // separate actionError state (not the page-load `error`) so a
+      // failed delete shows a banner without hiding the whole list.
+      if (deleteError.code === '23503') {
+        setActionError(
           `Can't delete booking #${booking.booking_id} -- it still has ` +
             `itineraries attached. Remove those first (Dispatch Board or ` +
             `directly in Supabase), then try again.`,
         )
       } else {
-        setError(deleteError.message)
+        setActionError(deleteError.message)
       }
       return
     }
@@ -169,6 +176,12 @@ function BookingsSection() {
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Bookings</h2>
+
+      {actionError && (
+        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
 
       {loading ? (
         <p className="mt-4 text-slate-500">Loading bookings...</p>

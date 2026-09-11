@@ -273,23 +273,29 @@ function DispatchBoardSection() {
 
     setSavingId(null)
 
-    if (logError) {
-      setError(logError.message)
-      return
-    }
-
+    // The status update above already succeeded even if the log insert
+    // below fails -- reflect the real status on screen either way, and
+    // only use the log failure to show a warning, not to hide the change
+    // that actually happened.
     if (newStatus === 'Delivered') {
       // Matches the load filter (Delivered/Cancelled excluded) -- drop it
       // off the board instead of showing a status it'll never leave.
       setRows((prev) => prev.filter((r) => r.itinerary_id !== itineraryId))
-      return
+    } else {
+      setRows((prev) =>
+        prev.map((r) =>
+          r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
+        ),
+      )
     }
 
-    setRows((prev) =>
-      prev.map((r) =>
-        r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
-      ),
-    )
+    if (logError) {
+      setError(
+        `Status was updated to "${newStatus}", but recording it in the ` +
+          `dispatch log failed (${logError.message}). The status change ` +
+          `itself went through.`,
+      )
+    }
   }
 
   async function handleDriverChange(
@@ -329,8 +335,23 @@ function DispatchBoardSection() {
         })
 
       if (assignError) {
-        setError(assignError.message)
+        // The previous driver was already deactivated in step 1, so the
+        // itinerary now genuinely has no active driver in the database --
+        // reflect that on screen instead of leaving the old name showing,
+        // which would make it look like nothing happened.
+        setError(
+          `The previous driver was removed, but assigning the new one ` +
+            `failed (${assignError.message}). This itinerary now has no ` +
+            `driver assigned -- please pick one again.`,
+        )
         setSavingId(null)
+        setRows((prev) =>
+          prev.map((r) =>
+            r.itinerary_id === itineraryId
+              ? { ...r, assigned_employee_id: null, assigned_driver_name: null }
+              : r,
+          ),
+        )
         return
       }
     }

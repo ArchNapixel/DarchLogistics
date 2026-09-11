@@ -65,6 +65,31 @@ function QuoteForm() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+
+    // Number(...) on an empty/invalid string gives NaN, which would
+    // otherwise be sent to Supabase and silently saved as null -- catch
+    // that here instead of letting a quote go in with missing numbers.
+    const weightValue = Number(form.weight)
+    const proposedRateValue = Number(form.proposedRate)
+    const deliveryOrderCountValue = Number(form.deliveryOrderCount)
+
+    if (!form.weight || Number.isNaN(weightValue) || weightValue <= 0) {
+      setError('Enter a valid weight.')
+      return
+    }
+    if (!form.proposedRate || Number.isNaN(proposedRateValue) || proposedRateValue <= 0) {
+      setError('Enter a valid proposed rate.')
+      return
+    }
+    if (
+      !form.deliveryOrderCount ||
+      Number.isNaN(deliveryOrderCountValue) ||
+      deliveryOrderCountValue <= 0
+    ) {
+      setError('Enter a valid number of deliveries.')
+      return
+    }
+
     setSubmitting(true)
 
     const { error: insertError } = await supabase.from('quote_requests').insert({
@@ -75,15 +100,15 @@ function QuoteForm() {
       delivery_location_text: form.deliveryLocationText,
       cargo_type: form.cargoType,
       cargo_description: form.cargoDescription,
-      weight: Number(form.weight),
+      weight: weightValue,
       container_type: form.containerType,
       preferred_pickup_date: form.preferredPickupDate,
       payment_terms: form.paymentTerms,
-      proposed_rate: Number(form.proposedRate),
+      proposed_rate: proposedRateValue,
       is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
       preferred_delivery_date:
         form.isLastDayOfPortStorage === 'Yes' ? null : form.preferredDeliveryDate,
-      delivery_order_count: Number(form.deliveryOrderCount),
+      delivery_order_count: deliveryOrderCountValue,
       request_status: 'Pending',
     })
 

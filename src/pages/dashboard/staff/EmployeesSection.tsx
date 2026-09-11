@@ -45,6 +45,7 @@ function EmployeesSection() {
   const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     loadEmployees()
@@ -56,6 +57,7 @@ function EmployeesSection() {
     }
 
     setDeletingId(employee.employee_id)
+    setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('employees')
@@ -65,7 +67,19 @@ function EmployeesSection() {
     setDeletingId(null)
 
     if (deleteError) {
-      setError(deleteError.message)
+      // '23503' is Postgres's error code for a foreign key violation --
+      // e.g. this employee is still assigned to a work order. Uses a
+      // separate actionError state (not the page-load `error`) so a
+      // failed delete shows a banner without hiding the whole list.
+      if (deleteError.code === '23503') {
+        setActionError(
+          `Can't delete ${employee.name} -- they're still referenced ` +
+            `elsewhere (e.g. an assigned work order). Reassign or remove ` +
+            `those first, then try again.`,
+        )
+      } else {
+        setActionError(deleteError.message)
+      }
       return
     }
 
@@ -135,6 +149,12 @@ function EmployeesSection() {
           Add Employee
         </button>
       </div>
+
+      {actionError && (
+        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
 
       {loading && <p className="mt-4 text-slate-500">Loading employees...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
