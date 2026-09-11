@@ -1,9 +1,9 @@
-// SetUpClientAccountModal: creates a pending `users` row for a client
-// (email, username, user_role = 'Client', linked via client_id) with no
-// login attached yet -- auth_user_id stays NULL. The actual Supabase
-// Auth login has to be created manually afterward (Dashboard ->
-// Authentication -> Users, same email), since creating real accounts
-// requires a secret key that can never live in browser code.
+// SetUpClientAccountModal: creates a real login for a client in one
+// step -- calls the create-user-account Edge Function (which holds the
+// service-role key server-side, never in browser code) to create the
+// actual Supabase Auth account AND the linked `public.users` row
+// together, with auth_user_id already attached. No more manual
+// "go create it in the Dashboard" step.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -28,30 +28,41 @@ function SetUpClientAccountModal({
 }) {
   const [email, setEmail] = useState(client.email ?? '')
   const [username, setUsername] = useState(client.client_name)
+  const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
 
   async function handleSubmit() {
-    if (!email.trim() || !username.trim()) {
-      setError('Enter both an email and a username.')
+    if (!email.trim() || !username.trim() || !password.trim()) {
+      setError('Enter an email, username, and password.')
+      return
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.')
       return
     }
 
     setSubmitting(true)
     setError(null)
 
-    const { error: insertError } = await supabase.from('users').insert({
-      email,
-      username,
-      user_role: 'Client',
-      client_id: client.client_id,
-    })
+    const { data, error: invokeError } = await supabase.functions.invoke(
+      'create-user-account',
+      {
+        body: {
+          email,
+          username,
+          password,
+          user_role: 'Client',
+          client_id: client.client_id,
+        },
+      },
+    )
 
     setSubmitting(false)
 
-    if (insertError) {
-      setError(insertError.message)
+    if (invokeError || data?.error) {
+      setError(data?.error ?? invokeError.message)
       return
     }
 
@@ -64,15 +75,13 @@ function SetUpClientAccountModal({
         {done ? (
           <>
             <h3 className="text-lg font-bold text-slate-900">
-              Account record created
+              Account created
             </h3>
             <p className="mt-3 text-sm text-slate-600">
-              One more step: go to Supabase Dashboard → Authentication →
-              Users → Add user, and create a login for{' '}
+              {client.client_name} can now log in with{' '}
               <span className="font-medium text-slate-900">{email}</span>{' '}
-              with a temporary password. Then share those credentials with{' '}
-              {client.client_name} directly -- the app will link their
-              account automatically the first time they log in.
+              and the password you just set. Share those credentials with
+              them directly.
             </p>
             <div className="mt-6 flex justify-end">
               <button
@@ -112,6 +121,17 @@ function SetUpClientAccountModal({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  className={fieldClasses}
+                />
+              </label>
+
+              <label className={labelClasses}>
+                Password
+                <input
+                  type="text"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
                   className={fieldClasses}
                 />
               </label>

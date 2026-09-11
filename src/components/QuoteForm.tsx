@@ -18,6 +18,9 @@ type QuoteFormData = {
   containerType: '20ft' | '40ft'
   preferredPickupDate: string
   paymentTerms: 'Cash' | '7Days' | '14Days' | '30Days'
+  proposedRate: string
+  isLastDayOfPortStorage: 'No' | 'Yes'
+  preferredDeliveryDate: string
 }
 
 const emptyForm: QuoteFormData = {
@@ -32,6 +35,9 @@ const emptyForm: QuoteFormData = {
   containerType: '20ft',
   preferredPickupDate: '',
   paymentTerms: 'Cash',
+  proposedRate: '',
+  isLastDayOfPortStorage: 'No',
+  preferredDeliveryDate: '',
 }
 
 // Shared Tailwind classes so every input/select looks the same.
@@ -71,6 +77,10 @@ function QuoteForm() {
       container_type: form.containerType,
       preferred_pickup_date: form.preferredPickupDate,
       payment_terms: form.paymentTerms,
+      proposed_rate: Number(form.proposedRate),
+      is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
+      preferred_delivery_date:
+        form.isLastDayOfPortStorage === 'Yes' ? null : form.preferredDeliveryDate,
       request_status: 'Pending',
     })
 
@@ -166,6 +176,33 @@ function QuoteForm() {
       </label>
 
       <label className={labelClasses}>
+        Is this the last day of free port storage?
+        <select
+          name="isLastDayOfPortStorage"
+          value={form.isLastDayOfPortStorage}
+          onChange={handleChange}
+          className={fieldClasses}
+        >
+          <option value="No">No</option>
+          <option value="Yes">Yes</option>
+        </select>
+      </label>
+
+      {form.isLastDayOfPortStorage === 'No' && (
+        <label className={labelClasses}>
+          Preferred delivery date
+          <input
+            type="date"
+            name="preferredDeliveryDate"
+            value={form.preferredDeliveryDate}
+            onChange={handleChange}
+            required
+            className={fieldClasses}
+          />
+        </label>
+      )}
+
+      <label className={labelClasses}>
         Origin
         <input
           type="text"
@@ -255,6 +292,21 @@ function QuoteForm() {
           <option value="14Days">14 days</option>
           <option value="30Days">30 days</option>
         </select>
+      </label>
+
+      <label className={labelClasses}>
+        Proposed rate in pesos
+        <input
+          type="number"
+          name="proposedRate"
+          value={form.proposedRate}
+          onChange={handleChange}
+          required
+          min="0"
+          step="0.01"
+          placeholder="e.g. 15000"
+          className={fieldClasses}
+        />
       </label>
 
       <button
