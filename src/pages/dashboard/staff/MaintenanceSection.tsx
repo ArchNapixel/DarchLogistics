@@ -4,6 +4,7 @@
 // work orders each currently has, so staff can see who's free before
 // assigning a new one.
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
 
@@ -47,12 +48,21 @@ type Tab = (typeof TABS)[number]
 const ACTIVE_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
 function MaintenanceSection() {
-  const [activeTab, setActiveTab] = useState<Tab>('Active')
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+
+  const [activeTab, setActiveTab] = useState<Tab>(
+    requestedTab === 'Completed' ? 'Completed' : 'Active',
+  )
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [mechanics, setMechanics] = useState<Mechanic[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+
+  useEffect(() => {
+    setActiveTab(requestedTab === 'Completed' ? 'Completed' : 'Active')
+  }, [requestedTab])
 
   useEffect(() => {
     loadData()

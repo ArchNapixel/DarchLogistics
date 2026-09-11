@@ -7,7 +7,11 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import RoleBadge from './RoleBadge'
 
-type SidebarLink = { label: string; to: string }
+type SidebarLink = {
+  label: string
+  to: string
+  children?: { label: string; to: string }[]
+}
 
 function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   const { username, role } = useAuth()
@@ -41,15 +45,39 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         {sidebarLinks.length > 0 && (
           <aside className="w-56 border-r border-slate-200 bg-white p-4">
             <nav className="flex flex-col gap-1">
-              {sidebarLinks.map((link) => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {sidebarLinks.map((link) =>
+                link.children ? (
+                  <div key={link.to} className="group relative">
+                    <Link
+                      to={link.to}
+                      className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    >
+                      {link.label}
+                      <span className="text-xs text-slate-400">›</span>
+                    </Link>
+
+                    <div className="absolute left-full top-0 z-10 ml-1 hidden min-w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-lg group-hover:block">
+                      {link.children.map((child) => (
+                        <Link
+                          key={child.to}
+                          to={child.to}
+                          className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    {link.label}
+                  </Link>
+                ),
+              )}
             </nav>
           </aside>
         )}

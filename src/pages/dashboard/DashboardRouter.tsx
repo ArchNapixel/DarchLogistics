@@ -29,8 +29,22 @@ const staffLinks = [
   { label: 'Bookings', to: '/dashboard/bookings' },
   { label: 'Clients', to: '/dashboard/clients' },
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
-  { label: 'Fleet', to: '/dashboard/fleet' },
-  { label: 'Maintenance', to: '/dashboard/maintenance' },
+  {
+    label: 'Fleet',
+    to: '/dashboard/fleet',
+    children: [
+      { label: 'Trucks', to: '/dashboard/fleet?tab=Trucks' },
+      { label: 'Trailers', to: '/dashboard/fleet?tab=Trailers' },
+    ],
+  },
+  {
+    label: 'Maintenance',
+    to: '/dashboard/maintenance',
+    children: [
+      { label: 'Active', to: '/dashboard/maintenance?tab=Active' },
+      { label: 'Completed', to: '/dashboard/maintenance?tab=Completed' },
+    ],
+  },
   { label: 'Employees', to: '/dashboard/employees' },
   { label: 'Payroll', to: '/dashboard/payroll' },
   { label: 'Reports', to: '/dashboard/reports' },

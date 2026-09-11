@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 import AddTruckModal from './AddTruckModal'
@@ -43,7 +44,11 @@ const TABS = ['Trucks', 'Trailers'] as const
 type Tab = (typeof TABS)[number]
 
 function FleetSection() {
-  const [activeTab, setActiveTab] = useState<Tab>('Trucks')
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const initialTab: Tab = requestedTab === 'Trailers' ? 'Trailers' : 'Trucks'
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +65,10 @@ function FleetSection() {
   useEffect(() => {
     loadFleet()
   }, [])
+
+  useEffect(() => {
+    setActiveTab(requestedTab === 'Trailers' ? 'Trailers' : 'Trucks')
+  }, [requestedTab])
 
   async function handleDeleteTruck(truck: Truck) {
     if (!window.confirm(`Delete truck ${truck.plate_number}? This cannot be undone.`)) {
