@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import BookingDetailModal from './BookingDetailModal'
+import PaymentDuePanel from './PaymentDuePanel'
 
 export type Booking = {
   booking_id: number
@@ -183,69 +184,83 @@ function BookingsSection() {
         </p>
       )}
 
-      {loading ? (
-        <p className="mt-4 text-slate-500">Loading bookings...</p>
-      ) : error ? (
-        <p className="mt-4 text-red-700">{error}</p>
-      ) : bookings.length === 0 ? (
-        <p className="mt-4 text-slate-500">No bookings yet.</p>
-      ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Booking ID</th>
-                <th className="px-4 py-3 font-medium">Client</th>
-                <th className="px-4 py-3 font-medium">Origin → Destination</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Rate</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bookings.map((booking) => (
-                <tr
-                  key={booking.booking_id}
-                  onClick={() => setSelectedBooking(booking)}
-                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                >
-                  <td className="px-4 py-3 text-slate-900">
-                    #{booking.booking_id}
-                  </td>
-                  <td className="px-4 py-3 text-slate-900">
-                    {booking.client_name}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {booking.pickup_location} → {booking.delivery_location}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{booking.date}</td>
-                  <td className="px-4 py-3">
-                    <BookingStatusBadge status={booking.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {booking.rate !== null
-                      ? `₱${booking.rate.toLocaleString()}`
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(booking)
-                      }}
-                      disabled={deletingId === booking.booking_id}
-                      className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+      <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1">
+          {loading ? (
+            <p className="text-slate-500">Loading bookings...</p>
+          ) : error ? (
+            <p className="text-red-700">{error}</p>
+          ) : bookings.length === 0 ? (
+            <p className="text-slate-500">No bookings yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-200 text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Booking ID</th>
+                    <th className="px-4 py-3 font-medium">Client</th>
+                    <th className="px-4 py-3 font-medium">
+                      Origin → Destination
+                    </th>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Rate</th>
+                    <th className="px-4 py-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((booking) => (
+                    <tr
+                      key={booking.booking_id}
+                      onClick={() => setSelectedBooking(booking)}
+                      className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                     >
-                      {deletingId === booking.booking_id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <td className="px-4 py-3 text-slate-900">
+                        #{booking.booking_id}
+                      </td>
+                      <td className="px-4 py-3 text-slate-900">
+                        {booking.client_name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {booking.pickup_location} → {booking.delivery_location}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {booking.date}
+                      </td>
+                      <td className="px-4 py-3">
+                        <BookingStatusBadge status={booking.status} />
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {booking.rate !== null
+                          ? `₱${booking.rate.toLocaleString()}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDelete(booking)
+                          }}
+                          disabled={deletingId === booking.booking_id}
+                          className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          {deletingId === booking.booking_id
+                            ? 'Deleting...'
+                            : 'Delete'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+
+        <div className="w-full lg:max-w-sm">
+          <PaymentDuePanel />
+        </div>
+      </div>
 
       {selectedBooking && (
         <BookingDetailModal
