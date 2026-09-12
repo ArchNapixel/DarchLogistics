@@ -5,6 +5,7 @@
 // already checks the caller is staff and creates the Auth account +
 // linked `public.users` row together.
 import { useState } from 'react'
+import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
 
@@ -20,7 +21,7 @@ type Employee = {
 
 // Matches the `user_role` enum values also used as `employees.position`
 // values in AddEmployeeModal.tsx (Driver/Mechanic/Dispatcher/Admin).
-const USER_ROLES = ['Driver', 'Mechanic', 'Dispatcher', 'Admin'] as const
+const USER_ROLES = ['Driver', 'Mechanic', 'Dispatcher','Helper', 'Admin'] as const
 
 function SetUpStaffAccountModal({
   employee,
@@ -31,6 +32,7 @@ function SetUpStaffAccountModal({
   onClose: () => void
   onCreated: (employeeId: number) => void
 }) {
+  const { session } = useAuth()
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState(employee.name)
   const [password, setPassword] = useState('')
@@ -56,9 +58,19 @@ function SetUpStaffAccountModal({
     setSubmitting(true)
     setError(null)
 
+    const accessToken = session?.access_token
+    if (!accessToken) {
+      setSubmitting(false)
+      setError('Your session has expired. Please log in again.')
+      return
+    }
+
     const { data, error: invokeError } = await supabase.functions.invoke(
       'create-user-account',
       {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: {
           email,
           username,

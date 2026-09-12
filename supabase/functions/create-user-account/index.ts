@@ -54,7 +54,8 @@ Deno.serve(async (req) => {
     }
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+    if (!accessToken) {
       return jsonResponse({ error: "Not authenticated." }, 401);
     }
 
@@ -67,8 +68,8 @@ Deno.serve(async (req) => {
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: callerAuth, error: callerAuthError } = await callerClient
-      .auth.getUser();
+    const { data: callerAuth, error: callerAuthError } =
+      await callerClient.auth.getUser(accessToken);
 
     if (callerAuthError || !callerAuth.user) {
       return jsonResponse({ error: "Not authenticated." }, 401);

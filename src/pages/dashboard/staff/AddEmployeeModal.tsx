@@ -149,6 +149,7 @@ function AddEmployeeModal({
             >
               <option value="Driver">Driver</option>
               <option value="Mechanic">Mechanic</option>
+              <option value="Helper">Helper</option>
               <option value="Dispatcher">Dispatcher</option>
               <option value="Admin">Admin</option>
             </select>

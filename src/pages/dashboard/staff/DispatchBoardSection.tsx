@@ -31,6 +31,8 @@ type DispatchRow = {
   status: string
   assigned_employee_id: number | null
   assigned_driver_name: string | null
+  assigned_helper_employee_id: number | null
+  assigned_helper_name: string | null
   plate_number: string | null
   trailer_id: number | null
 }
@@ -81,6 +83,7 @@ function DispatchBoardSection() {
   const canEditStatus = isAdmin(role)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
+  const [helpers, setHelpers] = useState<DriverOption[]>([])
   const [trucks, setTrucks] = useState<TruckOption[]>([])
   const [trailers, setTrailers] = useState<TrailerOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -134,6 +137,7 @@ function DispatchBoardSection() {
     if (itineraryRows.length === 0) {
       setRows([])
       setDrivers([])
+      setHelpers([])
       setError(null)
       setLoading(false)
       return
@@ -149,20 +153,24 @@ function DispatchBoardSection() {
       ),
     )
 
-    // 2. Place names, current driver assignments, and every employee_id
-    // that counts as a Driver -- in parallel.
-    const [placesResult, crewResult, driverUsersResult] = await Promise.all([
+    // 2. Place names, current crew assignments, and assignable staff -- in parallel.
+    const [placesResult, crewResult, driverUsersResult, helperUsersResult] = await Promise.all([
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
       supabase
         .from('itinerary_crews')
-        .select('itinerary_id, employee_id')
-        .eq('crew_role', 'Driver')
+        .select('itinerary_id, employee_id, crew_role')
+        .in('crew_role', ['Driver', 'Helper'])
         .eq('is_active', true)
         .in('itinerary_id', itineraryIds),
       supabase
         .from('users')
         .select('employee_id')
         .eq('user_role', 'Driver')
+        .not('employee_id', 'is', null),
+      supabase
+        .from('users')
+        .select('employee_id')
+        .eq('user_role', 'Helper')
         .not('employee_id', 'is', null),
     ])
 
@@ -181,12 +189,24 @@ function DispatchBoardSection() {
       setLoading(false)
       return
     }
+    if (helperUsersResult.error) {
+      setError(helperUsersResult.error.message)
+      setLoading(false)
+      return
+    }
 
     const placeNameById = new Map(
       placesResult.data.map((p) => [p.place_id, p.place_name]),
     )
-    const assignedEmployeeIdByItinerary = new Map(
-      crewResult.data.map((c) => [c.itinerary_id, c.employee_id as number]),
+    const assignedDriverIdByItinerary = new Map(
+      crewResult.data
+        .filter((c) => c.crew_role === 'Driver')
+        .map((c) => [c.itinerary_id, c.employee_id as number]),
+    )
+    const assignedHelperIdByItinerary = new Map(
+      crewResult.data
+        .filter((c) => c.crew_role === 'Helper')
+        .map((c) => [c.itinerary_id, c.employee_id as number]),
     )
 
     // 3. Employee names, for every assignable driver plus whoever's
@@ -194,6 +214,7 @@ function DispatchBoardSection() {
     const employeeIds = new Set<number>(
       driverUsersResult.data.map((u) => u.employee_id as number),
     )
+    helperUsersResult.data.forEach((u) => employeeIds.add(u.employee_id as number))
     crewResult.data.forEach((c) => employeeIds.add(c.employee_id as number))
 
     const { data: employeeRows, error: employeeError } =
@@ -216,6 +237,9 @@ function DispatchBoardSection() {
     const driverEmployeeIds = new Set(
       driverUsersResult.data.map((u) => u.employee_id as number),
     )
+    const helperEmployeeIds = new Set(
+      helperUsersResult.data.map((u) => u.employee_id as number),
+    )
 
     setDrivers(
       employeeRows
@@ -223,11 +247,19 @@ function DispatchBoardSection() {
         .map((e) => ({ employee_id: e.employee_id, full_name: e.full_name }))
         .sort((a, b) => a.full_name.localeCompare(b.full_name)),
     )
+    setHelpers(
+      employeeRows
+        .filter((e) => helperEmployeeIds.has(e.employee_id))
+        .map((e) => ({ employee_id: e.employee_id, full_name: e.full_name }))
+        .sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    )
 
     setRows(
       itineraryRows.map((it) => {
         const assignedEmployeeId =
-          assignedEmployeeIdByItinerary.get(it.itinerary_id) ?? null
+          assignedDriverIdByItinerary.get(it.itinerary_id) ?? null
+        const assignedHelperEmployeeId =
+          assignedHelperIdByItinerary.get(it.itinerary_id) ?? null
         return {
           itinerary_id: it.itinerary_id,
           booking_id: it.booking_id,
@@ -241,6 +273,11 @@ function DispatchBoardSection() {
           assigned_driver_name:
             assignedEmployeeId !== null
               ? employeeNameById.get(assignedEmployeeId) ?? '—'
+              : null,
+          assigned_helper_employee_id: assignedHelperEmployeeId,
+          assigned_helper_name:
+            assignedHelperEmployeeId !== null
+              ? employeeNameById.get(assignedHelperEmployeeId) ?? '—'
               : null,
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
@@ -306,8 +343,9 @@ function DispatchBoardSection() {
     }
   }
 
-  async function handleDriverChange(
+  async function handleCrewChange(
     itineraryId: number,
+    crewRole: 'Driver' | 'Helper',
     previousEmployeeId: number | null,
     newEmployeeId: number | null,
   ) {
@@ -322,7 +360,7 @@ function DispatchBoardSection() {
         .update({ is_active: false, completed_at: new Date().toISOString() })
         .eq('itinerary_id', itineraryId)
         .eq('employee_id', previousEmployeeId)
-        .eq('crew_role', 'Driver')
+        .eq('crew_role', crewRole)
         .eq('is_active', true)
 
       if (deactivateError) {
@@ -339,7 +377,7 @@ function DispatchBoardSection() {
         .insert({
           itinerary_id: itineraryId,
           employee_id: newEmployeeId,
-          crew_role: 'Driver',
+          crew_role: crewRole,
         })
 
       if (assignError) {
@@ -348,7 +386,7 @@ function DispatchBoardSection() {
         // reflect that on screen instead of leaving the old name showing,
         // which would make it look like nothing happened.
         setError(
-          `The previous driver was removed, but assigning the new one ` +
+          `The previous ${crewRole.toLowerCase()} was removed, but assigning the new one ` +
             `failed (${assignError.message}). This itinerary now has no ` +
             `driver assigned -- please pick one again.`,
         )
@@ -366,10 +404,11 @@ function DispatchBoardSection() {
 
     setSavingId(null)
 
-    const newDriverName =
+    const newCrewName =
       newEmployeeId !== null
-        ? drivers.find((d) => d.employee_id === newEmployeeId)?.full_name ??
-          '—'
+        ? (crewRole === 'Driver' ? drivers : helpers).find(
+            (person) => person.employee_id === newEmployeeId,
+          )?.full_name ?? '—'
         : null
 
     setRows((prev) =>
@@ -377,8 +416,15 @@ function DispatchBoardSection() {
         r.itinerary_id === itineraryId
           ? {
               ...r,
-              assigned_employee_id: newEmployeeId,
-              assigned_driver_name: newDriverName,
+              ...(crewRole === 'Driver'
+                ? {
+                    assigned_employee_id: newEmployeeId,
+                    assigned_driver_name: newCrewName,
+                  }
+                : {
+                    assigned_helper_employee_id: newEmployeeId,
+                    assigned_helper_name: newCrewName,
+                  }),
             }
           : r,
       ),
@@ -459,6 +505,7 @@ function DispatchBoardSection() {
                 <th className="px-4 py-3 font-medium">Trip Date</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Driver</th>
+                <th className="px-4 py-3 font-medium">Helper</th>
                 <th className="px-4 py-3 font-medium">Truck</th>
                 <th className="px-4 py-3 font-medium">Trailer</th>
               </tr>
@@ -509,8 +556,9 @@ function DispatchBoardSection() {
                       value={row.assigned_employee_id ?? ''}
                       disabled={savingId === row.itinerary_id}
                       onChange={(e) =>
-                        handleDriverChange(
+                        handleCrewChange(
                           row.itinerary_id,
+                          'Driver',
                           row.assigned_employee_id,
                           e.target.value ? Number(e.target.value) : null,
                         )
@@ -521,6 +569,28 @@ function DispatchBoardSection() {
                       {drivers.map((driver) => (
                         <option key={driver.employee_id} value={driver.employee_id}>
                           {driver.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={row.assigned_helper_employee_id ?? ''}
+                      disabled={savingId === row.itinerary_id}
+                      onChange={(e) =>
+                        handleCrewChange(
+                          row.itinerary_id,
+                          'Helper',
+                          row.assigned_helper_employee_id,
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {helpers.map((helper) => (
+                        <option key={helper.employee_id} value={helper.employee_id}>
+                          {helper.full_name}
                         </option>
                       ))}
                     </select>
