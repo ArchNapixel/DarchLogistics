@@ -1,13 +1,23 @@
 // DashboardRouter: renders at "/dashboard/*". Picks which set of routes
-// to show based on the logged-in user's role (isStaff / isEmployee from
-// src/lib/roles.ts), then defines only the sub-pages valid for that tier.
+// to show based on the logged-in user's role (isAdmin / isDispatcher /
+// isEmployee from src/lib/roles.ts), then defines only the sub-pages
+// valid for that tier.
 //
 // This is what enforces tier protection beyond login: e.g. an Employee
 // has no "quotations" route in their tree, so typing /dashboard/quotations
 // directly falls through to the catch-all and bounces back to /dashboard.
+//
+// Admin and Dispatcher are both "staff" (isStaff()) for broader checks
+// elsewhere, but no longer share a route tree here: Dispatcher gets a
+// restricted sidebar (Dispatch Board, Bookings, Quotations only -- no
+// Employees/Payroll/Fleet/Maintenance/Inventory/Reports/Settings) and
+// lands on the Dispatch Board directly instead of the KPI dashboard,
+// since managing it is their actual job. DispatchBoardSection.tsx
+// itself further restricts what a Dispatcher can edit there (status is
+// Admin-only; driver/truck/trailer assignment stays editable for both).
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { isStaff, isEmployee } from '../../lib/roles'
+import { isAdmin, isDispatcher, isEmployee } from '../../lib/roles'
 import DashboardLayout from '../../components/DashboardLayout'
 import StaffDashboard from './StaffDashboard'
 import EmployeeDashboard from './EmployeeDashboard'
@@ -54,6 +64,12 @@ const staffLinks = [
   { label: 'Reports', to: '/dashboard/reports' },
 ]
 
+const dispatcherLinks = [
+  { label: 'Dispatch Board', to: '/dashboard/dispatch' },
+  { label: 'Bookings', to: '/dashboard/bookings' },
+  { label: 'Quotations', to: '/dashboard/quotations' },
+]
+
 const employeeLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'My History', to: '/dashboard/history' },
@@ -78,7 +94,7 @@ function DashboardRouter() {
     return <CenteredMessage text={error} />
   }
 
-  if (isStaff(role)) {
+  if (isAdmin(role)) {
     return (
       <Routes>
         <Route element={<DashboardLayout sidebarLinks={staffLinks} />}>
@@ -95,6 +111,26 @@ function DashboardRouter() {
           <Route path="reports" element={<ReportsSection />} />
           <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+    )
+  }
+
+  if (isDispatcher(role)) {
+    return (
+      <Routes>
+        <Route element={<DashboardLayout sidebarLinks={dispatcherLinks} />}>
+          <Route
+            index
+            element={<Navigate to="/dashboard/dispatch" replace />}
+          />
+          <Route path="dispatch" element={<DispatchBoardSection />} />
+          <Route path="bookings" element={<BookingsSection />} />
+          <Route path="quotations" element={<QuoteRequestsSection />} />
+          <Route
+            path="*"
+            element={<Navigate to="/dashboard/dispatch" replace />}
+          />
         </Route>
       </Routes>
     )

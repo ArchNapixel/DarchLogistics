@@ -5,7 +5,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
-import { isStaff } from '../lib/roles'
+import { isAdmin } from '../lib/roles'
 import RoleBadge from './RoleBadge'
 
 type SidebarLink = {
@@ -109,7 +109,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               )}
             </nav>
 
-            {isStaff(role) && (
+            {isAdmin(role) && (
               <Link
                 to="/dashboard/settings"
                 className="mt-4 rounded-lg border-t border-slate-200 px-3 pt-4 text-sm font-medium text-slate-600 hover:text-slate-900"
