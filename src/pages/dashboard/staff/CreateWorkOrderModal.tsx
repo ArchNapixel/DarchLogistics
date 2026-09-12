@@ -1,8 +1,14 @@
 // CreateWorkOrderModal: staff creates a work order for a truck OR a
-// trailer (exactly one, enforced by a DB check constraint) and assigns
-// a mechanic. work_order_number is generated automatically so staff
-// doesn't have to invent a unique one. work_order_status defaults to
-// 'Created' at the database level.
+// trailer (exactly one, enforced by a DB check constraint).
+// work_order_number is generated automatically so staff doesn't have to
+// invent a unique one. work_order_status defaults to 'Created' at the
+// database level.
+//
+// Assigning a mechanic is optional -- "Unassigned" is the default and a
+// valid choice, so the work order lands on the Task Board (TaskBoard.tsx)
+// for any mechanic to accept. The dropdown still lists every mechanic
+// (including whoever's creating this, if they're also listed as one)
+// for staff who'd rather assign it directly.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -107,7 +113,6 @@ function CreateWorkOrderModal({
 
     setVehicleOptions(options)
     setMechanics(mechanicRows)
-    if (mechanicRows.length > 0) setMechanicId(String(mechanicRows[0].employee_id))
 
     const preselectedKey = vehicle
       ? vehicle.type === 'truck'
@@ -126,10 +131,6 @@ function CreateWorkOrderModal({
       setError('Select a truck or trailer.')
       return
     }
-    if (!mechanicId) {
-      setError('Select a mechanic to assign.')
-      return
-    }
 
     setSubmitting(true)
     setError(null)
@@ -141,7 +142,7 @@ function CreateWorkOrderModal({
       work_order_number: workOrderNumber,
       plate_number: selectedVehicle.plateNumber,
       trailer_id: selectedVehicle.trailerId,
-      assigned_mechanic_id: Number(mechanicId),
+      assigned_mechanic_id: mechanicId ? Number(mechanicId) : null,
       maintenance_type: maintenanceType,
       work_description: description.trim() || null,
       scheduled_start_date: scheduledDate || null,
@@ -184,10 +185,6 @@ function CreateWorkOrderModal({
           <p className="mt-4 text-slate-500">
             No trucks or trailers found. Add one under Fleet first.
           </p>
-        ) : mechanics.length === 0 ? (
-          <p className="mt-4 text-slate-500">
-            No mechanics found. Add one under Employees first.
-          </p>
         ) : (
           <div className="mt-4 grid gap-4">
             <label className={labelClasses}>
@@ -206,12 +203,13 @@ function CreateWorkOrderModal({
             </label>
 
             <label className={labelClasses}>
-              Assign mechanic
+              Assign mechanic (optional)
               <select
                 value={mechanicId}
                 onChange={(e) => setMechanicId(e.target.value)}
                 className={fieldClasses}
               >
+                <option value="">Unassigned -- open on the Task Board</option>
                 {mechanics.map((m) => (
                   <option key={m.employee_id} value={m.employee_id}>
                     {m.full_name}
@@ -268,7 +266,7 @@ function CreateWorkOrderModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || vehicleOptions.length === 0 || mechanics.length === 0}
+            disabled={submitting || vehicleOptions.length === 0}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {submitting ? 'Creating...' : 'Create Work Order'}
