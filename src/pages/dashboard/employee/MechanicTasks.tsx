@@ -1,5 +1,9 @@
 // MechanicTasks: shows the logged-in mechanic's assigned work orders,
-// found via work_orders.assigned_mechanic_id.
+// found via work_orders.assigned_mechanic_id. Status is a free-choice
+// dropdown (ALL_STATUSES), not a fixed progression -- the mechanic can
+// set it to whatever actually applies, in any order. New work orders
+// get assigned here by accepting them on the Task Board (TaskBoard.tsx)
+// first.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -22,7 +26,18 @@ const STATUS_STYLES: Record<string, string> = {
   Cancelled: 'bg-red-100 text-red-700',
 }
 
-const STATUS_FLOW = ['Created', 'Scheduled', 'In Progress', 'Completed']
+// A free-choice dropdown, not a fixed progression -- the mechanic picks
+// whatever status actually applies (including going back to "On Hold"
+// or jumping straight to "Cancelled"), rather than being forced through
+// one status at a time.
+const ALL_STATUSES = [
+  'Created',
+  'Scheduled',
+  'In Progress',
+  'On Hold',
+  'Completed',
+  'Cancelled',
+]
 
 function StatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
@@ -38,6 +53,7 @@ function MechanicTasks() {
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -67,32 +83,31 @@ function MechanicTasks() {
     setLoading(false)
   }
 
-  async function advanceStatus(order: WorkOrder) {
-    const currentIndex = STATUS_FLOW.indexOf(order.work_order_status)
-    const nextStatus = currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
-    if (!nextStatus) return
-
+  async function handleStatusChange(order: WorkOrder, newStatus: string) {
     setUpdatingId(order.work_order_id)
+    setActionError(null)
 
     const { error: updateError } = await supabase
       .from('work_orders')
-      .update({ work_order_status: nextStatus })
+      .update({ work_order_status: newStatus })
       .eq('work_order_id', order.work_order_id)
 
     setUpdatingId(null)
 
     if (updateError) {
-      setError(updateError.message)
+      setActionError(updateError.message)
       return
     }
 
-    if (nextStatus === 'Completed') {
+    if (newStatus === 'Completed' || newStatus === 'Cancelled') {
+      // Matches the load filter (Completed/Cancelled excluded) -- drop
+      // it off the list instead of showing a status it'll never leave.
       setOrders((prev) => prev.filter((o) => o.work_order_id !== order.work_order_id))
     } else {
       setOrders((prev) =>
         prev.map((o) =>
           o.work_order_id === order.work_order_id
-            ? { ...o, work_order_status: nextStatus }
+            ? { ...o, work_order_status: newStatus }
             : o,
         ),
       )
@@ -107,52 +122,59 @@ function MechanicTasks() {
     return <p className="text-red-700">{error}</p>
   }
 
-  if (orders.length === 0) {
-    return <p className="text-slate-500">Nothing assigned yet.</p>
-  }
-
   return (
-    <div className="grid gap-4">
-      {orders.map((order) => {
-        const currentIndex = STATUS_FLOW.indexOf(order.work_order_status)
-        const nextStatus = currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
+    <div>
+      {actionError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
 
-        return (
-          <div
-            key={order.work_order_id}
-            className="rounded-xl border border-slate-200 p-5"
-          >
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">
-                {order.work_order_number} — Truck {order.plate_number}
-              </p>
-              <StatusBadge status={order.work_order_status} />
+      {orders.length === 0 ? (
+        <p className="text-slate-500">Nothing assigned yet.</p>
+      ) : (
+        <div className="grid gap-4">
+          {orders.map((order) => (
+            <div
+              key={order.work_order_id}
+              className="rounded-xl border border-slate-200 p-5"
+            >
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900">
+                  {order.work_order_number} — Truck {order.plate_number}
+                </p>
+                <StatusBadge status={order.work_order_status} />
+              </div>
+              {order.work_description && (
+                <p className="mt-1 text-sm text-slate-600">
+                  {order.work_description}
+                </p>
+              )}
+              {order.scheduled_start_date && (
+                <p className="mt-1 text-sm text-slate-500">
+                  Scheduled: {order.scheduled_start_date}
+                </p>
+              )}
+
+              <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                Status:
+                <select
+                  value={order.work_order_status}
+                  disabled={updatingId === order.work_order_id}
+                  onChange={(e) => handleStatusChange(order, e.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                >
+                  {ALL_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            {order.work_description && (
-              <p className="mt-1 text-sm text-slate-600">
-                {order.work_description}
-              </p>
-            )}
-            {order.scheduled_start_date && (
-              <p className="mt-1 text-sm text-slate-500">
-                Scheduled: {order.scheduled_start_date}
-              </p>
-            )}
-
-            {nextStatus && (
-              <button
-                onClick={() => advanceStatus(order)}
-                disabled={updatingId === order.work_order_id}
-                className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {updatingId === order.work_order_id
-                  ? 'Updating...'
-                  : `Mark as ${nextStatus}`}
-              </button>
-            )}
-          </div>
-        )
-      })}
+          ))}
+        </div>
+      )}
     </div>
   )
 }
