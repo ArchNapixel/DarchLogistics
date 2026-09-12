@@ -34,7 +34,9 @@ import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import SettingsSection from './staff/SettingsSection'
+import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
 import HistorySection from './employee/HistorySection'
+import MyPayslipPage from './employee/MyPayslipPage'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -70,11 +72,13 @@ const dispatcherLinks = [
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
   { label: 'Bookings', to: '/dashboard/bookings' },
   { label: 'Quotations', to: '/dashboard/quotations' },
+  { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 
 const employeeLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'My History', to: '/dashboard/history' },
+  { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 
 function CenteredMessage({ text }: { text: string }) {
@@ -130,6 +134,7 @@ function DashboardRouter() {
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
+          <Route path="payslips" element={<DispatcherPayslipSection />} />
           <Route
             path="*"
             element={<Navigate to="/dashboard/dispatch" replace />}
@@ -145,6 +150,7 @@ function DashboardRouter() {
         <Route element={<DashboardLayout sidebarLinks={employeeLinks} />}>
           <Route index element={<EmployeeDashboard />} />
           <Route path="history" element={<HistorySection />} />
+          <Route path="payslips" element={<MyPayslipPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

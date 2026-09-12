@@ -204,11 +204,26 @@ function FinancialActionModal({
   )
 }
 
+// Paid Full / Partial Payment both track against the FULL contract
+// value (rate x all trips), not just trips completed so far -- a client
+// can pay in advance before delivery finishes. Whichever one is used
+// first locks in amount_to_pay at that target (the existing override if
+// staff already set a discount via Manage, otherwise the full contract
+// value), so the rest of the app's "amount due" for this booking
+// switches from trip-based to full-contract-based from then on --
+// consistent everywhere, since every view already reads the same
+// amount_to_pay override (see paymentDue.ts).
+function getPaymentTarget(booking: Booking): number {
+  return booking.amount_to_pay ?? booking.total_contract_value
+}
+
 function FinancialSection() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [payingId, setPayingId] = useState<number | null>(null)
 
   useEffect(() => {
     loadBookings()
@@ -324,10 +339,91 @@ function FinancialSection() {
     setLoading(false)
   }
 
+  async function handlePaidFull(booking: Booking) {
+    const target = getPaymentTarget(booking)
+    const remaining = target - booking.amount_paid
+
+    if (remaining <= 0) {
+      return
+    }
+    if (
+      !window.confirm(
+        `Mark booking #${booking.booking_id} as fully paid? This records ` +
+          `the remaining ${formatMoney(remaining)} as paid, for a total of ` +
+          `${formatMoney(target)}.`,
+      )
+    ) {
+      return
+    }
+
+    setPayingId(booking.booking_id)
+    setActionError(null)
+
+    const { error: updateError } = await supabase
+      .from('bookings')
+      .update({ amount_to_pay: target, amount_paid: target })
+      .eq('booking_id', booking.booking_id)
+
+    setPayingId(null)
+
+    if (updateError) {
+      setActionError(updateError.message)
+      return
+    }
+
+    loadBookings()
+  }
+
+  async function handlePartialPayment(booking: Booking) {
+    const target = getPaymentTarget(booking)
+    const remaining = target - booking.amount_paid
+
+    const input = window.prompt(
+      `How much did ${booking.client_name} pay? (Remaining balance: ${formatMoney(remaining)})`,
+    )
+    if (input === null) {
+      return
+    }
+
+    const amount = Number(input)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionError('Enter a valid payment amount greater than zero.')
+      return
+    }
+    if (amount > remaining) {
+      setActionError(
+        `Payment can't exceed the remaining balance (${formatMoney(remaining)}).`,
+      )
+      return
+    }
+
+    setPayingId(booking.booking_id)
+    setActionError(null)
+
+    const { error: updateError } = await supabase
+      .from('bookings')
+      .update({ amount_to_pay: target, amount_paid: booking.amount_paid + amount })
+      .eq('booking_id', booking.booking_id)
+
+    setPayingId(null)
+
+    if (updateError) {
+      setActionError(updateError.message)
+      return
+    }
+
+    loadBookings()
+  }
+
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Financial Records</h2>
       <p className="mt-1 text-sm text-slate-500">Record payments and, if needed, override the amount due.</p>
+      {actionError && (
+        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
       {loading && <p className="mt-4 text-slate-500">Loading financial records...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && bookings.length === 0 && <p className="mt-4 text-slate-500">No bookings yet.</p>}
@@ -347,18 +443,43 @@ function FinancialSection() {
               </tr>
             </thead>
             <tbody>
-              {bookings.map((booking) => (
-                <tr key={booking.booking_id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3 text-slate-900">#{booking.booking_id}</td>
-                  <td className="px-4 py-3 text-slate-900">{booking.client_name}</td>
-                  <td className="px-4 py-3"><BookingStatusBadge status={booking.status} /></td>
-                  <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{formatMoney(booking.balance_due)}</td>
-                  <td className="px-4 py-3"><button onClick={() => setSelectedBooking(booking)} className="font-medium text-slate-700 hover:text-slate-900">Manage</button></td>
-                </tr>
-              ))}
+              {bookings.map((booking) => {
+                const remaining = getPaymentTarget(booking) - booking.amount_paid
+                return (
+                  <tr key={booking.booking_id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-3 text-slate-900">#{booking.booking_id}</td>
+                    <td className="px-4 py-3 text-slate-900">{booking.client_name}</td>
+                    <td className="px-4 py-3"><BookingStatusBadge status={booking.status} /></td>
+                    <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{formatMoney(booking.balance_due)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        {remaining > 0 && (
+                          <>
+                            <button
+                              onClick={() => handlePartialPayment(booking)}
+                              disabled={payingId === booking.booking_id}
+                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              Partial Payment
+                            </button>
+                            <button
+                              onClick={() => handlePaidFull(booking)}
+                              disabled={payingId === booking.booking_id}
+                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                            >
+                              {payingId === booking.booking_id ? 'Saving...' : 'Paid Full'}
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => setSelectedBooking(booking)} className="font-medium text-slate-700 hover:text-slate-900">Manage</button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

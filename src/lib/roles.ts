@@ -1,9 +1,9 @@
 // Role helpers. Keeps tier logic in one place instead of comparing
 // role strings all over the app.
 //
-// 3 tiers, 5 roles:
-//   staff    = Admin, Dispatcher   (identical dashboard/access)
-//   employee = Driver, Mechanic    (identical dashboard/access)
+// 3 tiers, 6 roles:
+//   staff    = Admin, Dispatcher            (separate dashboards -- see below)
+//   employee = Driver, Mechanic, Helper     (identical dashboard/access)
 //   client   = Client
 
 export function isStaff(role: string | null): boolean {
@@ -11,7 +11,7 @@ export function isStaff(role: string | null): boolean {
 }
 
 export function isEmployee(role: string | null): boolean {
-  return role === 'Driver' || role === 'Mechanic'
+  return role === 'Driver' || role === 'Mechanic' || role === 'Helper'
 }
 
 // Admin and Dispatcher share the "staff" tier for route protection, but
