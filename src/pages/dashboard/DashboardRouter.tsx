@@ -32,6 +32,7 @@ import InventorySection from './staff/InventorySection'
 import EmployeesSection from './staff/EmployeesSection'
 import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
+import FinancialSection from './staff/FinancialSection'
 import SettingsSection from './staff/SettingsSection'
 import HistorySection from './employee/HistorySection'
 
@@ -62,6 +63,7 @@ const staffLinks = [
     ],
   },
   { label: 'Reports', to: '/dashboard/reports' },
+  { label: 'Financial Records', to: '/dashboard/financial-records' },
 ]
 
 const dispatcherLinks = [
@@ -109,6 +111,7 @@ function DashboardRouter() {
           <Route path="employees" element={<EmployeesSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="reports" element={<ReportsSection />} />
+          <Route path="financial-records" element={<FinancialSection />} />
           <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

@@ -1,6 +1,4 @@
 // BookingDetailModal: read-only detail view for a single booking row.
-// All fields come from the row clicked in BookingsSection, which already
-// loaded them from Supabase.
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
 
@@ -51,18 +49,9 @@ function BookingDetailModal({
           <InfoRow label="Origin" value={booking.pickup_location} />
           <InfoRow label="Destination" value={booking.delivery_location} />
           <InfoRow label="Rate" value={formatMoney(booking.rate)} />
-          <InfoRow
-            label="Amount to pay"
-            value={formatMoney(booking.amount_to_pay)}
-          />
-          <InfoRow
-            label="Amount paid"
-            value={formatMoney(booking.amount_paid)}
-          />
-          <InfoRow
-            label="Balance due"
-            value={formatMoney(booking.balance_due)}
-          />
+          <InfoRow label="Amount to pay" value={formatMoney(booking.amount_to_pay)} />
+          <InfoRow label="Amount paid" value={formatMoney(booking.amount_paid)} />
+          <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
         </div>
 
         <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
