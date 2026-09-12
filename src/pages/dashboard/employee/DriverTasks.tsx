@@ -44,10 +44,6 @@ function DriverTasks() {
   const [showReportIssue, setShowReportIssue] = useState(false)
   const [expenseTripId, setExpenseTripId] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (employeeId) loadTrips(employeeId)
-  }, [employeeId])
-
   async function loadTrips(driverEmployeeId: number) {
     setLoading(true)
 
@@ -130,6 +126,10 @@ function DriverTasks() {
     setError(null)
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (employeeId) loadTrips(employeeId)
+  }, [employeeId])
 
   // Called by UpdateStatusControl after a successful status change.
   // "Delivered" trips drop out of this list entirely (matches the
