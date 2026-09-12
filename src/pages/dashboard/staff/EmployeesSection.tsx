@@ -46,6 +46,9 @@ function EmployeesSection() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [positionFilter, setPositionFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
     loadEmployees()
@@ -138,6 +141,20 @@ function EmployeesSection() {
     setLoading(false)
   }
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const positions = Array.from(
+    new Set(['Dispatcher', ...employees.map((employee) => employee.position)]),
+  ).sort()
+  const statuses = Array.from(
+    new Set(['Inactive', ...employees.map((employee) => employee.status)]),
+  ).sort()
+  const filteredEmployees = employees.filter(
+    (employee) =>
+      employee.name.toLowerCase().includes(normalizedSearchTerm) &&
+      (!positionFilter || employee.position === positionFilter) &&
+      (!statusFilter || employee.status === statusFilter),
+  )
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -156,13 +173,64 @@ function EmployeesSection() {
         </p>
       )}
 
+      {!loading && !error && employees.length > 0 && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <label>
+            <span className="sr-only">Search employee names</span>
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search names..."
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+            />
+          </label>
+          <label>
+            <span className="sr-only">Filter by position</span>
+            <select
+              value={positionFilter}
+              onChange={(e) => setPositionFilter(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            >
+              <option value="">All positions</option>
+              {positions.map((position) => (
+                <option key={position} value={position}>
+                  {position}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Filter by status</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            >
+              <option value="">All statuses</option>
+              {statuses.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       {loading && <p className="mt-4 text-slate-500">Loading employees...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && employees.length === 0 && (
         <p className="mt-4 text-slate-500">No employees yet.</p>
       )}
 
-      {!loading && !error && employees.length > 0 && (
+      {!loading && !error && employees.length > 0 && filteredEmployees.length === 0 && (
+        <p className="mt-4 text-slate-500">
+          No employees match the current search and filters.
+        </p>
+      )}
+
+      {!loading && !error && filteredEmployees.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
@@ -175,7 +243,7 @@ function EmployeesSection() {
               </tr>
             </thead>
             <tbody>
-              {employees.map((employee) => (
+              {filteredEmployees.map((employee) => (
                 <tr
                   key={employee.employee_id}
                   className="border-b border-slate-100 last:border-0"
