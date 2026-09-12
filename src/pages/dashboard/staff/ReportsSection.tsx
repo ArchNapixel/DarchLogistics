@@ -2,7 +2,10 @@
 // (MOCK DATA -- not wired to Supabase yet). "Payments Due" is real,
 // backed by src/lib/paymentDue.ts -- the full breakdown across every
 // client, versus the simplified version on the Bookings page's side
-// panel (PaymentDuePanel.tsx). See paymentDue.ts for the due-date rule.
+// panel (PaymentDuePanel.tsx). View-only: payments are recorded (and
+// the billable amount overridden, if needed) in Financial Records
+// (FinancialSection.tsx) instead. See paymentDue.ts for the due-date
+// rule and the override behavior.
 import { useEffect, useState } from 'react'
 import {
   loadPaymentDueReport,
@@ -124,75 +127,104 @@ function PaymentsDueTab() {
     return <p className="text-slate-500">Loading payment due report...</p>
   }
 
-  if (error) {
-    return <p className="text-red-700">{error}</p>
-  }
-
-  if (rows.length === 0) {
-    return <p className="text-slate-500">No bookings to track yet.</p>
+  if (rows.length === 0 && !error) {
+    return <p className="text-slate-500">No outstanding balances right now.</p>
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-slate-500">
-          <tr>
-            <th className="px-4 py-3 font-medium">Booking</th>
-            <th className="px-4 py-3 font-medium">Client</th>
-            <th className="px-4 py-3 font-medium">Origin → Destination</th>
-            <th className="px-4 py-3 font-medium">Rate</th>
-            <th className="px-4 py-3 font-medium">Payment Terms</th>
-            <th className="px-4 py-3 font-medium">Base Date</th>
-            <th className="px-4 py-3 font-medium">Due Date</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const due = formatDaysUntilDue(row.days_until_due)
-            return (
-              <tr
-                key={row.booking_id}
-                className="border-b border-slate-100 last:border-0"
-              >
-                <td className="px-4 py-3 text-slate-900">
-                  #{row.booking_id}
-                </td>
-                <td className="px-4 py-3 text-slate-900">
-                  {row.client_name}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {row.pickup_place_name} → {row.delivery_place_name}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {row.rate_of_delivery_service != null
-                    ? `₱${row.rate_of_delivery_service.toLocaleString()}`
-                    : '—'}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {row.payment_terms}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {row.base_date ?? '—'}
-                  <span className="ml-1.5 text-xs text-slate-400">
-                    ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {row.due_date ?? '—'}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}
-                  >
-                    {due.label}
-                  </span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+    <div>
+      {error && (
+        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-slate-200 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Booking</th>
+              <th className="px-4 py-3 font-medium">Client</th>
+              <th className="px-4 py-3 font-medium">Origin → Destination</th>
+              <th className="px-4 py-3 font-medium">Rate/Trip</th>
+              <th className="px-4 py-3 font-medium">Trips</th>
+              <th className="px-4 py-3 font-medium">Contract Value</th>
+              <th className="px-4 py-3 font-medium">Billable</th>
+              <th className="px-4 py-3 font-medium">Paid</th>
+              <th className="px-4 py-3 font-medium">Balance</th>
+              <th className="px-4 py-3 font-medium">Terms</th>
+              <th className="px-4 py-3 font-medium">Base Date</th>
+              <th className="px-4 py-3 font-medium">Due Date</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const due = formatDaysUntilDue(row.days_until_due)
+              return (
+                <tr
+                  key={row.booking_id}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="px-4 py-3 text-slate-900">
+                    #{row.booking_id}
+                  </td>
+                  <td className="px-4 py-3 text-slate-900">
+                    {row.client_name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.pickup_place_name} → {row.delivery_place_name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.rate_per_trip != null
+                      ? `₱${row.rate_per_trip.toLocaleString()}`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.completed_trips}/{row.total_trips}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    ₱{row.total_contract_value.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    ₱{row.billable_amount.toLocaleString()}
+                    {row.amount_to_pay_override !== null && (
+                      <span className="ml-1.5 text-xs text-slate-400">
+                        (overridden)
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    ₱{row.amount_paid.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    ₱{row.balance_due.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.payment_terms}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.base_date ?? '—'}
+                    <span className="ml-1.5 text-xs text-slate-400">
+                      ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.due_date ?? '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}
+                    >
+                      {due.label}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

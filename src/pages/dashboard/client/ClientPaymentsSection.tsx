@@ -67,12 +67,19 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
                 {due.label}
               </span>
             </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {row.completed_trips}/{row.total_trips} trips completed ·{' '}
+              {row.payment_terms}
+            </p>
             <div className="mt-1 flex items-center justify-between text-sm text-slate-500">
               <span>
-                {row.rate_of_delivery_service != null
-                  ? `₱${row.rate_of_delivery_service.toLocaleString()}`
-                  : '—'}{' '}
-                · {row.payment_terms}
+                Balance due: ₱{row.balance_due.toLocaleString()}
+                {row.amount_paid > 0 && (
+                  <span className="text-slate-400">
+                    {' '}
+                    (₱{row.amount_paid.toLocaleString()} already paid)
+                  </span>
+                )}
               </span>
               <span>
                 {row.due_date ? `Due ${row.due_date}` : 'Due date TBD'}

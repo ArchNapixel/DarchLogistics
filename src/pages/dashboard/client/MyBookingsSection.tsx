@@ -262,10 +262,18 @@ function MyBookingsSection() {
               <Field label="Cargo" value={booking.cargo_type} />
               <Field label="Container" value={booking.container_type} />
               <Field
-                label="Rate"
+                label="Rate/Trip"
                 value={
                   booking.rate_of_delivery_service != null
                     ? `₱${booking.rate_of_delivery_service.toLocaleString()}`
+                    : '—'
+                }
+              />
+              <Field
+                label="Contract Value"
+                value={
+                  booking.rate_of_delivery_service != null
+                    ? `₱${(booking.rate_of_delivery_service * booking.itineraries.length).toLocaleString()}`
                     : '—'
                 }
               />

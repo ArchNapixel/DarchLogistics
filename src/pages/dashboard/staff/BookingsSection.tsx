@@ -20,10 +20,21 @@ export type Booking = {
   delivery_location: string
   date: string
   status: string
+  // rate is PER TRIP -- total_trips/completed_trips + the derived
+  // totals below exist so nothing has to re-guess "rate x how many?"
+  // billable_amount is the EFFECTIVE amount due: amount_to_pay if staff
+  // overrode it in Financial Records, otherwise computed_billable_amount
+  // (rate x completed trips). (See src/lib/paymentDue.ts for the same
+  // rule applied to the Payments Due report.)
   rate: number | null
+  total_trips: number
+  completed_trips: number
+  total_contract_value: number
+  computed_billable_amount: number
   amount_to_pay: number | null
-  amount_paid: number | null
-  balance_due: number | null
+  billable_amount: number
+  amount_paid: number
+  balance_due: number
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -104,7 +115,7 @@ function BookingsSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, balance_due',
+        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid',
       )
       .order('created_at', { ascending: false })
 
@@ -121,7 +132,9 @@ function BookingsSection() {
       return
     }
 
-    // 2. Look up client names and place names (bookings only stores IDs).
+    // 2. Look up client names, place names, and itinerary counts
+    // (bookings only stores client/place IDs, and rate is per trip so
+    // the total/billable amounts need the itinerary counts to compute).
     const clientIds = Array.from(new Set(bookingRows.map((b) => b.client_id)))
     const placeIds = Array.from(
       new Set(
@@ -131,10 +144,15 @@ function BookingsSection() {
         ]),
       ),
     )
+    const bookingIds = bookingRows.map((b) => b.booking_id)
 
-    const [clientsResult, placesResult] = await Promise.all([
+    const [clientsResult, placesResult, itinerariesResult] = await Promise.all([
       supabase.from('clients').select('client_id, client_name').in('client_id', clientIds),
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
+      supabase
+        .from('itineraries')
+        .select('booking_id, itinerary_status')
+        .in('booking_id', bookingIds),
     ])
 
     if (clientsResult.error) {
@@ -149,6 +167,12 @@ function BookingsSection() {
       return
     }
 
+    if (itinerariesResult.error) {
+      setError(itinerariesResult.error.message)
+      setLoading(false)
+      return
+    }
+
     const clientNameById = new Map(
       clientsResult.data.map((c) => [c.client_id, c.client_name]),
     )
@@ -156,19 +180,48 @@ function BookingsSection() {
       placesResult.data.map((p) => [p.place_id, p.place_name]),
     )
 
+    const totalTripsByBooking = new Map<number, number>()
+    const completedTripsByBooking = new Map<number, number>()
+    itinerariesResult.data.forEach((itinerary) => {
+      totalTripsByBooking.set(
+        itinerary.booking_id,
+        (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
+      )
+      if (itinerary.itinerary_status === 'Delivered') {
+        completedTripsByBooking.set(
+          itinerary.booking_id,
+          (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
+        )
+      }
+    })
+
     setBookings(
-      bookingRows.map((b) => ({
-        booking_id: b.booking_id,
-        client_name: clientNameById.get(b.client_id) ?? '—',
-        pickup_location: placeNameById.get(b.place_of_pickup_id) ?? '—',
-        delivery_location: placeNameById.get(b.place_of_delivery_id) ?? '—',
-        date: b.booking_date,
-        status: b.booking_status ?? 'Draft',
-        rate: b.rate_of_delivery_service,
-        amount_to_pay: b.amount_to_pay,
-        amount_paid: b.amount_paid,
-        balance_due: b.balance_due,
-      })),
+      bookingRows.map((b) => {
+        const rate = b.rate_of_delivery_service ?? 0
+        const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
+        const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
+        const computedBillableAmount = rate * completedTrips
+        const billableAmount = b.amount_to_pay ?? computedBillableAmount
+        const amountPaid = b.amount_paid ?? 0
+
+        return {
+          booking_id: b.booking_id,
+          client_name: clientNameById.get(b.client_id) ?? '—',
+          pickup_location: placeNameById.get(b.place_of_pickup_id) ?? '—',
+          delivery_location: placeNameById.get(b.place_of_delivery_id) ?? '—',
+          date: b.booking_date,
+          status: b.booking_status ?? 'Draft',
+          rate: b.rate_of_delivery_service,
+          total_trips: totalTrips,
+          completed_trips: completedTrips,
+          total_contract_value: rate * totalTrips,
+          computed_billable_amount: computedBillableAmount,
+          amount_to_pay: b.amount_to_pay,
+          billable_amount: billableAmount,
+          amount_paid: amountPaid,
+          balance_due: billableAmount - amountPaid,
+        }
+      }),
     )
     setError(null)
     setLoading(false)
@@ -204,7 +257,8 @@ function BookingsSection() {
                     </th>
                     <th className="px-4 py-3 font-medium">Date</th>
                     <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Rate</th>
+                    <th className="px-4 py-3 font-medium">Rate/Trip</th>
+                    <th className="px-4 py-3 font-medium">Contract Value</th>
                     <th className="px-4 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -234,6 +288,13 @@ function BookingsSection() {
                         {booking.rate !== null
                           ? `₱${booking.rate.toLocaleString()}`
                           : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        ₱{booking.total_contract_value.toLocaleString()}
+                        <span className="ml-1 text-xs text-slate-400">
+                          ({booking.completed_trips}/{booking.total_trips}{' '}
+                          trips)
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <button

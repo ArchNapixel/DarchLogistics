@@ -1,8 +1,12 @@
 // PaymentDuePanel: simplified payment-due list shown beside the
-// Bookings table -- client name, route, rate, due date, and a day
-// counter, across every client. The full breakdown (base date used,
-// whether it's actual or estimated, payment terms) lives on the
-// Reports page's "Payments Due" tab instead -- this is just a quick
+// Bookings table -- client name, route, balance due (rate/trip x trips
+// completed so far, minus anything already paid), due date, and a day
+// counter, across every client. View-only: payments themselves are
+// recorded in Financial Records (FinancialSection.tsx), which is also
+// where the amount due can be manually overridden -- this panel already
+// reflects any such override via balance_due. The full breakdown
+// (contract value, completed/total trips, base date source) lives on
+// the Reports page's "Payments Due" tab instead -- this is just a quick
 // glance while working the main Bookings list.
 import { useEffect, useState } from 'react'
 import {
@@ -43,17 +47,16 @@ function PaymentDuePanel() {
         Payment Due
       </h3>
 
+      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+
       {loading && <p className="mt-3 text-sm text-slate-500">Loading...</p>}
-      {!loading && error && (
-        <p className="mt-3 text-sm text-red-700">{error}</p>
-      )}
-      {!loading && !error && rows.length === 0 && (
+      {!loading && rows.length === 0 && (
         <p className="mt-3 text-sm text-slate-500">
-          No bookings to track yet.
+          No outstanding balances right now.
         </p>
       )}
 
-      {!loading && !error && rows.length > 0 && (
+      {!loading && rows.length > 0 && (
         <div className="mt-3 flex max-h-[28rem] flex-col gap-2 overflow-y-auto">
           {rows.map((row) => {
             const due = formatDaysUntilDue(row.days_until_due)
@@ -75,12 +78,11 @@ function PaymentDuePanel() {
                 <p className="mt-1 text-slate-500">
                   {row.pickup_place_name} → {row.delivery_place_name}
                 </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {row.completed_trips}/{row.total_trips} trips completed
+                </p>
                 <div className="mt-1 flex items-center justify-between text-slate-600">
-                  <span>
-                    {row.rate_of_delivery_service != null
-                      ? `₱${row.rate_of_delivery_service.toLocaleString()}`
-                      : '—'}
-                  </span>
+                  <span>Balance: ₱{row.balance_due.toLocaleString()}</span>
                   <span>{row.due_date ?? 'TBD'}</span>
                 </div>
               </div>

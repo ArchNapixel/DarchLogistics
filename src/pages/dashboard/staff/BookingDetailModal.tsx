@@ -6,6 +6,11 @@ function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
 }
 
+// rate is per trip, so booking.rate alone understates a multi-delivery
+// booking's real numbers -- show trip progress, the full contract
+// value, and what's actually billable so far (what's been Delivered),
+// separately from the flat per-trip rate.
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -48,8 +53,22 @@ function BookingDetailModal({
           <InfoRow label="Date" value={booking.date} />
           <InfoRow label="Origin" value={booking.pickup_location} />
           <InfoRow label="Destination" value={booking.delivery_location} />
-          <InfoRow label="Rate" value={formatMoney(booking.rate)} />
-          <InfoRow label="Amount to pay" value={formatMoney(booking.amount_to_pay)} />
+          <InfoRow label="Rate per trip" value={formatMoney(booking.rate)} />
+          <InfoRow
+            label="Trips completed"
+            value={`${booking.completed_trips}/${booking.total_trips}`}
+          />
+          <InfoRow
+            label="Total contract value"
+            value={formatMoney(booking.total_contract_value)}
+          />
+          <InfoRow
+            label="Billable so far"
+            value={
+              formatMoney(booking.billable_amount) +
+              (booking.amount_to_pay !== null ? ' (overridden)' : '')
+            }
+          />
           <InfoRow label="Amount paid" value={formatMoney(booking.amount_paid)} />
           <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
         </div>

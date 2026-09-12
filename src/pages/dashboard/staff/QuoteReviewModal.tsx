@@ -460,6 +460,15 @@ function QuoteReviewModal({
     onResolved(quote.quote_request_id)
   }
 
+  // proposedRate/estimatedDistanceKm are PER TRIP -- a booking with
+  // delivery_order_count deliveries runs that many separate truck trips,
+  // each with its own diesel burn, driver commission, and per-trip fee.
+  // The estimate below is for the whole contract (all deliveries), not
+  // just one, so every cost is multiplied by deliveryCount alongside the
+  // revenue side (rateForCalc x deliveryCount) -- otherwise the % of
+  // rate would compare a full-contract revenue against only one trip's
+  // costs and look far more profitable than it really is.
+  const deliveryCount = quote.delivery_order_count ?? 1
   const rateForCalc = Number(proposedRate)
   const distanceForCalc = Number(estimatedDistanceKm)
   const settingsLoaded =
@@ -469,15 +478,20 @@ function QuoteReviewModal({
   const canCalculateProfitability =
     settingsLoaded && rateForCalc > 0 && distanceForCalc > 0
 
+  const totalContractValue = rateForCalc * deliveryCount
   const dieselCost = canCalculateProfitability
-    ? dieselPricePerLiter! * distanceForCalc
+    ? dieselPricePerLiter! * distanceForCalc * deliveryCount
     : 0
   const driverCommissionCost = canCalculateProfitability
-    ? (driverCommissionRate! / 100) * rateForCalc
+    ? (driverCommissionRate! / 100) * rateForCalc * deliveryCount
     : 0
-  const perTripFeeCost = canCalculateProfitability ? driverPerTripFee! : 0
+  const perTripFeeCost = canCalculateProfitability
+    ? driverPerTripFee! * deliveryCount
+    : 0
   const totalCost = dieselCost + driverCommissionCost + perTripFeeCost
-  const costRatio = canCalculateProfitability ? totalCost / rateForCalc : 0
+  const costRatio = canCalculateProfitability
+    ? totalCost / totalContractValue
+    : 0
   const isLowMargin = canCalculateProfitability && costRatio >= 0.5
 
   const showProfitabilityPanel = approvedBookingId === null && distanceForCalc > 0
@@ -685,6 +699,16 @@ function QuoteReviewModal({
 
           {canCalculateProfitability && (
             <div className="mt-4 flex flex-col gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">
+                  Contract value ({deliveryCount}{' '}
+                  {deliveryCount === 1 ? 'trip' : 'trips'} × ₱
+                  {rateForCalc.toLocaleString()})
+                </span>
+                <span className="font-medium text-slate-900">
+                  ₱{totalContractValue.toLocaleString()}
+                </span>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Diesel cost</span>
                 <span className="font-medium text-slate-900">

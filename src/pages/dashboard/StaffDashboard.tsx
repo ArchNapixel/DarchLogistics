@@ -172,22 +172,60 @@ function StaffDashboard() {
       const rangeInfo = REVENUE_RANGES.find((r) => r.value === revenueRange)!
       const cutoffDate = getCutoffDate(rangeInfo.months)
 
-      const { data, error } = await supabase
+      // rate_of_delivery_service is per trip/itinerary, not the booking's
+      // flat total -- and the business only earns revenue on deliveries
+      // actually completed, so this sums rate x delivered-itinerary-count
+      // per booking, not just the rate once per booking (see
+      // src/lib/paymentDue.ts for the same rule applied to billing).
+      const { data: bookingRows, error: bookingError } = await supabase
         .from('bookings')
-        .select('rate_of_delivery_service')
+        .select('booking_id, rate_of_delivery_service')
         .neq('booking_status', 'Cancelled')
         .gte('booking_date', cutoffDate)
 
-      if (error) {
-        console.error('Failed to load revenue', error)
-        setRevenueError(`Couldn't load revenue (${error.message}).`)
+      if (bookingError) {
+        console.error('Failed to load revenue', bookingError)
+        setRevenueError(`Couldn't load revenue (${bookingError.message}).`)
         setRevenueLoading(false)
         return
       }
 
+      const bookingIds = bookingRows.map((b) => b.booking_id)
+
+      const { data: itineraryRows, error: itineraryError } =
+        bookingIds.length > 0
+          ? await supabase
+              .from('itineraries')
+              .select('booking_id, itinerary_status')
+              .in('booking_id', bookingIds)
+          : { data: [], error: null }
+
+      if (itineraryError) {
+        console.error('Failed to load revenue', itineraryError)
+        setRevenueError(`Couldn't load revenue (${itineraryError.message}).`)
+        setRevenueLoading(false)
+        return
+      }
+
+      const deliveredCountByBooking = new Map<number, number>()
+      itineraryRows.forEach((row) => {
+        if (row.itinerary_status === 'Delivered') {
+          deliveredCountByBooking.set(
+            row.booking_id,
+            (deliveredCountByBooking.get(row.booking_id) ?? 0) + 1,
+          )
+        }
+      })
+
       setRevenueError(null)
       setRevenue(
-        data.reduce((sum, row) => sum + (row.rate_of_delivery_service ?? 0), 0),
+        bookingRows.reduce(
+          (sum, booking) =>
+            sum +
+            (booking.rate_of_delivery_service ?? 0) *
+              (deliveredCountByBooking.get(booking.booking_id) ?? 0),
+          0,
+        ),
       )
       setRevenueLoading(false)
     }

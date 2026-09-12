@@ -1,29 +1,48 @@
-// paymentDue: shared calculation for "when is this booking's payment
-// due" -- used by the admin Reports page (all clients), the admin
-// Bookings page (all clients, simplified columns), and the client
-// portal (their own bookings only, via the clientId filter).
+// paymentDue: shared calculation for "how much is this booking's
+// payment, and when is it due" -- used by the admin Reports page (all
+// clients), the admin Bookings page (all clients, simplified columns),
+// and the client portal (their own bookings only, via the clientId
+// filter).
 //
-// Due date rule (from the business owner):
-// - Cash: due the day the booking is fully delivered. Until every
-//   itinerary under the booking is actually marked Delivered, there's
-//   no real delivery day yet, so it falls back to the "preferred" date
-//   as a reminder estimate -- preferred_delivery_date normally, or
-//   preferred_pickup_date if the quote was flagged
-//   is_last_day_of_port_storage (in which case preferred_delivery_date
-//   was never collected at quote time).
-// - 7Days/14Days/30Days: due N days after that same base date (actual
-//   completion once known, preferred date as an estimate until then).
+// Billing rule (from the business owner): rate_of_delivery_service is
+// the rate PER TRIP (per itinerary/deliverable), not the booking's flat
+// total -- a booking with delivery_order_count 10 at ₱5,500/trip is a
+// ₱55,000 contract, but the business can only actually bill for
+// itineraries the driver has marked Delivered. So each booking tracks:
+// - total_contract_value = rate x total itineraries (the full contract)
+// - computed_billable_amount = rate x itineraries actually Delivered so
+//   far (what the trips alone justify, always auto-calculated)
+// - billable_amount = the EFFECTIVE amount currently due:
+//   bookings.amount_to_pay if staff has manually overridden it in
+//   Financial Records (FinancialSection.tsx -- e.g. a discount or
+//   special arrangement), otherwise computed_billable_amount
+// - balance_due = billable_amount - amount_paid (what's currently owed)
+// Payments themselves are recorded in Financial Records, not here --
+// this module only computes what's owed and when; it doesn't write
+// amount_paid or amount_to_pay.
+// This is one row per booking with a running/partial amount, not one
+// row per itinerary -- as more trips complete, billable_amount and
+// balance_due grow, independent of whether the rest of the booking is
+// done yet (unless staff has overridden the total, in which case it
+// stays fixed at that override until changed again).
 //
-// "Actual completion" means every itinerary on the booking has
-// itinerary_status = 'Delivered', and the date used is the latest
-// delivery_receipts.received_at among them (that's the real recorded
-// delivery moment -- itineraries.trip_date_to is just the original
-// plan and is never updated when a trip actually finishes).
+// Due date rule: once at least one itinerary is Delivered, the date
+// used is the latest delivery_receipts.received_at among the delivered
+// ones (the real recorded delivery moment -- itineraries.trip_date_to
+// is just the original plan and never gets updated when a trip actually
+// finishes). Before any itinerary is delivered, there's nothing
+// billable yet, so the due date shown is just an estimate based on the
+// quote's preferred date (preferred_delivery_date normally, or
+// preferred_pickup_date if the quote was flagged
+// is_last_day_of_port_storage, since preferred_delivery_date was never
+// collected in that case) -- a reminder to plan around, not a real bill.
+// Cash terms are due on the base date itself; 7/14/30-day terms are due
+// that many days after it.
 //
-// A booking can finish earlier or later than its preferred date (some
-// itineraries done early, others delayed) -- that's exactly why the
-// estimate gets replaced by the real date once all deliveries land,
-// rather than always trusting the original preferred date.
+// A booking drops off the report entirely once every itinerary is
+// Delivered AND the balance is fully paid -- otherwise it stays,
+// whether that's because nothing's billable yet, or because more will
+// become billable as remaining trips complete.
 import { supabase } from './supabaseClient'
 
 export type PaymentDueRow = {
@@ -31,7 +50,15 @@ export type PaymentDueRow = {
   client_name: string
   pickup_place_name: string
   delivery_place_name: string
-  rate_of_delivery_service: number | null
+  rate_per_trip: number | null
+  total_trips: number
+  completed_trips: number
+  total_contract_value: number
+  computed_billable_amount: number
+  amount_to_pay_override: number | null
+  billable_amount: number
+  amount_paid: number
+  balance_due: number
   payment_terms: string
   base_date: string | null
   base_date_source: 'actual' | 'preferred' | 'unknown'
@@ -67,7 +94,7 @@ export async function loadPaymentDueReport(
   let bookingsQuery = supabase
     .from('bookings')
     .select(
-      'booking_id, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, place_of_pickup_id, place_of_delivery_id',
+      'booking_id, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
     )
     .neq('booking_status', 'Cancelled')
 
@@ -139,14 +166,16 @@ export async function loadPaymentDueReport(
     return { rows: [], error: itinerariesResult.error.message }
   }
 
-  const itineraryIds = itinerariesResult.data.map((i) => i.itinerary_id)
+  const deliveredItineraryIds = itinerariesResult.data
+    .filter((i) => i.itinerary_status === 'Delivered')
+    .map((i) => i.itinerary_id)
 
   const { data: receiptRows, error: receiptError } =
-    itineraryIds.length > 0
+    deliveredItineraryIds.length > 0
       ? await supabase
           .from('delivery_receipts')
           .select('itinerary_id, received_at')
-          .in('itinerary_id', itineraryIds)
+          .in('itinerary_id', deliveredItineraryIds)
       : { data: [], error: null }
 
   if (receiptError) {
@@ -176,63 +205,87 @@ export async function loadPaymentDueReport(
     itinerariesByBooking.set(itinerary.booking_id, list)
   })
 
-  const rows: PaymentDueRow[] = bookingRows.map((booking) => {
-    const quote =
-      booking.quote_request_id !== null
-        ? quoteById.get(booking.quote_request_id)
-        : undefined
+  const rows: PaymentDueRow[] = bookingRows
+    .map((booking) => {
+      const quote =
+        booking.quote_request_id !== null
+          ? quoteById.get(booking.quote_request_id)
+          : undefined
 
-    const preferredDate = quote
-      ? quote.is_last_day_of_port_storage
-        ? quote.preferred_pickup_date
-        : quote.preferred_delivery_date
-      : null
+      const preferredDate = quote
+        ? quote.is_last_day_of_port_storage
+          ? quote.preferred_pickup_date
+          : quote.preferred_delivery_date
+        : null
 
-    const itineraries = itinerariesByBooking.get(booking.booking_id) ?? []
-    const allDelivered =
-      itineraries.length > 0 &&
-      itineraries.every((itinerary) => itinerary.itinerary_status === 'Delivered')
+      const itineraries = itinerariesByBooking.get(booking.booking_id) ?? []
+      const deliveredItineraries = itineraries.filter(
+        (itinerary) => itinerary.itinerary_status === 'Delivered',
+      )
+      const totalTrips = itineraries.length
+      const completedTrips = deliveredItineraries.length
 
-    let baseDate: string | null = null
-    let baseDateSource: PaymentDueRow['base_date_source'] = 'unknown'
+      const rate = booking.rate_of_delivery_service ?? 0
+      const totalContractValue = rate * totalTrips
+      const computedBillableAmount = rate * completedTrips
+      const billableAmount = booking.amount_to_pay ?? computedBillableAmount
+      const amountPaid = booking.amount_paid ?? 0
+      const balanceDue = billableAmount - amountPaid
 
-    if (allDelivered) {
-      const receiptDates = itineraries
-        .map((itinerary) => receivedAtByItinerary.get(itinerary.itinerary_id))
-        .filter((date): date is string => Boolean(date))
-        .map((date) => date.slice(0, 10))
+      let baseDate: string | null = null
+      let baseDateSource: PaymentDueRow['base_date_source'] = 'unknown'
 
-      if (receiptDates.length > 0) {
-        baseDate = receiptDates.reduce((latest, date) =>
-          date > latest ? date : latest,
-        )
-        baseDateSource = 'actual'
-      } else if (preferredDate) {
+      if (completedTrips > 0) {
+        const receiptDates = deliveredItineraries
+          .map((itinerary) => receivedAtByItinerary.get(itinerary.itinerary_id))
+          .filter((date): date is string => Boolean(date))
+          .map((date) => date.slice(0, 10))
+
+        if (receiptDates.length > 0) {
+          baseDate = receiptDates.reduce((latest, date) =>
+            date > latest ? date : latest,
+          )
+          baseDateSource = 'actual'
+        }
+      }
+
+      if (baseDate === null && preferredDate) {
         baseDate = preferredDate
         baseDateSource = 'preferred'
       }
-    } else if (preferredDate) {
-      baseDate = preferredDate
-      baseDateSource = 'preferred'
-    }
 
-    const daysToAdd = PAYMENT_TERM_DAYS[booking.payment_terms] ?? 0
-    const dueDate = baseDate ? addDays(baseDate, daysToAdd) : null
+      const daysToAdd = PAYMENT_TERM_DAYS[booking.payment_terms] ?? 0
+      const dueDate = baseDate ? addDays(baseDate, daysToAdd) : null
 
-    return {
-      booking_id: booking.booking_id,
-      client_name: clientNameById.get(booking.client_id) ?? '—',
-      pickup_place_name: placeNameById.get(booking.place_of_pickup_id) ?? '—',
-      delivery_place_name:
-        placeNameById.get(booking.place_of_delivery_id) ?? '—',
-      rate_of_delivery_service: booking.rate_of_delivery_service,
-      payment_terms: booking.payment_terms,
-      base_date: baseDate,
-      base_date_source: baseDateSource,
-      due_date: dueDate,
-      days_until_due: dueDate ? daysFromToday(dueDate) : null,
-    }
-  })
+      return {
+        booking_id: booking.booking_id,
+        client_name: clientNameById.get(booking.client_id) ?? '—',
+        pickup_place_name: placeNameById.get(booking.place_of_pickup_id) ?? '—',
+        delivery_place_name:
+          placeNameById.get(booking.place_of_delivery_id) ?? '—',
+        rate_per_trip: booking.rate_of_delivery_service,
+        total_trips: totalTrips,
+        completed_trips: completedTrips,
+        total_contract_value: totalContractValue,
+        computed_billable_amount: computedBillableAmount,
+        amount_to_pay_override: booking.amount_to_pay,
+        billable_amount: billableAmount,
+        amount_paid: amountPaid,
+        balance_due: balanceDue,
+        payment_terms: booking.payment_terms,
+        base_date: baseDate,
+        base_date_source: baseDateSource,
+        due_date: dueDate,
+        days_until_due: dueDate ? daysFromToday(dueDate) : null,
+      }
+    })
+    // Drop bookings that are fully delivered AND fully settled -- there's
+    // nothing left to track. Anything else stays, including bookings with
+    // nothing billable yet (shown as an estimate) and partially-paid ones.
+    .filter(
+      (row) =>
+        !(row.completed_trips === row.total_trips && row.balance_due <= 0),
+    )
 
   rows.sort((a, b) => {
     if (a.days_until_due === null) return 1
