@@ -1,9 +1,9 @@
-// SetUpClientAccountModal: creates a real login for a client in one
-// step -- calls the create-user-account Edge Function (which holds the
-// service-role key server-side, never in browser code) to create the
-// actual Supabase Auth account AND the linked `public.users` row
-// together, with auth_user_id already attached. No more manual
-// "go create it in the Dashboard" step.
+// SetUpStaffAccountModal: creates a real login for an employee (Admin,
+// Dispatcher, Driver, or Mechanic) in one step -- same
+// create-user-account Edge Function used by SetUpClientAccountModal.tsx,
+// just passing employee_id instead of client_id. The function itself
+// already checks the caller is staff and creates the Auth account +
+// linked `public.users` row together.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
@@ -12,24 +12,33 @@ const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-type Client = {
-  client_id: number
-  client_name: string
-  email: string | null
+type Employee = {
+  employee_id: number
+  name: string
+  position: string
 }
 
-function SetUpClientAccountModal({
-  client,
+// Matches the `user_role` enum values also used as `employees.position`
+// values in AddEmployeeModal.tsx (Driver/Mechanic/Dispatcher/Admin).
+const USER_ROLES = ['Driver', 'Mechanic', 'Dispatcher', 'Admin'] as const
+
+function SetUpStaffAccountModal({
+  employee,
   onClose,
   onCreated,
 }: {
-  client: Client
+  employee: Employee
   onClose: () => void
-  onCreated: (clientId: number) => void
+  onCreated: (employeeId: number) => void
 }) {
-  const [email, setEmail] = useState(client.email ?? '')
-  const [username, setUsername] = useState(client.client_name)
+  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState(employee.name)
   const [password, setPassword] = useState('')
+  const [userRole, setUserRole] = useState(
+    USER_ROLES.includes(employee.position as (typeof USER_ROLES)[number])
+      ? employee.position
+      : 'Driver',
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -54,8 +63,8 @@ function SetUpClientAccountModal({
           email,
           username,
           password,
-          user_role: 'Client',
-          client_id: client.client_id,
+          user_role: userRole,
+          employee_id: employee.employee_id,
         },
       },
     )
@@ -85,14 +94,15 @@ function SetUpClientAccountModal({
               Account created
             </h3>
             <p className="mt-3 text-sm text-slate-600">
-              {client.client_name} can now log in with{' '}
-              <span className="font-medium text-slate-900">{email}</span>{' '}
+              {employee.name} can now log in as a{' '}
+              <span className="font-medium text-slate-900">{userRole}</span>{' '}
+              with <span className="font-medium text-slate-900">{email}</span>{' '}
               and the password you just set. Share those credentials with
               them directly.
             </p>
             <div className="mt-6 flex justify-end">
               <button
-                onClick={() => onCreated(client.client_id)}
+                onClick={() => onCreated(employee.employee_id)}
                 className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
               >
                 Done
@@ -102,7 +112,7 @@ function SetUpClientAccountModal({
         ) : (
           <>
             <h3 className="text-lg font-bold text-slate-900">
-              Set Up Account for {client.client_name}
+              Set Up Account for {employee.name}
             </h3>
 
             {error && (
@@ -112,6 +122,21 @@ function SetUpClientAccountModal({
             )}
 
             <div className="mt-4 grid gap-4">
+              <label className={labelClasses}>
+                Role
+                <select
+                  value={userRole}
+                  onChange={(e) => setUserRole(e.target.value)}
+                  className={fieldClasses}
+                >
+                  {USER_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <label className={labelClasses}>
                 Email
                 <input
@@ -167,4 +192,4 @@ function SetUpClientAccountModal({
   )
 }
 
-export default SetUpClientAccountModal
+export default SetUpStaffAccountModal

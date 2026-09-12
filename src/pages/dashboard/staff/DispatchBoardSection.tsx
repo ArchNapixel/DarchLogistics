@@ -1,6 +1,12 @@
 // DispatchBoardSection: board of active itineraries (not yet Delivered or
 // Cancelled) for staff to advance status and assign a driver.
 //
+// Status editing is Admin-only (canEditStatus) -- Dispatcher sees the
+// same badge but no dropdown, since status is meant to be advanced by
+// the driver from their own app as the trip actually progresses.
+// Dispatcher can still assign/reassign driver, truck, and trailer;
+// that's the actual dispatching work.
+//
 // Status changes write directly to itineraries.itinerary_status and log
 // to dispatch_status_logs (same pattern as the Driver's own
 // UpdateStatusControl.tsx). Driver assignment writes to itinerary_crews:
@@ -13,6 +19,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { isAdmin } from '../../../lib/roles'
 
 type DispatchRow = {
   itinerary_id: number
@@ -70,7 +77,8 @@ function DispatchStatusBadge({ status }: { status: string }) {
 }
 
 function DispatchBoardSection() {
-  const { employeeId } = useAuth()
+  const { employeeId, role } = useAuth()
+  const canEditStatus = isAdmin(role)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [trucks, setTrucks] = useState<TruckOption[]>([])
@@ -474,24 +482,26 @@ function DispatchBoardSection() {
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1.5">
                       <DispatchStatusBadge status={row.status} />
-                      <select
-                        value={row.status}
-                        disabled={savingId === row.itinerary_id}
-                        onChange={(e) =>
-                          handleStatusChange(
-                            row.itinerary_id,
-                            row.status,
-                            e.target.value,
-                          )
-                        }
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
-                      >
-                        {STATUS_FLOW.map((status) => (
-                          <option key={status} value={status}>
-                            {STATUS_LABELS[status]}
-                          </option>
-                        ))}
-                      </select>
+                      {canEditStatus && (
+                        <select
+                          value={row.status}
+                          disabled={savingId === row.itinerary_id}
+                          onChange={(e) =>
+                            handleStatusChange(
+                              row.itinerary_id,
+                              row.status,
+                              e.target.value,
+                            )
+                          }
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                        >
+                          {STATUS_FLOW.map((status) => (
+                            <option key={status} value={status}>
+                              {STATUS_LABELS[status]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">

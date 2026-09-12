@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
+import SetUpStaffAccountModal from './SetUpStaffAccountModal'
 
 type Employee = {
   employee_id: number
@@ -40,10 +41,16 @@ function EmploymentStatusBadge({ status }: { status: string }) {
 
 function EmployeesSection() {
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [linkedEmployeeIds, setLinkedEmployeeIds] = useState<Set<number>>(
+    new Set(),
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+  const [accountEmployee, setAccountEmployee] = useState<Employee | null>(
+    null,
+  )
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -117,6 +124,21 @@ function EmployeesSection() {
 
     const statusNameById = new Map(
       statuses.map((s) => [s.status_id, s.status_name]),
+    )
+
+    const { data: linkedRows, error: linkedError } = await supabase
+      .from('users')
+      .select('employee_id')
+      .not('employee_id', 'is', null)
+
+    if (linkedError) {
+      setError(linkedError.message)
+      setLoading(false)
+      return
+    }
+
+    setLinkedEmployeeIds(
+      new Set(linkedRows.map((row) => row.employee_id as number)),
     )
 
     setEmployees(
@@ -239,46 +261,66 @@ function EmployeesSection() {
                 <th className="px-4 py-3 font-medium">Position</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Hire Date</th>
+                <th className="px-4 py-3 font-medium">Account</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((employee) => (
-                <tr
-                  key={employee.employee_id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 text-slate-900">{employee.name}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {employee.position}
-                  </td>
-                  <td className="px-4 py-3">
-                    <EmploymentStatusBadge status={employee.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {employee.hire_date}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setEditingEmployee(employee)}
-                        className="font-medium text-slate-600 hover:text-slate-900"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(employee)}
-                        disabled={deletingId === employee.employee_id}
-                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        {deletingId === employee.employee_id
-                          ? 'Deleting...'
-                          : 'Delete'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredEmployees.map((employee) => {
+                const isLinked = linkedEmployeeIds.has(employee.employee_id)
+                return (
+                  <tr
+                    key={employee.employee_id}
+                    className="border-b border-slate-100 last:border-0"
+                  >
+                    <td className="px-4 py-3 text-slate-900">
+                      {employee.name}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {employee.position}
+                    </td>
+                    <td className="px-4 py-3">
+                      <EmploymentStatusBadge status={employee.status} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {employee.hire_date}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isLinked ? (
+                        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                          Set Up
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setAccountEmployee(employee)}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                        >
+                          Set Up Account
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setEditingEmployee(employee)}
+                          className="font-medium text-slate-600 hover:text-slate-900"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(employee)}
+                          disabled={deletingId === employee.employee_id}
+                          className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          {deletingId === employee.employee_id
+                            ? 'Deleting...'
+                            : 'Delete'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -295,6 +337,17 @@ function EmployeesSection() {
             setShowAddEmployee(false)
             setEditingEmployee(null)
             loadEmployees()
+          }}
+        />
+      )}
+
+      {accountEmployee && (
+        <SetUpStaffAccountModal
+          employee={accountEmployee}
+          onClose={() => setAccountEmployee(null)}
+          onCreated={(employeeId) => {
+            setLinkedEmployeeIds((prev) => new Set(prev).add(employeeId))
+            setAccountEmployee(null)
           }}
         />
       )}
