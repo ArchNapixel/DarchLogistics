@@ -80,15 +80,28 @@ function PayrollSection() {
     }
 
     setPayroll(
-      data.map((entry) => ({
-        payroll_id: entry.payroll_id,
-        employee_name: entry.employees?.[0]?.full_name ?? '—',
-        period: formatPeriod(entry.payroll_period_start, entry.payroll_period_end),
-        gross_pay: entry.gross_pay,
-        cash_advance_deducted: entry.cash_advance_deducted,
-        net_pay: entry.net_pay,
-        status: entry.payslip_status,
-      })),
+      data.map((entry) => {
+        // payroll_payslips.employee_id is a many-to-one FK (many
+        // payslips, one employee), so PostgREST actually returns
+        // `employees` as a single object at runtime -- but the
+        // untyped Supabase client (no generated DB types in this
+        // project) infers every embedded relation as an array
+        // regardless of real cardinality. Trust the runtime shape,
+        // not the type: indexing with [0] here always returned
+        // undefined, which is why every row showed a blank employee
+        // name.
+        const employee = entry.employees as unknown as { full_name: string } | null
+
+        return {
+          payroll_id: entry.payroll_id,
+          employee_name: employee?.full_name ?? '—',
+          period: formatPeriod(entry.payroll_period_start, entry.payroll_period_end),
+          gross_pay: entry.gross_pay,
+          cash_advance_deducted: entry.cash_advance_deducted,
+          net_pay: entry.net_pay,
+          status: entry.payslip_status,
+        }
+      }),
     )
     setError(null)
     setLoading(false)
