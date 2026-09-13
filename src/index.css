@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* Public site redesign tokens (landing page + quote request page) --
+   Oswald for display/headline text, plus the navy/steel brand colors
+   from the Darch Logistics design. Nothing in the dashboard uses these,
+   so this is additive, not a global restyle. */
+@theme {
+  --font-display: "Oswald", sans-serif;
+  --color-brand-navy: #16233b;
+  --color-brand-navy-light: #1d3153;
+  --color-brand-steel: #4d7ea8;
+  --color-brand-steel-dark: #3f6a8f;
+  --color-brand-paper: #f1f0ed;
+}
+
 /* Makes clicking anchor links (like #quote) scroll smoothly instead of jumping */
 html {
   scroll-behavior: smooth;

@@ -1,11 +1,14 @@
 // QuoteForm: the public "Get a Quote" form. Anyone can submit this without
 // logging in. On submit, it inserts a new row into quote_requests with
 // request_status = 'Pending'. Staff will review it later from the dashboard.
+//
+// Visual redesign only below (numbered sections, toggle buttons for
+// cargo/container type, a radio pair + priority callout instead of a
+// plain select for the last-free-day question) -- the field set,
+// validation, and the Supabase insert are unchanged from before.
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-// The shape of the form's editable fields, as plain strings (form inputs
-// always give you strings/text, even for numbers and dates).
 type QuoteFormData = {
   clientName: string
   contactNumber: string
@@ -42,10 +45,49 @@ const emptyForm: QuoteFormData = {
   deliveryOrderCount: '',
 }
 
-// Shared Tailwind classes so every input/select looks the same.
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'rounded-md border border-slate-300 bg-slate-100 px-3 py-2.5 text-slate-900 focus:border-brand-steel focus:bg-white focus:outline-none'
+const labelClasses = 'flex flex-col gap-1.5 text-sm font-medium text-slate-700'
+
+function SectionHeading({ number, title }: { number: string; title: string }) {
+  return (
+    <div className="col-span-full">
+      <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
+        {number} — {title}
+      </p>
+      <div className="mt-2 border-t border-slate-300" />
+    </div>
+  )
+}
+
+function ToggleGroup<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: T[]
+  value: T
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="flex gap-2">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={`flex-1 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors ${
+            value === option
+              ? 'border-brand-steel bg-brand-steel text-white'
+              : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function QuoteForm() {
   const [form, setForm] = useState<QuoteFormData>(emptyForm)
@@ -53,12 +95,14 @@ function QuoteForm() {
   const [error, setError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
 
-  // One handler for every text/select field: updates just the field that
-  // changed, using its "name" attribute to know which one.
   function handleChange(
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) {
     const { name, value } = e.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
+  function setField<K extends keyof QuoteFormData>(name: K, value: QuoteFormData[K]) {
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -137,7 +181,7 @@ function QuoteForm() {
             setForm(emptyForm)
             setSubmitted(false)
           }}
-          className="mt-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          className="mt-6 rounded-lg bg-brand-steel px-4 py-2 text-sm font-medium text-white hover:bg-brand-steel-dark"
         >
           Submit another request
         </button>
@@ -146,21 +190,21 @@ function QuoteForm() {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="grid gap-5 rounded-xl border border-slate-200 bg-white p-8 shadow-sm sm:grid-cols-2"
-    >
+    <form onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2">
       {error && (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 sm:col-span-2">
+        <p className="col-span-full rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
       )}
+
+      <SectionHeading number="01" title="Contact" />
 
       <label className={labelClasses}>
         Client name
         <input
           type="text"
           name="clientName"
+          placeholder="Company or individual"
           value={form.clientName}
           onChange={handleChange}
           required
@@ -173,6 +217,7 @@ function QuoteForm() {
         <input
           type="tel"
           name="contactNumber"
+          placeholder="09XX XXX XXXX"
           value={form.contactNumber}
           onChange={handleChange}
           required
@@ -180,16 +225,95 @@ function QuoteForm() {
         />
       </label>
 
-      <label className={labelClasses}>
+      <label className={`${labelClasses} sm:col-span-2`}>
         Contact email (optional)
         <input
           type="email"
           name="contactEmail"
+          placeholder="name@company.com"
           value={form.contactEmail}
           onChange={handleChange}
           className={fieldClasses}
         />
       </label>
+
+      <SectionHeading number="02" title="Route" />
+
+      <label className={labelClasses}>
+        Origin
+        <input
+          type="text"
+          name="pickupLocationText"
+          placeholder="Port, plant or warehouse"
+          value={form.pickupLocationText}
+          onChange={handleChange}
+          required
+          className={fieldClasses}
+        />
+      </label>
+
+      <label className={labelClasses}>
+        Destination
+        <input
+          type="text"
+          name="deliveryLocationText"
+          placeholder="Delivery site"
+          value={form.deliveryLocationText}
+          onChange={handleChange}
+          required
+          className={fieldClasses}
+        />
+      </label>
+
+      <SectionHeading number="03" title="Cargo" />
+
+      <label className={labelClasses}>
+        Cargo type
+        <ToggleGroup
+          options={['Container', 'Loose'] as const}
+          value={form.cargoType}
+          onChange={(value) => setField('cargoType', value)}
+        />
+      </label>
+
+      <label className={labelClasses}>
+        Weight (tons)
+        <input
+          type="number"
+          name="weight"
+          placeholder="e.g. 24.5"
+          value={form.weight}
+          onChange={handleChange}
+          required
+          min="0"
+          step="0.01"
+          className={fieldClasses}
+        />
+      </label>
+
+      <label className={labelClasses}>
+        Container type
+        <ToggleGroup
+          options={['20ft', '40ft'] as const}
+          value={form.containerType}
+          onChange={(value) => setField('containerType', value)}
+        />
+      </label>
+
+      <label className={`${labelClasses} sm:col-span-2`}>
+        Cargo description
+        <textarea
+          name="cargoDescription"
+          value={form.cargoDescription}
+          onChange={handleChange}
+          required
+          rows={3}
+          placeholder="What it is, dimensions, how it is packed, lifting points"
+          className={fieldClasses}
+        />
+      </label>
+
+      <SectionHeading number="04" title="Schedule" />
 
       <label className={labelClasses}>
         Preferred pickup date
@@ -203,20 +327,44 @@ function QuoteForm() {
         />
       </label>
 
-      <label className={labelClasses}>
+      <div className={labelClasses}>
         Is this the last day of free port storage?
-        <select
-          name="isLastDayOfPortStorage"
-          value={form.isLastDayOfPortStorage}
-          onChange={handleChange}
-          className={fieldClasses}
-        >
-          <option value="No">No</option>
-          <option value="Yes">Yes</option>
-        </select>
-      </label>
+        <div className="flex items-center gap-6 pt-1">
+          <label className="flex items-center gap-2 text-sm font-normal text-slate-700">
+            <input
+              type="radio"
+              name="isLastDayOfPortStorage"
+              checked={form.isLastDayOfPortStorage === 'Yes'}
+              onChange={() => setField('isLastDayOfPortStorage', 'Yes')}
+              className="accent-brand-steel"
+            />
+            Yes — pickup is time-critical
+          </label>
+          <label className="flex items-center gap-2 text-sm font-normal text-slate-700">
+            <input
+              type="radio"
+              name="isLastDayOfPortStorage"
+              checked={form.isLastDayOfPortStorage === 'No'}
+              onChange={() => setField('isLastDayOfPortStorage', 'No')}
+              className="accent-brand-steel"
+            />
+            No
+          </label>
+        </div>
+      </div>
 
-      {form.isLastDayOfPortStorage === 'No' && (
+      {form.isLastDayOfPortStorage === 'Yes' ? (
+        <div className="col-span-full flex items-start gap-3 rounded-lg border border-brand-steel/30 bg-brand-steel/10 px-4 py-3">
+          <span className="mt-0.5 shrink-0 rounded border border-brand-steel-dark px-2 py-0.5 text-[10px] font-bold tracking-wide text-brand-steel-dark uppercase">
+            Priority
+          </span>
+          <p className="text-sm text-slate-700">
+            Flagged for same-day dispatch review. Delivery is scheduled off
+            the gate slot, so no delivery date is collected — dispatch will
+            confirm the drop window by phone.
+          </p>
+        </div>
+      ) : (
         <label className={labelClasses}>
           Preferred delivery date
           <input
@@ -230,97 +378,7 @@ function QuoteForm() {
         </label>
       )}
 
-      <label className={labelClasses}>
-        Origin
-        <input
-          type="text"
-          name="pickupLocationText"
-          value={form.pickupLocationText}
-          onChange={handleChange}
-          required
-          className={fieldClasses}
-        />
-      </label>
-
-      <label className={labelClasses}>
-        Destination
-        <input
-          type="text"
-          name="deliveryLocationText"
-          value={form.deliveryLocationText}
-          onChange={handleChange}
-          required
-          className={fieldClasses}
-        />
-      </label>
-
-      <label className={labelClasses}>
-        Cargo type
-        <select
-          name="cargoType"
-          value={form.cargoType}
-          onChange={handleChange}
-          className={fieldClasses}
-        >
-          <option value="Container">Container</option>
-          <option value="Loose">Loose</option>
-        </select>
-      </label>
-
-      <label className={labelClasses}>
-        Weight (tons)
-        <input
-          type="number"
-          name="weight"
-          value={form.weight}
-          onChange={handleChange}
-          required
-          min="0"
-          step="0.01"
-          className={fieldClasses}
-        />
-      </label>
-
-      <label className={labelClasses}>
-        Number of deliveries
-        <input
-          type="number"
-          name="deliveryOrderCount"
-          value={form.deliveryOrderCount}
-          onChange={handleChange}
-          required
-          min="1"
-          step="1"
-          placeholder="e.g. 3"
-          className={fieldClasses}
-        />
-      </label>
-
-      <label className={`${labelClasses} sm:col-span-2`}>
-        Cargo description
-        <textarea
-          name="cargoDescription"
-          value={form.cargoDescription}
-          onChange={handleChange}
-          required
-          rows={3}
-          placeholder="e.g. Electronics, machinery, palletized goods..."
-          className={fieldClasses}
-        />
-      </label>
-
-      <label className={labelClasses}>
-        Trailer type
-        <select
-          name="containerType"
-          value={form.containerType}
-          onChange={handleChange}
-          className={fieldClasses}
-        >
-          <option value="20ft">20ft</option>
-          <option value="40ft">40ft</option>
-        </select>
-      </label>
+      <SectionHeading number="05" title="Commercial" />
 
       <label className={labelClasses}>
         Payment terms
@@ -338,27 +396,50 @@ function QuoteForm() {
       </label>
 
       <label className={labelClasses}>
-        Proposed rate in pesos
+        Proposed rate (PHP)
         <input
           type="number"
           name="proposedRate"
+          placeholder="₱ 0.00"
           value={form.proposedRate}
           onChange={handleChange}
           required
           min="0"
           step="0.01"
-          placeholder="e.g. 15000"
           className={fieldClasses}
         />
       </label>
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50 sm:col-span-2"
-      >
-        {submitting ? 'Submitting...' : 'Submit Quote Request'}
-      </button>
+      <label className={labelClasses}>
+        Number of deliveries
+        <input
+          type="number"
+          name="deliveryOrderCount"
+          placeholder="1"
+          value={form.deliveryOrderCount}
+          onChange={handleChange}
+          required
+          min="1"
+          step="1"
+          className={fieldClasses}
+        />
+      </label>
+
+      <div className="col-span-full mt-2 flex flex-wrap items-center gap-4 border-t border-slate-300 pt-6">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-brand-steel px-6 py-3 text-sm font-bold tracking-wide text-white uppercase hover:bg-brand-steel-dark disabled:opacity-50"
+        >
+          {submitting ? 'Submitting...' : 'Submit Request'}
+        </button>
+        <p className="text-sm text-slate-500">
+          Or call dispatch directly —{' '}
+          <a href="tel:09660475467" className="font-medium text-slate-700 underline">
+            09660475467
+          </a>
+        </p>
+      </div>
     </form>
   )
 }

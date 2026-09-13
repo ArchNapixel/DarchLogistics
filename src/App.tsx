@@ -3,6 +3,7 @@
 // are picked based on the logged-in user's role.
 import { Routes, Route } from 'react-router-dom'
 import LandingPage from './pages/LandingPage'
+import QuoteRequestPage from './pages/QuoteRequestPage'
 import LoginPage from './pages/LoginPage'
 import DashboardRouter from './pages/dashboard/DashboardRouter'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -11,6 +12,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/quote-request" element={<QuoteRequestPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/dashboard/*"
