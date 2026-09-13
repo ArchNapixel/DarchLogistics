@@ -1,9 +1,11 @@
-// ReportsSection: "Overview" tab keeps the placeholder mock cards
-// (MOCK DATA -- not wired to Supabase yet). "Payments Due" is real,
-// backed by src/lib/paymentDue.ts -- the full breakdown across every
-// client, versus the simplified version on the Bookings page's side
-// panel (PaymentDuePanel.tsx). View-only: payments are recorded (and
-// the billable amount overridden, if needed) in Financial Records
+// ReportsSection: "Overview" shows real activity counts across the
+// other report tabs (issue reports, client requests, payslip issues,
+// work order completions/acceptances) as clickable cards that jump
+// straight to that tab. "Payments Due" is real, backed by
+// src/lib/paymentDue.ts -- the full breakdown across every client,
+// versus the simplified version on the Bookings page's side panel
+// (PaymentDuePanel.tsx). View-only: payments are recorded (and the
+// billable amount overridden, if needed) in Financial Records
 // (FinancialSection.tsx) instead. See paymentDue.ts for the due-date
 // rule and the override behavior.
 import { useEffect, useState } from 'react'
@@ -13,81 +15,157 @@ import {
   DUE_TONE_STYLES,
   type PaymentDueRow,
 } from '../../../lib/paymentDue'
+import { supabase } from '../../../lib/supabaseClient'
+import { loadPendingStatusRequests } from '../../../lib/clientStatusRequests'
+import { loadPendingPayslipIssues } from '../../../lib/payslipIssueReports'
+import { loadWorkOrderAcceptanceLog } from '../../../lib/workOrderAcceptanceLog'
+import { loadWorkOrderCompletions } from '../../../lib/workOrderCompletions'
+import IssueReportsSection from './IssueReportsSection'
+import ClientStatusRequestsSection from './ClientStatusRequestsSection'
+import PayslipIssueReportsSection from './PayslipIssueReportsSection'
+import WorkOrderAcceptanceLogSection from './WorkOrderAcceptanceLogSection'
+import WorkOrderCompletionsSection from './WorkOrderCompletionsSection'
 
-type ReportCard = {
-  report_id: number
-  title: string
-  headline_value: string
+const TABS = [
+  'Overview',
+  'Payments Due',
+  'Issue Reports',
+  'Client Requests',
+  'Work Order Completions',
+  'Work Order Acceptance',
+  'Payslip Issues',
+] as const
+type Tab = (typeof TABS)[number]
+
+type ReportActivityCard = {
+  tab: Tab
+  label: string
+  value: number
   subtitle: string
-  accent: string
-  // Relative bar heights (0-100) for the mini chart, oldest to newest.
-  chart_values: number[]
+  // Mono accent ramp only -- no arbitrary per-card colors. Varying the
+  // step (not the hue) is what gives each card its own weight.
+  accent: 'bg-accent-100' | 'bg-accent-300' | 'bg-accent-500' | 'bg-accent-700' | 'bg-accent-900'
 }
 
-// MOCK DATA -- replace with real Supabase query later.
-const MOCK_REPORTS: ReportCard[] = [
-  {
-    report_id: 1,
-    title: 'Revenue Report',
-    headline_value: '₱1,284,600',
-    subtitle: 'Total revenue this month',
-    accent: 'bg-blue-500',
-    chart_values: [40, 55, 48, 62, 70, 58, 80],
-  },
-  {
-    report_id: 2,
-    title: 'Delivery Performance',
-    headline_value: '96.4%',
-    subtitle: 'On-time deliveries this month',
-    accent: 'bg-green-500',
-    chart_values: [85, 90, 88, 94, 91, 97, 96],
-  },
-  {
-    report_id: 3,
-    title: 'Fleet Utilization',
-    headline_value: '78%',
-    subtitle: 'Average truck utilization',
-    accent: 'bg-orange-500',
-    chart_values: [60, 65, 72, 68, 75, 80, 78],
-  },
-]
+function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+  const [cards, setCards] = useState<ReportActivityCard[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-function MiniBarChart({
-  values,
-  accent,
-}: {
-  values: number[]
-  accent: string
-}) {
-  return (
-    <div className="mt-4 flex h-16 items-end gap-1.5">
-      {values.map((value, index) => (
-        <div
-          key={index}
-          className={`flex-1 rounded-t ${accent}`}
-          style={{ height: `${value}%`, opacity: 0.3 + (index / values.length) * 0.7 }}
-        />
-      ))}
-    </div>
-  )
-}
+  useEffect(() => {
+    load()
+  }, [])
 
-function OverviewTab() {
+  async function load() {
+    const [
+      issueReportsResult,
+      clientRequestsResult,
+      payslipIssuesResult,
+      completionsResult,
+      acceptancesResult,
+    ] = await Promise.all([
+      supabase.from('issue_reports').select('*', { count: 'exact', head: true }),
+      loadPendingStatusRequests(),
+      loadPendingPayslipIssues(),
+      loadWorkOrderCompletions(),
+      loadWorkOrderAcceptanceLog(),
+    ])
+
+    const loadError =
+      issueReportsResult.error?.message ??
+      clientRequestsResult.error ??
+      payslipIssuesResult.error ??
+      completionsResult.error ??
+      acceptancesResult.error
+
+    if (loadError) {
+      setError(loadError)
+      return
+    }
+
+    setError(null)
+    setCards([
+      {
+        tab: 'Issue Reports',
+        label: 'Issue Reports',
+        value: issueReportsResult.count ?? 0,
+        subtitle: 'Total reported by drivers',
+        accent: 'bg-accent-900',
+      },
+      {
+        tab: 'Client Requests',
+        label: 'Client Requests',
+        value: clientRequestsResult.requests.length,
+        subtitle: 'Awaiting a response',
+        accent: 'bg-accent-500',
+      },
+      {
+        tab: 'Payslip Issues',
+        label: 'Payslip Issues',
+        value: payslipIssuesResult.reports.length,
+        subtitle: 'Awaiting resolution',
+        accent: 'bg-accent-300',
+      },
+      {
+        tab: 'Work Order Completions',
+        label: 'Work Orders Completed',
+        value: completionsResult.completions.length,
+        subtitle: 'Total finished by mechanics',
+        accent: 'bg-accent-900',
+      },
+      {
+        tab: 'Work Order Acceptance',
+        label: 'Work Orders Accepted',
+        value: acceptancesResult.entries.length,
+        subtitle: 'Total acceptance events logged',
+        accent: 'bg-accent-500',
+      },
+    ])
+  }
+
+  // Decorative fill, not a precise proportion: 6% floor so a 0-value
+  // card still shows a sliver of track, scaled against the loudest
+  // card in the current batch.
+  const maxValue = cards ? Math.max(...cards.map((card) => card.value), 1) : 1
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {MOCK_REPORTS.map((report) => (
-        <button
-          key={report.report_id}
-          className="rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm hover:border-slate-300"
-        >
-          <p className="text-sm font-medium text-slate-500">{report.title}</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">
-            {report.headline_value}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">{report.subtitle}</p>
-          <MiniBarChart values={report.chart_values} accent={report.accent} />
-        </button>
-      ))}
+    <div>
+      <h3 className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+        Report Activity
+      </h3>
+
+      {error && (
+        <p className="mt-3 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
+      {!error && !cards && (
+        <p className="mt-3 font-ui text-neutral-500">Loading report activity...</p>
+      )}
+
+      {cards && (
+        <div className="mt-3 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((card) => (
+            <button
+              key={card.tab}
+              onClick={() => onNavigate(card.tab)}
+              className="reports-blueprint-card px-[22px] pt-[22px] pb-5 text-left hover:border-accent-500/60"
+            >
+              <p className="font-ui text-base text-reports-ink">{card.label}</p>
+              <p className="font-condensed mt-2.5 text-[36px] leading-none font-bold text-reports-ink">
+                {card.value}
+              </p>
+              <p className="mt-2.5 font-ui text-[13px] text-neutral-600">{card.subtitle}</p>
+              <div className="mt-4 h-1.5 w-full bg-neutral-200">
+                <div
+                  className={`h-full ${card.accent}`}
+                  style={{ width: `${Math.max(6, (card.value / maxValue) * 100)}%` }}
+                />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -229,25 +307,34 @@ function PaymentsDueTab() {
   )
 }
 
-const TABS = ['Overview', 'Payments Due'] as const
-type Tab = (typeof TABS)[number]
+const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
+  'Payments Due': PaymentsDueTab,
+  'Issue Reports': IssueReportsSection,
+  'Client Requests': ClientStatusRequestsSection,
+  'Work Order Completions': WorkOrderCompletionsSection,
+  'Work Order Acceptance': WorkOrderAcceptanceLogSection,
+  'Payslip Issues': PayslipIssueReportsSection,
+}
 
 function ReportsSection() {
   const [activeTab, setActiveTab] = useState<Tab>('Overview')
+  const ActiveTabComponent = activeTab === 'Overview' ? null : TAB_COMPONENTS[activeTab]
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-slate-900">Reports</h2>
+    <div className="bg-reports-bg -m-6 p-6">
+      <h2 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
+        Reports
+      </h2>
 
-      <div className="mt-4 flex gap-2 border-b border-slate-200">
+      <div className="mt-5 flex flex-wrap gap-7 border-b border-reports-hairline">
         {TABS.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium ${
+            className={`font-ui pb-2.5 text-[15px] ${
               activeTab === tab
-                ? 'border-b-2 border-slate-900 text-slate-900'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'border-b-2 border-accent-700 font-semibold text-reports-ink'
+                : 'text-neutral-600 hover:text-neutral-800'
             }`}
           >
             {tab}
@@ -256,7 +343,11 @@ function ReportsSection() {
       </div>
 
       <div className="mt-6">
-        {activeTab === 'Overview' ? <OverviewTab /> : <PaymentsDueTab />}
+        {activeTab === 'Overview' ? (
+          <OverviewTab onNavigate={setActiveTab} />
+        ) : (
+          ActiveTabComponent && <ActiveTabComponent />
+        )}
       </div>
     </div>
   )

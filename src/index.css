@@ -17,3 +17,46 @@
 html {
   scroll-behavior: smooth;
 }
+
+/* Reports page redesign tokens ("Industry" design system) -- Barlow
+   Condensed for headings, Barlow for body/UI, steel-blue accent ramp.
+   Additive, like the brand-navy tokens above: only src/pages/dashboard/
+   staff/ReportsSection.tsx uses these, nothing else in the dashboard is
+   restyled. Accent ramp is a plain monochrome HSL(210, 30%, L) scale
+   built off the one required hex (#5980a6 == 500 step exactly). */
+@theme {
+  --font-condensed: "Barlow Condensed", sans-serif;
+  --font-ui: "Barlow", sans-serif;
+  --color-reports-bg: #f2f2f3;
+  --color-reports-ink: #1d1f20;
+  --color-reports-hairline: #dcdcdd;
+  --color-accent-100: #dee6ed;
+  --color-accent-300: #acbfd2;
+  --color-accent-500: #5980a6;
+  --color-accent-700: #3e5974;
+  --color-accent-900: #243342;
+}
+
+/* Blueprint stat card: transparent fill, square corners, hairline
+   border, plus a small crosshair "registration mark" at each corner --
+   the signature motif, not a generic rounded card. Corners are drawn as
+   4 tiny SVG crosses positioned via multiple background-images so no
+   extra markup/pseudo-elements-per-corner is needed. */
+.reports-blueprint-card {
+  position: relative;
+  background-color: transparent;
+  border: 1px solid var(--color-reports-hairline);
+  border-radius: 0;
+  background-repeat: no-repeat;
+  background-size: 9px 9px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E");
+  background-position:
+    top -4px left -4px,
+    top -4px right -4px,
+    bottom -4px left -4px,
+    bottom -4px right -4px;
+}

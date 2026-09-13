@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { logWorkOrderAcceptance } from '../../../lib/workOrderAcceptanceLog'
 
 type AvailableWorkOrder = {
   work_order_id: number
@@ -110,6 +111,11 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
     setOrders((prev) =>
       prev.filter((o) => o.work_order_id !== order.work_order_id),
     )
+
+    // Best-effort -- the accept itself already succeeded above; a
+    // failure to log it shouldn't block or error out the actual accept.
+    logWorkOrderAcceptance({ workOrderId: order.work_order_id, employeeId })
+
     onAccepted()
   }
 

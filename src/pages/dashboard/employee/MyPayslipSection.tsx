@@ -13,6 +13,7 @@ import {
   type Payslip,
   type PayslipLineItem,
 } from '../../../lib/payslip'
+import ReportPayslipIssueModal from './ReportPayslipIssueModal'
 
 const STATUS_STYLES: Record<string, string> = {
   Paid: 'bg-green-100 text-green-700',
@@ -34,7 +35,11 @@ function formatPeriod(start: string, end: string) {
   return `${format(start)} – ${format(end)}`
 }
 
-function MyPayslipSection() {
+function MyPayslipSection({
+  onIssueReported,
+}: {
+  onIssueReported?: () => void
+}) {
   const { employeeId } = useAuth()
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,6 +50,9 @@ function MyPayslipSection() {
   >({})
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
   const [lineItemsError, setLineItemsError] = useState<string | null>(null)
+  const [reportingPayslip, setReportingPayslip] = useState<Payslip | null>(
+    null,
+  )
 
   useEffect(() => {
     if (employeeId) {
@@ -165,11 +173,34 @@ function MyPayslipSection() {
                     </div>
                   </div>
                 )}
+
+                <button
+                  onClick={() => setReportingPayslip(payslip)}
+                  className="mt-3 text-sm font-medium text-slate-600 underline hover:text-slate-900"
+                >
+                  Report an Issue
+                </button>
               </div>
             )}
           </div>
         )
       })}
+
+      {reportingPayslip && employeeId && (
+        <ReportPayslipIssueModal
+          employeeId={employeeId}
+          payrollId={reportingPayslip.payroll_id}
+          period={formatPeriod(
+            reportingPayslip.payroll_period_start,
+            reportingPayslip.payroll_period_end,
+          )}
+          onClose={() => setReportingPayslip(null)}
+          onReported={() => {
+            setReportingPayslip(null)
+            onIssueReported?.()
+          }}
+        />
+      )}
     </div>
   )
 }

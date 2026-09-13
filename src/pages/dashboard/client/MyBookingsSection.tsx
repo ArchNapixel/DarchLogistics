@@ -20,6 +20,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import ClientStatusRequestModal from './ClientStatusRequestModal'
 
 type Itinerary = {
   itinerary_id: number
@@ -109,12 +110,19 @@ function getConfirmedDeliveryDate(booking: Booking): string | null {
   return dates.reduce((latest, date) => (date > latest ? date : latest))
 }
 
-function MyBookingsSection() {
+function MyBookingsSection({
+  onStatusRequested,
+}: {
+  onStatusRequested?: () => void
+}) {
   const { clientId } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedBookingId, setExpandedBookingId] = useState<number | null>(
+    null,
+  )
+  const [requestingBooking, setRequestingBooking] = useState<Booking | null>(
     null,
   )
 
@@ -294,20 +302,29 @@ function MyBookingsSection() {
               </div>
             </div>
 
-            <button
-              onClick={() =>
-                setExpandedBookingId(isExpanded ? null : booking.booking_id)
-              }
-              className="mt-4 flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
-            >
-              {isExpanded ? 'Hide' : 'View'} itineraries (
-              {booking.itineraries.length})
-              <span
-                className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                onClick={() =>
+                  setExpandedBookingId(isExpanded ? null : booking.booking_id)
+                }
+                className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
               >
-                ▾
-              </span>
-            </button>
+                {isExpanded ? 'Hide' : 'View'} itineraries (
+                {booking.itineraries.length})
+                <span
+                  className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                >
+                  ▾
+                </span>
+              </button>
+
+              <button
+                onClick={() => setRequestingBooking(booking)}
+                className="text-sm font-medium text-slate-600 underline hover:text-slate-900"
+              >
+                Request Status Update
+              </button>
+            </div>
 
             {isExpanded && (
               <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
@@ -361,6 +378,19 @@ function MyBookingsSection() {
           </div>
         )
       })}
+
+      {requestingBooking && clientId && (
+        <ClientStatusRequestModal
+          clientId={clientId}
+          bookingId={requestingBooking.booking_id}
+          route={`${requestingBooking.pickup_place_name} → ${requestingBooking.delivery_place_name}`}
+          onClose={() => setRequestingBooking(null)}
+          onRequested={() => {
+            setRequestingBooking(null)
+            onStatusRequested?.()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -17,6 +17,7 @@ import ClientProfileSection, {
   type ClientProfile,
 } from './client/ClientProfileSection'
 import ClientPaymentsSection from './client/ClientPaymentsSection'
+import MyStatusRequestsSection from './client/MyStatusRequestsSection'
 
 function ClientDashboard() {
   const { username, role, clientId } = useAuth()
@@ -27,6 +28,7 @@ function ClientDashboard() {
   const [submittedMessage, setSubmittedMessage] = useState<string | null>(
     null,
   )
+  const [statusRequestsRefreshKey, setStatusRequestsRefreshKey] = useState(0)
 
   useEffect(() => {
     if (clientId) {
@@ -102,7 +104,11 @@ function ClientDashboard() {
             )}
           </div>
           <div className="mt-4">
-            <MyBookingsSection />
+            <MyBookingsSection
+              onStatusRequested={() =>
+                setStatusRequestsRefreshKey((key) => key + 1)
+              }
+            />
           </div>
         </div>
 
@@ -113,6 +119,15 @@ function ClientDashboard() {
           <div className="mt-4">
             {clientId && <ClientPaymentsSection clientId={clientId} />}
           </div>
+        </div>
+      </div>
+
+      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          My Status Requests
+        </h2>
+        <div className="mt-4">
+          <MyStatusRequestsSection key={statusRequestsRefreshKey} />
         </div>
       </div>
 
