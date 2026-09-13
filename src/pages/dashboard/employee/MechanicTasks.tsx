@@ -4,14 +4,21 @@
 // set it to whatever actually applies, in any order. New work orders
 // get assigned here by accepting them on the Task Board (TaskBoard.tsx)
 // first.
+//
+// Picking "Completed" doesn't update the status directly -- it opens
+// CompleteWorkOrderModal, which requires a description + parts-used
+// breakdown before the work order can actually be marked complete.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import CompleteWorkOrderModal from './CompleteWorkOrderModal'
 
 type WorkOrder = {
   work_order_id: number
   work_order_number: string
-  plate_number: string
+  plate_number: string | null
+  trailer_id: number | null
+  vehicle_label: string
   work_order_status: string
   work_description: string | null
   scheduled_start_date: string | null
@@ -54,7 +61,9 @@ function MechanicTasks() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
+  const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
 
   useEffect(() => {
     if (employeeId) loadOrders(employeeId)
@@ -66,7 +75,7 @@ function MechanicTasks() {
     const { data, error } = await supabase
       .from('work_orders')
       .select(
-        'work_order_id, work_order_number, plate_number, work_order_status, work_description, scheduled_start_date',
+        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, work_description, scheduled_start_date',
       )
       .eq('assigned_mechanic_id', mechanicEmployeeId)
       .not('work_order_status', 'in', '(Completed,Cancelled)')
@@ -78,12 +87,41 @@ function MechanicTasks() {
       return
     }
 
-    setOrders(data)
+    const trailerIds = Array.from(
+      new Set(data.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
+    )
+
+    const { data: trailers, error: trailerError } =
+      trailerIds.length > 0
+        ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
+        : { data: [], error: null }
+
+    if (trailerError) {
+      setError(trailerError.message)
+      setLoading(false)
+      return
+    }
+
+    const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
+
+    setOrders(
+      data.map((order) => ({
+        ...order,
+        vehicle_label: order.plate_number
+          ? `Truck ${order.plate_number}`
+          : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
+      })),
+    )
     setError(null)
     setLoading(false)
   }
 
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
+    if (newStatus === 'Completed') {
+      setCompletingOrder(order)
+      return
+    }
+
     setUpdatingId(order.work_order_id)
     setActionError(null)
 
@@ -99,7 +137,7 @@ function MechanicTasks() {
       return
     }
 
-    if (newStatus === 'Completed' || newStatus === 'Cancelled') {
+    if (newStatus === 'Cancelled') {
       // Matches the load filter (Completed/Cancelled excluded) -- drop
       // it off the list instead of showing a status it'll never leave.
       setOrders((prev) => prev.filter((o) => o.work_order_id !== order.work_order_id))
@@ -112,6 +150,16 @@ function MechanicTasks() {
         ),
       )
     }
+  }
+
+  function handleWorkOrderCompleted() {
+    if (completingOrder) {
+      setSuccessMessage(`${completingOrder.work_order_number} marked complete.`)
+      setOrders((prev) =>
+        prev.filter((o) => o.work_order_id !== completingOrder.work_order_id),
+      )
+    }
+    setCompletingOrder(null)
   }
 
   if (loading) {
@@ -130,6 +178,12 @@ function MechanicTasks() {
         </p>
       )}
 
+      {successMessage && (
+        <p className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+          {successMessage}
+        </p>
+      )}
+
       {orders.length === 0 ? (
         <p className="text-slate-500">Nothing assigned yet.</p>
       ) : (
@@ -141,7 +195,7 @@ function MechanicTasks() {
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
-                  {order.work_order_number} — Truck {order.plate_number}
+                  {order.work_order_number} — {order.vehicle_label}
                 </p>
                 <StatusBadge status={order.work_order_status} />
               </div>
@@ -174,6 +228,16 @@ function MechanicTasks() {
             </div>
           ))}
         </div>
+      )}
+
+      {completingOrder && (
+        <CompleteWorkOrderModal
+          workOrderId={completingOrder.work_order_id}
+          workOrderNumber={completingOrder.work_order_number}
+          plateNumber={completingOrder.plate_number}
+          onClose={() => setCompletingOrder(null)}
+          onCompleted={handleWorkOrderCompleted}
+        />
       )}
     </div>
   )

@@ -14,6 +14,7 @@ import {
 } from '../../../lib/payslip'
 import IssuePayslipModal from './IssuePayslipModal'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
+import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
 
 type PayrollEntry = {
   payroll_id: number
@@ -167,6 +168,10 @@ function PayrollSection() {
             Issue Payslip
           </button>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <CashAdvanceRequestsSection />
       </div>
 
       {actionError && (

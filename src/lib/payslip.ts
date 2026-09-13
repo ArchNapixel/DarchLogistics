@@ -233,12 +233,18 @@ export function allowanceLineItem(settings: PayrollSettings): PayslipLineItem {
 }
 
 // Total cash advances issued minus what's already been deducted across
-// this employee's past payslips -- what's still owed back.
+// this employee's past payslips -- what's still owed back. Only counts
+// 'Approved' rows -- a 'Pending' employee-requested advance hasn't
+// actually been given to them yet, so it must not inflate this balance.
 export async function getOutstandingCashAdvance(
   employeeId: number,
 ): Promise<{ outstanding: number; error: string | null }> {
   const [advancesResult, payslipsResult] = await Promise.all([
-    supabase.from('cash_advances').select('amount').eq('employee_id', employeeId),
+    supabase
+      .from('cash_advances')
+      .select('amount')
+      .eq('employee_id', employeeId)
+      .eq('status', 'Approved'),
     supabase
       .from('payroll_payslips')
       .select('cash_advance_deducted')
