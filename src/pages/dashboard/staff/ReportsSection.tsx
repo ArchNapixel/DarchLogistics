@@ -20,11 +20,13 @@ import { loadPendingStatusRequests } from '../../../lib/clientStatusRequests'
 import { loadPendingPayslipIssues } from '../../../lib/payslipIssueReports'
 import { loadWorkOrderAcceptanceLog } from '../../../lib/workOrderAcceptanceLog'
 import { loadWorkOrderCompletions } from '../../../lib/workOrderCompletions'
+import { loadPendingMaintenanceSchedules } from '../../../lib/maintenanceSchedules'
 import IssueReportsSection from './IssueReportsSection'
 import ClientStatusRequestsSection from './ClientStatusRequestsSection'
 import PayslipIssueReportsSection from './PayslipIssueReportsSection'
 import WorkOrderAcceptanceLogSection from './WorkOrderAcceptanceLogSection'
 import WorkOrderCompletionsSection from './WorkOrderCompletionsSection'
+import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 
 const TABS = [
   'Overview',
@@ -34,6 +36,7 @@ const TABS = [
   'Work Order Completions',
   'Work Order Acceptance',
   'Payslip Issues',
+  'Maintenance Schedules',
 ] as const
 type Tab = (typeof TABS)[number]
 
@@ -62,12 +65,14 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       payslipIssuesResult,
       completionsResult,
       acceptancesResult,
+      maintenanceSchedulesResult,
     ] = await Promise.all([
       supabase.from('issue_reports').select('*', { count: 'exact', head: true }),
       loadPendingStatusRequests(),
       loadPendingPayslipIssues(),
       loadWorkOrderCompletions(),
       loadWorkOrderAcceptanceLog(),
+      loadPendingMaintenanceSchedules(),
     ])
 
     const loadError =
@@ -75,7 +80,8 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       clientRequestsResult.error ??
       payslipIssuesResult.error ??
       completionsResult.error ??
-      acceptancesResult.error
+      acceptancesResult.error ??
+      maintenanceSchedulesResult.error
 
     if (loadError) {
       setError(loadError)
@@ -118,6 +124,13 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         value: acceptancesResult.entries.length,
         subtitle: 'Total acceptance events logged',
         accent: 'bg-accent-500',
+      },
+      {
+        tab: 'Maintenance Schedules',
+        label: 'Maintenance Schedules',
+        value: maintenanceSchedulesResult.schedules.length,
+        subtitle: 'Upcoming, flagged by mechanics',
+        accent: 'bg-accent-300',
       },
     ])
   }
@@ -314,6 +327,7 @@ const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
   'Work Order Completions': WorkOrderCompletionsSection,
   'Work Order Acceptance': WorkOrderAcceptanceLogSection,
   'Payslip Issues': PayslipIssueReportsSection,
+  'Maintenance Schedules': MaintenanceSchedulesSection,
 }
 
 function ReportsSection() {

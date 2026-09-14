@@ -287,7 +287,6 @@ function FleetSection() {
               <tr>
                 <th className="px-4 py-3 font-medium">Plate Number</th>
                 <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Registration</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
@@ -302,9 +301,6 @@ function FleetSection() {
                     {trailer.plate_number || 'N/A'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{trailer.trailer_type}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {trailer.registration_number || 'N/A'}
-                  </td>
                   <td className="px-4 py-3">
                     <FleetStatusBadge status={trailer.current_status} />
                   </td>

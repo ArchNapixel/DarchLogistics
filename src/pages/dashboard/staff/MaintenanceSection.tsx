@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
+import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 
 type WorkOrder = {
   work_order_id: number
@@ -42,7 +43,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-const TABS = ['Active', 'Completed'] as const
+const TABS = ['Active', 'Completed', 'Schedules'] as const
 type Tab = (typeof TABS)[number]
 
 const ACTIVE_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
@@ -162,25 +163,30 @@ function MaintenanceSection() {
 
       {!loading && !error && (
         <>
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className="flex gap-2 border-b border-slate-200">
-                {TABS.map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2 text-sm font-medium ${
-                      activeTab === tab
-                        ? 'border-b-2 border-slate-900 text-slate-900'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+          <div className="mt-6 flex gap-2 border-b border-slate-200">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium ${
+                  activeTab === tab
+                    ? 'border-b-2 border-slate-900 text-slate-900'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-              {filteredOrders.length === 0 ? (
+          {activeTab === 'Schedules' ? (
+            <div className="mt-4">
+              <MaintenanceSchedulesSection />
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                {filteredOrders.length === 0 ? (
                 <p className="mt-4 text-slate-500">
                   No {activeTab.toLowerCase()} work orders.
                 </p>
@@ -257,6 +263,7 @@ function MaintenanceSection() {
               )}
             </div>
           </div>
+          )}
         </>
       )}
 
