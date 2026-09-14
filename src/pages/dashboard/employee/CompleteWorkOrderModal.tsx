@@ -15,8 +15,11 @@
 //   4. Re-check stock (someone else may have used the same part since
 //      this modal opened) and decrement inventory_items for each part
 //   5. Update work_orders.work_order_status to "Completed"
-//   6. If this work order is for a truck (plate_number set): update
-//      truck_profiles.current_odometer / next_service_date / last_service_date
+//   6. Reset the vehicle's fleet status back to "Available" (it was set
+//      to "Under Maintenance" when the work order was created --
+//      CreateWorkOrderModal.tsx). For a truck (plate_number set), also
+//      sync truck_profiles.current_odometer / next_service_date /
+//      last_service_date.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -74,12 +77,14 @@ function CompleteWorkOrderModal({
   workOrderId,
   workOrderNumber,
   plateNumber,
+  trailerId,
   onClose,
   onCompleted,
 }: {
   workOrderId: number
   workOrderNumber: string
   plateNumber: string | null
+  trailerId: number | null
   onClose: () => void
   onCompleted: () => void
 }) {
@@ -466,9 +471,12 @@ function CompleteWorkOrderModal({
       return
     }
 
-    // 6. If this is a truck job, sync odometer / service dates.
-    if (plateNumber && (odometerValue !== null || nextServiceDate)) {
-      const truckUpdates: Record<string, string | number> = {}
+    // 6. Reset the vehicle's fleet status, and for a truck job also sync
+    // odometer / service dates.
+    if (plateNumber) {
+      const truckUpdates: Record<string, string | number> = {
+        current_status: 'Available',
+      }
       if (odometerValue !== null) truckUpdates.current_odometer = odometerValue
       if (nextServiceDate) {
         truckUpdates.next_service_date = nextServiceDate
@@ -483,6 +491,19 @@ function CompleteWorkOrderModal({
       if (truckError) {
         setFormError(
           `Work order was marked Completed, but the truck profile could not be updated (${truckError.message}). This needs manual review.`,
+        )
+        setSubmitting(false)
+        return
+      }
+    } else if (trailerId !== null) {
+      const { error: trailerError } = await supabase
+        .from('trailers')
+        .update({ current_status: 'Available' })
+        .eq('trailer_id', trailerId)
+
+      if (trailerError) {
+        setFormError(
+          `Work order was marked Completed, but the trailer's status could not be updated (${trailerError.message}). This needs manual review.`,
         )
         setSubmitting(false)
         return

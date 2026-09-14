@@ -235,6 +235,7 @@ function MechanicTasks() {
           workOrderId={completingOrder.work_order_id}
           workOrderNumber={completingOrder.work_order_number}
           plateNumber={completingOrder.plate_number}
+          trailerId={completingOrder.trailer_id}
           onClose={() => setCompletingOrder(null)}
           onCompleted={handleWorkOrderCompleted}
         />

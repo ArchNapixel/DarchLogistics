@@ -323,6 +323,31 @@ function DispatchBoardSection() {
     // only use the log failure to show a warning, not to hide the change
     // that actually happened.
     if (newStatus === 'Delivered') {
+      // Trip's done -- free up whatever truck/trailer were on it. Best
+      // effort: the itinerary status change itself already went through,
+      // so a failure here isn't worth blocking on or alarming the user
+      // over (matches the "not blocking" tone of the log-failure warning
+      // just below).
+      const finishedRow = rows.find((r) => r.itinerary_id === itineraryId)
+      if (finishedRow?.plate_number) {
+        supabase
+          .from('truck_profiles')
+          .update({ current_status: 'Available' })
+          .eq('plate_number', finishedRow.plate_number)
+          .then(({ error }) => {
+            if (error) console.error('Failed to free up truck status:', error)
+          })
+      }
+      if (finishedRow?.trailer_id) {
+        supabase
+          .from('trailers')
+          .update({ current_status: 'Available' })
+          .eq('trailer_id', finishedRow.trailer_id)
+          .then(({ error }) => {
+            if (error) console.error('Failed to free up trailer status:', error)
+          })
+      }
+
       // Matches the load filter (Delivered/Cancelled excluded) -- drop it
       // off the board instead of showing a status it'll never leave.
       setRows((prev) => prev.filter((r) => r.itinerary_id !== itineraryId))
@@ -434,8 +459,14 @@ function DispatchBoardSection() {
   // Truck/trailer assignment: a plain overwrite on the itinerary row --
   // unlike driver assignment, no history is kept of previous
   // assignments (itinerary_crews tracks driver history; there's no
-  // equivalent table for trucks/trailers).
-  async function handleTruckChange(itineraryId: number, plateNumber: string | null) {
+  // equivalent table for trucks/trailers). The fleet status sync below
+  // (new truck -> "In Transit", the one it replaced -> "Available") is
+  // best effort, same reasoning as the Delivered handling above.
+  async function handleTruckChange(
+    itineraryId: number,
+    previousPlateNumber: string | null,
+    plateNumber: string | null,
+  ) {
     setSavingId(itineraryId)
     setError(null)
 
@@ -451,6 +482,25 @@ function DispatchBoardSection() {
       return
     }
 
+    if (plateNumber) {
+      supabase
+        .from('truck_profiles')
+        .update({ current_status: 'In Transit' })
+        .eq('plate_number', plateNumber)
+        .then(({ error }) => {
+          if (error) console.error('Failed to update truck status:', error)
+        })
+    }
+    if (previousPlateNumber && previousPlateNumber !== plateNumber) {
+      supabase
+        .from('truck_profiles')
+        .update({ current_status: 'Available' })
+        .eq('plate_number', previousPlateNumber)
+        .then(({ error }) => {
+          if (error) console.error('Failed to free up truck status:', error)
+        })
+    }
+
     setRows((prev) =>
       prev.map((r) =>
         r.itinerary_id === itineraryId ? { ...r, plate_number: plateNumber } : r,
@@ -458,7 +508,11 @@ function DispatchBoardSection() {
     )
   }
 
-  async function handleTrailerChange(itineraryId: number, trailerId: number | null) {
+  async function handleTrailerChange(
+    itineraryId: number,
+    previousTrailerId: number | null,
+    trailerId: number | null,
+  ) {
     setSavingId(itineraryId)
     setError(null)
 
@@ -472,6 +526,25 @@ function DispatchBoardSection() {
     if (updateError) {
       setError(updateError.message)
       return
+    }
+
+    if (trailerId !== null) {
+      supabase
+        .from('trailers')
+        .update({ current_status: 'In Transit' })
+        .eq('trailer_id', trailerId)
+        .then(({ error }) => {
+          if (error) console.error('Failed to update trailer status:', error)
+        })
+    }
+    if (previousTrailerId !== null && previousTrailerId !== trailerId) {
+      supabase
+        .from('trailers')
+        .update({ current_status: 'Available' })
+        .eq('trailer_id', previousTrailerId)
+        .then(({ error }) => {
+          if (error) console.error('Failed to free up trailer status:', error)
+        })
     }
 
     setRows((prev) =>
@@ -602,6 +675,7 @@ function DispatchBoardSection() {
                       onChange={(e) =>
                         handleTruckChange(
                           row.itinerary_id,
+                          row.plate_number,
                           e.target.value || null,
                         )
                       }
@@ -622,6 +696,7 @@ function DispatchBoardSection() {
                       onChange={(e) =>
                         handleTrailerChange(
                           row.itinerary_id,
+                          row.trailer_id,
                           e.target.value ? Number(e.target.value) : null,
                         )
                       }

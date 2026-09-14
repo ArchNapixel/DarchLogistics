@@ -349,7 +349,10 @@ function FleetSection() {
         <CreateWorkOrderModal
           vehicle={workOrderVehicle}
           onClose={() => setWorkOrderVehicle(null)}
-          onCreated={() => setWorkOrderVehicle(null)}
+          onCreated={() => {
+            setWorkOrderVehicle(null)
+            loadFleet()
+          }}
         />
       )}
 

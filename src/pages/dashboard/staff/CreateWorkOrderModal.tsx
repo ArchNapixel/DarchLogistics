@@ -148,10 +148,31 @@ function CreateWorkOrderModal({
       scheduled_start_date: scheduledDate || null,
     })
 
+    if (insertError) {
+      setSubmitting(false)
+      setError(insertError.message)
+      return
+    }
+
+    // Reflect the open work order on the Fleet page -- reverted back to
+    // "Available" when the mechanic marks this work order Completed
+    // (CompleteWorkOrderModal.tsx).
+    const { error: statusError } = selectedVehicle.plateNumber
+      ? await supabase
+          .from('truck_profiles')
+          .update({ current_status: 'Under Maintenance' })
+          .eq('plate_number', selectedVehicle.plateNumber)
+      : await supabase
+          .from('trailers')
+          .update({ current_status: 'Under Maintenance' })
+          .eq('trailer_id', selectedVehicle.trailerId)
+
     setSubmitting(false)
 
-    if (insertError) {
-      setError(insertError.message)
+    if (statusError) {
+      setError(
+        `Work order ${workOrderNumber} was created, but the vehicle's status could not be updated to "Under Maintenance" (${statusError.message}). This needs manual review.`,
+      )
       return
     }
 
