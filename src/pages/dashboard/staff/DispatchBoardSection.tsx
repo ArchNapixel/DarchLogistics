@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { isAdmin } from '../../../lib/roles'
+import { syncBookingStatusIfFullyDelivered } from '../../../lib/bookingStatus'
 
 type DispatchRow = {
   itinerary_id: number
@@ -347,6 +348,12 @@ function DispatchBoardSection() {
             if (error) console.error('Failed to free up trailer status:', error)
           })
       }
+
+      // If this was the last itinerary on its booking still not
+      // Delivered, flip the booking itself to Delivered too.
+      syncBookingStatusIfFullyDelivered(itineraryId).then(({ error }) => {
+        if (error) console.error('Failed to sync booking status:', error)
+      })
 
       // Matches the load filter (Delivered/Cancelled excluded) -- drop it
       // off the board instead of showing a status it'll never leave.

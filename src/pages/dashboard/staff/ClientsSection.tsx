@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
+import ClientBookingHistoryModal from './ClientBookingHistoryModal'
 
 type Client = {
   client_id: number
@@ -24,6 +25,7 @@ function ClientsSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [viewingClient, setViewingClient] = useState<Client | null>(null)
 
   useEffect(() => {
     loadClients()
@@ -106,7 +108,12 @@ function ClientsSection() {
                     className="border-b border-slate-100 last:border-0"
                   >
                     <td className="px-4 py-3 text-slate-900">
-                      {client.client_name}
+                      <button
+                        onClick={() => setViewingClient(client)}
+                        className="font-medium text-slate-900 underline decoration-slate-300 hover:text-slate-700"
+                      >
+                        {client.client_name}
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {client.email ?? '—'}
@@ -148,6 +155,13 @@ function ClientsSection() {
           client={selectedClient}
           onClose={() => setSelectedClient(null)}
           onCreated={handleAccountCreated}
+        />
+      )}
+
+      {viewingClient && (
+        <ClientBookingHistoryModal
+          client={viewingClient}
+          onClose={() => setViewingClient(null)}
         />
       )}
     </div>

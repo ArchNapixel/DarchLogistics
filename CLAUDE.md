@@ -162,6 +162,23 @@ before creating it.
     `payslip.ts` was fixed to filter `status = 'Approved'` — a
     `'Pending'` request hasn't actually been given to the employee yet,
     so it must not inflate what gets deducted from their next payslip.
+  - "View Cash Advance Ledger" — effectively covered, not a gap, per
+    team decision. No dedicated all-employees ledger page exists, and
+    none is needed: outstanding balance per employee is available via
+    `IssuePayslipModal` (calls `getOutstandingCashAdvance()`), the
+    "Pending Cash Advance Requests" panel handles approve/reject, and
+    each employee's payslip table shows historical cash advance
+    deductions per pay period. Note for later: `getOutstandingCashAdvance()`
+    is a pooled running balance (`sum of Approved cash_advances.amount`
+    minus `sum of payroll_payslips.cash_advance_deducted`, both summed
+    across the employee's whole history) — it does NOT track which
+    specific `cash_advances` row a given deduction paid off, since
+    `payslip_line_items` has no reference back to `cash_advances` at
+    all. That's fine for the aggregate balance this feature needs, but
+    if a future feature ever needs *per-advance* settlement status
+    (e.g. "is this specific ₱500 advance paid off"), that can't be
+    read from existing data and would need new tracking (FIFO
+    attribution would be the natural choice).
 - Financial Records / Payments Due — `lib/paymentDue.ts` calculates what
   each client owes from delivered trips, payment terms, and delivery
   receipt dates. FinancialSection (`/dashboard/financial-records`) is

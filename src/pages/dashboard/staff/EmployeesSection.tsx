@@ -7,6 +7,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
+import EmployeeDetailModal from './EmployeeDetailModal'
+
+// Only these positions have trips/work orders to show a detail view
+// for -- Admin/Dispatcher don't.
+const DETAIL_VIEW_POSITIONS = new Set(['Driver', 'Mechanic', 'Helper'])
 
 type Employee = {
   employee_id: number
@@ -52,6 +57,7 @@ function EmployeesSection() {
     null,
   )
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [positionFilter, setPositionFilter] = useState('')
@@ -274,7 +280,16 @@ function EmployeesSection() {
                     className="border-b border-slate-100 last:border-0"
                   >
                     <td className="px-4 py-3 text-slate-900">
-                      {employee.name}
+                      {DETAIL_VIEW_POSITIONS.has(employee.position) ? (
+                        <button
+                          onClick={() => setDetailEmployee(employee)}
+                          className="font-medium text-slate-900 underline decoration-slate-300 hover:text-slate-700"
+                        >
+                          {employee.name}
+                        </button>
+                      ) : (
+                        employee.name
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {employee.position}
@@ -349,6 +364,17 @@ function EmployeesSection() {
             setLinkedEmployeeIds((prev) => new Set(prev).add(employeeId))
             setAccountEmployee(null)
           }}
+        />
+      )}
+
+      {detailEmployee && (
+        <EmployeeDetailModal
+          employee={{
+            employee_id: detailEmployee.employee_id,
+            name: detailEmployee.name,
+            position: detailEmployee.position,
+          }}
+          onClose={() => setDetailEmployee(null)}
         />
       )}
     </div>
