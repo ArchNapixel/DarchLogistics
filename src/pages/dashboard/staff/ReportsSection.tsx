@@ -23,6 +23,7 @@ import { loadWorkOrderCompletions } from '../../../lib/workOrderCompletions'
 import { loadPendingMaintenanceSchedules } from '../../../lib/maintenanceSchedules'
 import { loadAllReviews, averageRating } from '../../../lib/clientReviews'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
+import { loadPendingRelogRequests } from '../../../lib/statusRelogRequests'
 import IssueReportsSection from './IssueReportsSection'
 import ClientStatusRequestsSection from './ClientStatusRequestsSection'
 import PayslipIssueReportsSection from './PayslipIssueReportsSection'
@@ -31,6 +32,9 @@ import WorkOrderCompletionsSection from './WorkOrderCompletionsSection'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 import ClientReviewsSection from './ClientReviewsSection'
 import ClientDelinquencySection from './ClientDelinquencySection'
+import StatusRelogRequestsSection from './StatusRelogRequestsSection'
+import DispatchStatusLogSection from './DispatchStatusLogSection'
+import WorkOrderStatusLogSection from './WorkOrderStatusLogSection'
 
 const TABS = [
   'Overview',
@@ -43,6 +47,9 @@ const TABS = [
   'Maintenance Schedules',
   'Client Reviews',
   'Client Standing',
+  'Status Relog Requests',
+  'Dispatch Status Log',
+  'Work Order Status Log',
 ] as const
 type Tab = (typeof TABS)[number]
 
@@ -74,6 +81,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       maintenanceSchedulesResult,
       reviewsResult,
       delinquentResult,
+      relogRequestsResult,
     ] = await Promise.all([
       supabase.from('issue_reports').select('*', { count: 'exact', head: true }),
       loadPendingStatusRequests(),
@@ -83,6 +91,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       loadPendingMaintenanceSchedules(),
       loadAllReviews(),
       loadCurrentlyDelinquentClients(),
+      loadPendingRelogRequests(),
     ])
 
     const loadError =
@@ -93,7 +102,8 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       acceptancesResult.error ??
       maintenanceSchedulesResult.error ??
       reviewsResult.error ??
-      delinquentResult.error
+      delinquentResult.error ??
+      relogRequestsResult.error
 
     if (loadError) {
       setError(loadError)
@@ -160,6 +170,13 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         value: delinquentResult.clients.length,
         subtitle: 'Currently flagged',
         accent: 'bg-accent-900',
+      },
+      {
+        tab: 'Status Relog Requests',
+        label: 'Status Relog Requests',
+        value: relogRequestsResult.requests.length,
+        subtitle: 'Awaiting admin approval',
+        accent: 'bg-accent-500',
       },
     ])
   }
@@ -359,6 +376,9 @@ const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
   'Maintenance Schedules': MaintenanceSchedulesSection,
   'Client Reviews': ClientReviewsSection,
   'Client Standing': ClientDelinquencySection,
+  'Status Relog Requests': StatusRelogRequestsSection,
+  'Dispatch Status Log': DispatchStatusLogSection,
+  'Work Order Status Log': WorkOrderStatusLogSection,
 }
 
 function ReportsSection() {

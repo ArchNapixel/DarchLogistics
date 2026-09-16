@@ -1,11 +1,15 @@
 // DispatchBoardSection: board of active itineraries (not yet Delivered or
 // Cancelled) for staff to advance status and assign a driver.
 //
-// Status editing is Admin-only (canEditStatus) -- Dispatcher sees the
-// same badge but no dropdown, since status is meant to be advanced by
-// the driver from their own app as the trip actually progresses.
-// Dispatcher can still assign/reassign driver, truck, and trailer;
-// that's the actual dispatching work.
+// Status editing: Admin gets the full free-choice dropdown (any status,
+// any direction) and can go backward directly. Dispatcher's dropdown
+// only ever offers the current status plus whatever comes after it in
+// STATUS_FLOW -- going backward (e.g. Delivered -> InTransit) isn't a
+// dropdown option at all for them. Instead Dispatcher gets a "Request
+// Correction" button that submits a status_relog_requests row (see
+// statusRelogRequests.ts / RequestStatusRelogModal.tsx) for Admin to
+// approve or reject from Reports -> Status Relog Requests -- Admin
+// approving it is what actually applies the change.
 //
 // Status changes write directly to itineraries.itinerary_status and log
 // to dispatch_status_logs (same pattern as the Driver's own
@@ -19,8 +23,9 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { isAdmin } from '../../../lib/roles'
+import { isAdmin, isDispatcher } from '../../../lib/roles'
 import { syncBookingStatusIfFullyDelivered } from '../../../lib/bookingStatus'
+import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
 
 type DispatchRow = {
   itinerary_id: number
@@ -81,7 +86,9 @@ function DispatchStatusBadge({ status }: { status: string }) {
 
 function DispatchBoardSection() {
   const { employeeId, role } = useAuth()
-  const canEditStatus = isAdmin(role)
+  const canFreelyEditStatus = isAdmin(role)
+  const canEditStatus = isAdmin(role) || isDispatcher(role)
+  const [relogRequestRow, setRelogRequestRow] = useState<DispatchRow | null>(null)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [helpers, setHelpers] = useState<DriverOption[]>([])
@@ -622,12 +629,24 @@ function DispatchBoardSection() {
                           }
                           className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
                         >
-                          {STATUS_FLOW.map((status) => (
+                          {(canFreelyEditStatus
+                            ? STATUS_FLOW
+                            : STATUS_FLOW.slice(STATUS_FLOW.indexOf(row.status))
+                          ).map((status) => (
                             <option key={status} value={status}>
                               {STATUS_LABELS[status]}
                             </option>
                           ))}
                         </select>
+                      )}
+                      {canEditStatus && !canFreelyEditStatus && (
+                        <button
+                          type="button"
+                          onClick={() => setRelogRequestRow(row)}
+                          className="text-left text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                        >
+                          Request correction
+                        </button>
                       )}
                     </div>
                   </td>
@@ -722,6 +741,18 @@ function DispatchBoardSection() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {relogRequestRow && employeeId && (
+        <RequestStatusRelogModal
+          targetType="itinerary"
+          itineraryId={relogRequestRow.itinerary_id}
+          currentStatus={relogRequestRow.status}
+          statusOptions={STATUS_FLOW.filter((status) => status !== relogRequestRow.status)}
+          employeeId={employeeId}
+          onClose={() => setRelogRequestRow(null)}
+          onRequested={() => setRelogRequestRow(null)}
+        />
       )}
     </div>
   )

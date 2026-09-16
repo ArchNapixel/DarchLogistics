@@ -8,10 +8,20 @@
 // Picking "Completed" doesn't update the status directly -- it opens
 // CompleteWorkOrderModal, which requires a description + parts-used
 // breakdown before the work order can actually be marked complete.
+//
+// Completed work orders drop off the main list above (the load query
+// excludes them), so a "Recently Completed" list below it is the only
+// place a mechanic can flag one they finished by mistake -- "Request
+// Correction" submits a status_relog_requests row for Admin to approve
+// (see statusRelogRequests.ts) rather than reopening it directly.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
+import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
+
+const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
 type WorkOrder = {
   work_order_id: number
@@ -58,15 +68,20 @@ function StatusBadge({ status }: { status: string }) {
 function MechanicTasks() {
   const { employeeId } = useAuth()
   const [orders, setOrders] = useState<WorkOrder[]>([])
+  const [recentlyCompleted, setRecentlyCompleted] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
+  const [reopeningOrder, setReopeningOrder] = useState<WorkOrder | null>(null)
 
   useEffect(() => {
-    if (employeeId) loadOrders(employeeId)
+    if (employeeId) {
+      loadOrders(employeeId)
+      loadRecentlyCompleted(employeeId)
+    }
   }, [employeeId])
 
   async function loadOrders(mechanicEmployeeId: number) {
@@ -116,6 +131,44 @@ function MechanicTasks() {
     setLoading(false)
   }
 
+  // Last 10 the mechanic finished, most recent first (by work_order_id,
+  // the closest proxy to completion order without an extra join to
+  // work_order_completions.completed_at) -- just enough to catch a
+  // "wait, I marked the wrong one" a little after the fact.
+  async function loadRecentlyCompleted(mechanicEmployeeId: number) {
+    const { data, error: loadError } = await supabase
+      .from('work_orders')
+      .select(
+        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, work_description, scheduled_start_date',
+      )
+      .eq('assigned_mechanic_id', mechanicEmployeeId)
+      .eq('work_order_status', 'Completed')
+      .order('work_order_id', { ascending: false })
+      .limit(10)
+
+    if (loadError || !data) return
+
+    const trailerIds = Array.from(
+      new Set(data.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
+    )
+
+    const { data: trailers } =
+      trailerIds.length > 0
+        ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
+        : { data: [] }
+
+    const trailerPlateById = new Map((trailers ?? []).map((t) => [t.trailer_id, t.plate_number]))
+
+    setRecentlyCompleted(
+      data.map((order) => ({
+        ...order,
+        vehicle_label: order.plate_number
+          ? `Truck ${order.plate_number}`
+          : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
+      })),
+    )
+  }
+
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
     if (newStatus === 'Completed') {
       setCompletingOrder(order)
@@ -135,6 +188,17 @@ function MechanicTasks() {
     if (updateError) {
       setActionError(updateError.message)
       return
+    }
+
+    // Best effort -- the status change above already succeeded even if
+    // this fails, same reasoning as dispatch_status_logs elsewhere.
+    if (employeeId) {
+      logWorkOrderStatusChange({
+        workOrderId: order.work_order_id,
+        previousStatus: order.work_order_status,
+        newStatus,
+        changedByEmployeeId: employeeId,
+      })
     }
 
     if (newStatus === 'Cancelled') {
@@ -230,14 +294,54 @@ function MechanicTasks() {
         </div>
       )}
 
+      {recentlyCompleted.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-slate-700">Recently Completed</h3>
+          <div className="mt-3 grid gap-3">
+            {recentlyCompleted.map((order) => (
+              <div
+                key={order.work_order_id}
+                className="flex items-center justify-between rounded-xl border border-slate-200 p-4"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {order.work_order_number} — {order.vehicle_label}
+                  </p>
+                  <StatusBadge status={order.work_order_status} />
+                </div>
+                <button
+                  onClick={() => setReopeningOrder(order)}
+                  className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                >
+                  Request correction
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {completingOrder && (
         <CompleteWorkOrderModal
           workOrderId={completingOrder.work_order_id}
           workOrderNumber={completingOrder.work_order_number}
           plateNumber={completingOrder.plate_number}
           trailerId={completingOrder.trailer_id}
+          previousStatus={completingOrder.work_order_status}
           onClose={() => setCompletingOrder(null)}
           onCompleted={handleWorkOrderCompleted}
+        />
+      )}
+
+      {reopeningOrder && employeeId && (
+        <RequestStatusRelogModal
+          targetType="work_order"
+          workOrderId={reopeningOrder.work_order_id}
+          currentStatus={reopeningOrder.work_order_status}
+          statusOptions={REOPEN_STATUS_OPTIONS}
+          employeeId={employeeId}
+          onClose={() => setReopeningOrder(null)}
+          onRequested={() => setReopeningOrder(null)}
         />
       )}
     </div>

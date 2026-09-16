@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
 import { ITEM_TYPES } from '../staff/AddInventoryItemModal'
 
 const fieldClasses =
@@ -78,6 +79,7 @@ function CompleteWorkOrderModal({
   workOrderNumber,
   plateNumber,
   trailerId,
+  previousStatus,
   onClose,
   onCompleted,
 }: {
@@ -85,6 +87,7 @@ function CompleteWorkOrderModal({
   workOrderNumber: string
   plateNumber: string | null
   trailerId: number | null
+  previousStatus: string
   onClose: () => void
   onCompleted: () => void
 }) {
@@ -469,6 +472,17 @@ function CompleteWorkOrderModal({
       )
       setSubmitting(false)
       return
+    }
+
+    // Best effort -- the status change above already succeeded even if
+    // this fails.
+    if (employeeId) {
+      logWorkOrderStatusChange({
+        workOrderId,
+        previousStatus,
+        newStatus: 'Completed',
+        changedByEmployeeId: employeeId,
+      })
     }
 
     // 6. Reset the vehicle's fleet status, and for a truck job also sync
