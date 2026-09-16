@@ -1,5 +1,9 @@
-// DispatchBoardSection: board of active itineraries (not yet Delivered or
-// Cancelled) for staff to advance status and assign a driver.
+// DispatchBoardSection: board of itineraries (everything but Cancelled)
+// for staff to advance status and assign a driver, split into 3 tables --
+// Needs Assignment (missing driver, truck, or trailer), Assigned (fully
+// crewed, just not delivered yet), and Completed (status Delivered --
+// previously excluded from this page entirely, now shown read-into
+// instead of vanishing). Each table is newest trip date first.
 //
 // Status editing: Admin gets the full free-choice dropdown (any status,
 // any direction) and can go backward directly. Dispatcher's dropdown
@@ -26,6 +30,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { isAdmin, isDispatcher } from '../../../lib/roles'
 import { syncBookingStatusIfFullyDelivered } from '../../../lib/bookingStatus'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
+import ItineraryLogModal from './ItineraryLogModal'
 
 type DispatchRow = {
   itinerary_id: number
@@ -84,11 +89,205 @@ function DispatchStatusBadge({ status }: { status: string }) {
   )
 }
 
+// Shared table renderer for all 3 groups below -- same columns/handlers
+// regardless of which bucket a row is in.
+function DispatchTable({
+  rows,
+  drivers,
+  helpers,
+  trucks,
+  trailers,
+  canEditStatus,
+  canFreelyEditStatus,
+  savingId,
+  onStatusChange,
+  onRequestCorrection,
+  onCrewChange,
+  onTruckChange,
+  onTrailerChange,
+  onViewLogs,
+}: {
+  rows: DispatchRow[]
+  drivers: DriverOption[]
+  helpers: DriverOption[]
+  trucks: TruckOption[]
+  trailers: TrailerOption[]
+  canEditStatus: boolean
+  canFreelyEditStatus: boolean
+  savingId: number | null
+  onStatusChange: (itineraryId: number, previousStatus: string, newStatus: string) => void
+  onRequestCorrection: (row: DispatchRow) => void
+  onCrewChange: (
+    itineraryId: number,
+    crewRole: 'Driver' | 'Helper',
+    previousEmployeeId: number | null,
+    newEmployeeId: number | null,
+  ) => void
+  onTruckChange: (itineraryId: number, previousPlateNumber: string | null, plateNumber: string | null) => void
+  onTrailerChange: (itineraryId: number, previousTrailerId: number | null, trailerId: number | null) => void
+  onViewLogs: (itineraryId: number) => void
+}) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm">
+        <thead className="border-b border-slate-200 text-slate-500">
+          <tr>
+            <th className="px-4 py-3 font-medium">Booking</th>
+            <th className="px-4 py-3 font-medium">Origin → Destination</th>
+            <th className="px-4 py-3 font-medium">Trip Date</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Driver</th>
+            <th className="px-4 py-3 font-medium">Helper</th>
+            <th className="px-4 py-3 font-medium">Truck</th>
+            <th className="px-4 py-3 font-medium">Trailer</th>
+            <th className="px-4 py-3 font-medium">Logs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.itinerary_id} className="border-b border-slate-100 last:border-0">
+              <td className="px-4 py-3 text-slate-900">#{row.booking_id}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {row.pickup_location} → {row.delivery_location}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {row.trip_date_from}
+                {row.trip_date_to ? ` – ${row.trip_date_to}` : ''}
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-col gap-1.5">
+                  <DispatchStatusBadge status={row.status} />
+                  {canEditStatus && (
+                    <select
+                      value={row.status}
+                      disabled={savingId === row.itinerary_id}
+                      onChange={(e) => onStatusChange(row.itinerary_id, row.status, e.target.value)}
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                    >
+                      {(canFreelyEditStatus
+                        ? STATUS_FLOW
+                        : STATUS_FLOW.slice(STATUS_FLOW.indexOf(row.status))
+                      ).map((status) => (
+                        <option key={status} value={status}>
+                          {STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {canEditStatus && !canFreelyEditStatus && (
+                    <button
+                      type="button"
+                      onClick={() => onRequestCorrection(row)}
+                      className="text-left text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                    >
+                      Request correction
+                    </button>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <select
+                  value={row.assigned_employee_id ?? ''}
+                  disabled={savingId === row.itinerary_id}
+                  onChange={(e) =>
+                    onCrewChange(
+                      row.itinerary_id,
+                      'Driver',
+                      row.assigned_employee_id,
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                >
+                  <option value="">Unassigned</option>
+                  {drivers.map((driver) => (
+                    <option key={driver.employee_id} value={driver.employee_id}>
+                      {driver.full_name}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="px-4 py-3">
+                <select
+                  value={row.assigned_helper_employee_id ?? ''}
+                  disabled={savingId === row.itinerary_id}
+                  onChange={(e) =>
+                    onCrewChange(
+                      row.itinerary_id,
+                      'Helper',
+                      row.assigned_helper_employee_id,
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                >
+                  <option value="">Unassigned</option>
+                  {helpers.map((helper) => (
+                    <option key={helper.employee_id} value={helper.employee_id}>
+                      {helper.full_name}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="px-4 py-3">
+                <select
+                  value={row.plate_number ?? ''}
+                  disabled={savingId === row.itinerary_id}
+                  onChange={(e) => onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                >
+                  <option value="">Unassigned</option>
+                  {trucks.map((truck) => (
+                    <option key={truck.plate_number} value={truck.plate_number}>
+                      {truck.plate_number}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="px-4 py-3">
+                <select
+                  value={row.trailer_id ?? ''}
+                  disabled={savingId === row.itinerary_id}
+                  onChange={(e) =>
+                    onTrailerChange(
+                      row.itinerary_id,
+                      row.trailer_id,
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                >
+                  <option value="">Unassigned</option>
+                  {trailers.map((trailer) => (
+                    <option key={trailer.trailer_id} value={trailer.trailer_id}>
+                      {trailer.plate_number ?? `#${trailer.trailer_id}`}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => onViewLogs(row.itinerary_id)}
+                  className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                >
+                  Logs
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function DispatchBoardSection() {
   const { employeeId, role } = useAuth()
   const canFreelyEditStatus = isAdmin(role)
   const canEditStatus = isAdmin(role) || isDispatcher(role)
   const [relogRequestRow, setRelogRequestRow] = useState<DispatchRow | null>(null)
+  const [logsItineraryId, setLogsItineraryId] = useState<number | null>(null)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [helpers, setHelpers] = useState<DriverOption[]>([])
@@ -105,14 +304,19 @@ function DispatchBoardSection() {
   async function loadDispatchBoard() {
     setLoading(true)
 
-    // 1. Active itineraries -- anything not finished or cancelled yet.
+    // 1. Every itinerary except Cancelled ones -- Delivered trips used to
+    // be excluded here too and just vanished off the board; they're now
+    // shown in their own "Completed" table below instead. Newest trip
+    // date first (most recently added trips tend to be scheduled
+    // furthest out, so this is what actually surfaces new work instead
+    // of burying it at the bottom of a long list).
     const { data: itineraryRows, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
         'itinerary_id, booking_id, trip_date_from, trip_date_to, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
       )
-      .not('itinerary_status', 'in', '(Delivered,Cancelled)')
-      .order('trip_date_from', { ascending: true })
+      .neq('itinerary_status', 'Cancelled')
+      .order('trip_date_from', { ascending: false })
 
     if (itineraryError) {
       setError(itineraryError.message)
@@ -361,17 +565,15 @@ function DispatchBoardSection() {
       syncBookingStatusIfFullyDelivered(itineraryId).then(({ error }) => {
         if (error) console.error('Failed to sync booking status:', error)
       })
-
-      // Matches the load filter (Delivered/Cancelled excluded) -- drop it
-      // off the board instead of showing a status it'll never leave.
-      setRows((prev) => prev.filter((r) => r.itinerary_id !== itineraryId))
-    } else {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
-        ),
-      )
     }
+
+    // Delivered trips stay in `rows` and move into the Completed table
+    // (grouped at render time) instead of disappearing.
+    setRows((prev) =>
+      prev.map((r) =>
+        r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
+      ),
+    )
 
     if (logError) {
       setError(
@@ -568,6 +770,29 @@ function DispatchBoardSection() {
     )
   }
 
+  const activeRows = rows.filter((r) => r.status !== 'Delivered')
+  const completedRows = rows.filter((r) => r.status === 'Delivered')
+  const hasFullCrew = (r: DispatchRow) =>
+    r.assigned_employee_id !== null && r.plate_number !== null && r.trailer_id !== null
+  const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
+  const assignedRows = activeRows.filter(hasFullCrew)
+
+  const tableProps = {
+    drivers,
+    helpers,
+    trucks,
+    trailers,
+    canEditStatus,
+    canFreelyEditStatus,
+    savingId,
+    onStatusChange: handleStatusChange,
+    onRequestCorrection: setRelogRequestRow,
+    onCrewChange: handleCrewChange,
+    onTruckChange: handleTruckChange,
+    onTrailerChange: handleTrailerChange,
+    onViewLogs: setLogsItineraryId,
+  }
+
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Dispatch Board</h2>
@@ -581,166 +806,52 @@ function DispatchBoardSection() {
       {loading ? (
         <p className="mt-4 text-slate-500">Loading dispatch board...</p>
       ) : rows.length === 0 ? (
-        <p className="mt-4 text-slate-500">No active trips right now.</p>
+        <p className="mt-4 text-slate-500">No trips right now.</p>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Booking</th>
-                <th className="px-4 py-3 font-medium">Origin → Destination</th>
-                <th className="px-4 py-3 font-medium">Trip Date</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Driver</th>
-                <th className="px-4 py-3 font-medium">Helper</th>
-                <th className="px-4 py-3 font-medium">Truck</th>
-                <th className="px-4 py-3 font-medium">Trailer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.itinerary_id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 text-slate-900">
-                    #{row.booking_id}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.pickup_location} → {row.delivery_location}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.trip_date_from}
-                    {row.trip_date_to ? ` – ${row.trip_date_to}` : ''}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1.5">
-                      <DispatchStatusBadge status={row.status} />
-                      {canEditStatus && (
-                        <select
-                          value={row.status}
-                          disabled={savingId === row.itinerary_id}
-                          onChange={(e) =>
-                            handleStatusChange(
-                              row.itinerary_id,
-                              row.status,
-                              e.target.value,
-                            )
-                          }
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
-                        >
-                          {(canFreelyEditStatus
-                            ? STATUS_FLOW
-                            : STATUS_FLOW.slice(STATUS_FLOW.indexOf(row.status))
-                          ).map((status) => (
-                            <option key={status} value={status}>
-                              {STATUS_LABELS[status]}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      {canEditStatus && !canFreelyEditStatus && (
-                        <button
-                          type="button"
-                          onClick={() => setRelogRequestRow(row)}
-                          className="text-left text-xs font-medium text-slate-500 underline hover:text-slate-700"
-                        >
-                          Request correction
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={row.assigned_employee_id ?? ''}
-                      disabled={savingId === row.itinerary_id}
-                      onChange={(e) =>
-                        handleCrewChange(
-                          row.itinerary_id,
-                          'Driver',
-                          row.assigned_employee_id,
-                          e.target.value ? Number(e.target.value) : null,
-                        )
-                      }
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {drivers.map((driver) => (
-                        <option key={driver.employee_id} value={driver.employee_id}>
-                          {driver.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={row.assigned_helper_employee_id ?? ''}
-                      disabled={savingId === row.itinerary_id}
-                      onChange={(e) =>
-                        handleCrewChange(
-                          row.itinerary_id,
-                          'Helper',
-                          row.assigned_helper_employee_id,
-                          e.target.value ? Number(e.target.value) : null,
-                        )
-                      }
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {helpers.map((helper) => (
-                        <option key={helper.employee_id} value={helper.employee_id}>
-                          {helper.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={row.plate_number ?? ''}
-                      disabled={savingId === row.itinerary_id}
-                      onChange={(e) =>
-                        handleTruckChange(
-                          row.itinerary_id,
-                          row.plate_number,
-                          e.target.value || null,
-                        )
-                      }
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {trucks.map((truck) => (
-                        <option key={truck.plate_number} value={truck.plate_number}>
-                          {truck.plate_number}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={row.trailer_id ?? ''}
-                      disabled={savingId === row.itinerary_id}
-                      onChange={(e) =>
-                        handleTrailerChange(
-                          row.itinerary_id,
-                          row.trailer_id,
-                          e.target.value ? Number(e.target.value) : null,
-                        )
-                      }
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {trailers.map((trailer) => (
-                        <option key={trailer.trailer_id} value={trailer.trailer_id}>
-                          {trailer.plate_number ?? `#${trailer.trailer_id}`}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
+              Needs Assignment
+            </h3>
+            {needsAssignmentRows.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">
+                Nothing waiting on a driver, truck, or trailer.
+              </p>
+            ) : (
+              <div className="mt-2">
+                <DispatchTable rows={needsAssignmentRows} {...tableProps} />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8">
+            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
+              Assigned — In Progress
+            </h3>
+            {assignedRows.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">
+                No fully-crewed trips in progress.
+              </p>
+            ) : (
+              <div className="mt-2">
+                <DispatchTable rows={assignedRows} {...tableProps} />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8">
+            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
+              Completed
+            </h3>
+            {completedRows.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No delivered trips yet.</p>
+            ) : (
+              <div className="mt-2">
+                <DispatchTable rows={completedRows} {...tableProps} />
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {relogRequestRow && employeeId && (
@@ -752,6 +863,13 @@ function DispatchBoardSection() {
           employeeId={employeeId}
           onClose={() => setRelogRequestRow(null)}
           onRequested={() => setRelogRequestRow(null)}
+        />
+      )}
+
+      {logsItineraryId !== null && (
+        <ItineraryLogModal
+          itineraryId={logsItineraryId}
+          onClose={() => setLogsItineraryId(null)}
         />
       )}
     </div>

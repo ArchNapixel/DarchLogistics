@@ -17,15 +17,50 @@ export async function loadDispatchStatusLog(): Promise<{
   entries: DispatchStatusLogEntry[]
   error: string | null
 }> {
-  const { data: rows, error } = await supabase
-    .from('dispatch_status_logs')
-    .select('log_id, itinerary_id, previous_status, new_status, changed_by, status_changed_at')
-    .order('status_changed_at', { ascending: false })
+  return loadLogRows(
+    supabase
+      .from('dispatch_status_logs')
+      .select('log_id, itinerary_id, previous_status, new_status, changed_by, status_changed_at')
+      .order('status_changed_at', { ascending: false }),
+  )
+}
+
+// Same data, scoped to one itinerary -- backs the "Logs" popup on each
+// Dispatch Board row.
+export async function loadDispatchStatusLogForItinerary(itineraryId: number): Promise<{
+  entries: DispatchStatusLogEntry[]
+  error: string | null
+}> {
+  return loadLogRows(
+    supabase
+      .from('dispatch_status_logs')
+      .select('log_id, itinerary_id, previous_status, new_status, changed_by, status_changed_at')
+      .eq('itinerary_id', itineraryId)
+      .order('status_changed_at', { ascending: false }),
+  )
+}
+
+async function loadLogRows(
+  query: PromiseLike<{
+    data:
+      | {
+          log_id: number
+          itinerary_id: number
+          previous_status: string
+          new_status: string
+          changed_by: number
+          status_changed_at: string
+        }[]
+      | null
+    error: { message: string } | null
+  }>,
+): Promise<{ entries: DispatchStatusLogEntry[]; error: string | null }> {
+  const { data: rows, error } = await query
 
   if (error) {
     return { entries: [], error: error.message }
   }
-  if (rows.length === 0) {
+  if (!rows || rows.length === 0) {
     return { entries: [], error: null }
   }
 
