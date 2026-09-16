@@ -72,21 +72,15 @@ const STATUS_LABELS: Record<string, string> = {
   Delivered: 'Delivered',
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-gray-100 text-gray-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-purple-100 text-purple-700',
-  InTransit: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-}
-
-function DispatchStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700'
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${style}`}>
-      {STATUS_LABELS[status] ?? status}
-    </span>
-  )
+// Mono accent ramp only, no traffic-light colors -- weight increases as
+// a trip gets closer to done, Delivered reads as a solid, locked-in tag
+// rather than just another dropdown option.
+const STATUS_SELECT_STYLES: Record<string, string> = {
+  Awaiting: 'border-neutral-300 bg-transparent text-neutral-600',
+  Dispatched: 'border-accent-300 bg-accent-100 text-accent-700',
+  PickedUp: 'border-accent-500 bg-accent-100 text-accent-700',
+  InTransit: 'border-accent-500 bg-accent-300/50 text-accent-900',
+  Delivered: 'border-accent-900 bg-accent-900 text-white',
 }
 
 // Shared table renderer for all 3 groups below -- same columns/handlers
@@ -128,41 +122,60 @@ function DispatchTable({
   onViewLogs: (itineraryId: number) => void
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-slate-500">
+    <div className="reports-blueprint-card overflow-x-auto">
+      <table className="w-full text-left font-ui text-sm">
+        <thead className="border-b border-reports-hairline">
           <tr>
-            <th className="px-4 py-3 font-medium">Booking</th>
-            <th className="px-4 py-3 font-medium">Origin → Destination</th>
-            <th className="px-4 py-3 font-medium">Trip Date</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Driver</th>
-            <th className="px-4 py-3 font-medium">Helper</th>
-            <th className="px-4 py-3 font-medium">Truck</th>
-            <th className="px-4 py-3 font-medium">Trailer</th>
-            <th className="px-4 py-3 font-medium">Logs</th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Booking
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Origin → Destination
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Trip Date
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Status
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Driver
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Helper
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Truck
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Trailer
+            </th>
+            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
+              Logs
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.itinerary_id} className="border-b border-slate-100 last:border-0">
-              <td className="px-4 py-3 text-slate-900">#{row.booking_id}</td>
-              <td className="px-4 py-3 text-slate-600">
+            <tr key={row.itinerary_id} className="border-b border-reports-hairline last:border-0">
+              <td className="px-4 py-3 text-reports-ink">#{row.booking_id}</td>
+              <td className="px-4 py-3 text-neutral-600">
                 {row.pickup_location} → {row.delivery_location}
               </td>
-              <td className="px-4 py-3 text-slate-600">
+              <td className="px-4 py-3 text-neutral-600">
                 {row.trip_date_from}
                 {row.trip_date_to ? ` – ${row.trip_date_to}` : ''}
               </td>
               <td className="px-4 py-3">
-                <div className="flex flex-col gap-1.5">
-                  <DispatchStatusBadge status={row.status} />
+                <div className="flex flex-col items-start gap-1.5">
                   {canEditStatus && (
                     <select
                       value={row.status}
                       disabled={savingId === row.itinerary_id}
                       onChange={(e) => onStatusChange(row.itinerary_id, row.status, e.target.value)}
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                      className={`border px-2 py-1 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
+                        STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
+                      }`}
                     >
                       {(canFreelyEditStatus
                         ? STATUS_FLOW
@@ -178,7 +191,7 @@ function DispatchTable({
                     <button
                       type="button"
                       onClick={() => onRequestCorrection(row)}
-                      className="text-left text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                      className="text-left text-xs font-medium text-neutral-500 underline hover:text-neutral-700"
                     >
                       Request correction
                     </button>
@@ -197,7 +210,7 @@ function DispatchTable({
                       e.target.value ? Number(e.target.value) : null,
                     )
                   }
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                  className="w-full border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                 >
                   <option value="">Unassigned</option>
                   {drivers.map((driver) => (
@@ -219,7 +232,7 @@ function DispatchTable({
                       e.target.value ? Number(e.target.value) : null,
                     )
                   }
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                  className="w-full border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                 >
                   <option value="">Unassigned</option>
                   {helpers.map((helper) => (
@@ -234,7 +247,7 @@ function DispatchTable({
                   value={row.plate_number ?? ''}
                   disabled={savingId === row.itinerary_id}
                   onChange={(e) => onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                  className="w-full border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                 >
                   <option value="">Unassigned</option>
                   {trucks.map((truck) => (
@@ -255,7 +268,7 @@ function DispatchTable({
                       e.target.value ? Number(e.target.value) : null,
                     )
                   }
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+                  className="w-full border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                 >
                   <option value="">Unassigned</option>
                   {trailers.map((trailer) => (
@@ -269,7 +282,7 @@ function DispatchTable({
                 <button
                   type="button"
                   onClick={() => onViewLogs(row.itinerary_id)}
-                  className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                  className="text-xs font-medium text-accent-700 underline hover:text-accent-900"
                 >
                   Logs
                 </button>
@@ -794,27 +807,37 @@ function DispatchBoardSection() {
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-slate-900">Dispatch Board</h2>
+    <div className="bg-reports-bg -m-6 p-6">
+      <h2 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
+        Dispatch Board
+      </h2>
+      <p className="mt-1 font-ui text-sm text-neutral-500">
+        Assign drivers, helpers, trucks and trailers, and track each booking through delivery.
+      </p>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {error}
         </p>
       )}
 
       {loading ? (
-        <p className="mt-4 text-slate-500">Loading dispatch board...</p>
+        <p className="mt-4 font-ui text-neutral-500">Loading dispatch board...</p>
       ) : rows.length === 0 ? (
-        <p className="mt-4 text-slate-500">No trips right now.</p>
+        <p className="mt-4 font-ui text-neutral-500">No trips right now.</p>
       ) : (
         <>
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
-              Needs Assignment
-            </h3>
+          <div className="mt-8">
+            <div className="flex items-center gap-2">
+              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
+                Needs Assignment
+              </h3>
+              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
+                {needsAssignmentRows.length}
+              </span>
+            </div>
             {needsAssignmentRows.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 font-ui text-sm text-neutral-500">
                 Nothing waiting on a driver, truck, or trailer.
               </p>
             ) : (
@@ -825,11 +848,16 @@ function DispatchBoardSection() {
           </div>
 
           <div className="mt-8">
-            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
-              Assigned — In Progress
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
+                Assigned — In Progress
+              </h3>
+              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
+                {assignedRows.length}
+              </span>
+            </div>
             {assignedRows.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 font-ui text-sm text-neutral-500">
                 No fully-crewed trips in progress.
               </p>
             ) : (
@@ -840,11 +868,16 @@ function DispatchBoardSection() {
           </div>
 
           <div className="mt-8">
-            <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">
-              Completed
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
+                Completed
+              </h3>
+              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
+                {completedRows.length}
+              </span>
+            </div>
             {completedRows.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">No delivered trips yet.</p>
+              <p className="mt-2 font-ui text-sm text-neutral-500">No delivered trips yet.</p>
             ) : (
               <div className="mt-2">
                 <DispatchTable rows={completedRows} {...tableProps} />
