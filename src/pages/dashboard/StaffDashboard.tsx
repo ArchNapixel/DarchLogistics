@@ -5,19 +5,24 @@ import { supabase } from '../../lib/supabaseClient'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
+// Outlined, square-cornered badges (mono accent ramp only, no rainbow
+// fills) to match the blueprint card style -- text color is the only
+// thing that varies per status, darker as a trip gets closer to done.
 const ITINERARY_STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-gray-100 text-gray-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-purple-100 text-purple-700',
-  InTransit: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
+  Awaiting: 'border-neutral-300 text-neutral-500',
+  Dispatched: 'border-accent-300 text-accent-500',
+  PickedUp: 'border-accent-500 text-accent-700',
+  InTransit: 'border-accent-700 text-accent-700',
+  Delivered: 'border-accent-900 text-accent-900',
+  Cancelled: 'border-red-300 text-red-700',
 }
 
 function ItineraryStatusBadge({ status }: { status: string }) {
-  const styles = ITINERARY_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
+  const styles = ITINERARY_STATUS_STYLES[status] ?? 'border-neutral-300 text-neutral-500'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
+    <span
+      className={`border px-2.5 py-1 font-ui text-[11px] font-semibold tracking-[0.05em] uppercase ${styles}`}
+    >
       {status}
     </span>
   )
@@ -316,32 +321,31 @@ function StaffDashboard() {
   ]
 
   return (
-    <div>
+    <div className="bg-reports-bg -m-6 p-6">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
           Welcome, {username}
         </h1>
         <RoleBadge role={role} />
       </div>
 
       {summaryError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {summaryError}
         </p>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="reports-blueprint-card mt-8 px-[22px] pt-[22px] pb-5">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">
-            Total Revenue{' '}
-            <span className="font-normal text-slate-400">(collected)</span>
+          <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+            Total Revenue <span className="normal-case">(collected)</span>
           </p>
           <select
             value={revenueRange}
             onChange={(e) =>
               setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
             }
-            className="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900"
+            className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
           >
             {REVENUE_RANGES.map((r) => (
               <option key={r.value} value={r.value}>
@@ -351,22 +355,19 @@ function StaffDashboard() {
           </select>
         </div>
         {revenueError ? (
-          <p className="mt-2 text-sm text-red-700">{revenueError}</p>
+          <p className="mt-2 font-ui text-sm text-red-700">{revenueError}</p>
         ) : (
-          <p className="mt-2 text-3xl font-bold text-slate-900">
+          <p className="font-condensed mt-2 text-[40px] leading-none font-bold text-reports-ink">
             {revenueLoading ? '--' : `₱${revenue.toLocaleString()}`}
           </p>
         )}
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {summaryCards.map((card) => (
-          <div
-            key={card.label}
-            className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-          >
-            <p className="text-sm text-slate-500">{card.label}</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">
+          <div key={card.label} className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
+            <p className="font-ui text-base text-reports-ink">{card.label}</p>
+            <p className="font-condensed mt-2.5 text-[36px] leading-none font-bold text-reports-ink">
               {loading ? '--' : card.value}
             </p>
           </div>
@@ -374,28 +375,28 @@ function StaffDashboard() {
       </div>
 
       <div className="mt-8">
-        <h2 className="text-lg font-bold text-slate-900">
+        <h2 className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
           Today's Deliveries
         </h2>
 
         {todayDeliveriesLoading && (
-          <p className="mt-4 text-slate-500">Loading today's deliveries...</p>
+          <p className="mt-3 font-ui text-neutral-500">Loading today's deliveries...</p>
         )}
         {!todayDeliveriesLoading && todayDeliveriesError && (
-          <p className="mt-4 text-red-700">{todayDeliveriesError}</p>
+          <p className="mt-3 font-ui text-red-700">{todayDeliveriesError}</p>
         )}
         {!todayDeliveriesLoading &&
           !todayDeliveriesError &&
           todayDeliveryRows.length === 0 && (
-            <p className="mt-4 text-slate-500">
+            <p className="mt-3 font-ui text-neutral-500">
               No deliveries scheduled for today.
             </p>
           )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
-          <div className="mt-4 max-h-96 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 border-b border-slate-200 bg-white text-slate-500">
+          <div className="mt-3 max-h-96 overflow-y-auto overflow-x-auto border border-reports-hairline bg-reports-bg">
+            <table className="w-full text-left font-ui text-sm">
+              <thead className="sticky top-0 border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>
                   <th className="px-4 py-3 font-medium">From</th>
                   <th className="px-4 py-3 font-medium">To</th>
@@ -409,18 +410,18 @@ function StaffDashboard() {
                 {todayDeliveryRows.map((row) => (
                   <tr
                     key={row.itinerary_id}
-                    className="border-b border-slate-100 last:border-0"
+                    className="border-b border-reports-hairline last:border-0"
                   >
-                    <td className="px-4 py-3 text-slate-900">{row.from}</td>
-                    <td className="px-4 py-3 text-slate-600">{row.to}</td>
-                    <td className="px-4 py-3 text-slate-600">
+                    <td className="px-4 py-3 text-reports-ink">{row.from}</td>
+                    <td className="px-4 py-3 text-neutral-600">{row.to}</td>
+                    <td className="px-4 py-3 text-neutral-600">
                       {row.rate != null ? `₱${row.rate.toLocaleString()}` : 'N/A'}
                     </td>
                     <td
                       className={
                         row.truckPlateNumber
-                          ? 'px-4 py-3 text-slate-600'
-                          : 'px-4 py-3 text-slate-400'
+                          ? 'px-4 py-3 text-neutral-600'
+                          : 'px-4 py-3 text-neutral-400'
                       }
                     >
                       {row.truckPlateNumber ?? 'Unassigned'}
@@ -428,8 +429,8 @@ function StaffDashboard() {
                     <td
                       className={
                         row.trailerPlateNumber
-                          ? 'px-4 py-3 text-slate-600'
-                          : 'px-4 py-3 text-slate-400'
+                          ? 'px-4 py-3 text-neutral-600'
+                          : 'px-4 py-3 text-neutral-400'
                       }
                     >
                       {row.trailerPlateNumber ?? 'Unassigned'}
