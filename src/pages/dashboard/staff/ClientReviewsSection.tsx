@@ -1,9 +1,16 @@
-// ClientReviewsSection: admin read-only view of every client's 1-5 star
-// review of the business (client/ClientReviewSection.tsx). One row per
-// client (they edit in place), so this is a snapshot of current
-// sentiment, not a growing feed.
+// ClientReviewsSection: admin view of every client's 1-5 star review of
+// the business (client/ClientReviewSection.tsx). One row per client
+// (they edit in place), so this is a snapshot of current sentiment, not
+// a growing feed. "Feature" publishes a review to the public landing
+// page (anonymized -- see clientReviews.ts's loadFeaturedReviews) --
+// staff picks which reviews go public, nothing shows there by default.
 import { useEffect, useState } from 'react'
-import { loadAllReviews, averageRating, type AdminClientReview } from '../../../lib/clientReviews'
+import {
+  loadAllReviews,
+  setReviewFeatured,
+  averageRating,
+  type AdminClientReview,
+} from '../../../lib/clientReviews'
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -18,6 +25,8 @@ function ClientReviewsSection() {
   const [reviews, setReviews] = useState<AdminClientReview[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<number | null>(null)
 
   useEffect(() => {
     load()
@@ -36,6 +45,29 @@ function ClientReviewsSection() {
     setReviews(loaded)
     setError(null)
     setLoading(false)
+  }
+
+  async function handleToggleFeatured(review: AdminClientReview) {
+    setSavingId(review.review_id)
+    setActionError(null)
+
+    const { error: saveError } = await setReviewFeatured({
+      reviewId: review.review_id,
+      isFeatured: !review.is_featured,
+    })
+
+    setSavingId(null)
+
+    if (saveError) {
+      setActionError(saveError)
+      return
+    }
+
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.review_id === review.review_id ? { ...r, is_featured: !r.is_featured } : r,
+      ),
+    )
   }
 
   if (loading) {
@@ -61,6 +93,12 @@ function ClientReviewsSection() {
         </p>
       )}
 
+      {actionError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
+
       <div className="grid gap-3">
         {reviews.map((review) => (
           <div
@@ -73,15 +111,37 @@ function ClientReviewsSection() {
                 <span className="text-xs text-slate-400">
                   {review.total_bookings} booking{review.total_bookings === 1 ? '' : 's'}
                 </span>
+                {review.is_featured && (
+                  <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                    Public
+                  </span>
+                )}
               </div>
               <Stars rating={review.rating} />
             </div>
             {review.comment && (
               <p className="mt-2 text-sm text-slate-700">{review.comment}</p>
             )}
-            <p className="mt-2 text-xs text-slate-400">
-              Updated {new Date(review.updated_at).toLocaleDateString()}
-            </p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-xs text-slate-400">
+                Updated {new Date(review.updated_at).toLocaleDateString()}
+              </p>
+              <button
+                onClick={() => handleToggleFeatured(review)}
+                disabled={savingId === review.review_id}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+                  review.is_featured
+                    ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    : 'bg-slate-900 text-white hover:bg-slate-700'
+                }`}
+              >
+                {savingId === review.review_id
+                  ? 'Saving...'
+                  : review.is_featured
+                    ? 'Unfeature'
+                    : 'Feature on website'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

@@ -17,6 +17,10 @@
 // client yet) so Approve doesn't have to re-match by email.
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import LocationPicker, {
+  emptyLocationValue,
+  type LocationValue,
+} from '../../../components/LocationPicker'
 
 type ContactInfo = {
   clientName: string
@@ -25,8 +29,8 @@ type ContactInfo = {
 }
 
 type FormData = {
-  pickupLocationText: string
-  deliveryLocationText: string
+  pickup: LocationValue
+  delivery: LocationValue
   cargoType: 'Container' | 'Loose'
   cargoDescription: string
   weight: string
@@ -40,8 +44,8 @@ type FormData = {
 }
 
 const emptyForm: FormData = {
-  pickupLocationText: '',
-  deliveryLocationText: '',
+  pickup: emptyLocationValue,
+  delivery: emptyLocationValue,
   cargoType: 'Container',
   cargoDescription: '',
   weight: '',
@@ -115,6 +119,10 @@ function NewQuoteModal({
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  function setField<K extends keyof FormData>(name: K, value: FormData[K]) {
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
   async function handleSubmit() {
     setError(null)
 
@@ -124,8 +132,13 @@ function NewQuoteModal({
       )
       return
     }
-    if (!form.pickupLocationText.trim() || !form.deliveryLocationText.trim()) {
-      setError('Enter both an origin and a destination.')
+    if (
+      !form.pickup.city ||
+      !form.pickup.barangay ||
+      !form.delivery.city ||
+      !form.delivery.barangay
+    ) {
+      setError('Select a city and barangay for both the origin and the destination.')
       return
     }
     if (!form.cargoDescription.trim()) {
@@ -172,8 +185,12 @@ function NewQuoteModal({
       client_name: contactInfo.clientName,
       contact_number: contactInfo.contactNumber,
       contact_email: contactInfo.contactEmail || null,
-      pickup_location_text: form.pickupLocationText,
-      delivery_location_text: form.deliveryLocationText,
+      pickup_location_text: form.pickup.detail,
+      pickup_city: form.pickup.city,
+      pickup_barangay: form.pickup.barangay,
+      delivery_location_text: form.delivery.detail,
+      delivery_city: form.delivery.city,
+      delivery_barangay: form.delivery.barangay,
       cargo_type: form.cargoType,
       cargo_description: form.cargoDescription,
       weight: weightValue,
@@ -274,29 +291,17 @@ function NewQuoteModal({
             </label>
           )}
 
-          <label className={labelClasses}>
-            Origin
-            <input
-              type="text"
-              name="pickupLocationText"
-              value={form.pickupLocationText}
-              onChange={handleChange}
-              required
-              className={fieldClasses}
-            />
-          </label>
+          <LocationPicker
+            label="Origin"
+            value={form.pickup}
+            onChange={(value) => setField('pickup', value)}
+          />
 
-          <label className={labelClasses}>
-            Destination
-            <input
-              type="text"
-              name="deliveryLocationText"
-              value={form.deliveryLocationText}
-              onChange={handleChange}
-              required
-              className={fieldClasses}
-            />
-          </label>
+          <LocationPicker
+            label="Destination"
+            value={form.delivery}
+            onChange={(value) => setField('delivery', value)}
+          />
 
           <label className={labelClasses}>
             Cargo type

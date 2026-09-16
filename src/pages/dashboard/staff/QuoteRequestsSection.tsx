@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import QuoteReviewModal from './QuoteReviewModal'
 import NewQuoteRequestModal from './NewQuoteRequestModal'
+import { formatLocationDisplay } from '../../../lib/locationReference'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -14,7 +15,11 @@ export type QuoteRequest = {
   contact_number: string | null
   contact_email: string | null
   pickup_location_text: string
+  pickup_city: string | null
+  pickup_barangay: string | null
   delivery_location_text: string
+  delivery_city: string | null
+  delivery_barangay: string | null
   cargo_type: string
   cargo_description: string
   weight: number
@@ -117,7 +122,17 @@ function QuoteRequestsSection() {
                     {quote.cargo_type}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {quote.pickup_location_text} → {quote.delivery_location_text}
+                    {formatLocationDisplay({
+                      city: quote.pickup_city,
+                      barangay: quote.pickup_barangay,
+                      detail: quote.pickup_location_text,
+                    })}{' '}
+                    →{' '}
+                    {formatLocationDisplay({
+                      city: quote.delivery_city,
+                      barangay: quote.delivery_barangay,
+                      detail: quote.delivery_location_text,
+                    })}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {quote.preferred_pickup_date ?? '—'}

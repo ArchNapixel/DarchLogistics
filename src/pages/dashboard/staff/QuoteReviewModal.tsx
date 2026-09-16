@@ -22,10 +22,13 @@
 //
 // Approve does 5 steps in order: reuse an existing `clients` row by
 // email if one matches (clients.email is unique) or create one from the
-// quote's free-text client info, reuse existing `places` rows by name
-// (trimmed, case-insensitive -- same idea as the client email check) or
-// create them if this is a new location, update the quote_request, create the
-// `bookings` row using those IDs, then create ONE `itinerary` per
+// quote's free-text client info, reuse existing `places` rows by
+// city+barangay (trimmed, case-insensitive -- barangay is the routing/
+// cache unit, same idea as the client email check) or create them if
+// this is a new barangay, update the quote_request, create the
+// `bookings` row using those IDs (also copying the quote's free-text
+// landmark detail onto pickup/delivery_address_detail, since bookings
+// only ever had place_id before), then create ONE `itinerary` per
 // delivery order (quote.delivery_order_count) linked to that booking --
 // a booking can cover multiple deliverables (e.g. several containers),
 // each needing its own truck+trailer+driver, so each one gets its own
@@ -39,25 +42,36 @@
 // "needs manual review" message instead of a generic one.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { formatLocationDisplay } from '../../../lib/locationReference'
 import type { QuoteRequest } from './QuoteRequestsSection'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-// Looks up an existing place by name (trimmed, case-insensitive) before
-// creating a new one -- a database-level unique index on
-// lower(trim(place_name)) backs this up in case some other code path
-// ever skips this check.
+// Looks up an existing place by city+barangay (trimmed, case-insensitive)
+// before creating a new one -- barangay is the routing/cache unit (see
+// route_cache below), not the free-text landmark, so two quotes into the
+// same barangay always resolve to the same place_id no matter how
+// differently their landmark text reads. A database-level unique index
+// on (lower(trim(city)), lower(trim(barangay))) backs this up in case
+// some other code path ever skips this check.
 async function findOrCreatePlace(
-  rawName: string,
+  city: string | null,
+  barangay: string | null,
 ): Promise<{ placeId: number } | { error: string }> {
-  const trimmedName = rawName.trim()
+  if (!city || !barangay) {
+    return { error: 'This quote is missing a city/barangay for one of its locations.' }
+  }
+
+  const trimmedCity = city.trim()
+  const trimmedBarangay = barangay.trim()
 
   const { data: existingPlace, error: existingPlaceError } = await supabase
     .from('places')
     .select('place_id')
-    .ilike('place_name', trimmedName)
+    .ilike('city', trimmedCity)
+    .ilike('barangay', trimmedBarangay)
     .maybeSingle()
 
   if (existingPlaceError) {
@@ -70,7 +84,11 @@ async function findOrCreatePlace(
 
   const { data: newPlace, error: insertError } = await supabase
     .from('places')
-    .insert({ place_name: trimmedName })
+    .insert({
+      place_name: `Brgy. ${trimmedBarangay}, ${trimmedCity}`,
+      city: trimmedCity,
+      barangay: trimmedBarangay,
+    })
     .select('place_id')
     .single()
 
@@ -84,11 +102,19 @@ async function findOrCreatePlace(
 // Read-only version of the lookup above -- used just to preview whether
 // a cached distance exists before Approve is clicked. Never creates a
 // place, since the quote might still get Rejected.
-async function findPlaceIdByName(rawName: string): Promise<number | null> {
+async function findPlaceIdByCityBarangay(
+  city: string | null,
+  barangay: string | null,
+): Promise<number | null> {
+  if (!city || !barangay) {
+    return null
+  }
+
   const { data } = await supabase
     .from('places')
     .select('place_id')
-    .ilike('place_name', rawName.trim())
+    .ilike('city', city.trim())
+    .ilike('barangay', barangay.trim())
     .maybeSingle()
 
   return data?.place_id ?? null
@@ -209,8 +235,11 @@ function QuoteReviewModal({
   // whether this route has a cached distance from a previous approval.
   useEffect(() => {
     async function preloadCachedDistance() {
-      const pickupId = await findPlaceIdByName(quote.pickup_location_text)
-      const deliveryId = await findPlaceIdByName(quote.delivery_location_text)
+      const pickupId = await findPlaceIdByCityBarangay(quote.pickup_city, quote.pickup_barangay)
+      const deliveryId = await findPlaceIdByCityBarangay(
+        quote.delivery_city,
+        quote.delivery_barangay,
+      )
 
       if (pickupId === null || deliveryId === null) {
         return
@@ -224,7 +253,12 @@ function QuoteReviewModal({
     }
 
     preloadCachedDistance()
-  }, [quote.pickup_location_text, quote.delivery_location_text])
+  }, [
+    quote.pickup_city,
+    quote.pickup_barangay,
+    quote.delivery_city,
+    quote.delivery_barangay,
+  ])
 
   async function handleApprove() {
     const rateValue = Number(proposedRate)
@@ -308,13 +342,12 @@ function QuoteReviewModal({
       clientId = newClient.client_id
     }
 
-    // 2. Reuse an existing place by name if one matches (trimmed,
-    // case-insensitive -- "Davao Port" and "davao port " are the same
-    // place), otherwise create it from the free-text pickup/delivery
-    // text. Without this, every approval created brand-new places rows
-    // even for locations already booked before, fragmenting the same
-    // real-world place across many IDs.
-    const pickupResult = await findOrCreatePlace(quote.pickup_location_text)
+    // 2. Reuse an existing place by city+barangay if one matches
+    // (trimmed, case-insensitive), otherwise create it. Barangay is the
+    // routing/cache unit, not the landmark text, so two quotes into the
+    // same barangay always resolve to the same place_id even if their
+    // free-text landmark reads completely differently.
+    const pickupResult = await findOrCreatePlace(quote.pickup_city, quote.pickup_barangay)
     if ('error' in pickupResult) {
       setError(pickupResult.error)
       setSubmitting(false)
@@ -322,7 +355,7 @@ function QuoteReviewModal({
     }
     const pickupPlace = { place_id: pickupResult.placeId }
 
-    const deliveryResult = await findOrCreatePlace(quote.delivery_location_text)
+    const deliveryResult = await findOrCreatePlace(quote.delivery_city, quote.delivery_barangay)
     if ('error' in deliveryResult) {
       setError(deliveryResult.error)
       setSubmitting(false)
@@ -374,6 +407,8 @@ function QuoteReviewModal({
         client_id: clientId,
         place_of_pickup_id: pickupPlace.place_id,
         place_of_delivery_id: deliveryPlace.place_id,
+        pickup_address_detail: quote.pickup_location_text || null,
+        delivery_address_detail: quote.delivery_location_text || null,
         cargo_type: quote.cargo_type,
         cargo_description: quote.cargo_description,
         weight: quote.weight,
@@ -548,10 +583,21 @@ function QuoteReviewModal({
                     .join(' / ') || '—'
                 }
               />
-              <InfoRow label="Origin" value={quote.pickup_location_text} />
+              <InfoRow
+                label="Origin"
+                value={formatLocationDisplay({
+                  city: quote.pickup_city,
+                  barangay: quote.pickup_barangay,
+                  detail: quote.pickup_location_text,
+                })}
+              />
               <InfoRow
                 label="Destination"
-                value={quote.delivery_location_text}
+                value={formatLocationDisplay({
+                  city: quote.delivery_city,
+                  barangay: quote.delivery_barangay,
+                  detail: quote.delivery_location_text,
+                })}
               />
               <InfoRow label="Cargo type" value={quote.cargo_type} />
               <InfoRow label="Trailer type" value={quote.container_type} />

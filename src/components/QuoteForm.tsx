@@ -8,13 +8,14 @@
 // validation, and the Supabase insert are unchanged from before.
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import LocationPicker, { emptyLocationValue, type LocationValue } from './LocationPicker'
 
 type QuoteFormData = {
   clientName: string
   contactNumber: string
   contactEmail: string
-  pickupLocationText: string
-  deliveryLocationText: string
+  pickup: LocationValue
+  delivery: LocationValue
   cargoType: 'Container' | 'Loose'
   cargoDescription: string
   weight: string
@@ -31,8 +32,8 @@ const emptyForm: QuoteFormData = {
   clientName: '',
   contactNumber: '',
   contactEmail: '',
-  pickupLocationText: '',
-  deliveryLocationText: '',
+  pickup: emptyLocationValue,
+  delivery: emptyLocationValue,
   cargoType: 'Container',
   cargoDescription: '',
   weight: '',
@@ -140,8 +141,12 @@ function QuoteForm() {
       client_name: form.clientName,
       contact_number: form.contactNumber || null,
       contact_email: form.contactEmail || null,
-      pickup_location_text: form.pickupLocationText,
-      delivery_location_text: form.deliveryLocationText,
+      pickup_location_text: form.pickup.detail,
+      pickup_city: form.pickup.city,
+      pickup_barangay: form.pickup.barangay,
+      delivery_location_text: form.delivery.detail,
+      delivery_city: form.delivery.city,
+      delivery_barangay: form.delivery.barangay,
       cargo_type: form.cargoType,
       cargo_description: form.cargoDescription,
       weight: weightValue,
@@ -239,31 +244,17 @@ function QuoteForm() {
 
       <SectionHeading number="02" title="Route" />
 
-      <label className={labelClasses}>
-        Origin
-        <input
-          type="text"
-          name="pickupLocationText"
-          placeholder="Port, plant or warehouse"
-          value={form.pickupLocationText}
-          onChange={handleChange}
-          required
-          className={fieldClasses}
-        />
-      </label>
+      <LocationPicker
+        label="Origin"
+        value={form.pickup}
+        onChange={(value) => setField('pickup', value)}
+      />
 
-      <label className={labelClasses}>
-        Destination
-        <input
-          type="text"
-          name="deliveryLocationText"
-          placeholder="Delivery site"
-          value={form.deliveryLocationText}
-          onChange={handleChange}
-          required
-          className={fieldClasses}
-        />
-      </label>
+      <LocationPicker
+        label="Destination"
+        value={form.delivery}
+        onChange={(value) => setField('delivery', value)}
+      />
 
       <SectionHeading number="03" title="Cargo" />
 
