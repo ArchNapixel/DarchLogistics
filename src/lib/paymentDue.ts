@@ -47,6 +47,7 @@ import { supabase } from './supabaseClient'
 
 export type PaymentDueRow = {
   booking_id: number
+  client_id: number
   client_name: string
   pickup_place_name: string
   delivery_place_name: string
@@ -259,6 +260,7 @@ export async function loadPaymentDueReport(
 
       return {
         booking_id: booking.booking_id,
+        client_id: booking.client_id,
         client_name: clientNameById.get(booking.client_id) ?? '—',
         pickup_place_name: placeNameById.get(booking.place_of_pickup_id) ?? '—',
         delivery_place_name:

@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
+import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
 
 type Client = {
   client_id: number
@@ -20,6 +21,9 @@ type Client = {
 function ClientsSection() {
   const [clients, setClients] = useState<Client[]>([])
   const [linkedClientIds, setLinkedClientIds] = useState<Set<number>>(
+    new Set(),
+  )
+  const [delinquentClientIds, setDelinquentClientIds] = useState<Set<number>>(
     new Set(),
   )
   const [loading, setLoading] = useState(true)
@@ -56,6 +60,16 @@ function ClientsSection() {
       return
     }
 
+    const { clients: delinquentClients, error: delinquentError } =
+      await loadCurrentlyDelinquentClients()
+
+    if (delinquentError) {
+      setError(delinquentError)
+      setLoading(false)
+      return
+    }
+
+    setDelinquentClientIds(new Set(delinquentClients.map((c) => c.client_id)))
     setClients(clientRows)
     setLinkedClientIds(
       new Set(linkedRows.map((row) => row.client_id as number)),
@@ -102,6 +116,7 @@ function ClientsSection() {
             <tbody>
               {clients.map((client) => {
                 const isLinked = linkedClientIds.has(client.client_id)
+                const isDelinquent = delinquentClientIds.has(client.client_id)
                 return (
                   <tr
                     key={client.client_id}
@@ -114,6 +129,11 @@ function ClientsSection() {
                       >
                         {client.client_name}
                       </button>
+                      {isDelinquent && (
+                        <span className="ml-2 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                          Delinquent
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {client.email ?? '—'}

@@ -18,6 +18,7 @@ import ClientProfileSection, {
 } from './client/ClientProfileSection'
 import ClientPaymentsSection from './client/ClientPaymentsSection'
 import MyStatusRequestsSection from './client/MyStatusRequestsSection'
+import ClientReviewSection from './client/ClientReviewSection'
 
 function ClientDashboard() {
   const { username, role, clientId } = useAuth()
@@ -128,6 +129,15 @@ function ClientDashboard() {
         </h2>
         <div className="mt-4">
           <MyStatusRequestsSection key={statusRequestsRefreshKey} />
+        </div>
+      </div>
+
+      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Rate Our Service
+        </h2>
+        <div className="mt-4">
+          <ClientReviewSection />
         </div>
       </div>
 
