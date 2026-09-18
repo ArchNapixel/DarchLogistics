@@ -11,7 +11,8 @@ import {
   loadPayrollSettings,
   getDefaultPayPeriod,
   buildDriverTripLineItems,
-  fixedSalaryLineItem,
+  attendanceSalaryLineItem,
+  countPaidAttendanceDays,
   allowanceLineItem,
   getOutstandingCashAdvance,
   issuePayslip,
@@ -96,7 +97,7 @@ function IssuePayslipModal({
     setLoadingPreview(true)
     setError(null)
 
-    const [advanceResult, tripResult] =
+    const [advanceResult, tripResult, attendanceResult] =
       employee.position === 'Driver'
         ? await Promise.all([
             getOutstandingCashAdvance(employee.employee_id),
@@ -107,10 +108,12 @@ function IssuePayslipModal({
               settings.driverCommissionRate,
               settings.driverPerTripFee,
             ),
+            Promise.resolve({ days: 0, error: null }),
           ])
         : await Promise.all([
             getOutstandingCashAdvance(employee.employee_id),
             Promise.resolve({ lineItems: [] as PayslipLineItem[], error: null }),
+            countPaidAttendanceDays(employee.employee_id, periodStart, periodEnd),
           ])
 
     if (advanceResult.error) {
@@ -123,11 +126,16 @@ function IssuePayslipModal({
       setLoadingPreview(false)
       return
     }
+    if (attendanceResult.error) {
+      setError(attendanceResult.error)
+      setLoadingPreview(false)
+      return
+    }
 
     const baseLineItems =
       employee.position === 'Driver'
         ? tripResult.lineItems
-        : [fixedSalaryLineItem(employee.position, settings)]
+        : [attendanceSalaryLineItem(employee.position, settings, attendanceResult.days)]
 
     setLineItems([...baseLineItems, allowanceLineItem(settings)])
     setOutstandingAdvance(advanceResult.outstanding)

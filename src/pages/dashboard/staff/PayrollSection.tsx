@@ -15,6 +15,8 @@ import {
 import IssuePayslipModal from './IssuePayslipModal'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
+import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
+import AttendanceSection from './AttendanceSection'
 
 type PayrollEntry = {
   payroll_id: number
@@ -59,6 +61,8 @@ function PayrollSection() {
     Record<number, PayslipLineItem[]>
   >({})
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
+  const [showLedger, setShowLedger] = useState(false)
+  const [showAttendance, setShowAttendance] = useState(false)
 
   useEffect(() => {
     loadPayroll()
@@ -156,6 +160,18 @@ function PayrollSection() {
         <h2 className="text-xl font-bold text-slate-900">Payroll</h2>
         <div className="flex gap-3">
           <button
+            onClick={() => setShowLedger((visible) => !visible)}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {showLedger ? 'Hide Cash Advance Ledger' : 'View Cash Advance Ledger'}
+          </button>
+          <button
+            onClick={() => setShowAttendance((visible) => !visible)}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {showAttendance ? 'Hide Attendance' : 'Record Attendance'}
+          </button>
+          <button
             onClick={() => setShowIssueAdvance(true)}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
@@ -173,6 +189,20 @@ function PayrollSection() {
       <div className="mt-6">
         <CashAdvanceRequestsSection />
       </div>
+
+      {showLedger && (
+        <section className="mt-6 border-t border-slate-200 pt-6">
+          <h3 className="text-lg font-semibold text-slate-900">Cash Advance Ledger</h3>
+          <div className="mt-4"><CashAdvanceLedgerSection /></div>
+        </section>
+      )}
+
+      {showAttendance && (
+        <section className="mt-6 border-t border-slate-200 pt-6">
+          <h3 className="text-lg font-semibold text-slate-900">Employee Attendance</h3>
+          <div className="mt-4"><AttendanceSection /></div>
+        </section>
+      )}
 
       {actionError && (
         <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

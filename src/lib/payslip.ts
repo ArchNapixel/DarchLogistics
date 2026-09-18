@@ -27,6 +27,7 @@
 //   even if settings/rates change later -- a payslip is a historical
 //   record, not a live calculation.
 import { supabase } from './supabaseClient'
+import { countPaidAttendanceDays } from './employeeAttendance'
 
 export type PayrollSettings = {
   driverCommissionRate: number
@@ -223,6 +224,27 @@ export function fixedSalaryLineItem(
     amount: salary,
   }
 }
+
+export function attendanceSalaryLineItem(
+  position: string,
+  settings: PayrollSettings,
+  paidAttendanceDays: number,
+): PayslipLineItem {
+  const weeklySalary =
+    position === 'Mechanic'
+      ? settings.mechanicWeeklySalary
+      : position === 'Dispatcher'
+        ? settings.dispatcherWeeklySalary
+        : settings.helperWeeklySalary
+
+  return {
+    itinerary_id: null,
+    description: `${position} salary (${paidAttendanceDays}/7 paid attendance days)`,
+    amount: (weeklySalary / 7) * paidAttendanceDays,
+  }
+}
+
+export { countPaidAttendanceDays }
 
 export function allowanceLineItem(settings: PayrollSettings): PayslipLineItem {
   return {
