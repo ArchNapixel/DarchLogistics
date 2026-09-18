@@ -5,6 +5,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
+import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
 import { isAdmin } from '../lib/roles'
 import RoleBadge from './RoleBadge'
 
@@ -57,6 +58,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </button>
         </div>
       </header>
+
+      <ComplianceExpiryAlerts />
 
       <div className="flex flex-1">
         {sidebarLinks.length > 0 && (

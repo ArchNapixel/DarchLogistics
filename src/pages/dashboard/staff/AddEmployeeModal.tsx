@@ -26,6 +26,10 @@ export type EditableEmployee = {
   rate_type: (typeof RATE_TYPES)[number]['value']
   rate_amount: number | null
   hire_date: string
+  driver_license_number: string | null
+  driver_license_expiry_date: string | null
+  medical_exam_date: string | null
+  medical_exam_expiry_date: string | null
 }
 
 function AddEmployeeModal({
@@ -49,6 +53,10 @@ function AddEmployeeModal({
     employee?.rate_amount != null ? String(employee.rate_amount) : '',
   )
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
+  const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
+  const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
+  const [medicalExamDate, setMedicalExamDate] = useState(employee?.medical_exam_date ?? '')
+  const [medicalExamExpiryDate, setMedicalExamExpiryDate] = useState(employee?.medical_exam_expiry_date ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,6 +69,10 @@ function AddEmployeeModal({
     }
     if (!hireDate) {
       setError('Enter a hire date.')
+      return
+    }
+    if (position === 'Driver' && (!licenseNumber.trim() || !licenseExpiryDate)) {
+      setError('Enter the driver license number and expiry date.')
       return
     }
 
@@ -79,6 +91,10 @@ function AddEmployeeModal({
       monthly_salary: null,
       hourly_rate: null,
       [selectedRateType.column]: rateAmount ? Number(rateAmount) : null,
+      driver_license_number: position === 'Driver' ? licenseNumber.trim() || null : null,
+      driver_license_expiry_date: position === 'Driver' ? licenseExpiryDate || null : null,
+      medical_exam_date: position === 'Driver' ? medicalExamDate || null : null,
+      medical_exam_expiry_date: position === 'Driver' ? medicalExamExpiryDate || null : null,
     }
 
     const { error: saveError } = isEditing
@@ -193,6 +209,27 @@ function AddEmployeeModal({
               className={fieldClasses}
             />
           </label>
+
+          {position === 'Driver' && (
+            <>
+              <label className={labelClasses}>
+                Driver license number
+                <input type="text" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Driver license expiry
+                <input type="date" value={licenseExpiryDate} onChange={(e) => setLicenseExpiryDate(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Medical exam date (optional)
+                <input type="date" value={medicalExamDate} onChange={(e) => setMedicalExamDate(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Medical exam expiry (optional)
+                <input type="date" value={medicalExamExpiryDate} onChange={(e) => setMedicalExamExpiryDate(e.target.value)} className={fieldClasses} />
+              </label>
+            </>
+          )}
         </div>
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">

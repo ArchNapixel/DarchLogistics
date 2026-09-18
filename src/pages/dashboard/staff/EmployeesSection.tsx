@@ -20,6 +20,8 @@ type Employee = {
   status: string
   hire_date: string
   editable: EditableEmployee
+  licenseExpiryDate: string | null
+  medicalExamExpiryDate: string | null
 }
 
 function extractRateAmount(row: Record<string, unknown>, rateType: string) {
@@ -42,6 +44,28 @@ function EmploymentStatusBadge({ status }: { status: string }) {
       {status}
     </span>
   )
+}
+
+function expiryLabel(date: string | null) {
+  if (!date) return 'Not recorded'
+  const days = Math.ceil(
+    (new Date(`${date}T00:00:00`).getTime() - Date.now()) / 86400000,
+  )
+  if (days < 0) return `Expired: ${date}`
+  if (days <= 30) return `Due soon: ${date}`
+  return date
+}
+
+function expiryClass(date: string | null) {
+  if (!date) return 'text-slate-400'
+  const days = Math.ceil(
+    (new Date(`${date}T00:00:00`).getTime() - Date.now()) / 86400000,
+  )
+  return days < 0
+    ? 'font-medium text-red-700'
+    : days <= 30
+      ? 'font-medium text-orange-700'
+      : 'text-slate-600'
 }
 
 function EmployeesSection() {
@@ -108,7 +132,7 @@ function EmployeesSection() {
     const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, employment_status_id, daily_rate, commission_per_trip, monthly_salary, hourly_rate',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, employment_status_id, daily_rate, commission_per_trip, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date',
       )
       .order('full_name', { ascending: true })
 
@@ -162,7 +186,13 @@ function EmployeesSection() {
           rate_type: row.rate_type,
           rate_amount: extractRateAmount(row, row.rate_type),
           hire_date: row.hire_date,
+          driver_license_number: row.driver_license_number,
+          driver_license_expiry_date: row.driver_license_expiry_date,
+          medical_exam_date: row.medical_exam_date,
+          medical_exam_expiry_date: row.medical_exam_expiry_date,
         },
+        licenseExpiryDate: row.driver_license_expiry_date,
+        medicalExamExpiryDate: row.medical_exam_expiry_date,
       })),
     )
     setError(null)
@@ -267,6 +297,8 @@ function EmployeesSection() {
                 <th className="px-4 py-3 font-medium">Position</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Hire Date</th>
+                <th className="px-4 py-3 font-medium">License Expiry</th>
+                <th className="px-4 py-3 font-medium">Medical Exam</th>
                 <th className="px-4 py-3 font-medium">Account</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
@@ -299,6 +331,16 @@ function EmployeesSection() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {employee.hire_date}
+                    </td>
+                    <td className={`px-4 py-3 ${expiryClass(employee.licenseExpiryDate)}`}>
+                      {employee.position === 'Driver'
+                        ? expiryLabel(employee.licenseExpiryDate)
+                        : '—'}
+                    </td>
+                    <td className={`px-4 py-3 ${expiryClass(employee.medicalExamExpiryDate)}`}>
+                      {employee.position === 'Driver'
+                        ? expiryLabel(employee.medicalExamExpiryDate)
+                        : '—'}
                     </td>
                     <td className="px-4 py-3">
                       {isLinked ? (
