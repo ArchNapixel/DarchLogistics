@@ -35,6 +35,8 @@ import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import SettingsSection from './staff/SettingsSection'
 import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
+import DamageChargesSection from './staff/DamageChargesSection'
+import TruckMaintenanceMonitoringSection from './staff/TruckMaintenanceMonitoringSection'
 import HistorySection from './employee/HistorySection'
 import MyPayslipPage from './employee/MyPayslipPage'
 
@@ -59,6 +61,7 @@ const staffLinks = [
   {
     label: 'Maintenance',
     children: [
+      { label: 'Truck Monitoring', to: '/dashboard/maintenance-monitoring' },
       { label: 'Fleet', to: '/dashboard/fleet' },
       { label: 'Maintenance', to: '/dashboard/maintenance' },
       { label: 'Inventory', to: '/dashboard/inventory' },
@@ -71,6 +74,7 @@ const staffLinks = [
 const dispatcherLinks = [
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
   { label: 'Bookings', to: '/dashboard/bookings' },
+  { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
@@ -111,6 +115,7 @@ function DashboardRouter() {
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="fleet" element={<FleetSection />} />
           <Route path="maintenance" element={<MaintenanceSection />} />
+          <Route path="maintenance-monitoring" element={<TruckMaintenanceMonitoringSection />} />
           <Route path="inventory" element={<InventorySection />} />
           <Route path="employees" element={<EmployeesSection />} />
           <Route path="payroll" element={<PayrollSection />} />
@@ -133,6 +138,7 @@ function DashboardRouter() {
           />
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="bookings" element={<BookingsSection />} />
+          <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
           <Route path="payslips" element={<DispatcherPayslipSection />} />
           <Route

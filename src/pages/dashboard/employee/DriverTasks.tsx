@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import UpdateStatusControl from './UpdateStatusControl'
 import ReportIssueModal from './ReportIssueModal'
 import AddExpenseModal from './AddExpenseModal'
+import InspectionReportModal from './InspectionReportModal'
 
 type Trip = {
   itinerary_id: number
@@ -42,6 +43,7 @@ function DriverTasks() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showReportIssue, setShowReportIssue] = useState(false)
+  const [showInspectionReport, setShowInspectionReport] = useState(false)
   const [expenseTripId, setExpenseTripId] = useState<number | null>(null)
 
   async function loadTrips(driverEmployeeId: number) {
@@ -197,6 +199,12 @@ function DriverTasks() {
     <div>
       <div className="mb-4 flex justify-end">
         <button
+          onClick={() => setShowInspectionReport(true)}
+          className="mr-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        >
+          Submit Inspection Report
+        </button>
+        <button
           onClick={() => setShowReportIssue(true)}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
         >
@@ -208,6 +216,10 @@ function DriverTasks() {
 
       {showReportIssue && (
         <ReportIssueModal onClose={() => setShowReportIssue(false)} />
+      )}
+
+      {showInspectionReport && (
+        <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
       )}
 
       {expenseTripId !== null && (

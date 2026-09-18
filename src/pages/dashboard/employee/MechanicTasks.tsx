@@ -20,6 +20,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
+import InspectionReportModal from './InspectionReportModal'
 
 const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
@@ -76,6 +77,7 @@ function MechanicTasks() {
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
   const [reopeningOrder, setReopeningOrder] = useState<WorkOrder | null>(null)
+  const [showInspectionReport, setShowInspectionReport] = useState(false)
 
   useEffect(() => {
     if (employeeId) {
@@ -236,6 +238,15 @@ function MechanicTasks() {
 
   return (
     <div>
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={() => setShowInspectionReport(true)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        >
+          Submit Inspection Report
+        </button>
+      </div>
+
       {actionError && (
         <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
@@ -343,6 +354,10 @@ function MechanicTasks() {
           onClose={() => setReopeningOrder(null)}
           onRequested={() => setReopeningOrder(null)}
         />
+      )}
+
+      {showInspectionReport && (
+        <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
       )}
     </div>
   )
