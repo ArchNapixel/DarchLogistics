@@ -35,7 +35,11 @@ const STATUS_STYLES: Record<string, string> = {
   Active: 'bg-green-100 text-green-700',
   'On Leave': 'bg-orange-100 text-orange-700',
   Terminated: 'bg-red-100 text-red-700',
+  Deactivated: 'bg-slate-200 text-slate-700',
 }
+
+const TABS = ['Active', 'Deactivated'] as const
+type Tab = (typeof TABS)[number]
 
 function EmploymentStatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
@@ -69,10 +73,12 @@ function expiryClass(date: string | null) {
 }
 
 function EmployeesSection() {
+  const [activeTab, setActiveTab] = useState<Tab>('Active')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [linkedEmployeeIds, setLinkedEmployeeIds] = useState<Set<number>>(
     new Set(),
   )
+  const [statusIdByName, setStatusIdByName] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddEmployee, setShowAddEmployee] = useState(false)
@@ -81,6 +87,7 @@ function EmployeesSection() {
     null,
   )
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [savingStatusId, setSavingStatusId] = useState<number | null>(null)
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -90,6 +97,40 @@ function EmployeesSection() {
   useEffect(() => {
     loadEmployees()
   }, [])
+
+  async function handleSetStatus(employee: Employee, statusName: 'Deactivated' | 'Active') {
+    const statusId = statusIdByName.get(statusName)
+    if (!statusId) {
+      setActionError(
+        `Could not find the "${statusName}" status -- make sure it's been added to employment_status.`,
+      )
+      return
+    }
+
+    const confirmMessage =
+      statusName === 'Deactivated'
+        ? `Deactivate ${employee.name}? They'll be removed from the active roster and, if they have a login, signed out and blocked from logging back in. Their records (payslips, history, etc.) stay fully intact.`
+        : `Reactivate ${employee.name}? They'll return to the active roster and be able to log in again.`
+
+    if (!window.confirm(confirmMessage)) return
+
+    setSavingStatusId(employee.employee_id)
+    setActionError(null)
+
+    const { error: updateError } = await supabase
+      .from('employees')
+      .update({ employment_status_id: statusId })
+      .eq('employee_id', employee.employee_id)
+
+    setSavingStatusId(null)
+
+    if (updateError) {
+      setActionError(updateError.message)
+      return
+    }
+
+    loadEmployees()
+  }
 
   async function handleDelete(employee: Employee) {
     if (!window.confirm(`Delete ${employee.name}? This cannot be undone.`)) {
@@ -155,6 +196,7 @@ function EmployeesSection() {
     const statusNameById = new Map(
       statuses.map((s) => [s.status_id, s.status_name]),
     )
+    setStatusIdByName(new Map(statuses.map((s) => [s.status_name, s.status_id])))
 
     const { data: linkedRows, error: linkedError } = await supabase
       .from('users')
@@ -200,13 +242,18 @@ function EmployeesSection() {
   }
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const tabEmployees = employees.filter((employee) =>
+    activeTab === 'Deactivated'
+      ? employee.status === 'Deactivated'
+      : employee.status !== 'Deactivated',
+  )
   const positions = Array.from(
-    new Set(['Dispatcher', ...employees.map((employee) => employee.position)]),
+    new Set(['Dispatcher', ...tabEmployees.map((employee) => employee.position)]),
   ).sort()
   const statuses = Array.from(
-    new Set(['Inactive', ...employees.map((employee) => employee.status)]),
+    new Set(tabEmployees.map((employee) => employee.status)),
   ).sort()
-  const filteredEmployees = employees.filter(
+  const filteredEmployees = tabEmployees.filter(
     (employee) =>
       employee.name.toLowerCase().includes(normalizedSearchTerm) &&
       (!positionFilter || employee.position === positionFilter) &&
@@ -223,6 +270,25 @@ function EmployeesSection() {
         >
           Add Employee
         </button>
+      </div>
+
+      <div className="mt-4 flex gap-2 border-b border-slate-200">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => {
+              setActiveTab(tab)
+              setStatusFilter('')
+            }}
+            className={`px-4 py-2 text-sm font-medium ${
+              activeTab === tab
+                ? 'border-b-2 border-slate-900 text-slate-900'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
       </div>
 
       {actionError && (
@@ -357,13 +423,34 @@ function EmployeesSection() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-3">
+                      <div className="flex flex-wrap gap-3">
                         <button
                           onClick={() => setEditingEmployee(employee)}
                           className="font-medium text-slate-600 hover:text-slate-900"
                         >
-                          Edit
+                          Edit Information
                         </button>
+                        {employee.status === 'Deactivated' ? (
+                          <button
+                            onClick={() => handleSetStatus(employee, 'Active')}
+                            disabled={savingStatusId === employee.employee_id}
+                            className="font-medium text-green-600 hover:text-green-800 disabled:opacity-50"
+                          >
+                            {savingStatusId === employee.employee_id
+                              ? 'Saving...'
+                              : 'Reactivate'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleSetStatus(employee, 'Deactivated')}
+                            disabled={savingStatusId === employee.employee_id}
+                            className="font-medium text-orange-600 hover:text-orange-800 disabled:opacity-50"
+                          >
+                            {savingStatusId === employee.employee_id
+                              ? 'Saving...'
+                              : 'Deactivate'}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(employee)}
                           disabled={deletingId === employee.employee_id}

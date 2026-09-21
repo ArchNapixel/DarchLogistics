@@ -4,6 +4,13 @@
 // describe what was done and list any parts used, so every part used is
 // traceable back to a real inventory_items row (no free-text parts).
 //
+// Parts already logged mid-job via AccessWorkOrderModal's "Log Part
+// Used" (workOrderPartsLog.ts) show up here read-only -- their stock was
+// already decremented the moment they were logged, so they're copied
+// into work_order_parts_used at the end WITHOUT decrementing again.
+// Only parts added fresh in this modal go through the stock-recheck/
+// decrement steps below.
+//
 // Steps on submit (not wrapped in a real DB transaction -- same known
 // limitation as QuoteReviewModal's Approve flow and payslip.ts's
 // issuePayslip -- so a failure partway through is surfaced with a
@@ -11,9 +18,12 @@
 // naming exactly what was saved and what wasn't):
 //   1. Create any brand-new inventory items the mechanic added inline
 //   2. Insert the work_order_completions row
-//   3. Insert one work_order_parts_used row per part
+//   3. Insert one work_order_parts_used row per part -- both the ones
+//      entered fresh here AND the ones already logged mid-job
 //   4. Re-check stock (someone else may have used the same part since
-//      this modal opened) and decrement inventory_items for each part
+//      this modal opened) and decrement inventory_items for each
+//      FRESHLY entered part only (already-logged ones were decremented
+//      when they were logged)
 //   5. Update work_orders.work_order_status to "Completed"
 //   6. Reset the vehicle's fleet status back to "Available" (it was set
 //      to "Under Maintenance" when the work order was created --
@@ -24,6 +34,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
+import { loadWorkOrderPartsLog, type LoggedPart } from '../../../lib/workOrderPartsLog'
 import { ITEM_TYPES } from '../staff/AddInventoryItemModal'
 
 const fieldClasses =
@@ -95,6 +106,7 @@ function CompleteWorkOrderModal({
 
   const [inventoryItems, setInventoryItems] = useState<InventoryItemOption[]>([])
   const [loadingInventory, setLoadingInventory] = useState(true)
+  const [alreadyLoggedParts, setAlreadyLoggedParts] = useState<LoggedPart[]>([])
 
   const [description, setDescription] = useState('')
   const [parts, setParts] = useState<PartRow[]>([])
@@ -109,7 +121,10 @@ function CompleteWorkOrderModal({
 
   useEffect(() => {
     loadInventory()
-  }, [])
+    loadWorkOrderPartsLog(workOrderId).then(({ parts: logged, error }) => {
+      if (!error) setAlreadyLoggedParts(logged)
+    })
+  }, [workOrderId])
 
   async function loadInventory() {
     setLoadingInventory(true)
@@ -401,16 +416,29 @@ function CompleteWorkOrderModal({
       return
     }
 
-    // 3. Insert the parts-used rows, linked to that completion.
-    if (resolvedParts.length > 0) {
-      const { error: partsError } = await supabase.from('work_order_parts_used').insert(
-        resolvedParts.map((p) => ({
-          completion_id: completion.completion_id,
-          item_id: p.itemId,
-          item_name_text: p.label,
-          quantity: p.quantity,
-        })),
-      )
+    // 3. Insert the parts-used rows, linked to that completion -- both
+    // the ones entered fresh here AND the ones already logged mid-job
+    // (their stock was decremented already, when they were logged --
+    // this just carries them into the completion record for reporting).
+    const allPartsForCompletion = [
+      ...resolvedParts.map((p) => ({
+        completion_id: completion.completion_id,
+        item_id: p.itemId,
+        item_name_text: p.label,
+        quantity: p.quantity,
+      })),
+      ...alreadyLoggedParts.map((p) => ({
+        completion_id: completion.completion_id,
+        item_id: p.item_id,
+        item_name_text: p.item_name_text,
+        quantity: p.quantity,
+      })),
+    ]
+
+    if (allPartsForCompletion.length > 0) {
+      const { error: partsError } = await supabase
+        .from('work_order_parts_used')
+        .insert(allPartsForCompletion)
 
       if (partsError) {
         setFormError(
@@ -585,6 +613,21 @@ function CompleteWorkOrderModal({
 
           <div>
             <p className="text-sm font-medium text-slate-700">Parts / products used</p>
+
+            {alreadyLoggedParts.length > 0 && (
+              <div className="mt-2 rounded-lg bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-500">
+                  Already logged during the job -- no need to re-enter these:
+                </p>
+                <ul className="mt-1 grid gap-0.5 text-sm text-slate-700">
+                  {alreadyLoggedParts.map((p) => (
+                    <li key={p.log_id}>
+                      {p.item_name_text} × {p.quantity}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {loadingInventory && (
               <p className="mt-2 text-sm text-slate-500">Loading inventory...</p>

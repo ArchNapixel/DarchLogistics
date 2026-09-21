@@ -12,6 +12,31 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 
+// employees.employment_status_id has no foreign key at the database
+// level (same as everywhere else it's read, e.g. EmployeesSection.tsx),
+// so this is two lookups rather than one embedded select: the
+// employee's current status_id, then whether that id's name is
+// "Deactivated". Runs on every login/session-restore, not just once, so
+// a deactivated employee is signed back out even if they still have a
+// valid cached session from before they were deactivated.
+async function isEmployeeDeactivated(employeeId: number): Promise<boolean> {
+  const { data: employee } = await supabase
+    .from('employees')
+    .select('employment_status_id')
+    .eq('employee_id', employeeId)
+    .single()
+
+  if (!employee || employee.employment_status_id === null) return false
+
+  const { data: status } = await supabase
+    .from('employment_status')
+    .select('status_name')
+    .eq('status_id', employee.employment_status_id)
+    .single()
+
+  return status?.status_name === 'Deactivated'
+}
+
 type AuthState = {
   session: Session | null
   role: string | null
@@ -75,6 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single()
 
         if (data) {
+          if (data.employee_id !== null && (await isEmployeeDeactivated(data.employee_id))) {
+            await supabase.auth.signOut()
+            setState({
+              session: null,
+              role: null,
+              username: null,
+              employeeId: null,
+              clientId: null,
+              loading: false,
+              error: 'This account has been deactivated. Contact an admin.',
+            })
+            return
+          }
+
           setState({
             session,
             role: data.user_role,

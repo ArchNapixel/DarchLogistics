@@ -21,16 +21,18 @@ import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
 import InspectionReportModal from './InspectionReportModal'
+import AccessWorkOrderModal from './AccessWorkOrderModal'
 
 const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
-type WorkOrder = {
+export type WorkOrder = {
   work_order_id: number
   work_order_number: string
   plate_number: string | null
   trailer_id: number | null
   vehicle_label: string
   work_order_status: string
+  maintenance_type: string
   work_description: string | null
   scheduled_start_date: string | null
 }
@@ -48,7 +50,7 @@ const STATUS_STYLES: Record<string, string> = {
 // whatever status actually applies (including going back to "On Hold"
 // or jumping straight to "Cancelled"), rather than being forced through
 // one status at a time.
-const ALL_STATUSES = [
+export const ALL_STATUSES = [
   'Created',
   'Scheduled',
   'In Progress',
@@ -57,7 +59,7 @@ const ALL_STATUSES = [
   'Cancelled',
 ]
 
-function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
@@ -78,6 +80,8 @@ function MechanicTasks() {
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
   const [reopeningOrder, setReopeningOrder] = useState<WorkOrder | null>(null)
   const [showInspectionReport, setShowInspectionReport] = useState(false)
+  const [accessingOrderId, setAccessingOrderId] = useState<number | null>(null)
+  const accessingOrder = orders.find((o) => o.work_order_id === accessingOrderId) ?? null
 
   useEffect(() => {
     if (employeeId) {
@@ -92,7 +96,7 @@ function MechanicTasks() {
     const { data, error } = await supabase
       .from('work_orders')
       .select(
-        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, work_description, scheduled_start_date',
+        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date',
       )
       .eq('assigned_mechanic_id', mechanicEmployeeId)
       .not('work_order_status', 'in', '(Completed,Cancelled)')
@@ -141,7 +145,7 @@ function MechanicTasks() {
     const { data, error: loadError } = await supabase
       .from('work_orders')
       .select(
-        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, work_description, scheduled_start_date',
+        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date',
       )
       .eq('assigned_mechanic_id', mechanicEmployeeId)
       .eq('work_order_status', 'Completed')
@@ -174,6 +178,7 @@ function MechanicTasks() {
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
     if (newStatus === 'Completed') {
       setCompletingOrder(order)
+      setAccessingOrderId(null)
       return
     }
 
@@ -285,21 +290,12 @@ function MechanicTasks() {
                 </p>
               )}
 
-              <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                Status:
-                <select
-                  value={order.work_order_status}
-                  disabled={updatingId === order.work_order_id}
-                  onChange={(e) => handleStatusChange(order, e.target.value)}
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
-                >
-                  {ALL_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <button
+                onClick={() => setAccessingOrderId(order.work_order_id)}
+                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+              >
+                Access Work Order
+              </button>
             </div>
           ))}
         </div>
@@ -358,6 +354,16 @@ function MechanicTasks() {
 
       {showInspectionReport && (
         <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
+      )}
+
+      {accessingOrder && employeeId && (
+        <AccessWorkOrderModal
+          order={accessingOrder}
+          employeeId={employeeId}
+          updating={updatingId === accessingOrder.work_order_id}
+          onStatusChange={handleStatusChange}
+          onClose={() => setAccessingOrderId(null)}
+        />
       )}
     </div>
   )

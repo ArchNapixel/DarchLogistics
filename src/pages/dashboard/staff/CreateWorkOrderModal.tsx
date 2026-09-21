@@ -16,7 +16,7 @@ const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-const MAINTENANCE_TYPES = ['Routine', 'Preventive', 'Predictive', 'Corrective'] as const
+export const MAINTENANCE_TYPES = ['Routine', 'Preventive', 'Predictive', 'Corrective'] as const
 
 type VehicleOption = {
   key: string

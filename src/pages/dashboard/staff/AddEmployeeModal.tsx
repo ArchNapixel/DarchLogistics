@@ -4,6 +4,11 @@
 // does an INSERT). rate_type determines which single rate column
 // actually gets filled in (daily_rate / commission_per_trip /
 // monthly_salary / hourly_rate) -- the other three stay null.
+//
+// Driver license / medical exam fields are only shown (and only
+// required) when editing an existing Driver, via the "Edit Information"
+// button in EmployeesSection.tsx -- adding a new employee skips them
+// entirely, so they're just null until someone fills them in later.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -71,7 +76,10 @@ function AddEmployeeModal({
       setError('Enter a hire date.')
       return
     }
-    if (position === 'Driver' && (!licenseNumber.trim() || !licenseExpiryDate)) {
+    // License/medical exam fields aren't collected when first adding an
+    // employee -- only required once editing an existing Driver, from
+    // the "Edit Information" button.
+    if (isEditing && position === 'Driver' && (!licenseNumber.trim() || !licenseExpiryDate)) {
       setError('Enter the driver license number and expiry date.')
       return
     }
@@ -210,7 +218,7 @@ function AddEmployeeModal({
             />
           </label>
 
-          {position === 'Driver' && (
+          {isEditing && position === 'Driver' && (
             <>
               <label className={labelClasses}>
                 Driver license number
