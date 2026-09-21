@@ -25,11 +25,21 @@ function EmployeeDashboard() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">
-            Welcome, {username}
-          </h1>
-          <RoleBadge role={role} />
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-900">
+              Welcome, {username}
+            </h1>
+            <RoleBadge role={role} />
+          </div>
+          <p className="text-sm text-slate-500">
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

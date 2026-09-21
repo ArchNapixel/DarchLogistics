@@ -322,11 +322,21 @@ function StaffDashboard() {
 
   return (
     <div className="bg-reports-bg -m-6 p-6">
-      <div className="flex items-center gap-3">
-        <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
-          Welcome, {username}
-        </h1>
-        <RoleBadge role={role} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
+            Welcome, {username}
+          </h1>
+          <RoleBadge role={role} />
+        </div>
+        <p className="font-ui text-sm text-neutral-500">
+          {new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })}
+        </p>
       </div>
 
       {summaryError && (

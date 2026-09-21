@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import AddInventoryItemModal, {
   type EditableInventoryItem,
 } from './AddInventoryItemModal'
+import InventoryReportModal from './InventoryReportModal'
 
 type InventoryItem = {
   item_id: number
@@ -39,6 +40,7 @@ function InventorySection() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [showReport, setShowReport] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
@@ -102,12 +104,20 @@ function InventorySection() {
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">Inventory</h2>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Add Item
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowAdd(true)}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            Add Item
+          </button>
+          <button
+            onClick={() => setShowReport(true)}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Print Inventory Report
+          </button>
+        </div>
       </div>
 
       {actionError && (
@@ -169,6 +179,8 @@ function InventorySection() {
           </table>
         </div>
       )}
+
+      {showReport && <InventoryReportModal onClose={() => setShowReport(false)} />}
 
       {(showAdd || editingItem) && (
         <AddInventoryItemModal
