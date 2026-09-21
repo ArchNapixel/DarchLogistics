@@ -12,12 +12,15 @@ import RoleBadge from '../../components/RoleBadge'
 import MyTasksSection from './employee/MyTasksSection'
 import TaskBoard from './employee/TaskBoard'
 import ScheduleMaintenanceModal from './employee/ScheduleMaintenanceModal'
+import IssueMaintenanceRequestModal from './employee/IssueMaintenanceRequestModal'
 
 function EmployeeDashboard() {
   const { username, role, employeeId } = useAuth()
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [showScheduleMaintenance, setShowScheduleMaintenance] = useState(false)
   const [scheduledMessage, setScheduledMessage] = useState<string | null>(null)
+  const [showIssueRequest, setShowIssueRequest] = useState(false)
+  const [requestMessage, setRequestMessage] = useState<string | null>(null)
 
   return (
     <div>
@@ -29,19 +32,34 @@ function EmployeeDashboard() {
           <RoleBadge role={role} />
         </div>
 
-        {role === 'Mechanic' && (
+        <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={() => setShowScheduleMaintenance(true)}
+            onClick={() => setShowIssueRequest(true)}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
           >
-            Schedule Maintenance
+            Issue Maintenance Request
           </button>
-        )}
+
+          {role === 'Mechanic' && (
+            <button
+              onClick={() => setShowScheduleMaintenance(true)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Schedule Maintenance
+            </button>
+          )}
+        </div>
       </div>
 
       {scheduledMessage && (
         <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
           {scheduledMessage}
+        </p>
+      )}
+
+      {requestMessage && (
+        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+          {requestMessage}
         </p>
       )}
 
@@ -64,6 +82,17 @@ function EmployeeDashboard() {
           onScheduled={() => {
             setShowScheduleMaintenance(false)
             setScheduledMessage('Maintenance schedule sent to admin.')
+          }}
+        />
+      )}
+
+      {showIssueRequest && employeeId && (
+        <IssueMaintenanceRequestModal
+          employeeId={employeeId}
+          onClose={() => setShowIssueRequest(false)}
+          onSubmitted={() => {
+            setShowIssueRequest(false)
+            setRequestMessage('Maintenance request sent to admin for approval.')
           }}
         />
       )}

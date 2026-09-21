@@ -21,6 +21,7 @@ import { loadPendingPayslipIssues } from '../../../lib/payslipIssueReports'
 import { loadWorkOrderAcceptanceLog } from '../../../lib/workOrderAcceptanceLog'
 import { loadWorkOrderCompletions } from '../../../lib/workOrderCompletions'
 import { loadPendingMaintenanceSchedules } from '../../../lib/maintenanceSchedules'
+import { loadPendingMaintenanceRequests } from '../../../lib/maintenanceRequests'
 import { loadAllReviews, averageRating } from '../../../lib/clientReviews'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
 import { loadPendingRelogRequests } from '../../../lib/statusRelogRequests'
@@ -30,6 +31,7 @@ import PayslipIssueReportsSection from './PayslipIssueReportsSection'
 import WorkOrderAcceptanceLogSection from './WorkOrderAcceptanceLogSection'
 import WorkOrderCompletionsSection from './WorkOrderCompletionsSection'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
+import MaintenanceRequestsSection from './MaintenanceRequestsSection'
 import ClientReviewsSection from './ClientReviewsSection'
 import ClientDelinquencySection from './ClientDelinquencySection'
 import StatusRelogRequestsSection from './StatusRelogRequestsSection'
@@ -45,6 +47,7 @@ const TABS = [
   'Work Order Acceptance',
   'Payslip Issues',
   'Maintenance Schedules',
+  'Maintenance Requests',
   'Client Reviews',
   'Client Standing',
   'Status Relog Requests',
@@ -79,6 +82,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       completionsResult,
       acceptancesResult,
       maintenanceSchedulesResult,
+      maintenanceRequestsResult,
       reviewsResult,
       delinquentResult,
       relogRequestsResult,
@@ -89,6 +93,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       loadWorkOrderCompletions(),
       loadWorkOrderAcceptanceLog(),
       loadPendingMaintenanceSchedules(),
+      loadPendingMaintenanceRequests(),
       loadAllReviews(),
       loadCurrentlyDelinquentClients(),
       loadPendingRelogRequests(),
@@ -101,6 +106,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       completionsResult.error ??
       acceptancesResult.error ??
       maintenanceSchedulesResult.error ??
+      maintenanceRequestsResult.error ??
       reviewsResult.error ??
       delinquentResult.error ??
       relogRequestsResult.error
@@ -153,6 +159,13 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         value: maintenanceSchedulesResult.schedules.length,
         subtitle: 'Upcoming, flagged by mechanics',
         accent: 'bg-accent-300',
+      },
+      {
+        tab: 'Maintenance Requests',
+        label: 'Maintenance Requests',
+        value: maintenanceRequestsResult.requests.length,
+        subtitle: 'Awaiting admin approval',
+        accent: 'bg-accent-700',
       },
       {
         tab: 'Client Reviews',
@@ -374,6 +387,7 @@ const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
   'Work Order Acceptance': WorkOrderAcceptanceLogSection,
   'Payslip Issues': PayslipIssueReportsSection,
   'Maintenance Schedules': MaintenanceSchedulesSection,
+  'Maintenance Requests': MaintenanceRequestsSection,
   'Client Reviews': ClientReviewsSection,
   'Client Standing': ClientDelinquencySection,
   'Status Relog Requests': StatusRelogRequestsSection,

@@ -8,6 +8,7 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
+import MaintenanceRequestsSection from './MaintenanceRequestsSection'
 
 type WorkOrder = {
   work_order_id: number
@@ -43,7 +44,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-const TABS = ['Active', 'Completed', 'Schedules'] as const
+const TABS = ['Active', 'Completed', 'Requests', 'Schedules'] as const
 type Tab = (typeof TABS)[number]
 
 const ACTIVE_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
@@ -182,6 +183,10 @@ function MaintenanceSection() {
           {activeTab === 'Schedules' ? (
             <div className="mt-4">
               <MaintenanceSchedulesSection />
+            </div>
+          ) : activeTab === 'Requests' ? (
+            <div className="mt-4">
+              <MaintenanceRequestsSection />
             </div>
           ) : (
             <div className="mt-4 grid gap-6 lg:grid-cols-3">
