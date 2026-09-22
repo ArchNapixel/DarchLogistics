@@ -236,7 +236,7 @@ function ConvertIssueToWorkOrderModal({
 
         <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
           <span
-            className={`rounded-full px-2.5 py-1 font-semibold ${SEVERITY_STYLES[report.severity] ?? 'bg-gray-100 text-gray-700'}`}
+            className={`px-2.5 py-1 font-semibold ${SEVERITY_STYLES[report.severity] ?? 'bg-gray-100 text-gray-700'}`}
           >
             {report.severity}
           </span>

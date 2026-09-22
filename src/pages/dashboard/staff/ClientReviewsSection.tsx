@@ -112,7 +112,7 @@ function ClientReviewsSection() {
                   {review.total_bookings} booking{review.total_bookings === 1 ? '' : 's'}
                 </span>
                 {review.is_featured && (
-                  <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                  <span className="bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
                     Public
                   </span>
                 )}

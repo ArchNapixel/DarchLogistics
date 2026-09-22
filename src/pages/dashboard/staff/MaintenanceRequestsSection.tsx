@@ -133,7 +133,7 @@ function MaintenanceRequestsSection() {
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{request.vehicle_label}</p>
-                <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                <span className="bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
                   Pending
                 </span>
               </div>

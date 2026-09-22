@@ -204,15 +204,23 @@ function OdometerUpdatesSection() {
   async function confirmSuggestion(suggestion: OdometerSuggestion) {
     setSavingId(suggestion.itinerary_id)
     setError(null)
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('truck_profiles')
       .update({ current_odometer: suggestion.suggested_odometer, updated_at: new Date().toISOString() })
       .eq('plate_number', suggestion.plate_number)
       .eq('current_odometer', suggestion.current_odometer)
+      .select('plate_number')
+      .maybeSingle()
 
     setSavingId(null)
     if (updateError) {
       setError(`Could not confirm ${suggestion.plate_number}: ${updateError.message}`)
+      return
+    }
+    if (!updated) {
+      // The .eq('current_odometer', ...) guard matched 0 rows -- someone
+      // else already updated this truck's odometer since the page loaded.
+      setError(`${suggestion.plate_number}'s odometer was already updated by someone else. Refresh to see the latest value.`)
       return
     }
 

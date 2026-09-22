@@ -38,7 +38,7 @@ const STATUS_STYLES: Record<string, string> = {
 function StatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
+    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
       {status}
     </span>
   )
@@ -259,7 +259,7 @@ function MaintenanceSection() {
                       <span className="text-sm text-slate-900">
                         {mechanic.full_name}
                       </span>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                      <span className="bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                         {mechanic.active_work_orders} active
                       </span>
                     </div>

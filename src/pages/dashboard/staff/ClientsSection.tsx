@@ -130,7 +130,7 @@ function ClientsSection() {
                         {client.client_name}
                       </button>
                       {isDelinquent && (
-                        <span className="ml-2 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                        <span className="ml-2 bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
                           Delinquent
                         </span>
                       )}
@@ -143,7 +143,7 @@ function ClientsSection() {
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        className={`px-3 py-1 text-xs font-semibold ${
                           isLinked
                             ? 'bg-green-100 text-green-700'
                             : 'bg-gray-100 text-gray-700'

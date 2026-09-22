@@ -148,7 +148,7 @@ function LocationPicker({
               type="button"
               onClick={() => pickNamedLocation(named)}
               title={named.full_name}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+              className={`border px-3 py-1 text-xs font-semibold ${
                 value.city === named.city && value.barangay === named.barangay
                   ? 'border-slate-900 bg-slate-900 text-white'
                   : 'border-slate-300 text-slate-600 hover:border-slate-500'

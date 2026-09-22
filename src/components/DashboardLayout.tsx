@@ -2,7 +2,7 @@
 // logo, user name + role badge, logout button, and an optional sidebar.
 // The actual page content renders into <Outlet /> via React Router's
 // nested routes (see DashboardRouter.tsx).
-import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
@@ -63,23 +63,34 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
       <div className="flex flex-1">
         {sidebarLinks.length > 0 && (
-          <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
+          // Sidebar = the 30% secondary color (brand-steel). Active/
+          // current-page links use slate-900 (the 10% accent, same
+          // color as every primary action button in the app) so the
+          // current page stays visually distinct against the blue.
+          <aside className="flex w-56 flex-col bg-brand-steel p-4">
             <nav className="flex flex-1 flex-col gap-1">
               {sidebarLinks.map((link) =>
                 link.children ? (
                   <div key={link.label} className="group relative">
                     {link.to ? (
-                      <Link
+                      <NavLink
                         to={link.to}
-                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        end
+                        className={({ isActive }) =>
+                          `flex items-center justify-between px-3 py-2 text-sm font-medium ${
+                            isActive
+                              ? 'bg-slate-900 text-white'
+                              : 'text-white/90 hover:bg-brand-steel-dark hover:text-white'
+                          }`
+                        }
                       >
                         {link.label}
-                        <span className="text-xs text-slate-400">›</span>
-                      </Link>
+                        <span className="text-xs text-white/60">›</span>
+                      </NavLink>
                     ) : (
-                      <span className="flex cursor-default items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-600 group-hover:bg-slate-100 group-hover:text-slate-900">
+                      <span className="flex cursor-default items-center justify-between px-3 py-2 text-sm font-medium text-white/90 group-hover:bg-brand-steel-dark group-hover:text-white">
                         {link.label}
-                        <span className="text-xs text-slate-400">›</span>
+                        <span className="text-xs text-white/60">›</span>
                       </span>
                     )}
 
@@ -87,38 +98,58 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                     no margin) -- a gap here would be a dead zone where
                     moving the mouse diagonally toward a lower item drops
                     the hover state and closes the menu before it can be
-                    clicked. */}
-                    <div className="absolute left-full top-0 z-10 hidden min-w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-lg group-hover:block">
+                    clicked. Kept white/slate (not blue) since it's a
+                    floating flyout menu over page content, not the
+                    sidebar itself -- matches every other floating panel
+                    in the app (dropdowns, modals). */}
+                    <div className="absolute left-full top-0 z-10 hidden min-w-40 border border-brand-steel-dark bg-white p-1 shadow-lg group-hover:block">
                       {link.children.map((child) => (
-                        <Link
+                        <NavLink
                           key={child.to}
                           to={child.to}
-                          className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          className={({ isActive }) =>
+                            `block px-3 py-2 text-sm font-medium ${
+                              isActive
+                                ? 'bg-slate-900 text-white'
+                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                            }`
+                          }
                         >
                           {child.label}
-                        </Link>
+                        </NavLink>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <Link
+                  <NavLink
                     key={link.to}
                     to={link.to!}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    end
+                    className={({ isActive }) =>
+                      `px-3 py-2 text-sm font-medium ${
+                        isActive
+                          ? 'bg-slate-900 text-white'
+                          : 'text-white/90 hover:bg-brand-steel-dark hover:text-white'
+                      }`
+                    }
                   >
                     {link.label}
-                  </Link>
+                  </NavLink>
                 ),
               )}
             </nav>
 
             {isAdmin(role) && (
-              <Link
+              <NavLink
                 to="/dashboard/settings"
-                className="mt-4 rounded-lg border-t border-slate-200 px-3 pt-4 text-sm font-medium text-slate-600 hover:text-slate-900"
+                className={({ isActive }) =>
+                  `mt-4 border-t border-brand-steel-dark px-3 pt-4 text-sm font-medium ${
+                    isActive ? 'text-white' : 'text-white/80 hover:text-white'
+                  }`
+                }
               >
                 ⚙ Settings
-              </Link>
+              </NavLink>
             )}
           </aside>
         )}

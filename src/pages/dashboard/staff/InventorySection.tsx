@@ -28,7 +28,7 @@ const TYPE_STYLES: Record<string, string> = {
 function TypeBadge({ type }: { type: string }) {
   const styles = TYPE_STYLES[type] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
+    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
       {type}
     </span>
   )

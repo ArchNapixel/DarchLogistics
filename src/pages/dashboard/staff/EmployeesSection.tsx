@@ -44,7 +44,7 @@ type Tab = (typeof TABS)[number]
 function EmploymentStatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>
+    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
       {status}
     </span>
   )
@@ -410,7 +410,7 @@ function EmployeesSection() {
                     </td>
                     <td className="px-4 py-3">
                       {isLinked ? (
-                        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                        <span className="bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
                           Set Up
                         </span>
                       ) : (

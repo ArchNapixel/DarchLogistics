@@ -96,7 +96,7 @@ function MaintenanceSchedulesSection() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-slate-900">{schedule.vehicle_label}</p>
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${SCHEDULE_TONE_STYLES[due.tone]}`}
+                    className={`px-3 py-1 text-xs font-semibold ${SCHEDULE_TONE_STYLES[due.tone]}`}
                   >
                     {due.label}
                   </span>

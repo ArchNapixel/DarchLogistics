@@ -1,5 +1,37 @@
 @import "tailwindcss";
 
+/* Sharp-edges design update: zeroing every radius scale step centrally
+   here flattens every rounded-{xs,sm,md,lg,xl,2xl,3xl,4xl} utility (and
+   the bare "rounded") app-wide, without hunting down each usage
+   file-by-file. rounded-full is a separate static utility (not driven
+   by these tokens) and was flattened by removing it at each of its ~38
+   call sites instead -- none of them turned out to be a functional
+   circle (avatar photo, spinner), all were decorative pill badges/
+   buttons, so none needed to stay round. */
+@theme {
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+}
+
+/* Dashboard 60-30-10 color system:
+   60% DOMINANT -- bg-slate-50 (page background) / bg-white (cards,
+   header, content) -- unchanged, just formalizing what was already
+   the de facto dominant color.
+   30% SECONDARY -- brand-steel (below) -- applied to the sidebar
+   (DashboardLayout.tsx), the app's one existing "brand" blue.
+   10% ACCENT -- slate-900 -- already the de facto primary-action-button
+   color everywhere (Approve, Issue Payslip, Confirm Delivery, etc.),
+   now also used for the sidebar's active/current-page indicator.
+   Existing status/semantic colors (green/amber/red/blue-100 badges for
+   Approved/Pending/Rejected/etc.) are untouched -- those are functional
+   indicators, not part of this aesthetic system. */
+
 /* Public site redesign tokens (landing page + quote request page) --
    Oswald for display/headline text, plus the navy/steel brand colors
    from the Darch Logistics design. Nothing in the dashboard uses these,

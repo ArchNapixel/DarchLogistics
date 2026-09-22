@@ -800,9 +800,9 @@ function QuoteReviewModal({
                     {(costRatio * 100).toFixed(1)}%
                   </span>
                 </div>
-                <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="relative h-3 w-full overflow-hidden bg-slate-100">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ease-out ${
+                    className={`h-full transition-all duration-500 ease-out ${
                       isLowMargin
                         ? 'bg-red-500'
                         : costRatio >= 0.4

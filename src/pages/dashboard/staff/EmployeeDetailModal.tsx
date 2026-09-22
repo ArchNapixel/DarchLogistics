@@ -33,7 +33,7 @@ const TRIP_STATUS_STYLES: Record<string, string> = {
 function TripStatusBadge({ status }: { status: string }) {
   const style = TRIP_STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${style}`}>
+    <span className={`px-3 py-1 text-xs font-semibold ${style}`}>
       {TRIP_STATUS_LABELS[status] ?? status}
     </span>
   )
@@ -57,7 +57,7 @@ const WORK_ORDER_STATUS_STYLES: Record<string, string> = {
 function WorkOrderStatusBadge({ status }: { status: string }) {
   const style = WORK_ORDER_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${style}`}>
+    <span className={`px-3 py-1 text-xs font-semibold ${style}`}>
       {status}
     </span>
   )

@@ -12,8 +12,24 @@ before creating it.
 - Public landing page with nav, hero, About section
 - Public quote request form (inserts into `quote_requests`)
 - Staff login/logout (Supabase Auth) + protected route wrapper
-- 3-tier role routing: isStaff() (Admin/Dispatcher), isEmployee() (Driver/Mechanic)
-- StaffDashboard (Admin + Dispatcher — full working dashboard)
+- 4 role trees in `DashboardRouter.tsx`: Admin (full `staffLinks` sidebar),
+  **Dispatcher** (its own restricted sidebar: Dispatch Board, Bookings,
+  Damage Charges, Quotations, My Payslips — lands on `/dashboard/dispatch`
+  directly instead of the KPI page, and can't see Employees/Payroll/Fleet/
+  Maintenance/Inventory/Reports/Settings), Employee (Driver/Mechanic/
+  Helper), and Client. `isStaff()` covers Admin+Dispatcher, `isEmployee()`
+  covers Driver/Mechanic/Helper, for broader checks outside routing.
+- StaffDashboard (Admin — full working dashboard)
+- Client portal (`ClientDashboard.tsx`, role `Client`) — profile edit, own
+  bookings list with itinerary drilldown, a payments-due panel (reuses
+  `lib/paymentDue.ts`), submitting a status-change request
+  (`ClientStatusRequestModal.tsx` → `client_status_requests`, staff review
+  in `staff/ClientStatusRequestsSection.tsx`), a 1–5 star review (upsert
+  into `client_reviews`, one per client — staff can "Feature" a review to
+  the public landing page in `staff/ClientReviewsSection.tsx`, anonymized
+  via the `count_bookings_for_clients` RPC so the public page never reads
+  `bookings` directly), and submitting a new quote (`NewQuoteModal.tsx`,
+  uses the same `LocationPicker` as the public quote form).
 - Quotations (`/dashboard/quotations`, QuoteRequestsSection +
   QuoteReviewModal) — Approve finds-or-creates the `clients` row, creates 2
   `places` rows, marks the quote `Approved`, creates the `bookings` row
@@ -80,9 +96,21 @@ before creating it.
      `truck_profiles.next_service_date` + `last_service_date` (set to 
      today)
   
-  `maintenance_requests` and `inspection_reports` (also mentioned as 
-  removed in the old schema cleanup) still don't exist and haven't been 
-  rebuilt — only `work_orders` and its two completion-tracking tables.
+  `maintenance_requests` and `inspection_reports` — **superseded**: both
+  now exist and are built (see "Maintenance Requests & Scheduling" and
+  the Inspection Report note below); this bullet's old "don't exist"
+  claim is stale.
+  Also new since the above was written: `employee/AccessWorkOrderModal.tsx`
+  (Mechanic, opened from an in-progress work order, not the Completed
+  step) — mid-job progress notes (`work_order_notes`) and logging parts
+  *used so far* (`work_order_parts_log`, decrements `inventory_items`
+  immediately, fresh-read-before-decrement race guard same as step 4
+  above). Deliberately separate from `work_order_parts_used`: at
+  Completion, `CompleteWorkOrderModal.tsx` copies the already-logged
+  parts into `work_order_parts_used` for the permanent record **without**
+  decrementing stock a second time (it was already decremented when
+  logged). Read-only admin viewers for history: `WorkOrderAcceptanceLogSection`,
+  `WorkOrderStatusLogSection`, `DispatchStatusLogSection`.
 - Fleet (`/dashboard/fleet`, FleetSection) — Trucks and Trailers tabs, both 
   reading real Supabase data (`truck_profiles`, `trailers`) with loading/
   error states and status badges. Full Add/Edit/Delete for both (AddTruckModal,
@@ -117,7 +145,37 @@ before creating it.
   trailer are also assignable per itinerary — `itineraries` has its own
   `plate_number`/`trailer_id` columns, and the Dispatch Board writes to
   them directly (plain overwrite, no assignment-history table, unlike
-  the Driver/Helper crew assignment above).
+  the Driver/Helper crew assignment above). Reaching "Delivered" here (or
+  via `DeliveryReceiptModal.tsx`, the Driver's own flow) also calls
+  `lib/bookingStatus.ts`'s `syncBookingStatusIfFullyDelivered()` — a
+  booking can cover multiple itineraries (one per delivery order), so it
+  only flips `bookings.booking_status` to `'Delivered'` once *every*
+  sibling itinerary under that booking is Delivered too. Fire-and-forget
+  at both call sites (logs to console on failure, doesn't block the
+  driver/staff action that triggered it).
+- Employee Detail View (staff-side, Operations → Employees) — clicking an
+  employee's name in `EmployeesSection.tsx` is now a link for Driver/
+  Mechanic/Helper only (Admin/Dispatcher stay plain text) and opens
+  `EmployeeDetailModal.tsx`, read-only. Driver/Helper: current active
+  trip (status not in Awaiting/Delivered/Cancelled, via `itinerary_crews`)
+  shown prominently at top, plus full trip history, most recent first.
+  Mechanic: current non-Completed/non-Cancelled work order, plus full
+  `work_order_completions` history. Reuses the Dispatch Board's and
+  MechanicTasks's exact status labels/colors (duplicated locally into
+  this file, not imported, since those source files are otherwise
+  off-limits) — no new status vocabulary invented.
+- Issue Reports → Work Order conversion (staff, `IssueReportsSection.tsx`)
+  — `issue_reports` gained a `worked_on boolean default false` column;
+  the list filters to `worked_on.is.null,worked_on.eq.false`. Staff can
+  either "Mark as Worked On" directly, or "Convert to Work Order"
+  (`ConvertIssueToWorkOrderModal.tsx`, creates a real `work_orders` row
+  pre-filled from the issue report, then marks the issue `worked_on`).
+  Both paths use `.select().maybeSingle()` after the `worked_on` update
+  to catch a silent RLS no-op instead of trusting a bare "no error".
+- Client Booking History (staff, `ClientsSection.tsx` → clicking a client
+  name opens `ClientBookingHistoryModal.tsx`) — reuses `BookingDetailModal`
+  from `BookingsSection.tsx` rather than duplicating it; Ongoing
+  (Draft/Confirmed) and Past sections. Read-only.
 - Employees (`/dashboard/employees`, EmployeesSection + AddEmployeeModal) —
   fully wired to `employees`/`employment_status`/`users`. Search/position/
   status filters, Edit, Delete (FK-violation-aware error handling), and
@@ -162,13 +220,12 @@ before creating it.
     `payslip.ts` was fixed to filter `status = 'Approved'` — a
     `'Pending'` request hasn't actually been given to the employee yet,
     so it must not inflate what gets deducted from their next payslip.
-  - "View Cash Advance Ledger" — effectively covered, not a gap, per
-    team decision. No dedicated all-employees ledger page exists, and
-    none is needed: outstanding balance per employee is available via
-    `IssuePayslipModal` (calls `getOutstandingCashAdvance()`), the
-    "Pending Cash Advance Requests" panel handles approve/reject, and
-    each employee's payslip table shows historical cash advance
-    deductions per pay period. Note for later: `getOutstandingCashAdvance()`
+  - "View Cash Advance Ledger" — **superseded**: a real dedicated ledger
+    page now exists, `staff/CashAdvanceLedgerSection.tsx`, toggleable as
+    a panel on the Payroll page (this replaces the earlier note in this
+    file that called the gap "effectively covered" by the payslip-modal
+    balance display alone — that's no longer the only way to see it).
+    Note for later: `getOutstandingCashAdvance()`
     is a pooled running balance (`sum of Approved cash_advances.amount`
     minus `sum of payroll_payslips.cash_advance_deducted`, both summed
     across the employee's whole history) — it does NOT track which
@@ -179,6 +236,68 @@ before creating it.
     (e.g. "is this specific ₱500 advance paid off"), that can't be
     read from existing data and would need new tracking (FIFO
     attribution would be the natural choice).
+  - Attendance (`staff/AttendanceSection.tsx`, toggleable panel on the
+    Payroll page alongside the Cash Advance Ledger) and Payslip Issue
+    Reports (`staff/PayslipIssueReportsSection.tsx` on the staff side,
+    `employee/ReportPayslipIssueModal.tsx` + `MyPayslipIssueReportsSection.tsx`
+    on the employee side, mounted in `MyPayslipPage.tsx`) — an employee
+    disputing a payslip line item submits a report, staff review it.
+- Maintenance Requests & Scheduling — two distinct concepts, don't
+  conflate them: `maintenance_requests` (urgent — Driver/Mechanic submit
+  via `employee/IssueMaintenanceRequestModal.tsx`, Admin approve/reject
+  in `staff/MaintenanceRequestsSection.tsx`; approving auto-creates a
+  real `work_orders` row and flips the vehicle to "Under Maintenance")
+  vs `maintenance_schedules` (a future heads-up reminder, no approval
+  step — Driver/Mechanic submit via `employee/ScheduleMaintenanceModal.tsx`,
+  anyone with access can just "Mark Done", `staff/MaintenanceSchedulesSection.tsx`).
+  Both are race-guarded the same way as the cash-advance-request decide
+  (`.eq('status', 'Pending')` in the update's WHERE). `employee/InspectionReportModal.tsx`
+  covers the "inspection report" half of what used to be a combined gap.
+  `staff/TruckMaintenanceMonitoringSection.tsx` (`/dashboard/maintenance-monitoring`,
+  its own top-level route, not a tab) layers two tabs on top: "Schedules"
+  (embeds `MaintenanceSchedulesSection` plus an "Assign Schedule" action
+  scoped to trucks only) and "Odometer Updates" — auto-suggests an
+  odometer bump per truck by comparing its `truck_profiles.updated_at`
+  against its most recent Delivered trip's distance
+  (`bookings.estimated_distance_km`), staff click "Confirm update" to
+  apply it. That confirm write is optimistic-concurrency-guarded
+  (`.eq('current_odometer', <value it was suggested against>)`) and now
+  checks whether the update actually matched a row via `.select().maybeSingle()`
+  — fixed 2026-09-22, it previously trusted a bare "no error" the same
+  way the project's documented RLS silent-no-op gotcha describes, so a
+  second admin confirming the same suggestion first would have looked
+  like it worked without actually updating anything.
+- Status Relog Requests — a Dispatcher or Mechanic can't move
+  `itineraries.itinerary_status` / `work_orders.work_order_status`
+  backward directly; they submit a request (`status_relog_requests`,
+  `RequestStatusRelogModal.tsx`, used from both the Dispatch Board and
+  Maintenance/MechanicTasks), Admin approves (applies the change + logs
+  it) or rejects (`staff/StatusRelogRequestsSection.tsx`).
+- Damage Charges (Dispatcher + Admin, `/dashboard/damage-charges`,
+  `staff/DamageChargesSection.tsx`) — resolves `delivery_damage_records`
+  back through `delivery_receipts` → `itineraries` → `bookings`/`clients`/
+  `places` to let staff decide whether a damage charge goes to the
+  Client or stays a Company cost.
+- Client Delinquency & Reviews (staff side; the client-facing review
+  submission is under "Client portal" above) — `staff/ClientDelinquencySection.tsx`
+  is an append-only log (`client_delinquency_log`; "currently delinquent"
+  is derived from each client's latest logged action, not a flag column)
+  plus an "Overdue Risk" auto-suggestion list (reuses `lib/paymentDue.ts`,
+  writes nothing until staff clicks to log it). `staff/ClientReviewsSection.tsx`
+  lets Admin feature a submitted review on the public landing page.
+- Location Picker (`components/LocationPicker.tsx`) — City/Barangay
+  dropdowns sourced from `location_reference` (`lib/locationReference.ts`),
+  used in the public `QuoteForm.tsx`, staff `NewQuoteRequestModal.tsx`,
+  and client `NewQuoteModal.tsx`. "Pick on map instead" shows a Leaflet +
+  OpenStreetMap view (`react-leaflet`/`leaflet` — these are real npm
+  deps, `npm install` needs to have been run after they were added, they
+  aren't declared-but-missing anymore as of 2026-09-22); clicking
+  reverse-geocodes via the free Nominatim API and tries to match a known
+  barangay, purely as a convenience guess — the City/Barangay dropdowns
+  stay editable either way, the map never silently overrides them.
+- Inventory CSV Export (`lib/inventoryReport.ts` + `staff/InventoryReportModal.tsx`,
+  from the Inventory page) — a Sun–Sat weekly stock/usage snapshot,
+  downloaded client-side as a CSV blob, no server involvement.
 - Financial Records / Payments Due — `lib/paymentDue.ts` calculates what
   each client owes from delivered trips, payment terms, and delivery
   receipt dates. FinancialSection (`/dashboard/financial-records`) is
@@ -192,10 +311,15 @@ before creating it.
 - "My History" (`/dashboard/history`, HistorySection) — Driver/Helper see
   real trip history via `itinerary_crews` → `itineraries` (filtered by
   `crew_role`), Mechanic sees real work order history via `work_orders`.
-- Reports (`/dashboard/reports`, ReportsSection) — partially real: the
-  "Payments Due" tab reuses `paymentDue.ts` (same as above) and is fully
-  real. The "Overview" tab (Revenue/Delivery Performance/Fleet
-  Utilization cards) is still hardcoded `// MOCK DATA`.
+- Reports (`/dashboard/reports`, ReportsSection) — **fully real now**, not
+  partial: 11 of its 14 tabs are new. "Overview" — **superseded**: this
+  file previously said it was hardcoded `// MOCK DATA`; that's no longer
+  true, it now pulls live counts from 9 real tables (`issue_reports`,
+  `client_status_requests`, `payslip_issue_reports`,
+  `work_order_completions`, `work_order_acceptance_log`,
+  `maintenance_schedules`, `maintenance_requests`, `client_reviews`,
+  `client_delinquency_log`) as clickable navigation cards. "Payments Due"
+  still reuses `paymentDue.ts` as before.
 
 ## Currently in progress
 Nothing is actively mid-build right now.
@@ -203,8 +327,28 @@ Nothing is actively mid-build right now.
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —
   this refers to anything further)
-- Reports "Overview" tab — still hardcoded mock (see above); wiring it to
-  real revenue/delivery/fleet data is still to be done.
+
+## 2026-09-22 codebase audit
+CLAUDE.md had fallen well behind — a teammate merged a large batch of new
+features (see git log) across many commits without this file being
+updated. A full read-through + diff against this file found the
+corrections above (marked **superseded**) plus two errors, both now
+fixed:
+- `npx tsc -b` / `npm run build` were failing: `react-leaflet` and
+  `leaflet` were listed in `package.json` but not actually present in
+  `node_modules` (nobody had re-run `npm install` after they were added)
+  — fixed by running `npm install`. This also resolved an implicit-`any`
+  TS error on the map click handler in `LocationPicker.tsx`, since TS
+  could now infer the event type from the package's own types once it
+  actually resolved.
+- The odometer-confirm silent-no-op bug in
+  `TruckMaintenanceMonitoringSection.tsx` described above — fixed.
+Everything else audited (~44 files: Client portal, Dispatcher role,
+Maintenance Requests/Scheduling, Work Order Logs, Status Relog Requests,
+Client Delinquency & Reviews, Attendance, Cash Advance Ledger, Payslip
+Issue Reports, Damage Charges, Location Picker, Inventory CSV Export)
+was clean — real Supabase data throughout, no mock markers, no
+console.log leftovers, every other write correctly checks its result.
 
 ## Schema reality check
 Live DB is a snake_case subset of the full design doc (see memory) — not
@@ -217,6 +361,17 @@ all 88 tables exist yet. Tables actually queried by the app right now
 `work_order_completions`, `work_order_parts_used`, `inventory_items`,
 `app_settings`, `cash_advances`, `employment_status`,
 `payroll_payslips`, `payslip_line_items`, `route_cache`.
+
+Added by the 2026-09-22 audit (teammate-built, previously undocumented
+here, all confirmed reachable and in real use — see the feature bullets
+above for which file queries each one): `client_delinquency_log`,
+`client_reviews`, `client_status_requests`, `employee_attendance`,
+`location_reference`, `maintenance_requests`, `maintenance_schedules`,
+`named_locations`, `payslip_issue_reports`, `status_relog_requests`,
+`work_order_acceptance_log`, `work_order_notes`, `work_order_parts_log`,
+`work_order_status_log`. Plus one RPC: `count_bookings_for_clients`
+(used by the public landing page's featured-reviews section to get a
+booking count per client without exposing raw `bookings` rows).
 
 `work_orders`, `work_order_completions`, `work_order_parts_used`,
 `truck_profiles`, and `inventory_items` had their exact column names
@@ -317,6 +472,27 @@ page) and running `update public.users set employee_id = <id> where
 user_id = <id>`. Worth checking other Admin/Dispatcher test accounts
 for the same gap, since anything that records "who did this"
 (`changed_by`, `approved_by`, etc.) depends on it.
+
+**Update, 2026-09-22:** most of the two lists below ("given as a fix, not
+yet re-tested" and "known gaps") are now stale — the Dispatch Board,
+cash advance requests, quote Approve/Reject, and Driver
+delivery/issue/expense flows have all been built on top of and used
+successfully in many sessions since they were written, so their
+underlying policies clearly work now even though nobody went back to
+edit the "not yet confirmed" wording at the time. Treat entries below as
+historical record of *how* each gap was found and fixed, not as a
+current to-do list — nothing in this file's "Not started yet" section
+depends on any of them. Separately: the full 2026-09-22 codebase audit
+(~44 files covering all the teammate-added features listed earlier in
+this file) found **zero missing-policy bugs** among the newer tables
+(`client_reviews`, `client_delinquency_log`, `maintenance_requests`,
+`maintenance_schedules`, `status_relog_requests`,
+`work_order_acceptance_log`, `work_order_notes`, `work_order_parts_log`,
+`work_order_status_log`, `client_status_requests`, `employee_attendance`,
+`payslip_issue_reports`, `location_reference`, `named_locations`) — RLS
+on those appears to have been set up correctly from the start by
+whoever built them, unlike the older tables below which needed live
+debugging.
 
 **Confirmed working today** (staff successfully completed the action):
 - `quote_requests` — `SELECT` for staff

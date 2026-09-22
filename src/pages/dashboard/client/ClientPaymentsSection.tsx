@@ -62,7 +62,7 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
                 {row.pickup_place_name} → {row.delivery_place_name}
               </p>
               <span
-                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}
+                className={`shrink-0 px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}
               >
                 {due.label}
               </span>

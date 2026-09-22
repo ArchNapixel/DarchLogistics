@@ -30,7 +30,7 @@ const STATUS_STYLES: Record<HistoryStatus, string> = {
 function HistoryStatusBadge({ status }: { status: HistoryStatus }) {
   return (
     <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}
+      className={`px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}
     >
       {status}
     </span>

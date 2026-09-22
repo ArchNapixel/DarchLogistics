@@ -39,7 +39,7 @@ function NavBar() {
           </Link>
           <Link
             to="/login"
-            className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            className="bg-black px-5 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
             Staff Login
           </Link>
@@ -87,7 +87,7 @@ function NavBar() {
           <Link
             to="/login"
             onClick={() => setMobileMenuOpen(false)}
-            className="mt-1 rounded-full bg-black px-4 py-2 text-center text-sm font-medium text-white"
+            className="mt-1 bg-black px-4 py-2 text-center text-sm font-medium text-white"
           >
             Staff Login
           </Link>
