@@ -173,7 +173,7 @@ function EmployeesSection() {
     const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, employment_status_id, daily_rate, commission_per_trip, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date',
+        'employee_id, first_name, last_name, full_name, position, rate_type, commission_basis, hire_date, employment_status_id, daily_rate, commission_per_trip, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date',
       )
       .order('full_name', { ascending: true })
 
@@ -227,6 +227,7 @@ function EmployeesSection() {
           position: row.position,
           rate_type: row.rate_type,
           rate_amount: extractRateAmount(row, row.rate_type),
+          commission_basis: row.commission_basis,
           hire_date: row.hire_date,
           driver_license_number: row.driver_license_number,
           driver_license_expiry_date: row.driver_license_expiry_date,

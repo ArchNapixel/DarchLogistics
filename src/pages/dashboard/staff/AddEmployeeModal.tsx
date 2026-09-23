@@ -23,6 +23,8 @@ export const RATE_TYPES = [
   { value: 'Hourly', label: 'Hourly rate', column: 'hourly_rate' },
 ] as const
 
+export const COMMISSION_BASES = ['Percentage', 'Flat Fee'] as const
+
 export type EditableEmployee = {
   employee_id: number
   first_name: string
@@ -30,6 +32,7 @@ export type EditableEmployee = {
   position: string
   rate_type: (typeof RATE_TYPES)[number]['value']
   rate_amount: number | null
+  commission_basis: (typeof COMMISSION_BASES)[number] | null
   hire_date: string
   driver_license_number: string | null
   driver_license_expiry_date: string | null
@@ -57,6 +60,13 @@ function AddEmployeeModal({
   const [rateAmount, setRateAmount] = useState(
     employee?.rate_amount != null ? String(employee.rate_amount) : '',
   )
+  // Only meaningful when rate_type is 'Commission Per Trip' -- defaults
+  // to 'Percentage' (the standard company-wide rate from Settings) for
+  // both a brand-new employee and an older one that predates this
+  // column and has never had it set.
+  const [commissionBasis, setCommissionBasis] = useState<
+    (typeof COMMISSION_BASES)[number]
+  >(employee?.commission_basis ?? 'Percentage')
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
   const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
@@ -87,18 +97,26 @@ function AddEmployeeModal({
     setSubmitting(true)
     setError(null)
 
+    const isCommissionPerTrip = rateType === 'Commission Per Trip'
+    // Percentage basis doesn't use a per-employee amount at all (the
+    // rate comes from app_settings.driver_commission_rate instead), so
+    // commission_per_trip stays null in that case even though the rate
+    // type matches -- [selectedRateType.column] below is skipped for it.
+    const skipAmountColumn = isCommissionPerTrip && commissionBasis === 'Percentage'
+
     const values = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       full_name: `${firstName.trim()} ${lastName.trim()}`,
       position,
       rate_type: rateType,
+      commission_basis: isCommissionPerTrip ? commissionBasis : null,
       hire_date: hireDate,
       daily_rate: null,
       commission_per_trip: null,
       monthly_salary: null,
       hourly_rate: null,
-      [selectedRateType.column]: rateAmount ? Number(rateAmount) : null,
+      ...(skipAmountColumn ? {} : { [selectedRateType.column]: rateAmount ? Number(rateAmount) : null }),
       driver_license_number: position === 'Driver' ? licenseNumber.trim() || null : null,
       driver_license_expiry_date: position === 'Driver' ? licenseExpiryDate || null : null,
       medical_exam_date: position === 'Driver' ? medicalExamDate || null : null,
@@ -206,17 +224,43 @@ function AddEmployeeModal({
             </select>
           </label>
 
-          <label className={labelClasses}>
-            {selectedRateType.label}
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={rateAmount}
-              onChange={(e) => setRateAmount(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
+          {rateType === 'Commission Per Trip' && (
+            <label className={labelClasses}>
+              Commission basis
+              <select
+                value={commissionBasis}
+                onChange={(e) =>
+                  setCommissionBasis(e.target.value as (typeof COMMISSION_BASES)[number])
+                }
+                className={fieldClasses}
+              >
+                {COMMISSION_BASES.map((basis) => (
+                  <option key={basis} value={basis}>
+                    {basis}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {rateType === 'Commission Per Trip' && commissionBasis === 'Percentage' ? (
+            <p className="flex flex-col justify-end text-sm text-slate-500">
+              Uses the company-wide commission rate set on the Settings page --
+              no per-employee amount needed.
+            </p>
+          ) : (
+            <label className={labelClasses}>
+              {selectedRateType.label}
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={rateAmount}
+                onChange={(e) => setRateAmount(e.target.value)}
+                className={fieldClasses}
+              />
+            </label>
+          )}
 
           {isEditing && position === 'Driver' && (
             <>

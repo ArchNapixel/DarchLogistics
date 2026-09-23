@@ -3,20 +3,34 @@
 // employee's own "My Payslip" view (MyPayslipSection.tsx, shown to
 // Driver/Mechanic/Helper/Dispatcher).
 //
-// Pay model (from the business owner):
-// - Driver: 12% commission on rate_of_delivery_service PLUS a flat
-//   driver_per_trip_fee, for every trip they actually delivered whose
-//   delivery_receipts.received_at falls inside the pay period -- NOT
-//   itineraries.trip_date_from, since that's just the planned date and
-//   a driver is paid for when they actually finished the trip. A trip
-//   counts for whoever delivered it even if itinerary_crews was later
-//   reassigned to someone else (itinerary_crews keeps history rows).
-// - Mechanic/Dispatcher/Helper: one flat weekly salary, the same for
-//   everyone in that position -- a single app_settings value per
-//   position, not a per-employee rate.
-// - Everyone (including Driver) also gets a flat daily_allowance x 7,
-//   since there's no attendance/time-tracking system to count actual
-//   worked days against.
+// Pay model (rewritten 2026-09-23 to read each employee's own
+// rate_type/rate columns on `employees`, instead of one shared
+// app_settings value per position -- see buildEmployeePayLineItems):
+// - rate_type 'Commission Per Trip': commission_basis decides the
+//   formula -- 'Percentage' is commissionRate% (from
+//   app_settings.driver_commission_rate, company-wide and still
+//   editable on the Settings page) of that trip's
+//   bookings.rate_of_delivery_service; 'Flat Fee' is that employee's
+//   own commission_per_trip peso amount instead. Either way, one line
+//   item per trip actually delivered whose delivery_receipts.received_at
+//   falls inside the pay period -- NOT itineraries.trip_date_from,
+//   since that's just the planned date and pay is for when the trip
+//   actually finished. A trip counts for whoever delivered it even if
+//   itinerary_crews was later reassigned to someone else (itinerary_crews
+//   keeps history rows). Any itinerary_id that already appears in a
+//   previously issued payslip_line_items row is skipped regardless of
+//   period dates -- a trip can never be paid twice, even if periods
+//   ever end up overlapping.
+// - rate_type 'Daily Fixed' / 'Monthly Salary' / 'Hourly': paid against
+//   attendance (employee_attendance, Present/Leave days count) using
+//   that employee's own daily_rate / monthly_salary / hourly_rate --
+//   Daily Fixed is daily_rate x paid days, Monthly Salary is
+//   (monthly_salary / 30) x paid days (same day-rate-equivalent
+//   approach, just per-employee now instead of one shared salary per
+//   position), Hourly is hourly_rate x hours_worked summed over the
+//   period's paid days.
+// - No separate daily allowance line item -- removed 2026-09-23, gross
+//   pay is just the rate_type-based pay above.
 // - Cash advances (cash_advances table) are never auto-deducted --
 //   admin sees the employee's outstanding balance when issuing a
 //   payslip and chooses how much (if any) to deduct THIS time.
@@ -27,25 +41,13 @@
 //   even if settings/rates change later -- a payslip is a historical
 //   record, not a live calculation.
 import { supabase } from './supabaseClient'
-import { countPaidAttendanceDays } from './employeeAttendance'
+import { countPaidAttendanceDays, sumPaidAttendanceHours, markAttendanceAsPaid } from './employeeAttendance'
 
 export type PayrollSettings = {
   driverCommissionRate: number
-  driverPerTripFee: number
-  mechanicWeeklySalary: number
-  dispatcherWeeklySalary: number
-  helperWeeklySalary: number
-  dailyAllowance: number
 }
 
-const SETTINGS_KEYS = [
-  'driver_commission_rate',
-  'driver_per_trip_fee',
-  'mechanic_weekly_salary',
-  'dispatcher_weekly_salary',
-  'helper_weekly_salary',
-  'daily_allowance',
-] as const
+const SETTINGS_KEYS = ['driver_commission_rate'] as const
 
 export async function loadPayrollSettings(): Promise<{
   settings: PayrollSettings | null
@@ -65,11 +67,6 @@ export async function loadPayrollSettings(): Promise<{
   return {
     settings: {
       driverCommissionRate: valueByKey.get('driver_commission_rate') ?? 0,
-      driverPerTripFee: valueByKey.get('driver_per_trip_fee') ?? 0,
-      mechanicWeeklySalary: valueByKey.get('mechanic_weekly_salary') ?? 0,
-      dispatcherWeeklySalary: valueByKey.get('dispatcher_weekly_salary') ?? 0,
-      helperWeeklySalary: valueByKey.get('helper_weekly_salary') ?? 0,
-      dailyAllowance: valueByKey.get('daily_allowance') ?? 0,
     },
     error: null,
   }
@@ -97,20 +94,62 @@ export type PayslipLineItem = {
   amount: number
 }
 
-// Driver-only: one line item per trip actually delivered within the
-// period, each combining that trip's commission + flat per-trip fee.
-export async function buildDriverTripLineItems(
-  employeeId: number,
+export type RateType = 'Daily Fixed' | 'Commission Per Trip' | 'Monthly Salary' | 'Hourly'
+export type CommissionBasis = 'Flat Fee' | 'Percentage'
+
+export type EmployeePayRate = {
+  employee_id: number
+  position: string
+  rate_type: RateType
+  commission_basis: CommissionBasis | null
+  daily_rate: number | null
+  commission_per_trip: number | null
+  monthly_salary: number | null
+  hourly_rate: number | null
+}
+
+// Commission Per Trip: one line item per trip actually delivered
+// within the period, using whichever formula commission_basis picks.
+// Trips already paid on some earlier payslip (any itinerary_id already
+// sitting in payslip_line_items) are excluded up front, regardless of
+// period dates -- the guarantee that a trip is never paid twice.
+async function buildCommissionTripLineItems(
+  employee: EmployeePayRate,
   periodStart: string,
   periodEnd: string,
-  commissionRate: number,
-  perTripFee: number,
+  companyCommissionRate: number,
 ): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  if (!employee.commission_basis) {
+    return {
+      lineItems: [],
+      error:
+        `${employee.position} #${employee.employee_id} is set to "Commission Per Trip" ` +
+        `but has no commission basis (Flat Fee / Percentage) chosen yet -- edit their ` +
+        `employee record first.`,
+    }
+  }
+  if (employee.commission_basis === 'Flat Fee' && employee.commission_per_trip == null) {
+    return {
+      lineItems: [],
+      error: `This employee's flat commission-per-trip amount hasn't been set -- edit their employee record first.`,
+    }
+  }
+  if (employee.position !== 'Driver' && employee.position !== 'Helper') {
+    return {
+      lineItems: [],
+      error: `"Commission Per Trip" only makes sense for a Driver or Helper (${employee.position} isn't crewed on trips) -- check this employee's rate type.`,
+    }
+  }
+
+  // crew_role matches the employee's own position ('Driver' or
+  // 'Helper' can both be Commission Per Trip, per the rate_type
+  // dropdown) -- not hardcoded to 'Driver', or a Helper on this rate
+  // type would silently get 0 trips found instead of a real error.
   const { data: crewRows, error: crewError } = await supabase
     .from('itinerary_crews')
     .select('itinerary_id')
-    .eq('employee_id', employeeId)
-    .eq('crew_role', 'Driver')
+    .eq('employee_id', employee.employee_id)
+    .eq('crew_role', employee.position)
 
   if (crewError) {
     return { lineItems: [], error: crewError.message }
@@ -138,20 +177,71 @@ export async function buildDriverTripLineItems(
 
   const deliveredIds = itineraryRows.map((row) => row.itinerary_id)
 
-  const { data: receiptRows, error: receiptError } = await supabase
-    .from('delivery_receipts')
-    .select('itinerary_id, received_at')
-    .in('itinerary_id', deliveredIds)
+  // payslip_line_items has no employee_id column of its own -- it only
+  // links back to payroll_payslips, which does. So "already paid"
+  // has to go through THIS employee's own payslips specifically, not
+  // a bare itinerary_id lookup across the whole table -- otherwise the
+  // Driver on a trip getting paid would wrongly blacklist that same
+  // trip from ever paying the Helper who was also on it, since two
+  // different employees legitimately earn their own commission on the
+  // same delivered trip.
+  const [receiptsResult, statusLogResult, ownPayslipsResult] = await Promise.all([
+    supabase.from('delivery_receipts').select('itinerary_id, received_at').in('itinerary_id', deliveredIds),
+    // Fallback for a trip marked Delivered via the Dispatch Board's
+    // direct status override instead of the Driver's own Delivery
+    // Receipt flow -- that path never writes a delivery_receipts row
+    // at all, so without this a staff-overridden trip could never be
+    // paid. Ordered oldest-first so the reduce below naturally keeps
+    // the LAST (most recent) Delivered transition per itinerary, in
+    // case one cycled through Delivered more than once.
+    supabase
+      .from('dispatch_status_logs')
+      .select('itinerary_id, status_changed_at')
+      .in('itinerary_id', deliveredIds)
+      .eq('new_status', 'Delivered')
+      .order('status_changed_at', { ascending: true }),
+    supabase.from('payroll_payslips').select('payroll_id').eq('employee_id', employee.employee_id),
+  ])
 
-  if (receiptError) {
-    return { lineItems: [], error: receiptError.message }
+  if (receiptsResult.error) {
+    return { lineItems: [], error: receiptsResult.error.message }
+  }
+  if (statusLogResult.error) {
+    return { lineItems: [], error: statusLogResult.error.message }
+  }
+  if (ownPayslipsResult.error) {
+    return { lineItems: [], error: ownPayslipsResult.error.message }
   }
 
-  const receivedDateByItinerary = new Map(
-    receiptRows.map((row) => [row.itinerary_id, row.received_at.slice(0, 10)]),
-  )
+  const receivedDateByItinerary = new Map<number, string>()
+  for (const row of statusLogResult.data) {
+    receivedDateByItinerary.set(row.itinerary_id, row.status_changed_at.slice(0, 10))
+  }
+  // delivery_receipts wins where it exists -- it's the more precise,
+  // intentionally-recorded date.
+  for (const row of receiptsResult.data) {
+    receivedDateByItinerary.set(row.itinerary_id, row.received_at.slice(0, 10))
+  }
+
+  const ownPayrollIds = ownPayslipsResult.data.map((row) => row.payroll_id)
+  let alreadyPaidIds = new Set<number>()
+  if (ownPayrollIds.length > 0) {
+    const alreadyPaidResult = await supabase
+      .from('payslip_line_items')
+      .select('itinerary_id')
+      .in('payroll_id', ownPayrollIds)
+      .in('itinerary_id', deliveredIds)
+
+    if (alreadyPaidResult.error) {
+      return { lineItems: [], error: alreadyPaidResult.error.message }
+    }
+    alreadyPaidIds = new Set(
+      alreadyPaidResult.data.map((row) => row.itinerary_id).filter((id): id is number => id != null),
+    )
+  }
 
   const qualifying = itineraryRows.filter((row) => {
+    if (alreadyPaidIds.has(row.itinerary_id)) return false
     const receivedDate = receivedDateByItinerary.get(row.itinerary_id)
     return receivedDate && receivedDate >= periodStart && receivedDate <= periodEnd
   })
@@ -190,16 +280,21 @@ export async function buildDriverTripLineItems(
   )
 
   const lineItems = qualifying.map((row) => {
-    const rate = rateByBooking.get(row.booking_id) ?? 0
-    const commission = (commissionRate / 100) * rate
-    const amount = commission + perTripFee
+    const amount =
+      employee.commission_basis === 'Flat Fee'
+        ? employee.commission_per_trip ?? 0
+        : (companyCommissionRate / 100) * (rateByBooking.get(row.booking_id) ?? 0)
+    const basisLabel =
+      employee.commission_basis === 'Flat Fee'
+        ? 'flat fee'
+        : `${companyCommissionRate}% commission`
     const pickup = placeNameById.get(row.place_of_pickup_id) ?? '—'
     const delivery = placeNameById.get(row.place_of_delivery_id) ?? '—'
     const date = receivedDateByItinerary.get(row.itinerary_id) ?? ''
 
     return {
       itinerary_id: row.itinerary_id,
-      description: `Trip #${row.itinerary_id}: ${pickup} → ${delivery} (${date})`,
+      description: `Trip #${row.itinerary_id}: ${pickup} → ${delivery} (${date}) — ${basisLabel}`,
       amount,
     }
   })
@@ -207,52 +302,88 @@ export async function buildDriverTripLineItems(
   return { lineItems, error: null }
 }
 
-export function fixedSalaryLineItem(
-  position: string,
-  settings: PayrollSettings,
-): PayslipLineItem {
-  const salary =
-    position === 'Mechanic'
-      ? settings.mechanicWeeklySalary
-      : position === 'Dispatcher'
-        ? settings.dispatcherWeeklySalary
-        : settings.helperWeeklySalary
+// Daily Fixed / Monthly Salary / Hourly: paid against attendance,
+// using this employee's own rate column instead of a shared
+// per-position app_settings value.
+async function buildAttendanceBasedLineItems(
+  employee: EmployeePayRate,
+  periodStart: string,
+  periodEnd: string,
+): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  if (employee.rate_type === 'Hourly') {
+    if (employee.hourly_rate == null) {
+      return { lineItems: [], error: `This employee's hourly rate hasn't been set -- edit their employee record first.` }
+    }
+    const { hours, error } = await sumPaidAttendanceHours(employee.employee_id, periodStart, periodEnd)
+    if (error) return { lineItems: [], error }
+
+    return {
+      lineItems: [
+        {
+          itinerary_id: null,
+          description: `${employee.position} hourly pay (${hours} hrs @ ₱${employee.hourly_rate}/hr)`,
+          amount: employee.hourly_rate * hours,
+        },
+      ],
+      error: null,
+    }
+  }
+
+  const rateAmount = employee.rate_type === 'Daily Fixed' ? employee.daily_rate : employee.monthly_salary
+  if (rateAmount == null) {
+    return {
+      lineItems: [],
+      error: `This employee's ${employee.rate_type === 'Daily Fixed' ? 'daily rate' : 'monthly salary'} hasn't been set -- edit their employee record first.`,
+    }
+  }
+
+  const { days, error } = await countPaidAttendanceDays(employee.employee_id, periodStart, periodEnd)
+  if (error) return { lineItems: [], error }
+
+  // Monthly Salary is converted to a daily-equivalent (÷30) and paid
+  // per attendance day, same approach as Daily Fixed -- just derived
+  // from a monthly figure instead of an already-daily one. The label's
+  // denominator matches whichever divisor actually drives the math --
+  // 30 for Monthly Salary regardless of period length, and the
+  // selected period's own day count for Daily Fixed (not a hardcoded
+  // 7 -- the period isn't always exactly a week, e.g. a first payslip
+  // covering however many days since the employee was hired, or an
+  // admin picking a custom range).
+  const dayRate = employee.rate_type === 'Daily Fixed' ? rateAmount : rateAmount / 30
+  const label = employee.rate_type === 'Daily Fixed' ? 'daily rate' : 'monthly salary'
+  const daysInPeriod =
+    Math.round(
+      (new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86_400_000,
+    ) + 1
+  const denominator = employee.rate_type === 'Daily Fixed' ? daysInPeriod : 30
 
   return {
-    itinerary_id: null,
-    description: `${position} weekly salary`,
-    amount: salary,
+    lineItems: [
+      {
+        itinerary_id: null,
+        description: `${employee.position} ${label} (${days}/${denominator} paid attendance days)`,
+        amount: dayRate * days,
+      },
+    ],
+    error: null,
   }
 }
 
-export function attendanceSalaryLineItem(
-  position: string,
+// The single entry point IssuePayslipModal calls -- dispatches on the
+// employee's own rate_type instead of their position.
+export async function buildEmployeePayLineItems(
+  employee: EmployeePayRate,
+  periodStart: string,
+  periodEnd: string,
   settings: PayrollSettings,
-  paidAttendanceDays: number,
-): PayslipLineItem {
-  const weeklySalary =
-    position === 'Mechanic'
-      ? settings.mechanicWeeklySalary
-      : position === 'Dispatcher'
-        ? settings.dispatcherWeeklySalary
-        : settings.helperWeeklySalary
-
-  return {
-    itinerary_id: null,
-    description: `${position} salary (${paidAttendanceDays}/7 paid attendance days)`,
-    amount: (weeklySalary / 7) * paidAttendanceDays,
+): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  if (employee.rate_type === 'Commission Per Trip') {
+    return buildCommissionTripLineItems(employee, periodStart, periodEnd, settings.driverCommissionRate)
   }
+  return buildAttendanceBasedLineItems(employee, periodStart, periodEnd)
 }
 
 export { countPaidAttendanceDays }
-
-export function allowanceLineItem(settings: PayrollSettings): PayslipLineItem {
-  return {
-    itinerary_id: null,
-    description: 'Daily allowance (7 days)',
-    amount: settings.dailyAllowance * 7,
-  }
-}
 
 // Total cash advances issued minus what's already been deducted across
 // this employee's past payslips -- what's still owed back. Only counts
@@ -297,21 +428,23 @@ export async function getOutstandingCashAdvance(
 // (a retry would create a duplicate payslip).
 export async function issuePayslip({
   employeeId,
+  rateType,
   periodStart,
   periodEnd,
   lineItems,
   cashAdvanceDeducted,
 }: {
   employeeId: number
+  rateType: RateType
   periodStart: string
   periodEnd: string
   lineItems: PayslipLineItem[]
   cashAdvanceDeducted: number
 }): Promise<{ payrollId: number | null; error: string | null }> {
   const grossPay = lineItems.reduce((sum, item) => sum + item.amount, 0)
-  const allowanceAmount =
-    lineItems.find((item) => item.description.startsWith('Daily allowance'))?.amount ?? 0
-  const basePay = grossPay - allowanceAmount
+  // No separate allowance line item anymore (removed 2026-09-23) --
+  // base_pay is just gross_pay.
+  const basePay = grossPay
   const netPay = grossPay - cashAdvanceDeducted
 
   const { data: payslip, error: payslipError } = await supabase
@@ -322,7 +455,7 @@ export async function issuePayslip({
       payroll_period_end: periodEnd,
       gross_pay: grossPay,
       base_pay: basePay,
-      allowance_amount: allowanceAmount,
+      allowance_amount: 0,
       cash_advance_deducted: cashAdvanceDeducted,
       net_pay: netPay,
       payslip_status: 'Pending',
@@ -352,6 +485,30 @@ export async function issuePayslip({
       error:
         `Payslip #${payslip.payroll_id} was created, but its line items ` +
         `could not be saved (${lineItemsError.message}). This needs manual review.`,
+    }
+  }
+
+  // Lock in the attendance days this payslip just paid for, so a
+  // future payslip run can never recount them -- the attendance
+  // equivalent of trips being excluded via payslip_line_items.itinerary_id.
+  // Not applicable to Commission Per Trip (no attendance involved in
+  // its pay at all).
+  if (rateType !== 'Commission Per Trip') {
+    const { error: markError } = await markAttendanceAsPaid(
+      employeeId,
+      periodStart,
+      periodEnd,
+      payslip.payroll_id,
+    )
+
+    if (markError) {
+      return {
+        payrollId: payslip.payroll_id,
+        error:
+          `Payslip #${payslip.payroll_id} was created, but its attendance days ` +
+          `could not be marked as paid (${markError}). This needs manual review -- ` +
+          `those days could get counted again on a future payslip.`,
+      }
     }
   }
 

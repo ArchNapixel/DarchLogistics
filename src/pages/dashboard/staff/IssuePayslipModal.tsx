@@ -10,20 +10,16 @@ import { supabase } from '../../../lib/supabaseClient'
 import {
   loadPayrollSettings,
   getDefaultPayPeriod,
-  buildDriverTripLineItems,
-  attendanceSalaryLineItem,
-  countPaidAttendanceDays,
-  allowanceLineItem,
+  buildEmployeePayLineItems,
   getOutstandingCashAdvance,
   issuePayslip,
   type PayslipLineItem,
   type PayrollSettings,
+  type EmployeePayRate,
 } from '../../../lib/payslip'
 
-type EmployeeOption = {
-  employee_id: number
+type EmployeeOption = EmployeePayRate & {
   full_name: string
-  position: string
 }
 
 function IssuePayslipModal({
@@ -57,7 +53,9 @@ function IssuePayslipModal({
     const [employeesResult, settingsResult] = await Promise.all([
       supabase
         .from('employees')
-        .select('employee_id, full_name, position')
+        .select(
+          'employee_id, full_name, position, rate_type, commission_basis, daily_rate, commission_per_trip, monthly_salary, hourly_rate',
+        )
         .order('full_name', { ascending: true }),
       loadPayrollSettings(),
     ])
@@ -97,47 +95,24 @@ function IssuePayslipModal({
     setLoadingPreview(true)
     setError(null)
 
-    const [advanceResult, tripResult, attendanceResult] =
-      employee.position === 'Driver'
-        ? await Promise.all([
-            getOutstandingCashAdvance(employee.employee_id),
-            buildDriverTripLineItems(
-              employee.employee_id,
-              periodStart,
-              periodEnd,
-              settings.driverCommissionRate,
-              settings.driverPerTripFee,
-            ),
-            Promise.resolve({ days: 0, error: null }),
-          ])
-        : await Promise.all([
-            getOutstandingCashAdvance(employee.employee_id),
-            Promise.resolve({ lineItems: [] as PayslipLineItem[], error: null }),
-            countPaidAttendanceDays(employee.employee_id, periodStart, periodEnd),
-          ])
+    const [advanceResult, payResult] = await Promise.all([
+      getOutstandingCashAdvance(employee.employee_id),
+      buildEmployeePayLineItems(employee, periodStart, periodEnd, settings),
+    ])
 
     if (advanceResult.error) {
       setError(advanceResult.error)
       setLoadingPreview(false)
       return
     }
-    if (tripResult.error) {
-      setError(tripResult.error)
-      setLoadingPreview(false)
-      return
-    }
-    if (attendanceResult.error) {
-      setError(attendanceResult.error)
+    if (payResult.error) {
+      setError(payResult.error)
+      setLineItems([])
       setLoadingPreview(false)
       return
     }
 
-    const baseLineItems =
-      employee.position === 'Driver'
-        ? tripResult.lineItems
-        : [attendanceSalaryLineItem(employee.position, settings, attendanceResult.days)]
-
-    setLineItems([...baseLineItems, allowanceLineItem(settings)])
+    setLineItems(payResult.lineItems)
     setOutstandingAdvance(advanceResult.outstanding)
     setDeductAmount('0')
     setLoadingPreview(false)
@@ -163,11 +138,18 @@ function IssuePayslipModal({
       return
     }
 
+    const employee = employees.find((e) => String(e.employee_id) === employeeId)
+    if (!employee) {
+      setError('Select an employee.')
+      return
+    }
+
     setSubmitting(true)
     setError(null)
 
     const { error: issueError } = await issuePayslip({
       employeeId: Number(employeeId),
+      rateType: employee.rate_type,
       periodStart,
       periodEnd,
       lineItems,

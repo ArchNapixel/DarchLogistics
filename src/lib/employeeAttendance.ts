@@ -75,6 +75,11 @@ export async function saveAttendanceRecord({
   return { error: error?.message ?? null }
 }
 
+// Both functions below only count a day toward a payslip once --
+// paid_payroll_id gets set on these rows by markAttendanceAsPaid()
+// once a payslip that used them is actually issued, so a day already
+// paid on an earlier payslip is excluded here even if its date falls
+// inside a later (or overlapping) period.
 export async function countPaidAttendanceDays(
   employeeId: number,
   startDate: string,
@@ -87,6 +92,54 @@ export async function countPaidAttendanceDays(
     .gte('attendance_date', startDate)
     .lte('attendance_date', endDate)
     .in('attendance_status', ['Present', 'Leave'])
+    .is('paid_payroll_id', null)
 
   return { days: data?.length ?? 0, error: error?.message ?? null }
+}
+
+// For Hourly-rate employees' payslips -- sums hours_worked across the
+// same unpaid "Present"/"Leave" days countPaidAttendanceDays counts, so
+// a day logged without hours (null) just contributes 0 instead of
+// breaking the sum.
+export async function sumPaidAttendanceHours(
+  employeeId: number,
+  startDate: string,
+  endDate: string,
+): Promise<{ hours: number; error: string | null }> {
+  const { data, error } = await supabase
+    .from('employee_attendance')
+    .select('hours_worked')
+    .eq('employee_id', employeeId)
+    .gte('attendance_date', startDate)
+    .lte('attendance_date', endDate)
+    .in('attendance_status', ['Present', 'Leave'])
+    .is('paid_payroll_id', null)
+
+  if (error) return { hours: 0, error: error.message }
+
+  const hours = data.reduce((sum, row) => sum + (row.hours_worked ?? 0), 0)
+  return { hours, error: null }
+}
+
+// Called by issuePayslip() right after a Daily Fixed / Monthly Salary /
+// Hourly payslip is created, so those same days can never be counted
+// again on a future payslip -- the attendance equivalent of how a
+// Commission Per Trip payslip's trips get excluded via
+// payslip_line_items.itinerary_id.
+export async function markAttendanceAsPaid(
+  employeeId: number,
+  startDate: string,
+  endDate: string,
+  payrollId: number,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('employee_attendance')
+    .update({ paid_payroll_id: payrollId })
+    .eq('employee_id', employeeId)
+    .gte('attendance_date', startDate)
+    .lte('attendance_date', endDate)
+    .in('attendance_status', ['Present', 'Leave'])
+    .is('paid_payroll_id', null)
+
+  return { error: error?.message ?? null }
 }
