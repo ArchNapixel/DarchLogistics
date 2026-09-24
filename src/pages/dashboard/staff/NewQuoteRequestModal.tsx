@@ -11,6 +11,7 @@ import LocationPicker, {
   emptyLocationValue,
   type LocationValue,
 } from '../../../components/LocationPicker'
+import NewQuoteLocationMap from './NewQuoteLocationMap'
 
 type FormData = {
   clientName: string
@@ -62,6 +63,30 @@ function NewQuoteRequestModal({
   const [form, setForm] = useState<FormData>(emptyForm)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Exact clicked point behind the current pickup/delivery, if it was
+  // set from the map -- just for drawing the two pins on
+  // NewQuoteLocationMap, not saved anywhere (the form's city/barangay
+  // fields are the real data).
+  const [pickupPin, setPickupPin] = useState<[number, number] | null>(null)
+  const [deliveryPin, setDeliveryPin] = useState<[number, number] | null>(null)
+
+  function handleMapPick(
+    role: 'pickup' | 'delivery',
+    location: { city: string; barangay: string } | null,
+    latlng: [number, number],
+  ) {
+    if (role === 'pickup') {
+      setPickupPin(latlng)
+      if (location) {
+        setForm((prev) => ({ ...prev, pickup: { ...prev.pickup, ...location } }))
+      }
+    } else {
+      setDeliveryPin(latlng)
+      if (location) {
+        setForm((prev) => ({ ...prev, delivery: { ...prev.delivery, ...location } }))
+      }
+    }
+  }
 
   function handleChange(
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
@@ -164,8 +189,16 @@ function NewQuoteRequestModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-stretch">
+      <div className="absolute inset-0 z-0">
+        <NewQuoteLocationMap
+          pickupPin={pickupPin}
+          deliveryPin={deliveryPin}
+          onPick={handleMapPick}
+        />
+      </div>
+
+      <div className="relative z-10 m-4 max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">New Quote Request</h3>
           <button
@@ -261,12 +294,14 @@ function NewQuoteRequestModal({
             label="Origin"
             value={form.pickup}
             onChange={(value) => setField('pickup', value)}
+            hideMapPicker
           />
 
           <LocationPicker
             label="Destination"
             value={form.delivery}
             onChange={(value) => setField('delivery', value)}
+            hideMapPicker
           />
 
           <label className={labelClasses}>

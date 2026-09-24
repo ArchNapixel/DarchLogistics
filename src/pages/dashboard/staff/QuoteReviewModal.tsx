@@ -7,9 +7,14 @@
 // pair (place_id_a always the lower id, so direction doesn't matter).
 // On open, if both the pickup and delivery text already match known
 // places AND that pair has a cached distance, the field is pre-filled
-// automatically. Otherwise staff type it in manually once, and Approve
-// saves it to route_cache so the next quote on that same route reuses
-// it instead of asking again.
+// automatically. Otherwise, a best-effort auto-estimate runs instead
+// (geocodeToLatLng + fetchDrivingDistanceKm below -- free OSM stack,
+// same one LocationPicker's map picker already uses: Nominatim to
+// geocode the city/barangay text, OSRM's public server for real
+// driving distance). Either way the field stays editable, and Approve
+// saves whatever value is showing to route_cache so the next quote on
+// that same route reuses the exact (possibly staff-corrected) number
+// instead of re-estimating.
 //
 // Profitability estimate: a side panel that appears once a distance is
 // entered, using `app_settings` (diesel_price_per_liter,
@@ -142,6 +147,39 @@ async function findCachedDistance(
   return data?.distance_km ?? null
 }
 
+// Best-effort auto-distance for a route with no route_cache hit yet --
+// same free OSM stack LocationPicker already uses for its map picker
+// (Nominatim), plus OSRM's public routing server for real driving
+// distance. Never trusted blindly (same spirit as the map picker's
+// reverse-geocode): a bad/no match just returns null and the caller
+// leaves the field blank for manual entry, exactly like before this
+// feature existed.
+async function geocodeToLatLng(
+  city: string,
+  barangay: string,
+): Promise<{ lat: number; lon: number } | null> {
+  const query = `Barangay ${barangay}, ${city}, Philippines`
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
+  )
+  const data = await response.json()
+  const first = data[0]
+  if (!first) return null
+  return { lat: Number(first.lat), lon: Number(first.lon) }
+}
+
+async function fetchDrivingDistanceKm(
+  pickup: { lat: number; lon: number },
+  delivery: { lat: number; lon: number },
+): Promise<number | null> {
+  const response = await fetch(
+    `https://router.project-osrm.org/route/v1/driving/${pickup.lon},${pickup.lat};${delivery.lon},${delivery.lat}?overview=false`,
+  )
+  const data = await response.json()
+  const meters = data?.routes?.[0]?.distance
+  return typeof meters === 'number' ? meters / 1000 : null
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -168,6 +206,8 @@ function QuoteReviewModal({
   const [paymentTerms, setPaymentTerms] = useState(quote.payment_terms)
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   const [distanceIsCached, setDistanceIsCached] = useState(false)
+  const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
+  const [autoEstimatingDistance, setAutoEstimatingDistance] = useState(false)
   const [tripDateFrom, setTripDateFrom] = useState(
     quote.preferred_pickup_date ?? '',
   )
@@ -231,28 +271,61 @@ function QuoteReviewModal({
     loadSettings()
   }, [])
 
-  // If both pickup and delivery text already match known places, check
-  // whether this route has a cached distance from a previous approval.
+  // If both pickup and delivery text already match known places with a
+  // cached distance from a previous approval, use that (it's exact --
+  // possibly staff-corrected). Otherwise fall back to a best-effort
+  // auto-estimate via geocoding + routing (see geocodeToLatLng/
+  // fetchDrivingDistanceKm above). Either way the field stays editable.
   useEffect(() => {
-    async function preloadCachedDistance() {
+    async function loadDistance() {
       const pickupId = await findPlaceIdByCityBarangay(quote.pickup_city, quote.pickup_barangay)
       const deliveryId = await findPlaceIdByCityBarangay(
         quote.delivery_city,
         quote.delivery_barangay,
       )
 
-      if (pickupId === null || deliveryId === null) {
+      if (pickupId !== null && deliveryId !== null) {
+        const cachedKm = await findCachedDistance(pickupId, deliveryId)
+        if (cachedKm !== null) {
+          setEstimatedDistanceKm(String(cachedKm))
+          setDistanceIsCached(true)
+          return
+        }
+      }
+
+      if (
+        !quote.pickup_city ||
+        !quote.pickup_barangay ||
+        !quote.delivery_city ||
+        !quote.delivery_barangay
+      ) {
         return
       }
 
-      const cachedKm = await findCachedDistance(pickupId, deliveryId)
-      if (cachedKm !== null) {
-        setEstimatedDistanceKm(String(cachedKm))
-        setDistanceIsCached(true)
+      setAutoEstimatingDistance(true)
+      try {
+        const [pickupPoint, deliveryPoint] = await Promise.all([
+          geocodeToLatLng(quote.pickup_city, quote.pickup_barangay),
+          geocodeToLatLng(quote.delivery_city, quote.delivery_barangay),
+        ])
+
+        if (!pickupPoint || !deliveryPoint) return
+
+        const km = await fetchDrivingDistanceKm(pickupPoint, deliveryPoint)
+        if (km !== null) {
+          setEstimatedDistanceKm(km.toFixed(2))
+          setDistanceIsAutoEstimated(true)
+        }
+      } catch {
+        // Geocoding/routing failed (network, rate limit, no match) --
+        // leave the field blank for manual entry, same as before this
+        // feature existed.
+      } finally {
+        setAutoEstimatingDistance(false)
       }
     }
 
-    preloadCachedDistance()
+    loadDistance()
   }, [
     quote.pickup_city,
     quote.pickup_barangay,
@@ -653,13 +726,25 @@ function QuoteReviewModal({
                   onChange={(e) => {
                     setEstimatedDistanceKm(e.target.value)
                     setDistanceIsCached(false)
+                    setDistanceIsAutoEstimated(false)
                   }}
                   className={fieldClasses}
                 />
+                {autoEstimatingDistance && (
+                  <span className="text-xs font-normal text-slate-500">
+                    Estimating distance...
+                  </span>
+                )}
                 {distanceIsCached && (
                   <span className="text-xs font-normal text-slate-500">
                     Pulled from a previous trip on this route -- edit if
                     it's changed.
+                  </span>
+                )}
+                {distanceIsAutoEstimated && (
+                  <span className="text-xs font-normal text-slate-500">
+                    Auto-estimated driving distance -- double check before
+                    approving.
                   </span>
                 )}
               </label>

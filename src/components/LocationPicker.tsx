@@ -12,10 +12,6 @@
 // editable afterward for the user to correct if the guess is wrong.
 import { useEffect, useState } from 'react'
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'
-import L from 'leaflet'
-import markerIconUrl from 'leaflet/dist/images/marker-icon.png'
-import markerIconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
-import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
 import {
   loadLocationReference,
@@ -26,20 +22,7 @@ import {
   type LocationReferenceRow,
   type NamedLocation,
 } from '../lib/locationReference'
-
-// Leaflet's default marker icon points at relative image paths that
-// don't resolve through Vite's bundler unless given the bundled asset
-// URLs explicitly.
-const markerIcon = L.icon({
-  iconUrl: markerIconUrl,
-  iconRetinaUrl: markerIconRetinaUrl,
-  shadowUrl: markerShadowUrl,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-})
-
-// Centered on Davao City -- the service area location_reference covers.
-const DEFAULT_CENTER: [number, number] = [7.1907, 125.4553]
+import { markerIcon, DEFAULT_CENTER } from '../lib/leafletIcons'
 
 export type LocationValue = {
   city: string
@@ -62,10 +45,16 @@ function LocationPicker({
   label,
   value,
   onChange,
+  hideMapPicker = false,
 }: {
   label: string
   value: LocationValue
   onChange: (value: LocationValue) => void
+  // Opt-in, off by default -- only NewQuoteRequestModal.tsx sets this,
+  // since it provides its own shared full-screen map (NewQuoteLocationMap.tsx)
+  // that sets both pickup and delivery from one map instead of each field
+  // having its own.
+  hideMapPicker?: boolean
 }) {
   const [rows, setRows] = useState<LocationReferenceRow[]>([])
   const [namedLocations, setNamedLocations] = useState<NamedLocation[]>([])
@@ -206,15 +195,17 @@ function LocationPicker({
         />
       </label>
 
-      <button
-        type="button"
-        onClick={() => setShowMap((prev) => !prev)}
-        className="col-span-full w-fit text-sm font-medium text-slate-600 underline hover:text-slate-900"
-      >
-        {showMap ? 'Hide map' : 'Pick on map instead'}
-      </button>
+      {!hideMapPicker && (
+        <button
+          type="button"
+          onClick={() => setShowMap((prev) => !prev)}
+          className="col-span-full w-fit text-sm font-medium text-slate-600 underline hover:text-slate-900"
+        >
+          {showMap ? 'Hide map' : 'Pick on map instead'}
+        </button>
+      )}
 
-      {showMap && (
+      {!hideMapPicker && showMap && (
         <div className="col-span-full">
           <div className="h-64 w-full overflow-hidden rounded-lg border border-slate-300">
             <MapContainer
