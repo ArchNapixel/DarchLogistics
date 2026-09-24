@@ -1,5 +1,6 @@
 // DashboardLayout: the one shared shell used by all 3 dashboard tiers --
-// logo, user name + role badge, logout button, and an optional sidebar.
+// logo, notification bell, user name + role badge, logout button, and an
+// optional sidebar.
 // The actual page content renders into <Outlet /> via React Router's
 // nested routes (see DashboardRouter.tsx).
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
@@ -48,6 +49,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         </span>
 
         <div className="flex items-center gap-4">
+          <ComplianceExpiryAlerts />
           <span className="font-medium text-slate-900">{username}</span>
           <RoleBadge role={role} />
           <button
@@ -58,8 +60,6 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </button>
         </div>
       </header>
-
-      <ComplianceExpiryAlerts />
 
       <div className="flex flex-1">
         {sidebarLinks.length > 0 && (

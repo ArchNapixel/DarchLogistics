@@ -11,6 +11,11 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 // use here -- the modal reads more fields directly from the same row).
 export type QuoteRequest = {
   quote_request_id: number
+  // Set when staff picked an existing client while logging the request
+  // (NewQuoteRequestModal). Null for a public/client-submitted quote or
+  // a brand-new client, in which case Approve resolves the client by
+  // email instead.
+  client_id: number | null
   client_name: string
   contact_number: string | null
   contact_email: string | null

@@ -66,7 +66,10 @@ type ReportActivityCard = {
   accent: 'bg-accent-100' | 'bg-accent-300' | 'bg-accent-500' | 'bg-accent-700' | 'bg-accent-900'
 }
 
-function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+// The tab counts, loaded once for the whole Reports page: the same
+// numbers fill the Overview cards and the badges on the tab strip, so
+// fetching them per-tab would just repeat these ten queries.
+function useReportActivity() {
   const [cards, setCards] = useState<ReportActivityCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -194,6 +197,18 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     ])
   }
 
+  return { cards, error }
+}
+
+function OverviewTab({
+  cards,
+  error,
+  onNavigate,
+}: {
+  cards: ReportActivityCard[] | null
+  error: string | null
+  onNavigate: (tab: Tab) => void
+}) {
   // Decorative fill, not a precise proportion: 6% floor so a 0-value
   // card still shows a sliver of track, scaled against the loudest
   // card in the current batch.
@@ -397,7 +412,13 @@ const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
 
 function ReportsSection() {
   const [activeTab, setActiveTab] = useState<Tab>('Overview')
+  const { cards, error: cardsError } = useReportActivity()
   const ActiveTabComponent = activeTab === 'Overview' ? null : TAB_COMPONENTS[activeTab]
+
+  // Only the tabs that have an Overview card get a badge -- Payments
+  // Due and the two status logs aren't counted there, and Overview
+  // itself is the summary, so none of them get one.
+  const countByTab = new Map(cards?.map((card) => [card.tab, card.value]))
 
   return (
     <div className="bg-reports-bg -m-6 p-6">
@@ -406,24 +427,33 @@ function ReportsSection() {
       </h2>
 
       <div className="mt-5 flex flex-wrap gap-7 border-b border-reports-hairline">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`font-ui pb-2.5 text-[15px] ${
-              activeTab === tab
-                ? 'border-b-2 border-accent-700 font-semibold text-reports-ink'
-                : 'text-neutral-600 hover:text-neutral-800'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+        {TABS.map((tab) => {
+          const count = countByTab.get(tab)
+
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`font-ui flex items-center gap-2 pb-2.5 text-[15px] ${
+                activeTab === tab
+                  ? 'border-b-2 border-accent-700 font-semibold text-reports-ink'
+                  : 'text-neutral-600 hover:text-neutral-800'
+              }`}
+            >
+              {tab}
+              {count !== undefined && count > 0 && (
+                <span className="font-condensed bg-accent-700 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white">
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       <div className="mt-6">
         {activeTab === 'Overview' ? (
-          <OverviewTab onNavigate={setActiveTab} />
+          <OverviewTab cards={cards} error={cardsError} onNavigate={setActiveTab} />
         ) : (
           ActiveTabComponent && <ActiveTabComponent />
         )}

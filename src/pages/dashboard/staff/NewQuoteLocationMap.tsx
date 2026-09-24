@@ -1,13 +1,18 @@
-// NewQuoteLocationMap: the full-screen map behind NewQuoteRequestModal.
-// One shared map for both fields, instead of each LocationPicker having
-// its own small map -- click anywhere, reverse-geocode the pin (same
-// Nominatim lookup LocationPicker itself uses), then choose whether that
-// point is the Pickup or the Delivery. Whichever is picked updates that
-// field on the form directly; city/barangay stay editable there
-// afterward if the guess is wrong, same "never trusted blindly" rule as
-// LocationPicker's own map.
+// NewQuoteLocationMap: the on-demand full-screen map for
+// NewQuoteRequestModal. It is only mounted while one of the two city
+// boxes is being answered -- clicking a city box opens it, and
+// assigning a point closes it again.
+//
+// A click reverse-geocodes the pin (same Nominatim lookup LocationPicker
+// itself uses) and then asks whether that point is the Pickup or the
+// Delivery. The box that opened the map only decides where it flies to
+// and what the banner says; the answer still comes from the popup, so a
+// point can always be assigned to either end. Whichever is chosen
+// updates that field on the form directly, and city/barangay stay
+// editable on the "Enter manually" tab afterward if the guess is wrong
+// -- same "never trusted blindly" rule as LocationPicker's own map.
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
@@ -16,6 +21,7 @@ import {
   type LocationReferenceRow,
 } from '../../../lib/locationReference'
 import { markerIcon, DEFAULT_CENTER } from '../../../lib/leafletIcons'
+import { geocodePlace } from '../../../lib/geocoding'
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({
@@ -23,6 +29,40 @@ function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }
       onPick(e.latlng.lat, e.latlng.lng)
     },
   })
+  return null
+}
+
+// Flies to wherever this field already points when the map opens: its
+// existing pin if it was set from the map before, otherwise the centre
+// of its city (geocoded). Falls back to sitting at DEFAULT_CENTER when
+// the field is still blank or the city can't be found.
+function FlyToField({
+  pin,
+  city,
+}: {
+  pin: [number, number] | null
+  city: string
+}) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (pin) {
+      map.flyTo(pin, 15)
+      return
+    }
+    if (!city) return
+
+    let cancelled = false
+    geocodePlace(`${city}, Philippines`).then((point) => {
+      if (!cancelled && point) {
+        map.flyTo([point.lat, point.lon], 13)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [map, pin, city])
+
   return null
 }
 
@@ -42,10 +82,20 @@ const pickupIcon = coloredDotIcon('#16a34a')
 const deliveryIcon = coloredDotIcon('#ea580c')
 
 function NewQuoteLocationMap({
+  openedFor,
+  focusPin,
+  focusCity,
   pickupPin,
   deliveryPin,
   onPick,
+  onCancel,
 }: {
+  // Which field's city box opened the map. Only used for the banner and
+  // the fly-to below -- the popup still asks Pickup or Delivery, so a
+  // click can always be assigned to either end.
+  openedFor: 'pickup' | 'delivery'
+  focusPin: [number, number] | null
+  focusCity: string
   pickupPin: [number, number] | null
   deliveryPin: [number, number] | null
   onPick: (
@@ -53,6 +103,7 @@ function NewQuoteLocationMap({
     location: { city: string; barangay: string } | null,
     latlng: [number, number],
   ) => void
+  onCancel: () => void
 }) {
   const [rows, setRows] = useState<LocationReferenceRow[]>([])
   const [pendingPin, setPendingPin] = useState<[number, number] | null>(null)
@@ -102,9 +153,22 @@ function NewQuoteLocationMap({
 
   return (
     <div className="relative h-full w-full">
-      <p className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-lg">
-        Click the map to set a location, then choose Pickup or Delivery.
-      </p>
+      <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-white px-4 py-2 shadow-lg">
+        <p className="text-sm font-medium text-slate-700">
+          Setting the{' '}
+          <span className={openedFor === 'pickup' ? 'text-green-700' : 'text-orange-700'}>
+            {openedFor === 'pickup' ? 'Origin' : 'Destination'}
+          </span>{' '}
+          -- click the map, then choose Pickup or Delivery.
+        </p>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-slate-400 hover:text-slate-700"
+        >
+          ✕
+        </button>
+      </div>
 
       <MapContainer center={DEFAULT_CENTER} zoom={11} style={{ height: '100%', width: '100%' }}>
         <TileLayer
@@ -112,6 +176,7 @@ function NewQuoteLocationMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ClickHandler onPick={handleMapClick} />
+        <FlyToField pin={focusPin} city={focusCity} />
 
         {pickupPin && <Marker position={pickupPin} icon={pickupIcon} />}
         {deliveryPin && <Marker position={deliveryPin} icon={deliveryIcon} />}

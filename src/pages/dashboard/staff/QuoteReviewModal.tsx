@@ -25,9 +25,10 @@
 // auto-rejects anything, it's just information for staff to weigh
 // before clicking Approve.
 //
-// Approve does 5 steps in order: reuse an existing `clients` row by
-// email if one matches (clients.email is unique) or create one from the
-// quote's free-text client info, reuse existing `places` rows by
+// Approve does 5 steps in order: resolve the client -- the `client_id`
+// staff already linked on the request if there is one, else an existing
+// `clients` row matching by email (clients.email is unique), else a new
+// one created from the quote's free-text client info -- reuse existing `places` rows by
 // city+barangay (trimmed, case-insensitive -- barangay is the routing/
 // cache unit, same idea as the client email check) or create them if
 // this is a new barangay, update the quote_request, create the
@@ -48,6 +49,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
+import { geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
 
 const fieldClasses =
@@ -158,14 +160,7 @@ async function geocodeToLatLng(
   city: string,
   barangay: string,
 ): Promise<{ lat: number; lon: number } | null> {
-  const query = `Barangay ${barangay}, ${city}, Philippines`
-  const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
-  )
-  const data = await response.json()
-  const first = data[0]
-  if (!first) return null
-  return { lat: Number(first.lat), lon: Number(first.lon) }
+  return geocodePlace(`Barangay ${barangay}, ${city}, Philippines`)
 }
 
 async function fetchDrivingDistanceKm(
@@ -354,12 +349,20 @@ function QuoteReviewModal({
     setSubmitting(true)
     setError(null)
 
-    // 1. Reuse an existing client if this email already has one (clients.email
-    // is unique -- inserting a duplicate would fail), otherwise create one
-    // from the quote's free-text client info.
+    // 1. Resolve the client, in order of how certain we are: a client
+    // staff already linked on the request itself, else an existing one
+    // matching this email (clients.email is unique -- inserting a
+    // duplicate would fail), else a new one from the quote's free-text
+    // client info.
     let clientId: number
 
-    if (quote.contact_email) {
+    if (quote.client_id) {
+      // Staff already picked a real client when logging this request
+      // (NewQuoteRequestModal's "Existing client" tab), so there's
+      // nothing to match or create -- and matching by email instead
+      // would duplicate the client whenever they have no email on file.
+      clientId = quote.client_id
+    } else if (quote.contact_email) {
       const { data: existingClient, error: existingClientError } =
         await supabase
           .from('clients')

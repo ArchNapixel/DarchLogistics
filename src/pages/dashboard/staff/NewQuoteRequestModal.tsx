@@ -5,12 +5,13 @@
 // as any other quote (QuoteReviewModal), instead of a separate
 // manual-booking path -- keeps one tested path for turning a quote into
 // a booking + itineraries, no matter who submitted it.
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import LocationPicker, {
   emptyLocationValue,
   type LocationValue,
 } from '../../../components/LocationPicker'
+import { formatLocationDisplay } from '../../../lib/locationReference'
 import NewQuoteLocationMap from './NewQuoteLocationMap'
 
 type FormData = {
@@ -49,9 +50,63 @@ const emptyForm: FormData = {
   deliveryOrderCount: '',
 }
 
+type ExistingClient = {
+  client_id: number
+  client_name: string
+  email: string | null
+  phone_number: string | null
+}
+
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+const tabClasses = (active: boolean) =>
+  `px-4 py-2 text-sm font-medium ${
+    active
+      ? 'border-b-2 border-slate-900 text-slate-900'
+      : 'text-slate-500 hover:text-slate-700'
+  }`
+
+// The city box on the "From map" tab. It looks like a normal field but
+// clicking it opens the map instead of a dropdown -- the map is only
+// ever on screen while one of these is being answered. The colored dot
+// matches that point's marker on NewQuoteLocationMap so the panel and
+// the map read as the same thing.
+function MapFieldButton({
+  color,
+  label,
+  value,
+  onClick,
+}: {
+  color: string
+  label: string
+  value: LocationValue
+  onClick: () => void
+}) {
+  return (
+    <div className={labelClasses}>
+      {label}
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${fieldClasses} flex items-center gap-2 text-left font-normal hover:border-slate-500`}
+      >
+        <span className={`h-3 w-3 shrink-0 rounded-full ${color}`} />
+        {value.city && value.barangay ? (
+          <span className="truncate">
+            {formatLocationDisplay({
+              city: value.city,
+              barangay: value.barangay,
+              detail: value.detail,
+            })}
+          </span>
+        ) : (
+          <span className="text-slate-400">Click to pick on map</span>
+        )}
+      </button>
+    </div>
+  )
+}
 
 function NewQuoteRequestModal({
   onClose,
@@ -69,6 +124,39 @@ function NewQuoteRequestModal({
   // fields are the real data).
   const [pickupPin, setPickupPin] = useState<[number, number] | null>(null)
   const [deliveryPin, setDeliveryPin] = useState<[number, number] | null>(null)
+  // Map is the default way in now; the City/Barangay dropdowns only
+  // appear on the "Enter manually" tab. Both write the same
+  // form.pickup/form.delivery, so switching tabs never loses a pick.
+  const [locationTab, setLocationTab] = useState<'map' | 'manual'>('map')
+  // Which city box is currently being answered, or null for no map on
+  // screen at all. The map is only ever up while one of the two boxes
+  // is open, and closes again as soon as a point is assigned.
+  const [mapOpenFor, setMapOpenFor] = useState<'pickup' | 'delivery' | null>(null)
+  // 'new' keeps the original type-it-in behaviour; 'existing' links the
+  // request to a real clients row up front, so Approve doesn't have to
+  // match it back by email later.
+  const [clientMode, setClientMode] = useState<'existing' | 'new'>('new')
+  const [clients, setClients] = useState<ExistingClient[]>([])
+  const [clientsError, setClientsError] = useState<string | null>(null)
+  const [selectedClientId, setSelectedClientId] = useState('')
+
+  useEffect(() => {
+    supabase
+      .from('clients')
+      .select('client_id, client_name, email, phone_number')
+      .order('client_name', { ascending: true })
+      .then(({ data, error: loadError }) => {
+        if (loadError) {
+          setClientsError(loadError.message)
+          return
+        }
+        setClients(data ?? [])
+      })
+  }, [])
+
+  const selectedClient = clients.find(
+    (client) => String(client.client_id) === selectedClientId,
+  )
 
   function handleMapPick(
     role: 'pickup' | 'delivery',
@@ -86,6 +174,7 @@ function NewQuoteRequestModal({
         setForm((prev) => ({ ...prev, delivery: { ...prev.delivery, ...location } }))
       }
     }
+    setMapOpenFor(null)
   }
 
   function handleChange(
@@ -102,7 +191,11 @@ function NewQuoteRequestModal({
   async function handleSubmit() {
     setError(null)
 
-    if (!form.clientName.trim() || !form.contactNumber.trim()) {
+    if (clientMode === 'existing' && !selectedClient) {
+      setError('Pick an existing client, or switch to "New client".')
+      return
+    }
+    if (clientMode === 'new' && (!form.clientName.trim() || !form.contactNumber.trim())) {
       setError('Enter a client name and contact number.')
       return
     }
@@ -154,10 +247,18 @@ function NewQuoteRequestModal({
 
     setSubmitting(true)
 
+    // An existing client's own record is the source of truth for these
+    // three -- they're still copied onto the quote row so every list
+    // that reads quote_requests.client_name keeps working unchanged.
     const { error: insertError } = await supabase.from('quote_requests').insert({
-      client_name: form.clientName,
-      contact_number: form.contactNumber || null,
-      contact_email: form.contactEmail || null,
+      client_id: selectedClient ? selectedClient.client_id : null,
+      client_name: selectedClient ? selectedClient.client_name : form.clientName,
+      contact_number: selectedClient
+        ? selectedClient.phone_number
+        : form.contactNumber || null,
+      contact_email: selectedClient
+        ? selectedClient.email
+        : form.contactEmail || null,
       pickup_location_text: form.pickup.detail,
       pickup_city: form.pickup.city,
       pickup_barangay: form.pickup.barangay,
@@ -189,16 +290,26 @@ function NewQuoteRequestModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch">
-      <div className="absolute inset-0 z-0">
-        <NewQuoteLocationMap
-          pickupPin={pickupPin}
-          deliveryPin={deliveryPin}
-          onPick={handleMapPick}
-        />
-      </div>
+    <div
+      className={`fixed inset-0 z-50 flex items-center px-4 ${
+        mapOpenFor ? 'justify-start' : 'justify-center bg-black/40'
+      }`}
+    >
+      {mapOpenFor && (
+        <div className="absolute inset-0 z-0">
+          <NewQuoteLocationMap
+            openedFor={mapOpenFor}
+            focusPin={mapOpenFor === 'pickup' ? pickupPin : deliveryPin}
+            focusCity={mapOpenFor === 'pickup' ? form.pickup.city : form.delivery.city}
+            pickupPin={pickupPin}
+            deliveryPin={deliveryPin}
+            onPick={handleMapPick}
+            onCancel={() => setMapOpenFor(null)}
+          />
+        </div>
+      )}
 
-      <div className="relative z-10 m-4 max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">New Quote Request</h3>
           <button
@@ -216,40 +327,89 @@ function NewQuoteRequestModal({
         )}
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className={labelClasses}>
-            Client name
-            <input
-              type="text"
-              name="clientName"
-              value={form.clientName}
-              onChange={handleChange}
-              required
-              className={fieldClasses}
-            />
-          </label>
+          <div className="col-span-full overflow-hidden rounded-lg border border-slate-200">
+            <div className="flex border-b border-slate-200 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setClientMode('existing')}
+                className={tabClasses(clientMode === 'existing')}
+              >
+                Existing client
+              </button>
+              <button
+                type="button"
+                onClick={() => setClientMode('new')}
+                className={tabClasses(clientMode === 'new')}
+              >
+                New client
+              </button>
+            </div>
 
-          <label className={labelClasses}>
-            Contact number
-            <input
-              type="tel"
-              name="contactNumber"
-              value={form.contactNumber}
-              onChange={handleChange}
-              required
-              className={fieldClasses}
-            />
-          </label>
+            {clientMode === 'existing' ? (
+              <div className="flex flex-col gap-2 p-3">
+                {clientsError && <p className="text-sm text-red-700">{clientsError}</p>}
+                <label className={labelClasses}>
+                  Client
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => setSelectedClientId(e.target.value)}
+                    className={fieldClasses}
+                  >
+                    <option value="">Select a client</option>
+                    {clients.map((client) => (
+                      <option key={client.client_id} value={client.client_id}>
+                        {client.client_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedClient && (
+                  <p className="text-xs text-slate-500">
+                    {selectedClient.phone_number ?? 'No phone on file'}
+                    {' / '}
+                    {selectedClient.email ?? 'no email on file'}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-3 p-3 sm:grid-cols-2">
+                <label className={labelClasses}>
+                  Client name
+                  <input
+                    type="text"
+                    name="clientName"
+                    value={form.clientName}
+                    onChange={handleChange}
+                    required
+                    className={fieldClasses}
+                  />
+                </label>
 
-          <label className={labelClasses}>
-            Contact email (optional)
-            <input
-              type="email"
-              name="contactEmail"
-              value={form.contactEmail}
-              onChange={handleChange}
-              className={fieldClasses}
-            />
-          </label>
+                <label className={labelClasses}>
+                  Contact number
+                  <input
+                    type="tel"
+                    name="contactNumber"
+                    value={form.contactNumber}
+                    onChange={handleChange}
+                    required
+                    className={fieldClasses}
+                  />
+                </label>
+
+                <label className={`${labelClasses} sm:col-span-2`}>
+                  Contact email (optional)
+                  <input
+                    type="email"
+                    name="contactEmail"
+                    value={form.contactEmail}
+                    onChange={handleChange}
+                    className={fieldClasses}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
 
           <label className={labelClasses}>
             Preferred pickup date
@@ -290,19 +450,57 @@ function NewQuoteRequestModal({
             </label>
           )}
 
-          <LocationPicker
-            label="Origin"
-            value={form.pickup}
-            onChange={(value) => setField('pickup', value)}
-            hideMapPicker
-          />
+          <div className="col-span-full overflow-hidden rounded-lg border border-slate-200">
+            <div className="flex border-b border-slate-200 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setLocationTab('map')}
+                className={tabClasses(locationTab === 'map')}
+              >
+                From map
+              </button>
+              <button
+                type="button"
+                onClick={() => setLocationTab('manual')}
+                className={tabClasses(locationTab === 'manual')}
+              >
+                Enter manually
+              </button>
+            </div>
 
-          <LocationPicker
-            label="Destination"
-            value={form.delivery}
-            onChange={(value) => setField('delivery', value)}
-            hideMapPicker
-          />
+            {locationTab === 'map' ? (
+              <div className="flex flex-col gap-3 p-3">
+                <MapFieldButton
+                  color="bg-green-600"
+                  label="Origin city"
+                  value={form.pickup}
+                  onClick={() => setMapOpenFor('pickup')}
+                />
+                <MapFieldButton
+                  color="bg-orange-600"
+                  label="Destination city"
+                  value={form.delivery}
+                  onClick={() => setMapOpenFor('delivery')}
+                />
+              </div>
+            ) : (
+              <div className="grid gap-3 p-3">
+                <LocationPicker
+                  label="Origin"
+                  value={form.pickup}
+                  onChange={(value) => setField('pickup', value)}
+                  hideMapPicker
+                />
+
+                <LocationPicker
+                  label="Destination"
+                  value={form.delivery}
+                  onChange={(value) => setField('delivery', value)}
+                  hideMapPicker
+                />
+              </div>
+            )}
+          </div>
 
           <label className={labelClasses}>
             Cargo type
