@@ -561,3 +561,17 @@ went on, but almost certainly needs a policy:**
 - Before any Supabase query, confirm exact table/column names with me — 
   never guess schema
 - Build one feature/section at a time, stop after each for testing
+- For schema changes and any DB write/DDL (`CREATE TABLE`, `ALTER`, RLS
+  policies, `INSERT`/`UPDATE`/`DELETE`) — give raw SQL in chat for me to
+  run in the Supabase SQL Editor myself, don't run it yourself via the
+  CLI. Read-only queries (`SELECT`, `information_schema`, `pg_policies`)
+  are fine to run directly.
+- Default to backend-only work (schema, RLS, SQL, data access) unless a
+  request explicitly names a UI/frontend change — then build that
+  specific change directly without re-asking permission each time.
+- After asking a confirming question or stating a plan, stop and wait
+  for my explicit go-ahead before editing files — don't answer your own
+  question and start implementing.
+- Match existing codebase conventions/patterns exactly (including
+  pre-existing lint warnings) instead of introducing a "more correct"
+  novel pattern in just the new file.
