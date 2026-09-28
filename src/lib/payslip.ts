@@ -6,12 +6,14 @@
 // Pay model (rewritten 2026-09-23 to read each employee's own
 // rate_type/rate columns on `employees`, instead of one shared
 // app_settings value per position -- see buildEmployeePayLineItems):
-// - rate_type 'Commission Per Trip': commission_basis decides the
-//   formula -- 'Percentage' is commissionRate% (from
-//   app_settings.driver_commission_rate, company-wide and still
-//   editable on the Settings page) of that trip's
-//   bookings.rate_of_delivery_service; 'Flat Fee' is that employee's
-//   own commission_per_trip peso amount instead. Either way, one line
+// - rate_type 'Commission Per Trip' (Drivers only): per trip,
+//   app_settings.driver_commission_rate% of that trip's
+//   bookings.rate_of_delivery_service (the rate is per trip, not per
+//   contract) PLUS app_settings.driver_per_trip_fee -- both
+//   company-wide, editable on the Settings page, and the same formula
+//   QuoteReviewModal's profitability panel estimates with. The old
+//   per-employee commission_basis / commission_per_trip columns are no
+//   longer used (removed 2026-09-28). One line
 //   item per trip actually delivered whose delivery_receipts.received_at
 //   falls inside the pay period -- NOT itineraries.trip_date_from,
 //   since that's just the planned date and pay is for when the trip
@@ -21,14 +23,19 @@
 //   previously issued payslip_line_items row is skipped regardless of
 //   period dates -- a trip can never be paid twice, even if periods
 //   ever end up overlapping.
-// - rate_type 'Daily Fixed' / 'Monthly Salary' / 'Hourly': paid against
-//   attendance (employee_attendance, Present/Leave days count) using
-//   that employee's own daily_rate / monthly_salary / hourly_rate --
-//   Daily Fixed is daily_rate x paid days, Monthly Salary is
-//   (monthly_salary / 30) x paid days (same day-rate-equivalent
-//   approach, just per-employee now instead of one shared salary per
-//   position), Hourly is hourly_rate x hours_worked summed over the
-//   period's paid days.
+// - rate_type 'Daily Fixed' / 'Weekly Salary' / 'Monthly Salary' /
+//   'Hourly': paid against attendance (employee_attendance,
+//   Present/Leave days count) using that employee's own daily_rate /
+//   weekly_salary / monthly_salary / hourly_rate -- Daily Fixed is
+//   daily_rate x paid days, Weekly Salary is (weekly_salary / 6 working
+//   days) x paid days (how Helpers are paid), Monthly Salary is
+//   (monthly_salary / 30) x paid days, Hourly is hourly_rate x
+//   hours_worked summed over the period's paid days.
+// - The admin can override any calculated line amount, or add manual
+//   lines, in IssuePayslipModal before issuing -- issuePayslip() just
+//   saves whatever lines it's handed.
+// - Dates are Philippine local dates (Asia/Manila), not UTC -- see
+//   toManilaDate().
 // - No separate daily allowance line item -- removed 2026-09-23, gross
 //   pay is just the rate_type-based pay above.
 // - Cash advances (cash_advances table) are never auto-deducted --
@@ -45,9 +52,10 @@ import { countPaidAttendanceDays, sumPaidAttendanceHours, markAttendanceAsPaid }
 
 export type PayrollSettings = {
   driverCommissionRate: number
+  driverPerTripFee: number
 }
 
-const SETTINGS_KEYS = ['driver_commission_rate'] as const
+const SETTINGS_KEYS = ['driver_commission_rate', 'driver_per_trip_fee'] as const
 
 export async function loadPayrollSettings(): Promise<{
   settings: PayrollSettings | null
@@ -67,20 +75,30 @@ export async function loadPayrollSettings(): Promise<{
   return {
     settings: {
       driverCommissionRate: valueByKey.get('driver_commission_rate') ?? 0,
+      driverPerTripFee: valueByKey.get('driver_per_trip_fee') ?? 0,
     },
     error: null,
   }
 }
 
-// Most recent Saturday on/before today, and the 6 days before it --
-// the default weekly pay period, editable in the Issue Payslip form.
+// A timestamp (or Date) as a YYYY-MM-DD date in Philippine time.
+// Slicing an ISO string gives the UTC date instead, which is 8 hours
+// behind -- a delivery at 7am Sunday in Manila would land on Saturday
+// and get paid in the wrong week.
+export function toManilaDate(value: string | Date): string {
+  return new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+}
+
+// Most recent Saturday on/before today (Manila time), and the 6 days
+// before it -- the default weekly pay period, editable in the Issue
+// Payslip form. The date math runs on UTC midnight of that Manila date
+// so toISOString() below can't shift it.
 export function getDefaultPayPeriod(): { start: string; end: string } {
-  const today = new Date()
-  const daysSinceSaturday = (today.getDay() - 6 + 7) % 7
-  const end = new Date(today)
-  end.setDate(today.getDate() - daysSinceSaturday)
+  const end = new Date(`${toManilaDate(new Date())}T00:00:00Z`)
+  const daysSinceSaturday = (end.getUTCDay() - 6 + 7) % 7
+  end.setUTCDate(end.getUTCDate() - daysSinceSaturday)
   const start = new Date(end)
-  start.setDate(end.getDate() - 6)
+  start.setUTCDate(end.getUTCDate() - 6)
 
   return {
     start: start.toISOString().slice(0, 10),
@@ -94,22 +112,21 @@ export type PayslipLineItem = {
   amount: number
 }
 
-export type RateType = 'Daily Fixed' | 'Commission Per Trip' | 'Monthly Salary' | 'Hourly'
-export type CommissionBasis = 'Flat Fee' | 'Percentage'
+export type RateType = 'Daily Fixed' | 'Weekly Salary' | 'Commission Per Trip' | 'Monthly Salary' | 'Hourly'
 
 export type EmployeePayRate = {
   employee_id: number
   position: string
   rate_type: RateType
-  commission_basis: CommissionBasis | null
   daily_rate: number | null
-  commission_per_trip: number | null
+  weekly_salary: number | null
   monthly_salary: number | null
   hourly_rate: number | null
 }
 
-// Commission Per Trip: one line item per trip actually delivered
-// within the period, using whichever formula commission_basis picks.
+// Commission Per Trip (Drivers only): one line item per trip actually
+// delivered within the period -- commission% of the trip's rate plus
+// the flat per-trip fee, both from app_settings.
 // Trips already paid on some earlier payslip (any itinerary_id already
 // sitting in payslip_line_items) are excluded up front, regardless of
 // period dates -- the guarantee that a trip is never paid twice.
@@ -117,39 +134,20 @@ async function buildCommissionTripLineItems(
   employee: EmployeePayRate,
   periodStart: string,
   periodEnd: string,
-  companyCommissionRate: number,
+  settings: PayrollSettings,
 ): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
-  if (!employee.commission_basis) {
+  if (employee.position !== 'Driver') {
     return {
       lineItems: [],
-      error:
-        `${employee.position} #${employee.employee_id} is set to "Commission Per Trip" ` +
-        `but has no commission basis (Flat Fee / Percentage) chosen yet -- edit their ` +
-        `employee record first.`,
-    }
-  }
-  if (employee.commission_basis === 'Flat Fee' && employee.commission_per_trip == null) {
-    return {
-      lineItems: [],
-      error: `This employee's flat commission-per-trip amount hasn't been set -- edit their employee record first.`,
-    }
-  }
-  if (employee.position !== 'Driver' && employee.position !== 'Helper') {
-    return {
-      lineItems: [],
-      error: `"Commission Per Trip" only makes sense for a Driver or Helper (${employee.position} isn't crewed on trips) -- check this employee's rate type.`,
+      error: `"Commission Per Trip" is for Drivers only (${employee.position}s are paid a salary) -- change this employee's rate type.`,
     }
   }
 
-  // crew_role matches the employee's own position ('Driver' or
-  // 'Helper' can both be Commission Per Trip, per the rate_type
-  // dropdown) -- not hardcoded to 'Driver', or a Helper on this rate
-  // type would silently get 0 trips found instead of a real error.
   const { data: crewRows, error: crewError } = await supabase
     .from('itinerary_crews')
     .select('itinerary_id')
     .eq('employee_id', employee.employee_id)
-    .eq('crew_role', employee.position)
+    .eq('crew_role', 'Driver')
 
   if (crewError) {
     return { lineItems: [], error: crewError.message }
@@ -215,12 +213,12 @@ async function buildCommissionTripLineItems(
 
   const receivedDateByItinerary = new Map<number, string>()
   for (const row of statusLogResult.data) {
-    receivedDateByItinerary.set(row.itinerary_id, row.status_changed_at.slice(0, 10))
+    receivedDateByItinerary.set(row.itinerary_id, toManilaDate(row.status_changed_at))
   }
   // delivery_receipts wins where it exists -- it's the more precise,
   // intentionally-recorded date.
   for (const row of receiptsResult.data) {
-    receivedDateByItinerary.set(row.itinerary_id, row.received_at.slice(0, 10))
+    receivedDateByItinerary.set(row.itinerary_id, toManilaDate(row.received_at))
   }
 
   const ownPayrollIds = ownPayslipsResult.data.map((row) => row.payroll_id)
@@ -280,21 +278,17 @@ async function buildCommissionTripLineItems(
   )
 
   const lineItems = qualifying.map((row) => {
-    const amount =
-      employee.commission_basis === 'Flat Fee'
-        ? employee.commission_per_trip ?? 0
-        : (companyCommissionRate / 100) * (rateByBooking.get(row.booking_id) ?? 0)
-    const basisLabel =
-      employee.commission_basis === 'Flat Fee'
-        ? 'flat fee'
-        : `${companyCommissionRate}% commission`
+    const tripRate = rateByBooking.get(row.booking_id) ?? 0
+    const amount = (settings.driverCommissionRate / 100) * tripRate + settings.driverPerTripFee
     const pickup = placeNameById.get(row.place_of_pickup_id) ?? '—'
     const delivery = placeNameById.get(row.place_of_delivery_id) ?? '—'
     const date = receivedDateByItinerary.get(row.itinerary_id) ?? ''
 
     return {
       itinerary_id: row.itinerary_id,
-      description: `Trip #${row.itinerary_id}: ${pickup} → ${delivery} (${date}) — ${basisLabel}`,
+      description:
+        `Trip #${row.itinerary_id}: ${pickup} → ${delivery} (${date}) — ` +
+        `${settings.driverCommissionRate}% of ₱${tripRate.toLocaleString()} + ₱${settings.driverPerTripFee.toLocaleString()} trip fee`,
       amount,
     }
   })
@@ -302,7 +296,7 @@ async function buildCommissionTripLineItems(
   return { lineItems, error: null }
 }
 
-// Daily Fixed / Monthly Salary / Hourly: paid against attendance,
+// Daily Fixed / Weekly Salary / Monthly Salary / Hourly: paid against attendance,
 // using this employee's own rate column instead of a shared
 // per-position app_settings value.
 async function buildAttendanceBasedLineItems(
@@ -329,33 +323,44 @@ async function buildAttendanceBasedLineItems(
     }
   }
 
-  const rateAmount = employee.rate_type === 'Daily Fixed' ? employee.daily_rate : employee.monthly_salary
+  const label =
+    employee.rate_type === 'Daily Fixed'
+      ? 'daily rate'
+      : employee.rate_type === 'Weekly Salary'
+        ? 'weekly salary'
+        : 'monthly salary'
+  const rateAmount =
+    employee.rate_type === 'Daily Fixed'
+      ? employee.daily_rate
+      : employee.rate_type === 'Weekly Salary'
+        ? employee.weekly_salary
+        : employee.monthly_salary
   if (rateAmount == null) {
     return {
       lineItems: [],
-      error: `This employee's ${employee.rate_type === 'Daily Fixed' ? 'daily rate' : 'monthly salary'} hasn't been set -- edit their employee record first.`,
+      error: `This employee's ${label} hasn't been set -- edit their employee record first.`,
     }
   }
 
   const { days, error } = await countPaidAttendanceDays(employee.employee_id, periodStart, periodEnd)
   if (error) return { lineItems: [], error }
 
-  // Monthly Salary is converted to a daily-equivalent (÷30) and paid
-  // per attendance day, same approach as Daily Fixed -- just derived
-  // from a monthly figure instead of an already-daily one. The label's
-  // denominator matches whichever divisor actually drives the math --
-  // 30 for Monthly Salary regardless of period length, and the
-  // selected period's own day count for Daily Fixed (not a hardcoded
-  // 7 -- the period isn't always exactly a week, e.g. a first payslip
-  // covering however many days since the employee was hired, or an
-  // admin picking a custom range).
-  const dayRate = employee.rate_type === 'Daily Fixed' ? rateAmount : rateAmount / 30
-  const label = employee.rate_type === 'Daily Fixed' ? 'daily rate' : 'monthly salary'
+  // Weekly (÷6 working days) and Monthly (÷30) salaries are converted
+  // to a daily-equivalent and paid per attendance day, same approach as
+  // Daily Fixed -- just derived from a bigger figure instead of an
+  // already-daily one. The label's denominator matches whichever
+  // divisor actually drives the math -- 6 / 30 regardless of period
+  // length, and the selected period's own day count for Daily Fixed
+  // (not a hardcoded 7 -- the period isn't always exactly a week, e.g.
+  // a first payslip covering however many days since the employee was
+  // hired, or an admin picking a custom range).
+  const salaryDivisor = employee.rate_type === 'Weekly Salary' ? 6 : 30
+  const dayRate = employee.rate_type === 'Daily Fixed' ? rateAmount : rateAmount / salaryDivisor
   const daysInPeriod =
     Math.round(
       (new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86_400_000,
     ) + 1
-  const denominator = employee.rate_type === 'Daily Fixed' ? daysInPeriod : 30
+  const denominator = employee.rate_type === 'Daily Fixed' ? daysInPeriod : salaryDivisor
 
   return {
     lineItems: [
@@ -378,7 +383,7 @@ export async function buildEmployeePayLineItems(
   settings: PayrollSettings,
 ): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
   if (employee.rate_type === 'Commission Per Trip') {
-    return buildCommissionTripLineItems(employee, periodStart, periodEnd, settings.driverCommissionRate)
+    return buildCommissionTripLineItems(employee, periodStart, periodEnd, settings)
   }
   return buildAttendanceBasedLineItems(employee, periodStart, periodEnd)
 }

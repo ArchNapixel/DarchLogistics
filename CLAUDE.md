@@ -195,10 +195,18 @@ before creating it.
   "Set Up Account" (SetUpStaffAccountModal, via the `create-user-account`
   Edge Function).
 - Payroll & Payslips — `lib/payslip.ts` is the shared pay-calculation
-  engine: Drivers earn a commission % + per-trip fee on delivered trips
-  (`bookings.rate_of_delivery_service` via `delivery_receipts` in the pay
-  period), Mechanic/Dispatcher/Helper get a flat weekly salary, everyone
-  gets a daily allowance — all configurable via `app_settings`. Admin
+  engine, driven by each employee's `employees.rate_type`. Drivers
+  (`Commission Per Trip`, Driver-only) earn per delivered trip
+  `app_settings.driver_commission_rate`% × `bookings.rate_of_delivery_service`
+  (rate is per trip, not per contract) + `app_settings.driver_per_trip_fee`
+  — both company-wide, same formula as QuoteReviewModal's profit panel;
+  trip date = `delivery_receipts.received_at` in Manila time. Everyone
+  else is paid against attendance: Daily Fixed, Weekly Salary (÷6 × paid
+  days — Helpers), Monthly Salary (÷30), Hourly. No daily allowance
+  anymore. `commission_basis`/`commission_per_trip` columns are legacy,
+  unused since 2026-09-28. In `IssuePayslipModal` the admin can override
+  any auto line amount or add manual lines; changes are tagged in the
+  saved line description ("adjusted by admin, auto: ₱X"). Admin
   issues payslips (`IssuePayslipModal`, previews line items, lets admin
   apply a cash-advance deduction bounded by outstanding balance) and cash
   advances directly (`IssueCashAdvanceModal`, inserts into

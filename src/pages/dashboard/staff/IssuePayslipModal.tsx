@@ -1,10 +1,12 @@
 // IssuePayslipModal: admin picks an employee + pay period, previews
-// the breakdown (trip-by-trip for a Driver, flat salary for everyone
-// else, plus the daily allowance for everyone), decides how much (if
-// any) of their outstanding cash advance to deduct this time, then
-// issues the payslip -- created as Pending (see PayrollSection.tsx for
-// the separate "Mark Paid" action). See src/lib/payslip.ts for the pay
-// rules themselves.
+// the auto-calculated breakdown (trip-by-trip for a Driver, salary vs
+// attendance for everyone else), can override any line's amount or add
+// manual lines (bonus, correction...), decides how much (if any) of
+// their outstanding cash advance to deduct this time, then issues the
+// payslip -- created as Pending (see PayrollSection.tsx for the
+// separate "Mark Paid" action). An overridden amount is saved with the
+// auto value noted in its description, so the payslip record shows it
+// was changed. See src/lib/payslip.ts for the pay rules themselves.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import {
@@ -13,7 +15,6 @@ import {
   buildEmployeePayLineItems,
   getOutstandingCashAdvance,
   issuePayslip,
-  type PayslipLineItem,
   type PayrollSettings,
   type EmployeePayRate,
 } from '../../../lib/payslip'
@@ -21,6 +22,20 @@ import {
 type EmployeeOption = EmployeePayRate & {
   full_name: string
 }
+
+// One row of the editable breakdown. autoAmount is what payslip.ts
+// calculated (null for a line the admin added by hand); amount is the
+// text in the input box, which starts as the auto value.
+type EditableLine = {
+  itinerary_id: number | null
+  description: string
+  autoAmount: number | null
+  amount: string
+}
+
+const roundPeso = (value: number) => Math.round(value * 100) / 100
+const formatPeso = (value: number) =>
+  `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 
 function IssuePayslipModal({
   onClose,
@@ -35,7 +50,7 @@ function IssuePayslipModal({
   const defaultPeriod = getDefaultPayPeriod()
   const [periodStart, setPeriodStart] = useState(defaultPeriod.start)
   const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end)
-  const [lineItems, setLineItems] = useState<PayslipLineItem[]>([])
+  const [lineItems, setLineItems] = useState<EditableLine[]>([])
   const [outstandingAdvance, setOutstandingAdvance] = useState(0)
   const [deductAmount, setDeductAmount] = useState('0')
   const [loadingOptions, setLoadingOptions] = useState(true)
@@ -54,7 +69,7 @@ function IssuePayslipModal({
       supabase
         .from('employees')
         .select(
-          'employee_id, full_name, position, rate_type, commission_basis, daily_rate, commission_per_trip, monthly_salary, hourly_rate',
+          'employee_id, full_name, position, rate_type, daily_rate, weekly_salary, monthly_salary, hourly_rate',
         )
         .order('full_name', { ascending: true }),
       loadPayrollSettings(),
@@ -112,13 +127,32 @@ function IssuePayslipModal({
       return
     }
 
-    setLineItems(payResult.lineItems)
+    setLineItems(
+      payResult.lineItems.map((item) => ({
+        itinerary_id: item.itinerary_id,
+        description: item.description,
+        autoAmount: roundPeso(item.amount),
+        amount: String(roundPeso(item.amount)),
+      })),
+    )
     setOutstandingAdvance(advanceResult.outstanding)
     setDeductAmount('0')
     setLoadingPreview(false)
   }
 
-  const grossPay = lineItems.reduce((sum, item) => sum + item.amount, 0)
+  function updateLine(index: number, changes: Partial<EditableLine>) {
+    setLineItems((lines) => lines.map((line, i) => (i === index ? { ...line, ...changes } : line)))
+  }
+
+  function addManualLine() {
+    setLineItems((lines) => [...lines, { itinerary_id: null, description: '', autoAmount: null, amount: '' }])
+  }
+
+  function removeLine(index: number) {
+    setLineItems((lines) => lines.filter((_, i) => i !== index))
+  }
+
+  const grossPay = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
   const deductValue = Number(deductAmount) || 0
   const netPay = grossPay - deductValue
 
@@ -137,6 +171,30 @@ function IssuePayslipModal({
       setError('Nothing to pay for this period.')
       return
     }
+    for (const line of lineItems) {
+      if (line.autoAmount === null && !line.description.trim()) {
+        setError('Enter a description for every line you added.')
+        return
+      }
+      if (line.amount.trim() === '' || !(Number(line.amount) >= 0)) {
+        setError(`Enter an amount of 0 or more for "${line.description || 'the new line'}".`)
+        return
+      }
+    }
+
+    // Final line items as they'll be saved -- overridden amounts and
+    // manual lines get tagged in the description so the payslip itself
+    // shows what the admin changed.
+    const finalLineItems = lineItems.map((line) => {
+      const amount = Number(line.amount)
+      let description = line.description.trim()
+      if (line.autoAmount === null) {
+        description += ' (added by admin)'
+      } else if (roundPeso(amount) !== line.autoAmount) {
+        description += ` (adjusted by admin, auto: ${formatPeso(line.autoAmount)})`
+      }
+      return { itinerary_id: line.itinerary_id, description, amount }
+    })
 
     const employee = employees.find((e) => String(e.employee_id) === employeeId)
     if (!employee) {
@@ -152,7 +210,7 @@ function IssuePayslipModal({
       rateType: employee.rate_type,
       periodStart,
       periodEnd,
-      lineItems,
+      lineItems: finalLineItems,
       cashAdvanceDeducted: deductValue,
     })
 
@@ -240,20 +298,75 @@ function IssuePayslipModal({
                 </p>
               )}
 
-              {!loadingPreview && lineItems.length > 0 && (
+              {!loadingPreview && (
                 <div className="mt-3 flex flex-col gap-2 text-sm">
-                  {lineItems.map((item, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <span className="text-slate-600">{item.description}</span>
-                      <span className="font-medium text-slate-900">
-                        ₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </span>
+                  {lineItems.map((item, index) => {
+                    const isAdjusted =
+                      item.autoAmount !== null && roundPeso(Number(item.amount) || 0) !== item.autoAmount
+
+                    return (
+                      <div key={index} className="flex items-start justify-between gap-3">
+                        {item.autoAmount === null ? (
+                          <input
+                            type="text"
+                            placeholder="e.g. Bonus, correction"
+                            aria-label="Line description"
+                            value={item.description}
+                            onChange={(e) => updateLine(index, { description: e.target.value })}
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-slate-900 focus:border-slate-500 focus:outline-none"
+                          />
+                        ) : (
+                          <span className="flex-1 text-slate-600">
+                            {item.description}
+                            {isAdjusted && (
+                              <span className="mt-0.5 block text-xs text-amber-700">
+                                Adjusted — auto was {formatPeso(item.autoAmount!)}{' '}
+                                <button
+                                  type="button"
+                                  onClick={() => updateLine(index, { amount: String(item.autoAmount) })}
+                                  className="underline hover:text-amber-900"
+                                >
+                                  Reset
+                                </button>
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          aria-label="Amount"
+                          value={item.amount}
+                          onChange={(e) => updateLine(index, { amount: e.target.value })}
+                          className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-right font-medium text-slate-900 focus:border-slate-500 focus:outline-none"
+                        />
+                        {item.autoAmount === null && (
+                          <button
+                            type="button"
+                            onClick={() => removeLine(index)}
+                            aria-label="Remove line"
+                            className="py-1 text-slate-400 hover:text-red-600"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={addManualLine}
+                    className="self-start text-sm font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    + Add line
+                  </button>
+                  {lineItems.length > 0 && (
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
+                      <span>Gross pay</span>
+                      <span>{formatPeso(grossPay)}</span>
                     </div>
-                  ))}
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
-                    <span>Gross pay</span>
-                    <span>₱{grossPay.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -280,7 +393,7 @@ function IssuePayslipModal({
             <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
               <span className="font-medium text-slate-700">Net pay</span>
               <span className="text-lg font-bold text-slate-900">
-                ₱{netPay.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {formatPeso(netPay)}
               </span>
             </div>
           </>
