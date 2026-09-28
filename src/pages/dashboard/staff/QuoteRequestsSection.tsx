@@ -11,6 +11,10 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 // use here -- the modal reads more fields directly from the same row).
 export type QuoteRequest = {
   quote_request_id: number
+  // Short code shown to the customer on submit ("Q-7F3K9A"), so staff
+  // can find the quote when they call. Null for quotes from before it
+  // existed.
+  reference_code: string | null
   // Set when staff picked an existing client while logging the request
   // (NewQuoteRequestModal). Null for a public/client-submitted quote or
   // a brand-new client, in which case Approve resolves the client by
@@ -25,6 +29,12 @@ export type QuoteRequest = {
   delivery_location_text: string
   delivery_city: string | null
   delivery_barangay: string | null
+  // Exact map pins, when the submitter dropped one (LocationPicker).
+  // Null for dropdown-only picks and every quote from before pins existed.
+  pickup_lat: number | null
+  pickup_lng: number | null
+  delivery_lat: number | null
+  delivery_lng: number | null
   cargo_type: string
   cargo_description: string
   weight: number
@@ -108,7 +118,7 @@ function QuoteRequestsSection() {
               <tr>
                 <th className="px-4 py-3 font-medium">Client</th>
                 <th className="px-4 py-3 font-medium">Cargo Type</th>
-                <th className="px-4 py-3 font-medium">Origin → Destination</th>
+                <th className="px-4 py-3 font-medium">Pickup → Delivery</th>
                 <th className="px-4 py-3 font-medium">Pickup Date</th>
                 <th className="px-4 py-3 font-medium">Deliveries</th>
                 <th className="px-4 py-3 font-medium"></th>
@@ -122,6 +132,11 @@ function QuoteRequestsSection() {
                 >
                   <td className="px-4 py-3 text-slate-900">
                     {quote.client_name}
+                    {quote.reference_code && (
+                      <span className="block font-mono text-xs text-slate-500">
+                        {quote.reference_code}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {quote.cargo_type}

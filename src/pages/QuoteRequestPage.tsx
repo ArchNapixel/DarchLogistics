@@ -1,7 +1,8 @@
 // QuoteRequestPage: the public "Get a Quote" page at /quote-request.
 // QuoteForm.tsx has the actual fields/validation/submit logic; this
-// page just adds the header band and the "what happens next" sidebar
-// around it, matching the rest of the public site's look.
+// page adds the header band and the "what happens next" content (shown
+// beside the form, and again on the confirmation screen), matching the
+// rest of the public site's look.
 import NavBar from '../components/NavBar'
 import Footer from '../components/Footer'
 import QuoteForm from '../components/QuoteForm'
@@ -37,37 +38,43 @@ function QuoteRequestPage() {
       </div>
 
       <div className="bg-brand-paper py-14">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1fr_320px]">
-          <QuoteForm />
+        {/* QuoteForm lays out its own two columns (steps + live quote
+            summary); the "what happens next" panel and photo sit under
+            that summary. */}
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <QuoteForm
+            nextSteps={steps}
+            aside={
+              <>
+                <div className="border border-slate-300 bg-white p-5">
+                  <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
+                    What Happens Next
+                  </p>
+                  <ol className="mt-3 flex flex-col gap-3 text-sm text-slate-700">
+                    {steps.map((step, index) => (
+                      <li key={step} className="flex gap-2">
+                        <span className="font-semibold text-brand-steel-dark">
+                          {index + 1}.
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
 
-          <aside className="flex flex-col gap-6">
-            <div className="rounded-lg border border-slate-300 bg-white p-5">
-              <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
-                What Happens Next
-              </p>
-              <ol className="mt-3 flex flex-col gap-3 text-sm text-slate-700">
-                {steps.map((step, index) => (
-                  <li key={step} className="flex gap-2">
-                    <span className="font-semibold text-brand-steel-dark">
-                      {index + 1}.
-                    </span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            <figure className="overflow-hidden rounded-lg border border-slate-300">
-              <img
-                src="/images/crane-lift.jpg"
-                alt="Rigging and load-out handled on site"
-                className="h-48 w-full object-cover grayscale"
-              />
-              <figcaption className="bg-white px-3 py-2 text-xs font-semibold tracking-[0.1em] text-slate-500 uppercase">
-                Rigging and load-out handled on site
-              </figcaption>
-            </figure>
-          </aside>
+                <figure className="hidden overflow-hidden border border-slate-300 lg:block">
+                  <img
+                    src="/images/crane-lift.jpg"
+                    alt="Rigging and load-out handled on site"
+                    className="h-48 w-full object-cover grayscale"
+                  />
+                  <figcaption className="bg-white px-3 py-2 text-xs font-semibold tracking-[0.1em] text-slate-500 uppercase">
+                    Rigging and load-out handled on site
+                  </figcaption>
+                </figure>
+              </>
+            }
+          />
         </div>
       </div>
 

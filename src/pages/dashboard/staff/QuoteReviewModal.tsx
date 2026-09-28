@@ -3,18 +3,17 @@
 // (bookings.estimated_distance_km is required), and trip start date,
 // plus Approve/Reject actions.
 //
-// Distance reuse: `route_cache` stores one distance per unique place
-// pair (place_id_a always the lower id, so direction doesn't matter).
-// On open, if both the pickup and delivery text already match known
-// places AND that pair has a cached distance, the field is pre-filled
-// automatically. Otherwise, a best-effort auto-estimate runs instead
-// (geocodeToLatLng + fetchDrivingDistanceKm below -- free OSM stack,
-// same one LocationPicker's map picker already uses: Nominatim to
-// geocode the city/barangay text, OSRM's public server for real
-// driving distance). Either way the field stays editable, and Approve
-// saves whatever value is showing to route_cache so the next quote on
-// that same route reuses the exact (possibly staff-corrected) number
-// instead of re-estimating.
+// Distance, most precise source first (the field stays editable either
+// way):
+//   1. Both ends have an exact map pin (quote_requests.*_lat/*_lng, set
+//      by LocationPicker) -> OSRM driving distance between the two pins.
+//   2. `route_cache` has a distance for this barangay pair (one row per
+//      unique place pair, place_id_a always the lower id, so direction
+//      doesn't matter) from a previous approval.
+//   3. Best-effort estimate between the two barangays' centres
+//      (Nominatim geocode of the city/barangay text + OSRM).
+// Approve saves whatever value is showing to route_cache so a later
+// quote on that same barangay pair *without* pins reuses it.
 //
 // Profitability estimate: a side panel that appears once a distance is
 // entered, using `app_settings` (diesel_price_per_liter,
@@ -49,7 +48,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { geocodePlace } from '../../../lib/geocoding'
+import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
+import { formatDate } from '../../../lib/quoteRequest'
 import type { QuoteRequest } from './QuoteRequestsSection'
 
 const fieldClasses =
@@ -163,25 +163,39 @@ async function geocodeToLatLng(
   return geocodePlace(`Barangay ${barangay}, ${city}, Philippines`)
 }
 
-async function fetchDrivingDistanceKm(
-  pickup: { lat: number; lon: number },
-  delivery: { lat: number; lon: number },
-): Promise<number | null> {
-  const response = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${pickup.lon},${pickup.lat};${delivery.lon},${delivery.lat}?overview=false`,
-  )
-  const data = await response.json()
-  const meters = data?.routes?.[0]?.distance
-  return typeof meters === 'number' ? meters / 1000 : null
+// Link to the exact pinned spot on OpenStreetMap, so staff can check
+// where the customer actually meant before approving. Null when the
+// quote has no pin for that end.
+function pinLink(lat: number | null | undefined, lng: number | null | undefined) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+  pin,
+}: {
+  label: string
+  value: string
+  pin?: string | null
+}) {
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
         {label}
       </p>
       <p className="text-slate-900">{value}</p>
+      {pin && (
+        <a
+          href={pin}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
+        >
+          View pinned spot on map
+        </a>
+      )}
     </div>
   )
 }
@@ -202,6 +216,7 @@ function QuoteReviewModal({
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   const [distanceIsCached, setDistanceIsCached] = useState(false)
   const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
+  const [distanceIsFromPins, setDistanceIsFromPins] = useState(false)
   const [autoEstimatingDistance, setAutoEstimatingDistance] = useState(false)
   const [tripDateFrom, setTripDateFrom] = useState(
     quote.preferred_pickup_date ?? '',
@@ -273,6 +288,30 @@ function QuoteReviewModal({
   // fetchDrivingDistanceKm above). Either way the field stays editable.
   useEffect(() => {
     async function loadDistance() {
+      if (
+        typeof quote.pickup_lat === 'number' &&
+        typeof quote.pickup_lng === 'number' &&
+        typeof quote.delivery_lat === 'number' &&
+        typeof quote.delivery_lng === 'number'
+      ) {
+        setAutoEstimatingDistance(true)
+        try {
+          const km = await fetchDrivingDistanceKm(
+            { lat: quote.pickup_lat, lon: quote.pickup_lng },
+            { lat: quote.delivery_lat, lon: quote.delivery_lng },
+          )
+          if (km !== null) {
+            setEstimatedDistanceKm(km.toFixed(2))
+            setDistanceIsFromPins(true)
+            return
+          }
+        } catch {
+          // Routing failed -- fall through to the cache/barangay estimate.
+        } finally {
+          setAutoEstimatingDistance(false)
+        }
+      }
+
       const pickupId = await findPlaceIdByCityBarangay(quote.pickup_city, quote.pickup_barangay)
       const deliveryId = await findPlaceIdByCityBarangay(
         quote.delivery_city,
@@ -326,6 +365,10 @@ function QuoteReviewModal({
     quote.pickup_barangay,
     quote.delivery_city,
     quote.delivery_barangay,
+    quote.pickup_lat,
+    quote.pickup_lng,
+    quote.delivery_lat,
+    quote.delivery_lng,
   ])
 
   async function handleApprove() {
@@ -485,6 +528,12 @@ function QuoteReviewModal({
         place_of_delivery_id: deliveryPlace.place_id,
         pickup_address_detail: quote.pickup_location_text || null,
         delivery_address_detail: quote.delivery_location_text || null,
+        // Exact spots, so dispatch/drivers aren't left with only a
+        // barangay (places rows are one per barangay, not per address).
+        pickup_lat: quote.pickup_lat,
+        pickup_lng: quote.pickup_lng,
+        delivery_lat: quote.delivery_lat,
+        delivery_lng: quote.delivery_lng,
         cargo_type: quote.cargo_type,
         cargo_description: quote.cargo_description,
         weight: quote.weight,
@@ -532,8 +581,8 @@ function QuoteReviewModal({
         `Booking #${newBooking.booking_id} was created, but its ` +
           `${deliveryCount} itinerary row(s) could not be created ` +
           `(${itineraryError.message}). The quote is already marked ` +
-          `Approved and the booking already exists -- this needs manual ` +
-          `review. Don't click Approve again, it would create a ` +
+          `Approved and the booking already exists, so this needs manual ` +
+          `review. Don't click Approve again: it would create a ` +
           `duplicate booking.`,
       )
       return
@@ -614,9 +663,15 @@ function QuoteReviewModal({
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             Quote #{quote.quote_request_id}
+            {quote.reference_code && (
+              <span className="ml-2 font-mono text-sm font-medium text-slate-500">
+                {quote.reference_code}
+              </span>
+            )}
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="text-slate-400 hover:text-slate-700"
           >
             ✕
@@ -635,7 +690,7 @@ function QuoteReviewModal({
               Quote approved. Booking #{approvedBookingId} was created with{' '}
               {itinerariesCreated}{' '}
               {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'}{' '}
-              (status "Awaiting") -- assign a truck, trailer, and driver to
+              (status "Awaiting"). Assign a truck, trailer, and driver to
               each from the Dispatch Board.
             </p>
             <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
@@ -660,23 +715,25 @@ function QuoteReviewModal({
                 }
               />
               <InfoRow
-                label="Origin"
+                label="Pickup"
                 value={formatLocationDisplay({
                   city: quote.pickup_city,
                   barangay: quote.pickup_barangay,
                   detail: quote.pickup_location_text,
                 })}
+                pin={pinLink(quote.pickup_lat, quote.pickup_lng)}
               />
               <InfoRow
-                label="Destination"
+                label="Delivery"
                 value={formatLocationDisplay({
                   city: quote.delivery_city,
                   barangay: quote.delivery_barangay,
                   detail: quote.delivery_location_text,
                 })}
+                pin={pinLink(quote.delivery_lat, quote.delivery_lng)}
               />
               <InfoRow label="Cargo type" value={quote.cargo_type} />
-              <InfoRow label="Trailer type" value={quote.container_type} />
+              <InfoRow label="Trailer size" value={quote.container_type} />
               <InfoRow label="Weight (tons)" value={String(quote.weight)} />
               <InfoRow
                 label="Number of deliveries"
@@ -684,7 +741,7 @@ function QuoteReviewModal({
               />
               <InfoRow
                 label="Preferred pickup date"
-                value={quote.preferred_pickup_date ?? '—'}
+                value={quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
               />
               <InfoRow
                 label="Cargo description"
@@ -730,24 +787,31 @@ function QuoteReviewModal({
                     setEstimatedDistanceKm(e.target.value)
                     setDistanceIsCached(false)
                     setDistanceIsAutoEstimated(false)
+                    setDistanceIsFromPins(false)
                   }}
                   className={fieldClasses}
                 />
                 {autoEstimatingDistance && (
                   <span className="text-xs font-normal text-slate-500">
-                    Estimating distance...
+                    Estimating distance…
                   </span>
                 )}
                 {distanceIsCached && (
                   <span className="text-xs font-normal text-slate-500">
-                    Pulled from a previous trip on this route -- edit if
-                    it's changed.
+                    From a previous trip between these barangays. Edit it if
+                    this route differs.
+                  </span>
+                )}
+                {distanceIsFromPins && (
+                  <span className="text-xs font-normal text-slate-500">
+                    Driving distance between the two pinned spots. Check it
+                    before approving.
                   </span>
                 )}
                 {distanceIsAutoEstimated && (
                   <span className="text-xs font-normal text-slate-500">
-                    Auto-estimated driving distance -- double check before
-                    approving.
+                    Rough estimate between the two barangay centres (no exact
+                    pins). Check it before approving.
                   </span>
                 )}
               </label>
@@ -906,7 +970,7 @@ function QuoteReviewModal({
 
               {isLowMargin && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-                  Costs are at or above 50% of the rate -- this trip may not
+                  Costs are at or above 50% of the rate, so this trip may not
                   be worth approving as priced. This is informational only;
                   Approve/Reject is still your call.
                 </p>

@@ -26,9 +26,6 @@ function ClientDashboard() {
   const [profileLoading, setProfileLoading] = useState(true)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [showNewQuote, setShowNewQuote] = useState(false)
-  const [submittedMessage, setSubmittedMessage] = useState<string | null>(
-    null,
-  )
   const [statusRequestsRefreshKey, setStatusRequestsRefreshKey] = useState(0)
 
   useEffect(() => {
@@ -67,12 +64,6 @@ function ClientDashboard() {
         </h1>
         <RoleBadge role={role} />
       </div>
-
-      {submittedMessage && (
-        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {submittedMessage}
-        </p>
-      )}
 
       <div className="mt-8 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">My Profile</h2>
@@ -145,12 +136,9 @@ function ClientDashboard() {
         <NewQuoteModal
           clientId={clientId}
           onClose={() => setShowNewQuote(false)}
-          onCreated={() => {
-            setShowNewQuote(false)
-            setSubmittedMessage(
-              'Quote request submitted. Our team will review it and get back to you.',
-            )
-          }}
+          // NewQuoteModal shows its own confirmation (reference number,
+          // summary, next steps) before calling this, so just close it.
+          onCreated={() => setShowNewQuote(false)}
         />
       )}
     </div>

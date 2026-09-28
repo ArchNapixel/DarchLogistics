@@ -14,30 +14,26 @@ export type LocationReferenceRow = {
 }
 
 // Module-level cache: this reference list never changes during a
-// session, and every quote form on the page loads it independently, so
-// there's no reason to re-fetch it more than once.
-let cachedRows: LocationReferenceRow[] | null = null
+// session. The *promise* is cached (not just the result) so the two
+// pickers on one form share a single request instead of both firing
+// one while the first is still in flight.
+let rowsRequest: Promise<{ rows: LocationReferenceRow[]; error: string | null }> | null = null
 
-export async function loadLocationReference(): Promise<{
-  rows: LocationReferenceRow[]
-  error: string | null
-}> {
-  if (cachedRows) {
-    return { rows: cachedRows, error: null }
+export function loadLocationReference() {
+  if (!rowsRequest) {
+    rowsRequest = Promise.resolve(
+      supabase
+        .from('location_reference')
+        .select('city, barangay, province')
+        .order('city', { ascending: true })
+        .order('barangay', { ascending: true }),
+    ).then(({ data, error }) => {
+      // Don't keep a failed load cached -- let the next form retry.
+      if (error) rowsRequest = null
+      return { rows: data ?? [], error: error?.message ?? null }
+    })
   }
-
-  const { data, error } = await supabase
-    .from('location_reference')
-    .select('city, barangay, province')
-    .order('city', { ascending: true })
-    .order('barangay', { ascending: true })
-
-  if (error) {
-    return { rows: [], error: error.message }
-  }
-
-  cachedRows = data
-  return { rows: data, error: null }
+  return rowsRequest
 }
 
 export type NamedLocation = {
@@ -48,32 +44,27 @@ export type NamedLocation = {
   landmark_detail: string | null
 }
 
-let cachedNamedLocations: NamedLocation[] | null = null
+let namedLocationsRequest: Promise<{ locations: NamedLocation[]; error: string | null }> | null =
+  null
 
 // Known shortcuts (ports/terminals staff use constantly, e.g. "DICT",
 // "TEFASCO", "KTC") -- each one FK'd to a real city+barangay in
 // location_reference, so picking one is equivalent to picking that city
 // and barangay by hand, just faster. Never the only way in: the City/
 // Barangay dropdowns stay available for anywhere not on this list.
-export async function loadNamedLocations(): Promise<{
-  locations: NamedLocation[]
-  error: string | null
-}> {
-  if (cachedNamedLocations) {
-    return { locations: cachedNamedLocations, error: null }
+export function loadNamedLocations() {
+  if (!namedLocationsRequest) {
+    namedLocationsRequest = Promise.resolve(
+      supabase
+        .from('named_locations')
+        .select('abbreviation, full_name, city, barangay, landmark_detail')
+        .order('abbreviation', { ascending: true }),
+    ).then(({ data, error }) => {
+      if (error) namedLocationsRequest = null
+      return { locations: data ?? [], error: error?.message ?? null }
+    })
   }
-
-  const { data, error } = await supabase
-    .from('named_locations')
-    .select('abbreviation, full_name, city, barangay, landmark_detail')
-    .order('abbreviation', { ascending: true })
-
-  if (error) {
-    return { locations: [], error: error.message }
-  }
-
-  cachedNamedLocations = data
-  return { locations: data, error: null }
+  return namedLocationsRequest
 }
 
 export function citiesFrom(rows: LocationReferenceRow[]): string[] {
@@ -84,14 +75,6 @@ export function barangaysForCity(rows: LocationReferenceRow[], city: string): st
   return rows.filter((r) => r.city === city).map((r) => r.barangay)
 }
 
-// Best-effort match of whatever text a Nominatim reverse-geocode call
-// returned against the known reference list. Nominatim's address
-// fields for Philippine barangays are inconsistent (sometimes tagged
-// "suburb", "village", "quarter", or missing entirely), so this doesn't
-// try to parse structure -- it just checks whether a known city/
-// barangay name appears anywhere in the combined text. Never trusted
-// blindly: the caller always shows this as an editable suggestion, not
-// a final answer.
 // Combines the structured city/barangay with the free-text landmark
 // detail into one display string, e.g. "ABC Warehouse -- Brgy. San
 // Antonio, Davao City". Used anywhere a quote/booking's location was
@@ -113,27 +96,71 @@ export function formatLocationDisplay({
   return '—'
 }
 
-export function matchLocationFromText(
+// Lowercase and strip accents, so "Santo Niño" and "Santo Nino" compare equal.
+function normalize(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+// Whole-word match only: a plain "contains" check made "Ula" match
+// inside "Mapula"/"Sibulan" and "Bato" inside "Paquibato", and since
+// rows are alphabetical the wrong one often won.
+function containsWord(text: string, phrase: string): boolean {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(text)
+}
+
+// Nominatim calls these cities "Davao City", "Tagum", "Samal", "Digos"...
+// while location_reference says "Tagum City", "Island Garden City of
+// Samal". Comparing on the bare name ("tagum", "samal") lines them up.
+function cityKey(name: string): string {
+  return normalize(name).replace(/^.*\bcity of /, '').replace(/ city$/, '').trim()
+}
+
+// "Peñaplata (Poblacion)" / "Zone 2 (Pob.)" -> "penaplata" / "zone 2":
+// Nominatim never includes the bracketed part.
+function barangayKey(name: string): string {
+  return normalize(name).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()
+}
+
+// Best-effort match of a Nominatim reverse-geocode result against the
+// known reference list. The city comes from Nominatim's structured
+// `city` field. The barangay is searched for only in the *area* names
+// (suburb/quarter/village/...) -- never in road names, since e.g.
+// "Babak-Samal-Kaputian Road" would otherwise match barangays Babak or
+// Kaputian. Barangay tagging is inconsistent in OSM, so each area name
+// is checked for a whole-word barangay name (a plain "contains" check
+// made "Ula" match inside "Mapula"). Best match wins: the full name
+// incl. brackets beats the bare name, longer beats shorter. If two
+// different barangays tie (e.g. "San Isidro" when there's both "San
+// Isidro (Babak)" and "San Isidro (Kaputian)"), or none match, barangay
+// comes back null -- the user picks it, it's never guessed.
+export function matchLocation(
   rows: LocationReferenceRow[],
-  addressText: string,
-): { city: string; barangay: string } | null {
-  const lowerText = addressText.toLowerCase()
+  address: { city: string | null; areas: string[] },
+): { city: string; barangay: string | null } | null {
+  if (!address.city) return null
+  const key = cityKey(address.city)
+  const cityRows = rows.filter((r) => cityKey(r.city) === key)
+  if (cityRows.length === 0) return null
 
-  const bothMatch = rows.find(
-    (r) =>
-      lowerText.includes(r.city.toLowerCase()) &&
-      lowerText.includes(r.barangay.toLowerCase()),
-  )
-  if (bothMatch) {
-    return { city: bothMatch.city, barangay: bothMatch.barangay }
+  const areas = address.areas.map(normalize)
+  const scored = cityRows
+    .map((r) => {
+      const full = normalize(r.barangay)
+      const bare = barangayKey(r.barangay)
+      const score = areas.some((a) => containsWord(a, full))
+        ? 1000 + full.length
+        : areas.some((a) => containsWord(a, bare))
+          ? bare.length
+          : 0
+      return { barangay: r.barangay, score }
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  const tie = scored.length > 1 && scored[0].score === scored[1].score
+  return {
+    city: cityRows[0].city,
+    barangay: scored.length > 0 && !tie ? scored[0].barangay : null,
   }
-
-  // No barangay-level match -- fall back to just the city, so the user
-  // at least doesn't have to hunt for the right city too.
-  const cityMatch = rows.find((r) => lowerText.includes(r.city.toLowerCase()))
-  if (cityMatch) {
-    return { city: cityMatch.city, barangay: cityMatch.barangay }
-  }
-
-  return null
 }

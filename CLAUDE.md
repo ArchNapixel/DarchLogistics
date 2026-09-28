@@ -259,7 +259,15 @@ before creating it.
   scoped to trucks only) and "Odometer Updates" — auto-suggests an
   odometer bump per truck by comparing its `truck_profiles.updated_at`
   against its most recent Delivered trip's distance
-  (`bookings.estimated_distance_km`), staff click "Confirm update" to
+  (`bookings.estimated_distance_km`, one-way — what the diesel estimate
+  is priced on — PLUS two base legs, since every truck leaves from and
+  returns to Brgy. J.P. Laurel, Panabo City: base → pickup and delivery
+  → base, worked out on this page only (`baseLegKm()`): cached
+  `route_cache` pair, else OSRM from the stop's pin/barangay centre. If
+  it can't be routed, the drive out counts as 0 and the drive back as
+  the trip distance, both flagged in the table. The quote/booking
+  module knows nothing about the base legs), staff click
+  "Confirm update" to
   apply it. That confirm write is optimistic-concurrency-guarded
   (`.eq('current_odometer', <value it was suggested against>)`) and now
   checks whether the update actually matched a row via `.select().maybeSingle()`
@@ -288,13 +296,37 @@ before creating it.
 - Location Picker (`components/LocationPicker.tsx`) — City/Barangay
   dropdowns sourced from `location_reference` (`lib/locationReference.ts`),
   used in the public `QuoteForm.tsx`, staff `NewQuoteRequestModal.tsx`,
-  and client `NewQuoteModal.tsx`. "Pick on map instead" shows a Leaflet +
+  and client `NewQuoteModal.tsx`. "Pick exact spot on map" shows a Leaflet +
   OpenStreetMap view (`react-leaflet`/`leaflet` — these are real npm
   deps, `npm install` needs to have been run after they were added, they
-  aren't declared-but-missing anymore as of 2026-09-22); clicking
-  reverse-geocodes via the free Nominatim API and tries to match a known
-  barangay, purely as a convenience guess — the City/Barangay dropdowns
-  stay editable either way, the map never silently overrides them.
+  aren't declared-but-missing anymore as of 2026-09-22); the clicked
+  point is saved as `pickup_lat/lng` / `delivery_lat/lng` on
+  `quote_requests` and copied to `bookings` on Approve, and
+  QuoteReviewModal routes between the two pins for the distance when
+  both exist. The click is reverse-geocoded (all Nominatim calls go
+  through `lib/geocoding.ts`, throttled to 1/sec) and matched by
+  `matchLocation()` in `lib/locationReference.ts` — structured `city`
+  field + whole-word barangay match on area fields only, returns
+  barangay `null` rather than guessing. Dropdowns stay editable.
+  **2026-09-28 rework:** the 3 quote channels now share
+  `lib/quoteRequest.ts` (form state, validation incl. origin≠destination
+  and date order, column mapping); the two dashboard modals also share
+  `components/QuoteShipmentFields.tsx`. Staff's separate full-screen
+  map (`NewQuoteLocationMap.tsx`) was removed in favour of the same
+  LocationPicker map as the other channels. `places` is still one row
+  per barangay — exact spots live on quotes/bookings, not `places`.
+  **Later on 2026-09-28 (UX pass):** public form + client portal use
+  `components/QuoteWizard.tsx` (Route → Cargo → Schedule & terms →
+  Review, live summary side panel); staff keep one page. Field sections
+  live in `QuoteShipmentFields.tsx` (`RouteFields`/`CargoFields`/
+  `ScheduleFields`), per-field errors via `validateShipment()` +
+  `useShipmentForm()`. On submit, customers see `QuoteSubmitted`
+  (`components/QuoteSummary.tsx`) with a `quote_requests.reference_code`
+  ("Q-XXXXXX", generated client-side because anon can't read the row
+  back — UNIQUE column). Client portal offers recent locations from
+  their own past bookings (`loadRecentLocations()`). Map pins are A/B
+  brand-colored SVGs on CSS-muted OSM tiles (CARTO/Stadia styled tiles
+  were avoided: commercial use needs a paid license).
 - Inventory CSV Export (`lib/inventoryReport.ts` + `staff/InventoryReportModal.tsx`,
   from the Inventory page) — a Sun–Sat weekly stock/usage snapshot,
   downloaded client-side as a CSV blob, no server involvement.

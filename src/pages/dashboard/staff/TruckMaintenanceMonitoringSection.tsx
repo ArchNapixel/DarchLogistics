@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import {
   createMaintenanceSchedule,
   MAINTENANCE_INTERVALS,
@@ -21,9 +22,69 @@ type OdometerSuggestion = {
   itinerary_id: number
   plate_number: string
   trip_date: string
-  distance: number
+  // Base -> pickup. 0 (and flagged) when it couldn't be routed.
+  out_km: number
+  out_is_fallback: boolean
+  trip_km: number
+  return_km: number
+  // True when the drive back to base couldn't be routed and the trip
+  // distance was used for it instead (same road back).
+  return_is_fallback: boolean
   current_odometer: number
   suggested_odometer: number
+}
+
+// Every truck leaves from and heads back to here, so the odometer moves
+// by base -> pickup + the delivery trip + delivery -> base. Only this
+// odometer feature uses the two base legs -- the quote's profitability
+// estimate stays one-way (bookings.estimated_distance_km) on purpose.
+const BASE = { city: 'Panabo City', barangay: 'J.P. Laurel' }
+
+// One end of a booking: its places row plus the exact pin, if any.
+type Stop = {
+  placeId: number | null
+  place: { city: string | null; barangay: string | null } | undefined
+  lat: number | null
+  lng: number | null
+}
+
+// Driving km between a booking's stop (pickup or delivery) and BASE:
+// a distance already cached in route_cache for that barangay pair if
+// there is one, else routed from the stop's pin (or its barangay's
+// centre when there's no pin) to the base barangay's centre. Road
+// distance is treated as the same both ways, same as route_cache.
+// Null when nothing works (no place, geocode/routing failure).
+async function baseLegKm(
+  stop: Stop,
+  basePlaceId: number | null,
+  basePoint: { lat: number; lon: number } | null,
+): Promise<number | null> {
+  if (stop.placeId !== null && basePlaceId !== null) {
+    const [low, high] = [stop.placeId, basePlaceId].sort((a, b) => a - b)
+    const { data: cached } = await supabase
+      .from('route_cache')
+      .select('distance_km')
+      .eq('place_id_a', low)
+      .eq('place_id_b', high)
+      .maybeSingle()
+    if (cached?.distance_km !== undefined && cached?.distance_km !== null) {
+      return Number(cached.distance_km)
+    }
+  }
+
+  if (!basePoint) return null
+  try {
+    const from =
+      typeof stop.lat === 'number' && typeof stop.lng === 'number'
+        ? { lat: stop.lat, lon: stop.lng }
+        : stop.place?.city && stop.place?.barangay
+          ? await geocodePlace(`Barangay ${stop.place.barangay}, ${stop.place.city}, Philippines`)
+          : null
+    if (!from) return null
+    return await fetchDrivingDistanceKm(from, basePoint)
+  } catch {
+    return null
+  }
 }
 
 type Tab = 'Schedules' | 'Odometer Updates'
@@ -151,7 +212,9 @@ function OdometerUpdatesSection() {
     const bookingIds = Array.from(new Set(deliveredItineraries.map((row) => row.booking_id)))
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
-      .select('booking_id, estimated_distance_km')
+      .select(
+        'booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng',
+      )
       .in('booking_id', bookingIds)
 
     if (bookingsError) {
@@ -161,7 +224,7 @@ function OdometerUpdatesSection() {
     }
 
     const truckByPlate = new Map((trucksResult.data ?? []).map((truck) => [truck.plate_number, truck]))
-    const distanceByBooking = new Map((bookingRows ?? []).map((booking) => [booking.booking_id, booking.estimated_distance_km]))
+    const bookingById = new Map((bookingRows ?? []).map((booking) => [booking.booking_id, booking]))
     const deliveredAtByItinerary = new Map((logsResult.data ?? []).map((log) => [log.itinerary_id, log.status_changed_at]))
     const latestByTruck = new Map<string, (typeof deliveredItineraries)[number]>()
 
@@ -173,22 +236,78 @@ function OdometerUpdatesSection() {
       }
     })
 
-    const nextSuggestions = Array.from(latestByTruck.values()).flatMap((itinerary) => {
+    const candidates = Array.from(latestByTruck.values()).flatMap((itinerary) => {
       const truck = truckByPlate.get(itinerary.plate_number)
-      const distance = Number(distanceByBooking.get(itinerary.booking_id) ?? 0)
+      const booking = bookingById.get(itinerary.booking_id)
+      const tripKm = Number(booking?.estimated_distance_km ?? 0)
       const deliveredAt = deliveredAtByItinerary.get(itinerary.itinerary_id)
-      const current = Number(truck?.current_odometer ?? 0)
-      if (!truck || !distance || !deliveredAt || deliveredAt <= truck.updated_at) return []
+      if (!truck || !booking || !tripKm || !deliveredAt || deliveredAt <= truck.updated_at) return []
+      return [{ itinerary, truck, booking, tripKm }]
+    })
 
-      return [{
+    // Base leg lookups (base -> pickup, delivery -> base), only for the
+    // trucks that actually have a pending suggestion (at most one per truck).
+    const stopPlaceIds = Array.from(
+      new Set(
+        candidates
+          .flatMap((c) => [c.booking.place_of_pickup_id, c.booking.place_of_delivery_id])
+          .filter((id): id is number => id !== null),
+      ),
+    )
+    const [placesResult, baseResult, basePoint] = await Promise.all([
+      stopPlaceIds.length > 0
+        ? supabase.from('places').select('place_id, city, barangay').in('place_id', stopPlaceIds)
+        : Promise.resolve({ data: [] as { place_id: number; city: string | null; barangay: string | null }[] }),
+      supabase
+        .from('places')
+        .select('place_id')
+        .ilike('city', BASE.city)
+        .ilike('barangay', BASE.barangay)
+        .maybeSingle(),
+      candidates.length > 0
+        ? geocodePlace(`Barangay ${BASE.barangay}, ${BASE.city}, Philippines`)
+        : Promise.resolve(null),
+    ])
+    const placeById = new Map((placesResult.data ?? []).map((place) => [place.place_id, place]))
+    const basePlaceId = baseResult.data?.place_id ?? null
+    const stop = (placeId: number | null, lat: number | null, lng: number | null): Stop => ({
+      placeId,
+      place: placeId !== null ? placeById.get(placeId) : undefined,
+      lat,
+      lng,
+    })
+    const round = (km: number) => Math.round(km * 100) / 100
+
+    const nextSuggestions: OdometerSuggestion[] = []
+    for (const { itinerary, truck, booking, tripKm } of candidates) {
+      const routedOutKm = await baseLegKm(
+        stop(booking.place_of_pickup_id, booking.pickup_lat, booking.pickup_lng),
+        basePlaceId,
+        basePoint,
+      )
+      const routedReturnKm = await baseLegKm(
+        stop(booking.place_of_delivery_id, booking.delivery_lat, booking.delivery_lng),
+        basePlaceId,
+        basePoint,
+      )
+      // Can't route the drive out -> leave it out (flagged) rather than
+      // guess. Can't route the drive back -> assume the same road back.
+      const outKm = routedOutKm ?? 0
+      const returnKm = routedReturnKm ?? tripKm
+      const current = Number(truck.current_odometer ?? 0)
+      nextSuggestions.push({
         itinerary_id: itinerary.itinerary_id,
         plate_number: itinerary.plate_number,
         trip_date: itinerary.trip_date_from,
-        distance,
+        out_km: round(outKm),
+        out_is_fallback: routedOutKm === null,
+        trip_km: tripKm,
+        return_km: round(returnKm),
+        return_is_fallback: routedReturnKm === null,
         current_odometer: current,
-        suggested_odometer: current + distance,
-      }]
-    })
+        suggested_odometer: round(current + outKm + tripKm + returnKm),
+      })
+    }
 
     setSuggestions(nextSuggestions)
     setLoading(false)
@@ -238,7 +357,9 @@ function OdometerUpdatesSection() {
           <tr>
             <th className="px-4 py-3 font-medium">Truck</th>
             <th className="px-4 py-3 font-medium">Trip date</th>
-            <th className="px-4 py-3 font-medium">Trip distance</th>
+            <th className="px-4 py-3 font-medium">J.P. Laurel to pickup</th>
+            <th className="px-4 py-3 font-medium">Delivery trip</th>
+            <th className="px-4 py-3 font-medium">Return to J.P. Laurel</th>
             <th className="px-4 py-3 font-medium">Current</th>
             <th className="px-4 py-3 font-medium">Suggested</th>
             <th className="px-4 py-3 font-medium">Action</th>
@@ -249,7 +370,19 @@ function OdometerUpdatesSection() {
             <tr key={suggestion.itinerary_id} className="border-b border-slate-100 last:border-0">
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.plate_number}</td>
               <td className="px-4 py-3 text-slate-600">{suggestion.trip_date}</td>
-              <td className="px-4 py-3 text-slate-600">{suggestion.distance.toLocaleString()} km</td>
+              <td className="px-4 py-3 text-slate-600">
+                {suggestion.out_km.toLocaleString()} km
+                {suggestion.out_is_fallback && (
+                  <span className="block text-xs text-amber-700">Couldn't route it, not counted</span>
+                )}
+              </td>
+              <td className="px-4 py-3 text-slate-600">{suggestion.trip_km.toLocaleString()} km</td>
+              <td className="px-4 py-3 text-slate-600">
+                {suggestion.return_km.toLocaleString()} km
+                {suggestion.return_is_fallback && (
+                  <span className="block text-xs text-amber-700">Couldn't route it, assumed same as trip</span>
+                )}
+              </td>
               <td className="px-4 py-3 text-slate-600">{suggestion.current_odometer.toLocaleString()}</td>
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.suggested_odometer.toLocaleString()}</td>
               <td className="px-4 py-3">
