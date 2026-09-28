@@ -36,6 +36,7 @@ export type EditableEmployee = {
   rate_type: (typeof RATE_TYPES)[number]['value']
   rate_amount: number | null
   hire_date: string
+  is_minimum_wage_earner: boolean
   driver_license_number: string | null
   driver_license_expiry_date: string | null
   medical_exam_date: string | null
@@ -63,6 +64,7 @@ function AddEmployeeModal({
     employee?.rate_amount != null ? String(employee.rate_amount) : '',
   )
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
+  const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
   const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
   const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
   const [medicalExamDate, setMedicalExamDate] = useState(employee?.medical_exam_date ?? '')
@@ -108,6 +110,7 @@ function AddEmployeeModal({
       commission_basis: null,
       commission_per_trip: null,
       hire_date: hireDate,
+      is_minimum_wage_earner: isMinimumWageEarner,
       daily_rate: null,
       weekly_salary: null,
       monthly_salary: null,
@@ -242,6 +245,16 @@ function AddEmployeeModal({
               />
             </label>
           )}
+
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={isMinimumWageEarner}
+              onChange={(e) => setIsMinimumWageEarner(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Minimum wage earner (exempt from withholding tax)
+          </label>
 
           {isEditing && position === 'Driver' && (
             <>

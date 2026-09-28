@@ -4,7 +4,8 @@
 // marking payslips Paid only happens from the admin side
 // (PayrollSection.tsx). Click a payslip to expand its line-item
 // breakdown -- for a Driver that's one row per trip delivered that
-// period, for everyone else it's their salary + daily allowance.
+// period, for everyone else their salary vs attendance -- then the
+// deductions (cash advance, SSS, PhilHealth, Pag-IBIG, withholding tax).
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import {
@@ -159,14 +160,25 @@ function MyPayslipSection({
                         ₱{payslip.gross_pay.toLocaleString()}
                       </span>
                     </div>
-                    {payslip.cash_advance_deducted > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-600">Cash advance deducted</span>
-                        <span className="font-medium text-red-600">
-                          -₱{payslip.cash_advance_deducted.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
+                    {(
+                      [
+                        ['Cash advance deducted', payslip.cash_advance_deducted],
+                        ['SSS', payslip.sss_ee],
+                        ['PhilHealth', payslip.philhealth_ee],
+                        ['Pag-IBIG', payslip.pagibig_ee],
+                        ['Withholding tax', payslip.withholding_tax],
+                      ] as const
+                    )
+                      .filter(([, amount]) => amount !== 0)
+                      .map(([label, amount]) => (
+                        <div key={label} className="flex items-center justify-between">
+                          <span className="text-slate-600">{label}</span>
+                          <span className="font-medium text-red-600">
+                            {/* negative = refund of an earlier over-deduction this month */}
+                            {amount > 0 ? '-' : '+'}₱{Math.abs(amount).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
                     <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
                       <span>Net pay</span>
                       <span>₱{payslip.net_pay.toLocaleString()}</span>

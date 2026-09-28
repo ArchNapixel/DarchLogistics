@@ -41,14 +41,27 @@
 // - Cash advances (cash_advances table) are never auto-deducted --
 //   admin sees the employee's outstanding balance when issuing a
 //   payslip and chooses how much (if any) to deduct THIS time.
-//   net_pay = gross_pay (base_pay + allowance_amount) -
-//   cash_advance_deducted.
+// - Government deductions (SSS / PhilHealth / Pag-IBIG employee shares
+//   + BIR withholding tax) are computed per weekly payslip by
+//   lib/governmentContributions.ts (see there for the weekly-share
+//   math); employer shares are stored alongside for remittance reports
+//   but never deducted. Admin can override any of them when issuing.
+//   net_pay = gross_pay - cash_advance_deducted - employee shares -
+//   withholding_tax.
+// - Lifecycle: issued as a Draft (staff-only) -> Finalized (released to
+//   the employee) -> Paid. See finalizePayslips / discardDraftPayslip.
 // - Payslips are issued weekly, period ending Saturday. Issuing writes
 //   the breakdown into payslip_line_items so it stays accurate forever
 //   even if settings/rates change later -- a payslip is a historical
 //   record, not a live calculation.
 import { supabase } from './supabaseClient'
 import { countPaidAttendanceDays, sumPaidAttendanceHours, markAttendanceAsPaid } from './employeeAttendance'
+import {
+  computeWeeklyContributions,
+  weeklyWithholdingTax,
+  type Contributions,
+  type EarlierPayslip,
+} from './governmentContributions'
 
 export type PayrollSettings = {
   driverCommissionRate: number
@@ -89,13 +102,15 @@ export function toManilaDate(value: string | Date): string {
   return new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 }
 
-// Most recent Saturday on/before today (Manila time), and the 6 days
-// before it -- the default weekly pay period, editable in the Issue
-// Payslip form. The date math runs on UTC midnight of that Manila date
-// so toISOString() below can't shift it.
+// The last COMPLETED Sun-Sat week (Manila time) -- the most recent
+// Saturday strictly before today, and the 6 days before it. On a
+// Saturday itself that's last week, since today's trips/attendance
+// aren't in yet. This is the week auto-generated drafts cover. The date
+// math runs on UTC midnight of that Manila date so toISOString() below
+// can't shift it.
 export function getDefaultPayPeriod(): { start: string; end: string } {
   const end = new Date(`${toManilaDate(new Date())}T00:00:00Z`)
-  const daysSinceSaturday = (end.getUTCDay() - 6 + 7) % 7
+  const daysSinceSaturday = (end.getUTCDay() - 6 + 7) % 7 || 7
   end.setUTCDate(end.getUTCDate() - daysSinceSaturday)
   const start = new Date(end)
   start.setUTCDate(end.getUTCDate() - 6)
@@ -104,6 +119,25 @@ export function getDefaultPayPeriod(): { start: string; end: string } {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
   }
+}
+
+// The Sun-Sat week containing today (Manila time) -- still in progress,
+// so its drafts keep topping up and can't be finalized yet.
+export function getCurrentPayPeriod(): { start: string; end: string } {
+  const start = new Date(`${toManilaDate(new Date())}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay())
+  const end = new Date(start)
+  end.setUTCDate(start.getUTCDate() + 6)
+
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  }
+}
+
+// A week is still in progress until its Saturday has passed (Manila).
+export function isWeekInProgress(periodEnd: string) {
+  return periodEnd >= toManilaDate(new Date())
 }
 
 export type PayslipLineItem = {
@@ -425,8 +459,52 @@ export async function getOutstandingCashAdvance(
   return { outstanding: totalIssued - totalDeducted, error: null }
 }
 
+const CONTRIBUTION_COLUMNS =
+  'sss_msc, sss_ee, sss_er, sss_ec, philhealth_ee, philhealth_er, pagibig_ee, pagibig_er, withholding_tax'
+
+// This employee's payslips for EARLIER weeks of the same calendar month
+// as periodEnd (period ending on/after the 1st, before this one) --
+// what computeWeeklyContributions needs to work out this week's share of
+// the month's contributions. Strictly earlier, so editing a draft never
+// counts the draft itself (or a later week) as "already deducted".
+export async function loadEarlierPayslipsThisMonth(
+  employeeId: number,
+  periodEnd: string,
+): Promise<{ payslips: EarlierPayslip[]; error: string | null }> {
+  const monthStart = `${periodEnd.slice(0, 7)}-01`
+
+  const { data, error } = await supabase
+    .from('payroll_payslips')
+    .select(`gross_pay, ${CONTRIBUTION_COLUMNS}`)
+    .eq('employee_id', employeeId)
+    .gte('payroll_period_end', monthStart)
+    .lt('payroll_period_end', periodEnd)
+
+  if (error) {
+    return { payslips: [], error: error.message }
+  }
+  return { payslips: data, error: null }
+}
+
+export type PayslipDeductions = Contributions & {
+  sss_msc: number
+  withholding_tax: number
+  // Which computed amounts the admin overrode, e.g. "SSS (employee):
+  // auto ₱300" -- null when nothing was changed.
+  deductions_note: string | null
+}
+
+// What actually comes out of the employee's pay (employer shares don't).
+export function totalEmployeeDeductions(
+  d: Pick<PayslipDeductions, 'sss_ee' | 'philhealth_ee' | 'pagibig_ee' | 'withholding_tax'>,
+) {
+  return d.sss_ee + d.philhealth_ee + d.pagibig_ee + d.withholding_tax
+}
+
 // Creates the payroll_payslips row plus its payslip_line_items rows in
-// one call. Not wrapped in a real DB transaction (no RPC for that yet
+// one call, as a DRAFT (finalized_at left null -- see finalizePayslips).
+// A draft already counts as paying its trips/attendance days, so they
+// can't be put on a second payslip while it's under review. Not wrapped in a real DB transaction (no RPC for that yet
 // -- same known limitation as QuoteReviewModal's Approve flow), so if
 // the line items insert fails after the payslip row succeeds, the
 // caller should treat it as needing manual review rather than retrying
@@ -438,6 +516,7 @@ export async function issuePayslip({
   periodEnd,
   lineItems,
   cashAdvanceDeducted,
+  deductions,
 }: {
   employeeId: number
   rateType: RateType
@@ -445,12 +524,14 @@ export async function issuePayslip({
   periodEnd: string
   lineItems: PayslipLineItem[]
   cashAdvanceDeducted: number
+  deductions: PayslipDeductions
 }): Promise<{ payrollId: number | null; error: string | null }> {
   const grossPay = lineItems.reduce((sum, item) => sum + item.amount, 0)
   // No separate allowance line item anymore (removed 2026-09-23) --
   // base_pay is just gross_pay.
   const basePay = grossPay
-  const netPay = grossPay - cashAdvanceDeducted
+  const netPay =
+    grossPay - cashAdvanceDeducted - totalEmployeeDeductions(deductions)
 
   const { data: payslip, error: payslipError } = await supabase
     .from('payroll_payslips')
@@ -462,6 +543,7 @@ export async function issuePayslip({
       base_pay: basePay,
       allowance_amount: 0,
       cash_advance_deducted: cashAdvanceDeducted,
+      ...deductions,
       net_pay: netPay,
       payslip_status: 'Pending',
     })
@@ -520,15 +602,412 @@ export async function issuePayslip({
   return { payrollId: payslip.payroll_id, error: null }
 }
 
+// Government deductions for a gross pay with no admin overrides -- what
+// a freshly generated (or topped-up, un-overridden) draft gets.
+async function computeAutoDeductions(
+  employeeId: number,
+  grossPay: number,
+  periodEnd: string,
+  isMinimumWageEarner: boolean,
+): Promise<{ deductions: PayslipDeductions | null; error: string | null }> {
+  const earlier = await loadEarlierPayslipsThisMonth(employeeId, periodEnd)
+  if (earlier.error) return { deductions: null, error: earlier.error }
+
+  const c = computeWeeklyContributions(grossPay, periodEnd, earlier.payslips)
+  const employeeShares = c.sss_ee + c.philhealth_ee + c.pagibig_ee
+  return {
+    deductions: {
+      sss_msc: c.sss_msc,
+      sss_ee: c.sss_ee,
+      sss_er: c.sss_er,
+      sss_ec: c.sss_ec,
+      philhealth_ee: c.philhealth_ee,
+      philhealth_er: c.philhealth_er,
+      pagibig_ee: c.pagibig_ee,
+      pagibig_er: c.pagibig_er,
+      withholding_tax: isMinimumWageEarner ? 0 : weeklyWithholdingTax(grossPay - employeeShares),
+      deductions_note: null,
+    },
+    error: null,
+  }
+}
+
+type ExistingDraft = PayslipDeductions & {
+  payroll_id: number
+  employee_id: number
+  finalized_at: string | null
+  gross_pay: number
+  cash_advance_deducted: number
+}
+
+// Auto-generation, run whenever the Payroll page opens (for last week
+// and the current week), so drafts just "appear" and stay current -- no
+// Issue button. For every current employee (not Deactivated/Terminated):
+// - no payslip for the period yet, and something earned -> create a
+//   draft (formula amounts, no cash advance -- admin adds that via Edit)
+// - an existing DRAFT -> top it up with only what's NEW since it was
+//   made (topUpDraft) -- a trip delivered or attendance recorded later
+// - an existing FINALIZED payslip -> leave it alone
+// This works because buildEmployeePayLineItems already skips trips on
+// any of the employee's payslips and attendance days already marked
+// paid, so for an existing draft it returns exactly the new items.
+// Employees whose pay can't be computed (e.g. rate not set) come back as
+// warnings instead of blocking everyone else. Two admins creating the
+// same new draft at once is safe (the unique employee+period constraint
+// rejects the second insert).
+// ponytail: topping up is not atomic -- two admins opening Payroll in
+// the same second could both add the same new trip line to a draft.
+// The review-before-finalize step catches it; move topUpDraft into a
+// Postgres function (one transaction) if that ever becomes real.
+export async function generateDraftPayslips(
+  periodStart: string,
+  periodEnd: string,
+  // Regenerate: only this employee (their draft was just discarded).
+  onlyEmployeeId?: number,
+): Promise<{ createdIds: number[]; warnings: string[]; error: string | null }> {
+  const [settingsResult, employeesResult, statusesResult, existingResult] = await Promise.all([
+    loadPayrollSettings(),
+    supabase
+      .from('employees')
+      .select(
+        'employee_id, full_name, position, rate_type, daily_rate, weekly_salary, monthly_salary, hourly_rate, is_minimum_wage_earner, employment_status_id',
+      ),
+    supabase.from('employment_status').select('status_id, status_name'),
+    supabase
+      .from('payroll_payslips')
+      .select(
+        `payroll_id, employee_id, finalized_at, gross_pay, cash_advance_deducted, deductions_note, ${CONTRIBUTION_COLUMNS}`,
+      )
+      .eq('payroll_period_start', periodStart)
+      .eq('payroll_period_end', periodEnd),
+  ])
+
+  const loadError =
+    settingsResult.error ??
+    employeesResult.error?.message ??
+    statusesResult.error?.message ??
+    existingResult.error?.message
+  if (loadError || !settingsResult.settings) {
+    return { createdIds: [], warnings: [], error: loadError ?? 'Could not load payroll settings.' }
+  }
+
+  const inactiveStatusIds = new Set(
+    statusesResult.data!
+      .filter((s) => s.status_name === 'Deactivated' || s.status_name === 'Terminated')
+      .map((s) => s.status_id),
+  )
+  const existingByEmployee = new Map(
+    (existingResult.data as unknown as ExistingDraft[]).map((row) => [row.employee_id, row]),
+  )
+  const toProcess = employeesResult.data!.filter(
+    (e) =>
+      !inactiveStatusIds.has(e.employment_status_id) &&
+      !existingByEmployee.get(e.employee_id)?.finalized_at &&
+      (onlyEmployeeId === undefined || e.employee_id === onlyEmployeeId),
+  )
+
+  const createdIds: number[] = []
+  const warnings: string[] = []
+
+  // One at a time: each employee's earlier-this-month payslips must be
+  // read after anything just created for them.
+  for (const employee of toProcess) {
+    const pay = await buildEmployeePayLineItems(employee, periodStart, periodEnd, settingsResult.settings)
+    if (pay.error) {
+      warnings.push(`${employee.full_name}: ${pay.error}`)
+      continue
+    }
+    // Nothing (new) earned -- salary types still return a ₱0 line when
+    // no attendance was recorded, so check the total, not the count.
+    const grossAdded = pay.lineItems.reduce((sum, item) => sum + item.amount, 0)
+    if (grossAdded <= 0) continue
+
+    const draft = existingByEmployee.get(employee.employee_id)
+    if (draft) {
+      const { error } = await topUpDraft(draft, employee, pay.lineItems, grossAdded, periodStart, periodEnd)
+      if (error) warnings.push(`${employee.full_name}: ${error}`)
+      continue
+    }
+
+    const auto = await computeAutoDeductions(
+      employee.employee_id,
+      grossAdded,
+      periodEnd,
+      employee.is_minimum_wage_earner,
+    )
+    if (auto.error || !auto.deductions) {
+      warnings.push(`${employee.full_name}: ${auto.error}`)
+      continue
+    }
+
+    const { payrollId, error } = await issuePayslip({
+      employeeId: employee.employee_id,
+      rateType: employee.rate_type,
+      periodStart,
+      periodEnd,
+      lineItems: pay.lineItems,
+      cashAdvanceDeducted: 0,
+      deductions: auto.deductions,
+    })
+
+    if (error) {
+      // Another admin generated this one at the same moment -- fine.
+      if (!error.includes('duplicate key')) warnings.push(`${employee.full_name}: ${error}`)
+      continue
+    }
+    if (payrollId !== null) createdIds.push(payrollId)
+  }
+
+  return { createdIds, warnings, error: null }
+}
+
+// Adds newly earned lines (new trips / newly recorded attendance) to an
+// existing draft and updates its totals. Admin edits stay: edited and
+// manual lines aren't touched, cash advance stays. Government deductions
+// are recalculated on the new gross -- unless the admin overrode them
+// (deductions_note set), in which case they're kept and the note gets a
+// "pay changed, check the deductions" flag instead of silently
+// replacing the admin's numbers.
+async function topUpDraft(
+  draft: ExistingDraft,
+  employee: EmployeePayRate & { is_minimum_wage_earner: boolean },
+  newLines: PayslipLineItem[],
+  grossAdded: number,
+  periodStart: string,
+  periodEnd: string,
+): Promise<{ error: string | null }> {
+  const { error: linesError } = await supabase
+    .from('payslip_line_items')
+    .insert(newLines.map((item) => ({ payroll_id: draft.payroll_id, ...item })))
+  if (linesError) return { error: linesError.message }
+
+  if (employee.rate_type !== 'Commission Per Trip') {
+    const { error: markError } = await markAttendanceAsPaid(
+      employee.employee_id,
+      periodStart,
+      periodEnd,
+      draft.payroll_id,
+    )
+    if (markError) {
+      return {
+        error: `new lines were added to draft #${draft.payroll_id}, but the attendance days couldn't be marked as paid (${markError}). This needs manual review.`,
+      }
+    }
+  }
+
+  const grossPay = draft.gross_pay + grossAdded
+  let deductions: PayslipDeductions
+  if (draft.deductions_note) {
+    const flag = `Pay went up by ₱${grossAdded.toLocaleString()} after these deductions were edited -- check them.`
+    deductions = {
+      sss_msc: draft.sss_msc,
+      sss_ee: draft.sss_ee,
+      sss_er: draft.sss_er,
+      sss_ec: draft.sss_ec,
+      philhealth_ee: draft.philhealth_ee,
+      philhealth_er: draft.philhealth_er,
+      pagibig_ee: draft.pagibig_ee,
+      pagibig_er: draft.pagibig_er,
+      withholding_tax: draft.withholding_tax,
+      deductions_note: `${draft.deductions_note} | ${flag}`,
+    }
+  } else {
+    const auto = await computeAutoDeductions(
+      employee.employee_id,
+      grossPay,
+      periodEnd,
+      employee.is_minimum_wage_earner,
+    )
+    if (auto.error || !auto.deductions) {
+      return { error: `new lines were added to draft #${draft.payroll_id}, but its totals couldn't be updated (${auto.error}). This needs manual review.` }
+    }
+    deductions = auto.deductions
+  }
+
+  const { data, error: updateError } = await supabase
+    .from('payroll_payslips')
+    .update({
+      gross_pay: grossPay,
+      base_pay: grossPay,
+      ...deductions,
+      net_pay: grossPay - draft.cash_advance_deducted - totalEmployeeDeductions(deductions),
+    })
+    .eq('payroll_id', draft.payroll_id)
+    .is('finalized_at', null)
+    .select('payroll_id')
+    .maybeSingle()
+
+  if (updateError || !data) {
+    return {
+      error: `new lines were added to draft #${draft.payroll_id}, but its totals couldn't be updated (${updateError?.message ?? 'it was finalized meanwhile'}). This needs manual review.`,
+    }
+  }
+  return { error: null }
+}
+
+// Saves the admin's edits to a DRAFT in place -- same payslip row, same
+// period, its line items replaced with the edited set (trip lines keep
+// their itinerary_id, so those trips stay paid by this draft). Refuses
+// once finalized. Not a DB transaction: a failure after the row update
+// names the payslip for manual review.
+export async function updateDraftPayslip(
+  payrollId: number,
+  {
+    lineItems,
+    cashAdvanceDeducted,
+    deductions,
+  }: { lineItems: PayslipLineItem[]; cashAdvanceDeducted: number; deductions: PayslipDeductions },
+): Promise<{ error: string | null }> {
+  const grossPay = lineItems.reduce((sum, item) => sum + item.amount, 0)
+
+  const { data, error: updateError } = await supabase
+    .from('payroll_payslips')
+    .update({
+      gross_pay: grossPay,
+      base_pay: grossPay,
+      cash_advance_deducted: cashAdvanceDeducted,
+      ...deductions,
+      net_pay: grossPay - cashAdvanceDeducted - totalEmployeeDeductions(deductions),
+    })
+    .eq('payroll_id', payrollId)
+    .is('finalized_at', null)
+    .select('payroll_id')
+    .maybeSingle()
+
+  if (updateError) return { error: updateError.message }
+  if (!data) return { error: 'This payslip has already been finalized, so it can no longer be edited.' }
+
+  const { error: deleteError } = await supabase.from('payslip_line_items').delete().eq('payroll_id', payrollId)
+  if (deleteError) {
+    return { error: `Payslip #${payrollId}'s totals were saved, but its old line items couldn't be replaced (${deleteError.message}). This needs manual review.` }
+  }
+
+  const { error: insertError } = await supabase.from('payslip_line_items').insert(
+    lineItems.map((item) => ({ payroll_id: payrollId, ...item })),
+  )
+  if (insertError) {
+    return { error: `Payslip #${payrollId}'s old line items were removed, but the edited ones couldn't be saved (${insertError.message}). This needs manual review.` }
+  }
+  return { error: null }
+}
+
+// Hold (Drivers only, enforced in the UI): an on-hold draft can't be
+// finalized -- neither on its own nor by "Finalize all" -- until the hold
+// is lifted, so it can't be released to the driver by accident.
+export async function setPayslipHold(
+  payrollId: number,
+  onHold: boolean,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase
+    .from('payroll_payslips')
+    .update({ on_hold: onHold })
+    .eq('payroll_id', payrollId)
+    .is('finalized_at', null)
+    .select('payroll_id')
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Only a draft payslip can be put on or taken off hold -- reload to check.' }
+  return { error: null }
+}
+
+// Draft -> released. A newly issued payslip has finalized_at = null (a
+// draft): only staff can see it (RLS hides drafts from employees), so
+// admin can review it first. Finalizing stamps finalized_at, which is
+// what makes it show up in the employee's own payslip list.
+// .is('finalized_at', null) + .select() so an already-finalized (or
+// RLS-blocked) row is reported instead of silently "succeeding".
+export async function finalizePayslips(
+  payrollIds: number[],
+): Promise<{ finalizedIds: number[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('payroll_payslips')
+    .update({ finalized_at: new Date().toISOString() })
+    .in('payroll_id', payrollIds)
+    .is('finalized_at', null)
+    .eq('on_hold', false)
+    // Week must be over -- a trip delivered after finalizing could
+    // never be paid (one payslip per employee per week).
+    .lt('payroll_period_end', toManilaDate(new Date()))
+    .select('payroll_id')
+
+  if (error) {
+    return { finalizedIds: [], error: error.message }
+  }
+  const finalizedIds = data.map((row) => row.payroll_id)
+  if (finalizedIds.length < payrollIds.length) {
+    return {
+      finalizedIds,
+      error: `Only ${finalizedIds.length} of ${payrollIds.length} payslips were finalized -- the rest are on hold, still in their week, already finalized, or couldn't be updated. Reload to check.`,
+    }
+  }
+  return { finalizedIds, error: null }
+}
+
+// Throws away a DRAFT payslip so it can be re-issued correctly: frees
+// its attendance days, deletes its line items (which frees its trips to
+// be paid again), then the payslip itself. Finalized payslips can't be
+// discarded. Not a DB transaction (same limitation as issuePayslip) --
+// a failure partway names what's left over.
+export async function discardDraftPayslip(
+  payrollId: number,
+): Promise<{ error: string | null }> {
+  const { error: attendanceError } = await supabase
+    .from('employee_attendance')
+    .update({ paid_payroll_id: null })
+    .eq('paid_payroll_id', payrollId)
+
+  if (attendanceError) {
+    return { error: attendanceError.message }
+  }
+
+  const { error: lineItemsError } = await supabase
+    .from('payslip_line_items')
+    .delete()
+    .eq('payroll_id', payrollId)
+
+  if (lineItemsError) {
+    return { error: lineItemsError.message }
+  }
+
+  const { data, error: payslipError } = await supabase
+    .from('payroll_payslips')
+    .delete()
+    .eq('payroll_id', payrollId)
+    .is('finalized_at', null)
+    .select('payroll_id')
+    .maybeSingle()
+
+  if (payslipError || !data) {
+    return {
+      error:
+        `Draft payslip #${payrollId}'s line items were removed, but the payslip itself ` +
+        `could not be deleted (${payslipError?.message ?? 'already finalized, or not permitted'}). ` +
+        `This needs manual review.`,
+    }
+  }
+  return { error: null }
+}
+
+// Only a finalized payslip can be marked Paid.
 export async function markPayslipPaid(
   payrollId: number,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('payroll_payslips')
     .update({ payslip_status: 'Paid' })
     .eq('payroll_id', payrollId)
+    .not('finalized_at', 'is', null)
+    .select('payroll_id')
+    .maybeSingle()
 
-  return { error: error?.message ?? null }
+  if (error) {
+    return { error: error.message }
+  }
+  if (!data) {
+    return { error: 'This payslip is still a draft -- finalize it before marking it paid.' }
+  }
+  return { error: null }
 }
 
 export type Payslip = {
@@ -539,6 +1018,10 @@ export type Payslip = {
   base_pay: number
   allowance_amount: number
   cash_advance_deducted: number
+  sss_ee: number
+  philhealth_ee: number
+  pagibig_ee: number
+  withholding_tax: number
   net_pay: number
   payslip_status: string
 }
@@ -549,9 +1032,12 @@ export async function loadPayslipsForEmployee(
   const { data, error } = await supabase
     .from('payroll_payslips')
     .select(
-      'payroll_id, payroll_period_start, payroll_period_end, gross_pay, base_pay, allowance_amount, cash_advance_deducted, net_pay, payslip_status',
+      'payroll_id, payroll_period_start, payroll_period_end, gross_pay, base_pay, allowance_amount, cash_advance_deducted, sss_ee, philhealth_ee, pagibig_ee, withholding_tax, net_pay, payslip_status',
     )
     .eq('employee_id', employeeId)
+    // Drafts aren't released yet (RLS hides them from employees too --
+    // this keeps staff viewing their own payslips consistent).
+    .not('finalized_at', 'is', null)
     .order('payroll_period_start', { ascending: false })
 
   if (error) {

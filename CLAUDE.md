@@ -206,7 +206,50 @@ before creating it.
   anymore. `commission_basis`/`commission_per_trip` columns are legacy,
   unused since 2026-09-28. In `IssuePayslipModal` the admin can override
   any auto line amount or add manual lines; changes are tagged in the
-  saved line description ("adjusted by admin, auto: ₱X"). Admin
+  saved line description ("adjusted by admin, auto: ₱X").
+  **Government deductions (2026-09-28):** `lib/governmentContributions.ts`
+  (pure math, 2026 rates as constants — self-check:
+  `node scripts/check-government-contributions.ts`) computes SSS
+  (MSC ₱5k–35k, EE 5% / ER 10% + EC ₱10/₱30), PhilHealth (2.5%/2.5%,
+  floor ₱10k, ceiling ₱100k), Pag-IBIG (fund salary cap ₱10k, EE 1% if
+  ≤ ₱1,500 else 2%, ER 2%) and BIR weekly withholding tax (TRAIN 2023+
+  weekly table on gross − EE contributions; 0 if
+  `employees.is_minimum_wage_earner`). Monthly contributions are split
+  across the weekly payslips of the month (month = month of
+  `payroll_period_end`, N = Saturdays in it): each payslip projects the
+  month's pay from month-to-date gross, and deducts its share minus what
+  earlier payslips this month already deducted — the last payslip
+  settles the month exactly (can be a small refund). EE + ER shares,
+  `sss_msc`, `withholding_tax` and `deductions_note` (admin overrides,
+  with auto values) are stored on `payroll_payslips`;
+  `net_pay = gross − cash advance − EE shares − tax`. No remittance
+  report yet.
+  **Payslip lifecycle (2026-09-28): Draft → Finalized → Paid.** There's
+  no "Issue Payslip" button any more: opening the Payroll page runs
+  `generateDraftPayslips()` for the last completed Sun–Sat week
+  (Manila time) — one draft per non-Deactivated/Terminated employee with
+  gross > 0 and no payslip for that exact period (DB unique constraint
+  on `employee_id, payroll_period_start, payroll_period_end` makes two
+  admins opening it at once safe). Drafts (`finalized_at` null) are
+  staff-only (restrictive RLS policy) and already count their trips/
+  attendance as paid. Per draft: **Edit** (`EditDraftPayslipModal.tsx`,
+  replaced `IssuePayslipModal.tsx` — edits the saved draft in place via
+  `updateDraftPayslip()`, never recalculates), **Regenerate** (discard +
+  regenerate that one employee, keeps a hold), **Hold Payslip** (Drivers
+  only, `on_hold` — blocks Finalize and "Finalize all"), **Finalize**
+  (stamps `finalized_at` → appears on the employee's payslip page). Only
+  finalized payslips can be marked Paid. Generation runs for **last week
+  and the current week** on every Payroll open; an existing draft is
+  **topped up** (`topUpDraft()`) with only what's new — the normal pay
+  calculation already skips trips on the employee's payslips and
+  attendance already marked paid — so admin edits survive. Deductions
+  are recalculated on the new gross unless admin had overridden them
+  (then kept, and `deductions_note` gets a "pay went up, check them"
+  flag). Removals (deleted attendance, un-delivered trip) aren't
+  subtracted — use Regenerate. A draft can't be finalized until its week
+  is over (`finalizePayslips` requires `payroll_period_end` < today,
+  Manila). Top-up isn't atomic (ponytail comment in payslip.ts). Weeks
+  older than last week aren't back-filled. Admin
   issues payslips (`IssuePayslipModal`, previews line items, lets admin
   apply a cash-advance deduction bounded by outstanding balance) and cash
   advances directly (`IssueCashAdvanceModal`, inserts into

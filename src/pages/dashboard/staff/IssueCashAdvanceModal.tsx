@@ -2,7 +2,7 @@
 // This never auto-deducts anything -- it's just the log of what was
 // issued. Deducting it happens later, optionally and by however much
 // admin chooses, when issuing that employee's payslip (see
-// IssuePayslipModal.tsx / src/lib/payslip.ts).
+// EditDraftPayslipModal.tsx / src/lib/payslip.ts).
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
