@@ -199,7 +199,13 @@ before creating it.
   (`Commission Per Trip`, Driver-only) earn per delivered trip
   `app_settings.driver_commission_rate`% × `bookings.rate_of_delivery_service`
   (rate is per trip, not per contract) + `app_settings.driver_per_trip_fee`
-  — both company-wide, same formula as QuoteReviewModal's profit panel;
+  — both company-wide, same formula as QuoteReviewModal's profit panel.
+  Rate type is **locked by position** in `AddEmployeeModal.tsx` (no
+  dropdown): Driver → Commission Per Trip, everyone else → Weekly Salary
+  (amount required). Position is chosen only when adding an employee —
+  read-only on Edit, no switching. Daily/Monthly/Hourly still work in `payslip.ts` for
+  older rows but can't be chosen, and saving such an employee converts
+  them to Weekly Salary;
   trip date = `delivery_receipts.received_at` in Manila time. Everyone
   else is paid against attendance: Daily Fixed, Weekly Salary (÷6 × paid
   days — Helpers), Monthly Salary (÷30), Hourly. No daily allowance

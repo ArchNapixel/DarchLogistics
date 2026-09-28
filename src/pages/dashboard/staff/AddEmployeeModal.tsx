@@ -57,12 +57,25 @@ function AddEmployeeModal({
   const [firstName, setFirstName] = useState(employee?.first_name ?? '')
   const [lastName, setLastName] = useState(employee?.last_name ?? '')
   const [position, setPosition] = useState(employee?.position ?? 'Driver')
-  const [rateType, setRateType] = useState<(typeof RATE_TYPES)[number]['value']>(
-    employee?.rate_type ?? 'Daily Fixed',
-  )
+  // Rate type isn't a choice: Drivers are Commission Per Trip (paid from
+  // the Settings commission % + per-trip fee), everyone else is Weekly
+  // Salary. Older employees on Daily/Monthly/Hourly get switched to
+  // Weekly Salary the next time they're saved here.
+  const rateType = position === 'Driver' ? 'Commission Per Trip' : 'Weekly Salary'
+  // Only carry over an amount that's already a weekly salary -- a
+  // monthly/daily figure pre-filled as "weekly" would be badly wrong.
   const [rateAmount, setRateAmount] = useState(
-    employee?.rate_amount != null ? String(employee.rate_amount) : '',
+    employee?.rate_type === 'Weekly Salary' && employee.rate_amount != null
+      ? String(employee.rate_amount)
+      : '',
   )
+  const legacyRate =
+    employee &&
+    employee.rate_type !== 'Weekly Salary' &&
+    employee.rate_type !== 'Commission Per Trip' &&
+    employee.rate_amount != null
+      ? `${employee.rate_type} ₱${employee.rate_amount.toLocaleString()}`
+      : null
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
   const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
@@ -91,8 +104,8 @@ function AddEmployeeModal({
       return
     }
 
-    if (rateType === 'Commission Per Trip' && position !== 'Driver') {
-      setError('Commission per trip is for Drivers only -- pick a salary rate type.')
+    if (rateType === 'Weekly Salary' && !(Number(rateAmount) > 0)) {
+      setError('Enter the weekly salary.')
       return
     }
 
@@ -183,20 +196,31 @@ function AddEmployeeModal({
             />
           </label>
 
-          <label className={labelClasses}>
-            Position
-            <select
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-              className={fieldClasses}
-            >
-              <option value="Driver">Driver</option>
-              <option value="Mechanic">Mechanic</option>
-              <option value="Helper">Helper</option>
-              <option value="Dispatcher">Dispatcher</option>
-              <option value="Admin">Admin</option>
-            </select>
-          </label>
+          {/* Position is picked once, when adding -- it can't be switched
+              afterwards (it also decides the rate type). */}
+          {isEditing ? (
+            <div className={labelClasses}>
+              Position
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                {position}
+              </p>
+            </div>
+          ) : (
+            <label className={labelClasses}>
+              Position
+              <select
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+                className={fieldClasses}
+              >
+                <option value="Driver">Driver</option>
+                <option value="Mechanic">Mechanic</option>
+                <option value="Helper">Helper</option>
+                <option value="Dispatcher">Dispatcher</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </label>
+          )}
 
           <label className={labelClasses}>
             Hire date
@@ -208,24 +232,12 @@ function AddEmployeeModal({
             />
           </label>
 
-          <label className={labelClasses}>
+          <div className={labelClasses}>
             Rate type
-            <select
-              value={rateType}
-              onChange={(e) =>
-                setRateType(e.target.value as (typeof RATE_TYPES)[number]['value'])
-              }
-              className={fieldClasses}
-            >
-              {RATE_TYPES.filter(
-                (r) => r.value !== 'Commission Per Trip' || position === 'Driver',
-              ).map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.value}
-                </option>
-              ))}
-            </select>
-          </label>
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+              {rateType}
+            </p>
+          </div>
 
           {rateType === 'Commission Per Trip' ? (
             <p className="flex flex-col justify-end text-sm text-slate-500">
@@ -243,6 +255,11 @@ function AddEmployeeModal({
                 onChange={(e) => setRateAmount(e.target.value)}
                 className={fieldClasses}
               />
+              {legacyRate && (
+                <span className="text-xs font-normal text-amber-700">
+                  Was {legacyRate} -- enter the weekly amount.
+                </span>
+              )}
             </label>
           )}
 
