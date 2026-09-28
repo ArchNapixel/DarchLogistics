@@ -18,7 +18,7 @@ import { BookingStatusBadge, type Booking } from './BookingsSection'
 
 type ClientBooking = Booking & { cargo_type: string | null }
 
-const ONGOING_STATUSES = new Set(['Draft', 'Confirmed'])
+const ONGOING_STATUSES = new Set(['Draft', 'Confirmed', 'InProgress'])
 
 function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'

@@ -28,7 +28,6 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { isAdmin, isDispatcher } from '../../../lib/roles'
-import { syncBookingStatusIfFullyDelivered } from '../../../lib/bookingStatus'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
 import ItineraryLogModal from './ItineraryLogModal'
 
@@ -573,11 +572,9 @@ function DispatchBoardSection() {
           })
       }
 
-      // If this was the last itinerary on its booking still not
-      // Delivered, flip the booking itself to Delivered too.
-      syncBookingStatusIfFullyDelivered(itineraryId).then(({ error }) => {
-        if (error) console.error('Failed to sync booking status:', error)
-      })
+      // The booking's own status follows automatically -- the
+      // sync_booking_status trigger on itineraries handles it in the
+      // database, for every status change (not just Delivered).
     }
 
     // Delivered trips stay in `rows` and move into the Completed table

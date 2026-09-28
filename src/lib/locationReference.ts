@@ -76,7 +76,7 @@ export function barangaysForCity(rows: LocationReferenceRow[], city: string): st
 }
 
 // Combines the structured city/barangay with the free-text landmark
-// detail into one display string, e.g. "ABC Warehouse -- Brgy. San
+// detail into one display string, e.g. "ABC Warehouse, Brgy. San
 // Antonio, Davao City". Used anywhere a quote/booking's location was
 // previously shown as a single free-text field.
 export function formatLocationDisplay({
@@ -90,7 +90,7 @@ export function formatLocationDisplay({
 }): string {
   const structured = city && barangay ? `Brgy. ${barangay}, ${city}` : null
 
-  if (detail && structured) return `${detail} -- ${structured}`
+  if (detail && structured) return `${detail}, ${structured}`
   if (structured) return structured
   if (detail) return detail
   return '—'

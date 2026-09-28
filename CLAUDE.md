@@ -122,9 +122,22 @@ before creating it.
   lookup-by-id pattern as DriverTasks.tsx. Detail view shows real
   `rate_of_delivery_service`, `amount_to_pay`, `amount_paid`, `balance_due`
   (no fabricated "payment status" label — those columns are mostly still
-  null until a payments flow exists). "New Booking" (NewBookingModal) is
-  still a no-op placeholder — real bookings are currently only created via
-  the Quotations Approve flow.
+  null until a payments flow exists). Real bookings are only created via
+  the Quotations Approve flow (NewBookingModal no longer exists).
+  **2026-09-28 rework:** Approve creates bookings as `Confirmed` (not
+  `Draft`); status then follows the trips via the trigger described
+  under Dispatch Board. List has status filter (Active/Delivered/
+  Cancelled/All) + search (client, place, #id, Q- reference), full
+  addresses incl. landmark. Delete was removed — bookings are
+  **cancelled** from `BookingDetailModal` instead (`cancellation_reason`,
+  `cancelled_at` columns): blocked while a trip is on the road; if no
+  trip delivered → booking `Cancelled` + Awaiting trips `Cancelled`; if
+  some delivered → only Awaiting trips cancelled and the booking ends
+  `Delivered` (so delivered trips still bill — Payments Due/revenue skip
+  Cancelled bookings). Freed trucks/trailers set back to `Available`,
+  each trip change logged to `dispatch_status_logs`. The detail modal
+  also shows cargo, schedule, terms, pin links, and a trips table
+  (status/driver/helper/truck/trailer).
 - Dispatch Board (`/dashboard/dispatch`, DispatchBoardSection) — reads
   active itineraries (`itinerary_status` not in Delivered/Cancelled),
   joined in JS with `places` for pickup/delivery names. Status dropdown
@@ -145,14 +158,14 @@ before creating it.
   trailer are also assignable per itinerary — `itineraries` has its own
   `plate_number`/`trailer_id` columns, and the Dispatch Board writes to
   them directly (plain overwrite, no assignment-history table, unlike
-  the Driver/Helper crew assignment above). Reaching "Delivered" here (or
-  via `DeliveryReceiptModal.tsx`, the Driver's own flow) also calls
-  `lib/bookingStatus.ts`'s `syncBookingStatusIfFullyDelivered()` — a
-  booking can cover multiple itineraries (one per delivery order), so it
-  only flips `bookings.booking_status` to `'Delivered'` once *every*
-  sibling itinerary under that booking is Delivered too. Fire-and-forget
-  at both call sites (logs to console on failure, doesn't block the
-  driver/staff action that triggered it).
+  the Driver/Helper crew assignment above). **Booking status is kept in
+  sync by a DB trigger** (`sync_booking_status` on `itineraries`,
+  SECURITY DEFINER, added 2026-09-28 — replaced the old
+  `lib/bookingStatus.ts` JS helper, which only ever handled Delivered
+  and only from two call sites). Rules, over the booking's non-Cancelled
+  itineraries: all Delivered → `Delivered`; any past Awaiting →
+  `InProgress`; else `Confirmed`. Never touches a `Cancelled` booking,
+  and leaves the status alone if every trip is cancelled.
 - Employee Detail View (staff-side, Operations → Employees) — clicking an
   employee's name in `EmployeesSection.tsx` is now a link for Driver/
   Mechanic/Helper only (Admin/Dispatcher stay plain text) and opens

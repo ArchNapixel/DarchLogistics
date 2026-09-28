@@ -5,7 +5,6 @@
 import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { syncBookingStatusIfFullyDelivered } from '../../../lib/bookingStatus'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -100,13 +99,9 @@ function DeliveryReceiptModal({
       return
     }
 
-    // If this was the last itinerary on its booking still not
-    // Delivered, flip the booking itself to Delivered too. Best
-    // effort -- the itinerary status change itself already succeeded,
-    // so this isn't worth blocking the driver's flow over.
-    syncBookingStatusIfFullyDelivered(itineraryId).then(({ error }) => {
-      if (error) console.error('Failed to sync booking status:', error)
-    })
+    // The booking's own status (Delivered once every trip is) follows
+    // automatically -- the sync_booking_status trigger on itineraries
+    // handles it in the database, for every status change.
 
     // 4. Log the status change.
     const { error: logError } = await supabase

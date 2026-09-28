@@ -55,7 +55,7 @@ function StatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
     <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
+      {status === 'InProgress' ? 'In progress' : status}
     </span>
   )
 }

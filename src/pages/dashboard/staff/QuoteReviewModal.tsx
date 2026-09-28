@@ -539,7 +539,10 @@ function QuoteReviewModal({
         weight: quote.weight,
         container_type: quote.container_type,
         payment_terms: paymentTerms,
-        booking_status: 'Draft',
+        // Approving IS the confirmation. From here the booking's status
+        // follows its itineraries automatically (sync_booking_status
+        // trigger): InProgress once a trip moves, Delivered once all are.
+        booking_status: 'Confirmed',
         booking_date: quote.preferred_pickup_date,
         estimated_distance_km: distanceValue,
         rate_of_delivery_service: rateValue,

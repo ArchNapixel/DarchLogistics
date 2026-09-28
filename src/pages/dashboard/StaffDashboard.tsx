@@ -90,7 +90,7 @@ function StaffDashboard() {
             supabase
               .from('bookings')
               .select('booking_id', { count: 'exact', head: true })
-              .in('booking_status', ['Confirmed', 'Dispatched', 'InProgress']),
+              .in('booking_status', ['Confirmed', 'InProgress']),
             supabase
               .from('itineraries')
               .select('itinerary_id', { count: 'exact', head: true })
