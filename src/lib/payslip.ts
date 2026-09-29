@@ -652,7 +652,24 @@ type ExistingDraft = PayslipDeductions & {
 // the same second could both add the same new trip line to a draft.
 // The review-before-finalize step catches it; move topUpDraft into a
 // Postgres function (one transaction) if that ever becomes real.
-export async function generateDraftPayslips(
+// Runs are queued one after another in this browser tab: React StrictMode
+// (dev) fires Payroll's open-effect twice, and two overlapping runs both
+// added the same trips to a draft (duplicate lines, stale gross). Queued,
+// the second run sees the first one's lines and adds nothing.
+// ponytail: only guards one tab -- two admins at once still need the
+// Postgres-function fix above.
+let generateQueue: Promise<unknown> = Promise.resolve()
+export function generateDraftPayslips(
+  periodStart: string,
+  periodEnd: string,
+  onlyEmployeeId?: number,
+) {
+  const run = generateQueue.then(() => generateDraftPayslipsNow(periodStart, periodEnd, onlyEmployeeId))
+  generateQueue = run.catch(() => undefined)
+  return run
+}
+
+async function generateDraftPayslipsNow(
   periodStart: string,
   periodEnd: string,
   // Regenerate: only this employee (their draft was just discarded).
@@ -705,6 +722,15 @@ export async function generateDraftPayslips(
   // One at a time: each employee's earlier-this-month payslips must be
   // read after anything just created for them.
   for (const employee of toProcess) {
+    // Self-heal an existing draft first (duplicate trip lines / gross that
+    // doesn't match its lines), so the top-up below adds to a correct total.
+    const existing = existingByEmployee.get(employee.employee_id)
+    if (existing) {
+      const healed = await healDraft(existing, employee, periodEnd)
+      if (healed.error) warnings.push(`${employee.full_name}: ${healed.error}`)
+      else if (healed.gross !== null) existing.gross_pay = healed.gross
+    }
+
     const pay = await buildEmployeePayLineItems(employee, periodStart, periodEnd, settingsResult.settings)
     if (pay.error) {
       warnings.push(`${employee.full_name}: ${pay.error}`)
@@ -788,10 +814,78 @@ async function topUpDraft(
     }
   }
 
-  const grossPay = draft.gross_pay + grossAdded
+  return saveDraftTotals(
+    draft,
+    employee,
+    draft.gross_pay + grossAdded,
+    periodEnd,
+    `Pay went up by ₱${grossAdded.toLocaleString()} after these deductions were edited -- check them.`,
+  )
+}
+
+// Removes double-counted trip lines from a draft (same itinerary_id on
+// more than one line -- left behind by the old overlapping-runs bug) and
+// makes its gross match its lines again. Runs on every Payroll open, so
+// bad drafts fix themselves. Returns the corrected gross when it changed.
+async function healDraft(
+  draft: ExistingDraft,
+  employee: EmployeePayRate & { is_minimum_wage_earner: boolean },
+  periodEnd: string,
+): Promise<{ gross: number | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('payslip_line_items')
+    .select('payslip_line_item_id, itinerary_id, amount')
+    .eq('payroll_id', draft.payroll_id)
+    .order('payslip_line_item_id', { ascending: true })
+  if (error) return { gross: null, error: error.message }
+
+  const seenTrips = new Set<number>()
+  const duplicateIds: number[] = []
+  let gross = 0
+  for (const line of data) {
+    if (line.itinerary_id != null) {
+      if (seenTrips.has(line.itinerary_id)) {
+        duplicateIds.push(line.payslip_line_item_id)
+        continue
+      }
+      seenTrips.add(line.itinerary_id)
+    }
+    gross += Number(line.amount)
+  }
+
+  if (duplicateIds.length === 0 && Math.abs(gross - draft.gross_pay) < 0.005) {
+    return { gross: null, error: null }
+  }
+
+  if (duplicateIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('payslip_line_items')
+      .delete()
+      .in('payslip_line_item_id', duplicateIds)
+    if (deleteError) return { gross: null, error: deleteError.message }
+  }
+
+  const { error: saveError } = await saveDraftTotals(
+    draft,
+    employee,
+    gross,
+    periodEnd,
+    'Duplicate trip lines were removed and the total corrected -- check the deductions.',
+  )
+  return { gross: saveError ? null : gross, error: saveError }
+}
+
+// Saves a draft's new gross and the deductions/net that go with it.
+// Government deductions are recalculated unless the admin overrode them.
+async function saveDraftTotals(
+  draft: ExistingDraft,
+  employee: EmployeePayRate & { is_minimum_wage_earner: boolean },
+  grossPay: number,
+  periodEnd: string,
+  flag: string,
+): Promise<{ error: string | null }> {
   let deductions: PayslipDeductions
   if (draft.deductions_note) {
-    const flag = `Pay went up by ₱${grossAdded.toLocaleString()} after these deductions were edited -- check them.`
     deductions = {
       sss_msc: draft.sss_msc,
       sss_ee: draft.sss_ee,
@@ -812,7 +906,7 @@ async function topUpDraft(
       employee.is_minimum_wage_earner,
     )
     if (auto.error || !auto.deductions) {
-      return { error: `new lines were added to draft #${draft.payroll_id}, but its totals couldn't be updated (${auto.error}). This needs manual review.` }
+      return { error: `draft #${draft.payroll_id}'s lines were changed, but its totals couldn't be updated (${auto.error}). This needs manual review.` }
     }
     deductions = auto.deductions
   }
@@ -832,7 +926,7 @@ async function topUpDraft(
 
   if (updateError || !data) {
     return {
-      error: `new lines were added to draft #${draft.payroll_id}, but its totals couldn't be updated (${updateError?.message ?? 'it was finalized meanwhile'}). This needs manual review.`,
+      error: `draft #${draft.payroll_id}'s lines were changed, but its totals couldn't be updated (${updateError?.message ?? 'it was finalized meanwhile'}). This needs manual review.`,
     }
   }
   return { error: null }
