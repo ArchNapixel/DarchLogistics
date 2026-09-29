@@ -12,6 +12,7 @@
 // CompleteWorkOrderModal.tsx step 3), so there's no risk of double-
 // counting or missing anything.
 import { supabase } from './supabaseClient'
+import { toManilaDate } from './payslip'
 
 export type CurrentStockRow = {
   item_id: number
@@ -21,6 +22,7 @@ export type CurrentStockRow = {
 }
 
 export type UsedStockRow = {
+  item_id: number
   item_name_text: string
   quantity: number
   work_order_number: string
@@ -28,13 +30,15 @@ export type UsedStockRow = {
 }
 
 // Sunday through Saturday, the week containing `anchorDate` (a
-// yyyy-mm-dd string, e.g. from an <input type="date">).
+// yyyy-mm-dd string, e.g. from an <input type="date">). The date math
+// runs on UTC midnight so toISOString() can't shift it a day -- with a
+// local midnight, Manila (UTC+8) got Saturday-to-Friday weeks. Same
+// approach as payslip.ts's getCurrentPayPeriod.
 export function getReportWeek(anchorDate: string): { start: string; end: string } {
-  const anchor = new Date(`${anchorDate}T00:00:00`)
-  const start = new Date(anchor)
-  start.setDate(anchor.getDate() - anchor.getDay())
+  const start = new Date(`${anchorDate}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay())
   const end = new Date(start)
-  end.setDate(start.getDate() + 6)
+  end.setUTCDate(start.getUTCDate() + 6)
 
   return {
     start: start.toISOString().slice(0, 10),
@@ -82,25 +86,22 @@ export type ReportWeekOption = {
 // Each condition is monotonic going further back in time, so once a
 // week fails all three, every earlier week will too -- safe to stop.
 function buildReportWeekOptions(earliestDataDate: string | null): ReportWeekOption[] {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toManilaDate(new Date())
   const { start: currentWeekStart } = getReportWeek(today)
-  const todayDate = new Date(`${today}T00:00:00`)
-  const currentMonth = todayDate.getMonth()
-  const currentYear = todayDate.getFullYear()
+  const currentMonth = today.slice(0, 7) // 'yyyy-mm'
 
   const weeks: ReportWeekOption[] = []
-  const cursor = new Date(`${currentWeekStart}T00:00:00`)
+  const cursor = new Date(`${currentWeekStart}T00:00:00Z`)
   const MAX_WEEKS = 520 // ~10 years, just a safety cap against a runaway loop
 
   for (let i = 0; i < MAX_WEEKS; i++) {
     const start = cursor.toISOString().slice(0, 10)
     const weekEndDate = new Date(cursor)
-    weekEndDate.setDate(cursor.getDate() + 6)
+    weekEndDate.setUTCDate(cursor.getUTCDate() + 6)
     const end = weekEndDate.toISOString().slice(0, 10)
 
     const touchesCurrentMonth =
-      (cursor.getMonth() === currentMonth && cursor.getFullYear() === currentYear) ||
-      (weekEndDate.getMonth() === currentMonth && weekEndDate.getFullYear() === currentYear)
+      start.slice(0, 7) === currentMonth || end.slice(0, 7) === currentMonth
     const isLastWeekFloor = i <= 1 // this week (i=0) and last week (i=1)
     const hasData = earliestDataDate !== null && end >= earliestDataDate
 
@@ -129,7 +130,7 @@ export async function loadReportWeekOptions(): Promise<{
     return { weeks: [], error: error.message }
   }
 
-  const earliestDataDate = data.length > 0 ? data[0].completed_at.slice(0, 10) : null
+  const earliestDataDate = data.length > 0 ? toManilaDate(data[0].completed_at) : null
   return { weeks: buildReportWeekOptions(earliestDataDate), error: null }
 }
 
@@ -150,18 +151,17 @@ export async function loadInventoryReport(
     return { currentStock: [], usedStock: [], error: stockError.message }
   }
 
-  const { data: completions, error: completionsError } = await supabase
+  // Week bounds in Manila time (+08:00), filtered in the DB rather than
+  // loading every completion ever and slicing UTC dates in JS.
+  const { data: weekCompletions, error: completionsError } = await supabase
     .from('work_order_completions')
     .select('completion_id, work_order_id, completed_at')
+    .gte('completed_at', `${weekStart}T00:00:00+08:00`)
+    .lte('completed_at', `${weekEnd}T23:59:59.999+08:00`)
 
   if (completionsError) {
     return { currentStock, usedStock: [], error: completionsError.message }
   }
-
-  const weekCompletions = completions.filter((c) => {
-    const day = c.completed_at.slice(0, 10)
-    return day >= weekStart && day <= weekEnd
-  })
 
   if (weekCompletions.length === 0) {
     return { currentStock, usedStock: [], error: null }
@@ -170,7 +170,7 @@ export async function loadInventoryReport(
   const completionIds = weekCompletions.map((c) => c.completion_id)
   const { data: partsUsed, error: partsError } = await supabase
     .from('work_order_parts_used')
-    .select('completion_id, item_name_text, quantity')
+    .select('completion_id, item_id, item_name_text, quantity')
     .in('completion_id', completionIds)
 
   if (partsError) {
@@ -198,6 +198,7 @@ export async function loadInventoryReport(
   const usedStock: UsedStockRow[] = partsUsed.map((p) => {
     const workOrderId = workOrderIdByCompletionId.get(p.completion_id)
     return {
+      item_id: p.item_id,
       item_name_text: p.item_name_text,
       quantity: p.quantity,
       work_order_number:
@@ -211,7 +212,38 @@ export async function loadInventoryReport(
   return { currentStock, usedStock, error: null }
 }
 
-function csvField(value: string | number): string {
+export type UsageTotalRow = {
+  item_id: number
+  name: string
+  total_used: number
+  work_order_count: number
+}
+
+// "How much of each part went out this week" -- the used-stock entries
+// summed per inventory item (by item_id, so a renamed item still counts
+// as one), most-used first.
+export function summarizeUsageByItem(usedStock: UsedStockRow[]): UsageTotalRow[] {
+  const byItem = new Map<number, { name: string; total: number; workOrders: Set<string> }>()
+  for (const row of usedStock) {
+    const entry = byItem.get(row.item_id) ?? {
+      name: row.item_name_text,
+      total: 0,
+      workOrders: new Set<string>(),
+    }
+    entry.total += Number(row.quantity)
+    entry.workOrders.add(row.work_order_number)
+    byItem.set(row.item_id, entry)
+  }
+
+  return Array.from(byItem, ([item_id, e]) => ({
+    item_id,
+    name: e.name,
+    total_used: e.total,
+    work_order_count: e.workOrders.size,
+  })).sort((a, b) => b.total_used - a.total_used)
+}
+
+export function csvField(value: string | number): string {
   const text = String(value)
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
@@ -237,6 +269,18 @@ export function buildInventoryReportCsv({
   lines.push(['Item Name', 'Type', 'Quantity'].map(csvField).join(','))
   for (const item of currentStock) {
     lines.push([item.name, item.item_type, item.quantity].map(csvField).join(','))
+  }
+
+  lines.push('')
+  lines.push('Usage by Item')
+  lines.push(['Item Name', 'Total Used', 'Work Orders'].map(csvField).join(','))
+  const totals = summarizeUsageByItem(usedStock)
+  if (totals.length === 0) {
+    lines.push('No stock used this week.')
+  } else {
+    for (const row of totals) {
+      lines.push([row.name, row.total_used, row.work_order_count].map(csvField).join(','))
+    }
   }
 
   lines.push('')

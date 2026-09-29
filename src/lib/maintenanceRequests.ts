@@ -167,6 +167,11 @@ export async function loadMyMaintenanceRequests(employeeId: number): Promise<{
 // (same as that modal does too), and links the two records together.
 // Not wrapped in a DB transaction -- same known limitation as elsewhere
 // in this app -- so a failure partway is surfaced naming what happened.
+//
+// The request is claimed FIRST (Pending -> Approved, race-guarded), and
+// only the admin who wins that claim goes on to create the work order.
+// Doing the claim last (as before) let two admins approving at once --
+// or a retry after a failed last step -- each create a work order.
 export async function approveMaintenanceRequest({
   request,
   resolvedByEmployeeId,
@@ -174,6 +179,25 @@ export async function approveMaintenanceRequest({
   request: PendingMaintenanceRequest
   resolvedByEmployeeId: number
 }): Promise<{ error: string | null }> {
+  const { data: claimed, error: claimError } = await supabase
+    .from('maintenance_requests')
+    .update({
+      status: 'Approved',
+      resolved_by_employee_id: resolvedByEmployeeId,
+      resolved_at: new Date().toISOString(),
+    })
+    .eq('request_id', request.request_id)
+    .eq('status', 'Pending')
+    .select('request_id')
+    .maybeSingle()
+
+  if (claimError) {
+    return { error: claimError.message }
+  }
+  if (!claimed) {
+    return { error: 'This request was already approved or rejected by someone else.' }
+  }
+
   const identifier = request.plate_number ?? `TR${request.trailer_id}`
   const workOrderNumber = `WO-${identifier}-${Date.now()}`
 
@@ -191,7 +215,28 @@ export async function approveMaintenanceRequest({
     .single()
 
   if (workOrderError || !newWorkOrder) {
-    return { error: workOrderError?.message ?? 'Could not create the work order.' }
+    // Put the request back in the queue so it can be approved again.
+    const { error: revertError } = await supabase
+      .from('maintenance_requests')
+      .update({ status: 'Pending', resolved_by_employee_id: null, resolved_at: null })
+      .eq('request_id', request.request_id)
+    const reason = workOrderError?.message ?? 'Could not create the work order.'
+    return {
+      error: revertError
+        ? `${reason} The request is marked Approved but has no work order -- this needs manual review.`
+        : reason,
+    }
+  }
+
+  const { error: linkError } = await supabase
+    .from('maintenance_requests')
+    .update({ work_order_id: newWorkOrder.work_order_id })
+    .eq('request_id', request.request_id)
+
+  if (linkError) {
+    return {
+      error: `Work order ${workOrderNumber} was created, but couldn't be linked to the request (${linkError.message}). This needs manual review.`,
+    }
   }
 
   const { error: statusError } = request.plate_number
@@ -210,18 +255,7 @@ export async function approveMaintenanceRequest({
     }
   }
 
-  const { error: resolveError } = await supabase
-    .from('maintenance_requests')
-    .update({
-      status: 'Approved',
-      resolved_by_employee_id: resolvedByEmployeeId,
-      resolved_at: new Date().toISOString(),
-      work_order_id: newWorkOrder.work_order_id,
-    })
-    .eq('request_id', request.request_id)
-    .eq('status', 'Pending')
-
-  return { error: resolveError?.message ?? null }
+  return { error: null }
 }
 
 export async function rejectMaintenanceRequest({
@@ -233,7 +267,7 @@ export async function rejectMaintenanceRequest({
   resolvedByEmployeeId: number
   rejectionReason: string
 }): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('maintenance_requests')
     .update({
       status: 'Rejected',
@@ -243,6 +277,12 @@ export async function rejectMaintenanceRequest({
     })
     .eq('request_id', requestId)
     .eq('status', 'Pending')
+    .select('request_id')
+    .maybeSingle()
 
-  return { error: error?.message ?? null }
+  if (error) return { error: error.message }
+  // 0 rows matched -- someone else already decided it (or RLS silently
+  // blocked the update), so don't report a rejection that didn't happen.
+  if (!updated) return { error: 'This request was already approved or rejected by someone else.' }
+  return { error: null }
 }

@@ -9,6 +9,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 import MaintenanceRequestsSection from './MaintenanceRequestsSection'
+import MaintenanceCostReportModal from './MaintenanceCostReportModal'
 
 type WorkOrder = {
   work_order_id: number
@@ -61,6 +62,7 @@ function MaintenanceSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showCostReport, setShowCostReport] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -151,12 +153,20 @@ function MaintenanceSection() {
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">Maintenance</h2>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          New Work Order
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            New Work Order
+          </button>
+          <button
+            onClick={() => setShowCostReport(true)}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Cost Report
+          </button>
+        </div>
       </div>
 
       {loading && <p className="mt-4 text-slate-500">Loading maintenance data...</p>}
@@ -270,6 +280,10 @@ function MaintenanceSection() {
           </div>
           )}
         </>
+      )}
+
+      {showCostReport && (
+        <MaintenanceCostReportModal onClose={() => setShowCostReport(false)} />
       )}
 
       {showCreate && (

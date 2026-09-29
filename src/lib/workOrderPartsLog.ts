@@ -8,6 +8,10 @@
 // CompleteWorkOrderModal.tsx reads these back and copies them into
 // work_order_parts_used at completion time WITHOUT decrementing stock
 // again -- the deduction already happened here.
+//
+// unit_cost is copied from inventory_items at the moment the part is
+// logged, so a later price change never rewrites what this job cost
+// (the maintenance cost report sums quantity x unit_cost).
 import { supabase } from './supabaseClient'
 
 export type LoggedPart = {
@@ -15,6 +19,7 @@ export type LoggedPart = {
   item_id: number
   item_name_text: string
   quantity: number
+  unit_cost: number | null
   employee_name: string
   used_at: string
 }
@@ -25,7 +30,7 @@ export async function loadWorkOrderPartsLog(workOrderId: number): Promise<{
 }> {
   const { data: rows, error } = await supabase
     .from('work_order_parts_log')
-    .select('log_id, item_id, item_name_text, quantity, employee_id, used_at')
+    .select('log_id, item_id, item_name_text, quantity, unit_cost, employee_id, used_at')
     .eq('work_order_id', workOrderId)
     .order('used_at', { ascending: false })
 
@@ -54,6 +59,7 @@ export async function loadWorkOrderPartsLog(workOrderId: number): Promise<{
       item_id: row.item_id,
       item_name_text: row.item_name_text,
       quantity: row.quantity,
+      unit_cost: row.unit_cost,
       employee_name: nameById.get(row.employee_id) ?? `Employee #${row.employee_id}`,
       used_at: row.used_at,
     })),
@@ -102,7 +108,7 @@ export async function logPartUsed({
 }): Promise<{ error: string | null }> {
   const { data: current, error: readError } = await supabase
     .from('inventory_items')
-    .select('quantity')
+    .select('quantity, unit_cost')
     .eq('item_id', itemId)
     .single()
 
@@ -119,6 +125,7 @@ export async function logPartUsed({
     item_id: itemId,
     item_name_text: itemName,
     quantity,
+    unit_cost: current.unit_cost,
     employee_id: employeeId,
   })
 

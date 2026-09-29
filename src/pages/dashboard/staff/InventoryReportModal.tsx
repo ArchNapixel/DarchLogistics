@@ -8,6 +8,7 @@ import {
   loadReportWeekOptions,
   loadInventoryReport,
   buildInventoryReportCsv,
+  summarizeUsageByItem,
   type ReportWeekOption,
   type CurrentStockRow,
   type UsedStockRow,
@@ -24,6 +25,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
   const [loadingWeeks, setLoadingWeeks] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const usageTotals = summarizeUsageByItem(usedStock)
 
   useEffect(() => {
     loadWeeks()
@@ -159,6 +161,34 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold text-slate-700">Usage by Item</h4>
+              {usageTotals.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500">No stock used this week.</p>
+              ) : (
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Item</th>
+                        <th className="px-3 py-2 font-medium">Total Used</th>
+                        <th className="px-3 py-2 font-medium">Work Orders</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usageTotals.map((row) => (
+                        <tr key={row.item_id} className="border-b border-slate-100 last:border-0">
+                          <td className="px-3 py-2 text-slate-900">{row.name}</td>
+                          <td className="px-3 py-2 font-medium text-slate-900">{row.total_used}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.work_order_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div>

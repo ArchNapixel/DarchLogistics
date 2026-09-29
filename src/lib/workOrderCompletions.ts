@@ -12,7 +12,6 @@ export type WorkOrderCompletion = {
   vehicle_label: string
   employee_name: string
   description: string
-  labor_hours: number | null
   odometer_reading: number | null
   next_service_date: string | null
   notes: string | null
@@ -27,7 +26,7 @@ export async function loadWorkOrderCompletions(): Promise<{
   const { data: completionRows, error: completionsError } = await supabase
     .from('work_order_completions')
     .select(
-      'completion_id, work_order_id, employee_id, description, labor_hours, odometer_reading, next_service_date, notes, completed_at',
+      'completion_id, work_order_id, employee_id, description, odometer_reading, next_service_date, notes, completed_at',
     )
     .order('completed_at', { ascending: false })
 
@@ -111,7 +110,6 @@ export async function loadWorkOrderCompletions(): Promise<{
         vehicle_label: vehicleLabel,
         employee_name: nameByEmployee.get(row.employee_id) ?? `Employee #${row.employee_id}`,
         description: row.description,
-        labor_hours: row.labor_hours,
         odometer_reading: row.odometer_reading,
         next_service_date: row.next_service_date,
         notes: row.notes,

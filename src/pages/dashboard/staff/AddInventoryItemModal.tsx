@@ -1,6 +1,9 @@
 // AddInventoryItemModal: form for adding OR editing an inventory item.
 // Pass an `item` prop to edit that row (fields pre-filled, submit does
 // an UPDATE); omit it to add a new one (submit does an INSERT).
+// Unit price is required -- every use of the item on a work order is
+// charged at this price in the maintenance cost report. Items added
+// before prices existed have none, so editing one forces a price in.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -15,6 +18,7 @@ export type EditableInventoryItem = {
   name: string
   item_type: (typeof ITEM_TYPES)[number]
   quantity: number
+  unit_cost: number | null
 }
 
 function AddInventoryItemModal({
@@ -35,6 +39,9 @@ function AddInventoryItemModal({
   const [quantity, setQuantity] = useState(
     item?.quantity != null ? String(item.quantity) : '0',
   )
+  const [unitCost, setUnitCost] = useState(
+    item?.unit_cost != null ? String(item.unit_cost) : '',
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +57,12 @@ function AddInventoryItemModal({
       return
     }
 
+    const unitCostValue = Number(unitCost)
+    if (unitCost === '' || Number.isNaN(unitCostValue) || unitCostValue < 0) {
+      setError('Enter the unit price (0 or more).')
+      return
+    }
+
     setSubmitting(true)
     setError(null)
 
@@ -57,6 +70,7 @@ function AddInventoryItemModal({
       name: name.trim(),
       item_type: itemType,
       quantity: quantityValue,
+      unit_cost: unitCostValue,
     }
 
     const { error: saveError } = isEditing
@@ -133,6 +147,18 @@ function AddInventoryItemModal({
               step="1"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
+              className={fieldClasses}
+            />
+          </label>
+
+          <label className={labelClasses}>
+            Unit price (₱)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
               className={fieldClasses}
             />
           </label>

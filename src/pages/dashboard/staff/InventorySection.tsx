@@ -15,6 +15,11 @@ type InventoryItem = {
   name: string
   item_type: string
   quantity: number
+  unit_cost: number | null
+}
+
+function formatMoney(value: number | null): string {
+  return value !== null ? `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '—'
 }
 
 const TYPE_STYLES: Record<string, string> = {
@@ -53,7 +58,7 @@ function InventorySection() {
 
     const { data, error: loadError } = await supabase
       .from('inventory_items')
-      .select('item_id, name, item_type, quantity')
+      .select('item_id, name, item_type, quantity, unit_cost')
       .order('name', { ascending: true })
 
     if (loadError) {
@@ -141,6 +146,7 @@ function InventorySection() {
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Quantity</th>
+                <th className="px-4 py-3 font-medium">Unit Price</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -156,6 +162,13 @@ function InventorySection() {
                     <TypeBadge type={item.item_type} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">{item.quantity}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {item.unit_cost !== null ? (
+                      formatMoney(item.unit_cost)
+                    ) : (
+                      <span className="text-xs font-medium text-amber-700">No price set</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">
                       <button

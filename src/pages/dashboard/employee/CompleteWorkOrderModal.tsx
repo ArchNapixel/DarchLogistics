@@ -19,7 +19,10 @@
 //   1. Create any brand-new inventory items the mechanic added inline
 //   2. Insert the work_order_completions row
 //   3. Insert one work_order_parts_used row per part -- both the ones
-//      entered fresh here AND the ones already logged mid-job
+//      entered fresh here AND the ones already logged mid-job. Each row
+//      carries unit_cost, the item's price at the time it was used
+//      (fresh-read for parts entered here, the logged price for mid-job
+//      parts) -- the maintenance cost report sums quantity x unit_cost.
 //   4. Re-check stock (someone else may have used the same part since
 //      this modal opened) and decrement inventory_items for each
 //      FRESHLY entered part only (already-logged ones were decremented
@@ -46,6 +49,7 @@ type InventoryItemOption = {
   name: string
   item_type: string
   quantity: number
+  unit_cost: number | null
 }
 
 type PartRow = {
@@ -57,6 +61,7 @@ type PartRow = {
   newItemConfirmed: boolean
   newItemType: string
   newItemQuantity: string
+  newItemUnitCost: string
   quantityUsed: string
   error: string | null
 }
@@ -80,6 +85,7 @@ function makeEmptyRow(): PartRow {
     newItemConfirmed: false,
     newItemType: DEFAULT_NEW_ITEM_TYPE,
     newItemQuantity: '',
+    newItemUnitCost: '',
     quantityUsed: '',
     error: null,
   }
@@ -110,7 +116,6 @@ function CompleteWorkOrderModal({
 
   const [description, setDescription] = useState('')
   const [parts, setParts] = useState<PartRow[]>([])
-  const [laborHours, setLaborHours] = useState('')
   const [odometerReading, setOdometerReading] = useState('')
   const [nextServiceDate, setNextServiceDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -130,7 +135,7 @@ function CompleteWorkOrderModal({
     setLoadingInventory(true)
     const { data, error } = await supabase
       .from('inventory_items')
-      .select('item_id, name, item_type, quantity')
+      .select('item_id, name, item_type, quantity, unit_cost')
       .order('name', { ascending: true })
 
     if (!error && data) {
@@ -165,6 +170,7 @@ function CompleteWorkOrderModal({
       newItemConfirmed: false,
       newItemType: DEFAULT_NEW_ITEM_TYPE,
       newItemQuantity: '',
+      newItemUnitCost: '',
       dropdownOpen: false,
       itemId: null,
       search: typedName,
@@ -180,6 +186,13 @@ function CompleteWorkOrderModal({
     }
     if (row.newItemQuantity === '' || Number.isNaN(qty) || qty < 0) {
       updateRow(row.key, { error: 'Enter a valid starting quantity (0 or more).' })
+      return
+    }
+    // Every inventory item must have a price -- it's what the
+    // maintenance cost report charges each use against.
+    const price = Number(row.newItemUnitCost)
+    if (row.newItemUnitCost === '' || Number.isNaN(price) || price < 0) {
+      updateRow(row.key, { error: 'Enter the unit price (0 or more).' })
       return
     }
     updateRow(row.key, { newItemConfirmed: true, error: null })
@@ -245,12 +258,6 @@ function CompleteWorkOrderModal({
       return
     }
 
-    const laborHoursValue = laborHours ? Number(laborHours) : null
-    if (laborHours && (Number.isNaN(laborHoursValue!) || laborHoursValue! < 0)) {
-      setFormError('Enter a valid number of labor hours.')
-      return
-    }
-
     const odometerValue = odometerReading ? Number(odometerReading) : null
     if (odometerReading && (Number.isNaN(odometerValue!) || odometerValue! < 0)) {
       setFormError('Enter a valid odometer reading.')
@@ -290,11 +297,12 @@ function CompleteWorkOrderModal({
     // touch anything -- someone else may have used the same part since
     // this modal's inventory list loaded.
     const existingRows = parts.filter((row) => !row.addingNew)
+    const freshPriceById = new Map<number, number | null>()
     if (existingRows.length > 0) {
       const ids = existingRows.map((row) => row.itemId as number)
       const { data: freshItems, error: freshError } = await supabase
         .from('inventory_items')
-        .select('item_id, quantity')
+        .select('item_id, quantity, unit_cost')
         .in('item_id', ids)
 
       if (freshError) {
@@ -304,6 +312,7 @@ function CompleteWorkOrderModal({
       }
 
       const freshById = new Map(freshItems.map((i) => [i.item_id, i.quantity]))
+      freshItems.forEach((i) => freshPriceById.set(i.item_id, i.unit_cost))
       for (const row of existingRows) {
         const current = freshById.get(row.itemId as number)
         if (current === undefined) {
@@ -325,7 +334,12 @@ function CompleteWorkOrderModal({
     }
 
     // 1. Create any brand-new inventory items, capturing their new item_id.
-    const resolvedParts: { itemId: number; quantity: number; label: string }[] = []
+    const resolvedParts: {
+      itemId: number
+      quantity: number
+      label: string
+      unitCost: number | null
+    }[] = []
     const createdItemNames: string[] = []
 
     for (const row of parts) {
@@ -336,6 +350,7 @@ function CompleteWorkOrderModal({
             name: row.search.trim(),
             item_type: row.newItemType,
             quantity: Number(row.newItemQuantity),
+            unit_cost: Number(row.newItemUnitCost),
           })
           .select('item_id')
           .single()
@@ -356,6 +371,7 @@ function CompleteWorkOrderModal({
           itemId: newItem.item_id,
           quantity: Number(row.quantityUsed),
           label: row.search.trim(),
+          unitCost: Number(row.newItemUnitCost),
         })
 
         // Flip this row from "staged new item" to "existing item" right
@@ -376,6 +392,7 @@ function CompleteWorkOrderModal({
             name: row.search.trim(),
             item_type: row.newItemType,
             quantity: Number(row.newItemQuantity),
+            unit_cost: Number(row.newItemUnitCost),
           },
         ])
       } else {
@@ -383,6 +400,7 @@ function CompleteWorkOrderModal({
           itemId: row.itemId as number,
           quantity: Number(row.quantityUsed),
           label: row.search,
+          unitCost: freshPriceById.get(row.itemId as number) ?? null,
         })
       }
     }
@@ -399,7 +417,6 @@ function CompleteWorkOrderModal({
         work_order_id: workOrderId,
         employee_id: employeeId,
         description: description.trim(),
-        labor_hours: laborHoursValue,
         odometer_reading: odometerValue,
         next_service_date: nextServiceDate || null,
         notes: notes.trim() || null,
@@ -426,12 +443,14 @@ function CompleteWorkOrderModal({
         item_id: p.itemId,
         item_name_text: p.label,
         quantity: p.quantity,
+        unit_cost: p.unitCost,
       })),
       ...alreadyLoggedParts.map((p) => ({
         completion_id: completion.completion_id,
         item_id: p.item_id,
         item_name_text: p.item_name_text,
         quantity: p.quantity,
+        unit_cost: p.unit_cost,
       })),
     ]
 
@@ -751,6 +770,20 @@ function CompleteWorkOrderModal({
                           />
                         </label>
 
+                        <label className={labelClasses}>
+                          Unit price (₱)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={row.newItemUnitCost}
+                            onChange={(e) =>
+                              updateRow(row.key, { newItemUnitCost: e.target.value })
+                            }
+                            className={fieldClasses}
+                          />
+                        </label>
+
                         <div className="flex items-end gap-2 sm:col-span-2">
                           <button
                             type="button"
@@ -779,7 +812,7 @@ function CompleteWorkOrderModal({
                     {row.addingNew && row.newItemConfirmed && (
                       <p className="mt-2 text-xs text-slate-500">
                         New item — {row.newItemType}, starting stock{' '}
-                        {row.newItemQuantity}.{' '}
+                        {row.newItemQuantity}, ₱{row.newItemUnitCost} each.{' '}
                         <button
                           type="button"
                           onClick={() =>
@@ -824,18 +857,6 @@ function CompleteWorkOrderModal({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className={labelClasses}>
-              Labor hours (optional)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={laborHours}
-                onChange={(e) => setLaborHours(e.target.value)}
-                className={fieldClasses}
-              />
-            </label>
-
             <label className={labelClasses}>
               Odometer reading (optional)
               <input

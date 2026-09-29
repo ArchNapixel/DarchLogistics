@@ -75,7 +75,6 @@ type CompletionRow = {
   completion_id: number
   completed_at: string
   description: string
-  labor_hours: number | null
   vehicle_label: string
 }
 
@@ -299,7 +298,7 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
     // 2. Completion history.
     const { data: completionRows, error: completionError } = await supabase
       .from('work_order_completions')
-      .select('completion_id, work_order_id, description, labor_hours, completed_at')
+      .select('completion_id, work_order_id, description, completed_at')
       .eq('employee_id', employeeId)
       .order('completed_at', { ascending: false })
 
@@ -360,7 +359,6 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
           completion_id: c.completion_id,
           completed_at: c.completed_at,
           description: c.description,
-          labor_hours: c.labor_hours,
           vehicle_label: vehicleLabel,
         }
       }),
@@ -410,7 +408,6 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Description</th>
-                <th className="px-4 py-3 font-medium">Labor Hours</th>
                 <th className="px-4 py-3 font-medium">Vehicle</th>
               </tr>
             </thead>
@@ -421,9 +418,6 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
                     {new Date(c.completed_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.description}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {c.labor_hours !== null ? c.labor_hours : '—'}
-                  </td>
                   <td className="px-4 py-3 text-slate-600">{c.vehicle_label}</td>
                 </tr>
               ))}

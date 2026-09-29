@@ -125,7 +125,7 @@ export async function markMaintenanceScheduleDone({
   scheduleId: number
   completedByEmployeeId: number
 }): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('maintenance_schedules')
     .update({
       status: 'Completed',
@@ -134,8 +134,14 @@ export async function markMaintenanceScheduleDone({
     })
     .eq('schedule_id', scheduleId)
     .eq('status', 'Pending')
+    .select('schedule_id')
+    .maybeSingle()
 
-  return { error: error?.message ?? null }
+  if (error) return { error: error.message }
+  // 0 rows matched -- already marked done by someone else (or RLS
+  // silently blocked it), so the "loser" isn't told it worked.
+  if (!updated) return { error: 'This schedule was already marked done by someone else.' }
+  return { error: null }
 }
 
 export type ScheduleDueTone = 'overdue' | 'soon' | 'upcoming'

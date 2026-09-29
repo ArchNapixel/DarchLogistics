@@ -1,5 +1,5 @@
 // WorkOrderCompletionsSection: admin read-only view of finished work
-// (src/lib/workOrderCompletions.ts) -- description, labor hours, parts
+// (src/lib/workOrderCompletions.ts) -- description, parts
 // used, and any odometer/next-service info recorded at completion.
 import { useEffect, useState } from 'react'
 import {
@@ -64,9 +64,6 @@ function WorkOrderCompletionsSection() {
           <p className="mt-2 text-sm text-slate-700">{completion.description}</p>
 
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-600 sm:grid-cols-3">
-            {completion.labor_hours !== null && (
-              <p>Labor: {completion.labor_hours}h</p>
-            )}
             {completion.odometer_reading !== null && (
               <p>Odometer: {completion.odometer_reading.toLocaleString()}</p>
             )}

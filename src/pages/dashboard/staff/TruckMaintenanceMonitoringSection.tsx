@@ -403,6 +403,7 @@ function TruckMaintenanceMonitoringSection() {
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [activeTab, setActiveTab] = useState<Tab>('Schedules')
   const [showAssign, setShowAssign] = useState(false)
+  const [schedulesVersion, setSchedulesVersion] = useState(0)
   const [loadingTrucks, setLoadingTrucks] = useState(true)
   const [truckError, setTruckError] = useState<string | null>(null)
 
@@ -442,7 +443,8 @@ function TruckMaintenanceMonitoringSection() {
         ))}
       </div>
       <div className="mt-4">
-        {activeTab === 'Schedules' ? <MaintenanceSchedulesSection /> : <OdometerUpdatesSection />}
+        {/* key bump remounts the list so a just-assigned schedule shows up */}
+        {activeTab === 'Schedules' ? <MaintenanceSchedulesSection key={schedulesVersion} /> : <OdometerUpdatesSection />}
       </div>
 
       {showAssign && employeeId && (
@@ -450,7 +452,10 @@ function TruckMaintenanceMonitoringSection() {
           trucks={trucks}
           employeeId={employeeId}
           onClose={() => setShowAssign(false)}
-          onSaved={() => setShowAssign(false)}
+          onSaved={() => {
+            setShowAssign(false)
+            setSchedulesVersion((v) => v + 1)
+          }}
         />
       )}
     </div>
