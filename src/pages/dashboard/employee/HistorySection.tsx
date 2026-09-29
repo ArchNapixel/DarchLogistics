@@ -14,7 +14,7 @@
 // completion, so they show their scheduled date instead.
 //
 // Drivers/Helpers can click a trip row to open TripDetailModal (below):
-// route, dates, truck/trailer, the delivery receipt, and the expenses
+// route, dates, truck/trailer, and the expenses
 // they logged on that trip -- loaded fresh when the row is opened.
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useAuth } from '../../../context/AuthContext'
@@ -56,13 +56,6 @@ type TripDetail = {
   status: string
   truck: string | null
   trailer: string | null
-  receipt: {
-    receiver_name: string
-    receiver_contact: string | null
-    delivery_condition: string | null
-    delivery_notes: string | null
-    received_at: string
-  } | null
   expenses: { amount: number; description: string }[]
 }
 
@@ -103,7 +96,7 @@ function TripDetailModal({
         return
       }
 
-      const [placesResult, trailerResult, receiptResult, expensesResult, clientRateResult] = await Promise.all([
+      const [placesResult, trailerResult, expensesResult, clientRateResult] = await Promise.all([
         supabase
           .from('places')
           .select('place_id, place_name')
@@ -111,11 +104,6 @@ function TripDetailModal({
         trip.trailer_id !== null
           ? supabase.from('trailers').select('plate_number').eq('trailer_id', trip.trailer_id).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
-        supabase
-          .from('delivery_receipts')
-          .select('receiver_name, receiver_contact, delivery_condition, delivery_notes, received_at')
-          .eq('itinerary_id', itineraryId)
-          .maybeSingle(),
         supabase
           .from('itinerary_expenses')
           .select('amount, description')
@@ -130,7 +118,6 @@ function TripDetailModal({
       const lookupError =
         placesResult.error ??
         trailerResult.error ??
-        receiptResult.error ??
         expensesResult.error ??
         clientRateResult.error
       if (lookupError) {
@@ -153,7 +140,6 @@ function TripDetailModal({
           trip.trailer_id !== null
             ? (trailerResult.data?.plate_number ?? `Trailer #${trip.trailer_id}`)
             : null,
-        receipt: receiptResult.data,
         expenses: expensesResult.data ?? [],
       })
     }
@@ -194,34 +180,6 @@ function TripDetailModal({
               <DetailRow label="Truck" value={detail.truck ?? '—'} />
               <DetailRow label="Trailer" value={detail.trailer ?? '—'} />
             </div>
-
-            <h4 className="mt-5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-              Delivery receipt
-            </h4>
-            {detail.receipt ? (
-              <div className="mt-1 divide-y divide-slate-100">
-                <DetailRow label="Received by" value={detail.receipt.receiver_name} />
-                {detail.receipt.receiver_contact && (
-                  <DetailRow label="Contact" value={detail.receipt.receiver_contact} />
-                )}
-                <DetailRow label="Condition" value={detail.receipt.delivery_condition ?? '—'} />
-                <DetailRow
-                  label="Received at"
-                  value={new Date(detail.receipt.received_at).toLocaleString('en-PH', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                />
-                {detail.receipt.delivery_notes && (
-                  <DetailRow label="Notes" value={detail.receipt.delivery_notes} />
-                )}
-              </div>
-            ) : (
-              <p className="mt-1 text-sm text-slate-500">No delivery receipt on record.</p>
-            )}
 
             <h4 className="mt-5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
               Your expenses

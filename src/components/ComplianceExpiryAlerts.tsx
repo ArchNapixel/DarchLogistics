@@ -1,6 +1,6 @@
 // ComplianceExpiryAlerts: the notification bell in the dashboard header.
 // Surfaces driver licenses and medical exams expiring within 30 days
-// (Admin sees every driver, a Driver sees only their own) as a
+// (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
 // full-width banner strip this used to render under the header.
 //
@@ -11,7 +11,7 @@
 // and it's fixed on the Employees page.
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { isAdmin } from '../lib/roles'
+import { isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 
 type ComplianceRow = {
@@ -51,7 +51,7 @@ function ComplianceExpiryAlerts() {
   const [open, setOpen] = useState(false)
 
   const loadAlerts = useCallback(async () => {
-    if (!isAdmin(role) && role !== 'Driver') {
+    if (!isStaff(role) && role !== 'Driver') {
       setAlerts([])
       return
     }

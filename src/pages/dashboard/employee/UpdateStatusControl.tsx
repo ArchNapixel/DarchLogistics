@@ -1,9 +1,9 @@
 // UpdateStatusControl: lets a driver advance an itinerary's status one
-// step at a time through the fixed flow: Awaiting -> Dispatched ->
-// PickedUp -> InTransit -> Delivered. It's a single "Mark as <next>"
-// button (with a confirm, since only Admin can move a status back), so
-// skipping steps or going backward isn't possible. Moving to "Delivered"
-// opens DeliveryReceiptModal instead of updating immediately.
+// step at a time: Awaiting -> Dispatched -> PickedUp -> InTransit. It's a
+// single "Mark as <next>" button (with a confirm, since only Admin can
+// move a status back), so skipping steps or going backward isn't
+// possible. The driver stops at In Transit -- only Dispatcher/Admin mark
+// a trip Delivered, from the Dispatch Board.
 //
 // The update only applies if the trip is still at the status this
 // screen shows (.eq on itinerary_status) and checks a row actually
@@ -13,14 +13,13 @@
 import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import DeliveryReceiptModal from './DeliveryReceiptModal'
 
+// The driver's part of the flow -- Delivered is set by dispatch.
 const STATUS_FLOW = [
   'Awaiting',
   'Dispatched',
   'PickedUp',
   'InTransit',
-  'Delivered',
 ]
 
 // Same wording as the Dispatch Board's STATUS_LABELS.
@@ -47,14 +46,21 @@ function UpdateStatusControl({
   const { employeeId } = useAuth()
   const [updating, setUpdating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showDeliveryModal, setShowDeliveryModal] = useState(false)
 
   const currentIndex = STATUS_FLOW.indexOf(currentStatus)
   const nextStatus =
     currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
 
-  // Already at the end of the flow (or an unrecognized/cancelled status)
-  // -- nothing further to advance to.
+  // In Transit: the rest is up to dispatch.
+  if (currentStatus === 'InTransit') {
+    return (
+      <p className="mt-3 text-xs text-slate-500">
+        Dispatch will mark this trip Delivered once it arrives.
+      </p>
+    )
+  }
+
+  // Delivered/Cancelled/unrecognized -- nothing further to advance to.
   if (!nextStatus) return null
 
   const nextLabel = TRIP_STATUS_LABELS[nextStatus] ?? nextStatus
@@ -111,10 +117,6 @@ function UpdateStatusControl({
   }
 
   function handleClick() {
-    if (nextStatus === 'Delivered') {
-      setShowDeliveryModal(true)
-      return
-    }
     if (!window.confirm(`Mark this trip as "${nextLabel}"? This can't be undone from your side.`)) {
       return
     }
@@ -139,18 +141,6 @@ function UpdateStatusControl({
         <p className="mt-1 text-xs text-slate-500">
           Waiting for dispatch to assign a truck.
         </p>
-      )}
-
-      {showDeliveryModal && (
-        <DeliveryReceiptModal
-          itineraryId={itineraryId}
-          currentStatus={currentStatus}
-          onClose={() => setShowDeliveryModal(false)}
-          onDelivered={() => {
-            setShowDeliveryModal(false)
-            onStatusChanged(itineraryId, 'Delivered')
-          }}
-        />
       )}
     </div>
   )

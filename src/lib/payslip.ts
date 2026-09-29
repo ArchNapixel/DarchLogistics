@@ -14,8 +14,9 @@
 //   QuoteReviewModal's profitability panel estimates with. The old
 //   per-employee commission_basis / commission_per_trip columns are no
 //   longer used (removed 2026-09-28). One line
-//   item per trip actually delivered whose delivery_receipts.received_at
-//   falls inside the pay period -- NOT itineraries.trip_date_from,
+//   item per trip actually delivered whose Delivered date (latest
+//   dispatch_status_logs row with new_status 'Delivered') falls inside
+//   the pay period -- NOT itineraries.trip_date_from,
 //   since that's just the planned date and pay is for when the trip
 //   actually finished. A trip counts for whoever delivered it even if
 //   itinerary_crews was later reassigned to someone else (itinerary_crews
@@ -220,15 +221,12 @@ async function buildCommissionTripLineItems(
   // trip from ever paying the Helper who was also on it, since two
   // different employees legitimately earn their own commission on the
   // same delivered trip.
-  const [receiptsResult, statusLogResult, ownPayslipsResult] = await Promise.all([
-    supabase.from('delivery_receipts').select('itinerary_id, received_at').in('itinerary_id', deliveredIds),
-    // Fallback for a trip marked Delivered via the Dispatch Board's
-    // direct status override instead of the Driver's own Delivery
-    // Receipt flow -- that path never writes a delivery_receipts row
-    // at all, so without this a staff-overridden trip could never be
-    // paid. Ordered oldest-first so the reduce below naturally keeps
-    // the LAST (most recent) Delivered transition per itinerary, in
-    // case one cycled through Delivered more than once.
+  const [statusLogResult, ownPayslipsResult] = await Promise.all([
+    // The delivery date is when the trip was marked Delivered on the
+    // Dispatch Board (logged in dispatch_status_logs). Ordered
+    // oldest-first so the loop below keeps the LAST (most recent)
+    // Delivered transition per itinerary, in case one cycled through
+    // Delivered more than once.
     supabase
       .from('dispatch_status_logs')
       .select('itinerary_id, status_changed_at')
@@ -238,9 +236,6 @@ async function buildCommissionTripLineItems(
     supabase.from('payroll_payslips').select('payroll_id').eq('employee_id', employee.employee_id),
   ])
 
-  if (receiptsResult.error) {
-    return { lineItems: [], error: receiptsResult.error.message }
-  }
   if (statusLogResult.error) {
     return { lineItems: [], error: statusLogResult.error.message }
   }
@@ -251,11 +246,6 @@ async function buildCommissionTripLineItems(
   const receivedDateByItinerary = new Map<number, string>()
   for (const row of statusLogResult.data) {
     receivedDateByItinerary.set(row.itinerary_id, toManilaDate(row.status_changed_at))
-  }
-  // delivery_receipts wins where it exists -- it's the more precise,
-  // intentionally-recorded date.
-  for (const row of receiptsResult.data) {
-    receivedDateByItinerary.set(row.itinerary_id, toManilaDate(row.received_at))
   }
 
   const ownPayrollIds = ownPayslipsResult.data.map((row) => row.payroll_id)

@@ -6,6 +6,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import QuoteReviewModal from './QuoteReviewModal'
 import NewQuoteRequestModal from './NewQuoteRequestModal'
 import { formatLocationDisplay } from '../../../lib/locationReference'
+import { formatDate } from '../../../lib/quoteRequest'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -155,7 +156,7 @@ function QuoteRequestsSection() {
                     })}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {quote.preferred_pickup_date ?? '—'}
+                    {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {quote.delivery_order_count ?? '—'}

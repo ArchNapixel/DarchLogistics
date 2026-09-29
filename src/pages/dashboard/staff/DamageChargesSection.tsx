@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import ReportDamageModal from './ReportDamageModal'
 
 type DamageCharge = {
   damage_id: number
@@ -24,6 +25,7 @@ function DamageChargesSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
+  const [showReport, setShowReport] = useState(false)
 
   useEffect(() => {
     loadDamageCharges()
@@ -36,7 +38,7 @@ function DamageChargesSection() {
     const { data: damageRows, error: damageError } = await supabase
       .from('delivery_damage_records')
       .select(
-        'damage_id, delivery_receipt_id, damage_description, estimated_damage_cost, charge_to, damage_status, created_at',
+        'damage_id, itinerary_id, damage_description, estimated_damage_cost, charge_to, damage_status, created_at',
       )
       .order('created_at', { ascending: false })
 
@@ -52,19 +54,9 @@ function DamageChargesSection() {
       return
     }
 
-    const receiptIds = damageRows.map((row) => row.delivery_receipt_id)
-    const { data: receiptRows, error: receiptError } = await supabase
-      .from('delivery_receipts')
-      .select('delivery_receipt_id, itinerary_id')
-      .in('delivery_receipt_id', receiptIds)
-
-    if (receiptError) {
-      setError(receiptError.message)
-      setLoading(false)
-      return
-    }
-
-    const itineraryIds = receiptRows.map((row) => row.itinerary_id)
+    // Damage is reported per trip when it's marked Delivered on the
+    // Dispatch Board (MarkDeliveredModal).
+    const itineraryIds = Array.from(new Set(damageRows.map((row) => row.itinerary_id)))
     const { data: itineraryRows, error: itineraryError } = await supabase
       .from('itineraries')
       .select('itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id')
@@ -86,11 +78,16 @@ function DamageChargesSection() {
       ),
     )
 
-    const [bookingsResult, clientsResult, placesResult] = await Promise.all([
+    const [bookingsResult, placesResult] = await Promise.all([
       supabase.from('bookings').select('booking_id, client_id').in('booking_id', bookingIds),
-      supabase.from('clients').select('client_id, client_name'),
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
     ])
+    // Only the clients these damage records belong to.
+    const clientIds = Array.from(new Set((bookingsResult.data ?? []).map((row) => row.client_id)))
+    const clientsResult = await supabase
+      .from('clients')
+      .select('client_id, client_name')
+      .in('client_id', clientIds)
 
     const lookupError =
       bookingsResult.error ?? clientsResult.error ?? placesResult.error
@@ -100,7 +97,6 @@ function DamageChargesSection() {
       return
     }
 
-    const receiptById = new Map(receiptRows.map((row) => [row.delivery_receipt_id, row]))
     const itineraryById = new Map(itineraryRows.map((row) => [row.itinerary_id, row]))
     const bookingById = new Map(
       (bookingsResult.data ?? []).map((row) => [row.booking_id, row]),
@@ -114,11 +110,10 @@ function DamageChargesSection() {
 
     setDamageCharges(
       damageRows.flatMap((row) => {
-        const receipt = receiptById.get(row.delivery_receipt_id)
-        const itinerary = receipt ? itineraryById.get(receipt.itinerary_id) : undefined
+        const itinerary = itineraryById.get(row.itinerary_id)
         const booking = itinerary ? bookingById.get(itinerary.booking_id) : undefined
 
-        if (!receipt || !itinerary || !booking) {
+        if (!itinerary || !booking) {
           return []
         }
 
@@ -147,7 +142,8 @@ function DamageChargesSection() {
     setSavingId(damage.damage_id)
     setError(null)
 
-    const { error: updateError } = await supabase
+    // .select() so a silent RLS no-op shows as an error, not fake success.
+    const { data: updated, error: updateError } = await supabase
       .from('delivery_damage_records')
       .update({
         charge_to: chargeTo,
@@ -156,11 +152,17 @@ function DamageChargesSection() {
         approved_at: new Date().toISOString(),
       })
       .eq('damage_id', damage.damage_id)
+      .select('damage_id')
+      .maybeSingle()
 
     setSavingId(null)
 
     if (updateError) {
       setError(updateError.message)
+      return
+    }
+    if (!updated) {
+      setError('The decision was not saved -- you may not have permission, or the record was removed. Reload the page.')
       return
     }
 
@@ -175,17 +177,32 @@ function DamageChargesSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Damage Charges</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Review reported delivery damage and decide whether the cost is charged to the client or the company.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Damage Charges</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Review reported delivery damage and decide whether the cost is charged to the client or the company.
+            Client charges are added to that booking's balance.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowReport(true)}
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          Report Damage
+        </button>
+      </div>
 
       {error && (
         <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
       {loading && <p className="mt-4 text-slate-500">Loading damage reports...</p>}
       {!loading && !error && damageCharges.length === 0 && (
-        <p className="mt-4 text-slate-500">No delivery damage has been reported.</p>
+        <p className="mt-4 text-slate-500">
+          No delivery damage has been reported. Use Report Damage above, or record it when
+          marking a trip delivered on the Dispatch Board.
+        </p>
       )}
       {!loading && damageCharges.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -234,6 +251,16 @@ function DamageChargesSection() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {showReport && (
+        <ReportDamageModal
+          onClose={() => setShowReport(false)}
+          onReported={() => {
+            setShowReport(false)
+            loadDamageCharges()
+          }}
+        />
       )}
     </div>
   )

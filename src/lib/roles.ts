@@ -16,8 +16,8 @@ export function isEmployee(role: string | null): boolean {
 
 // Admin and Dispatcher share the "staff" tier for route protection, but
 // no longer share the same sidebar/dashboard -- Dispatcher gets a
-// restricted view (Dispatch Board + context pages, no editing of
-// itinerary status). These two let callers tell them apart.
+// restricted view (Dispatch Board + a few context pages; status moves
+// only one step forward). These two let callers tell them apart.
 export function isAdmin(role: string | null): boolean {
   return role === 'Admin'
 }

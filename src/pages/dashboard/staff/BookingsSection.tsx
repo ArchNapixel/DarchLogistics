@@ -13,10 +13,15 @@
 // they're cancelled from the detail view (BookingDetailModal) instead.
 // Status moves on its own -- Confirmed on Approve, then InProgress /
 // Delivered as the trips move (sync_booking_status trigger in the DB).
+//
+// /dashboard/bookings?booking=12 opens booking #12's detail straight
+// away -- the Dispatch Board links its booking numbers here.
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { formatDate } from '../../../lib/quoteRequest'
+import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import BookingDetailModal from './BookingDetailModal'
 import PaymentDuePanel from './PaymentDuePanel'
 
@@ -31,14 +36,16 @@ export type Booking = {
   // totals below exist so nothing has to re-guess "rate x how many?"
   // billable_amount is the EFFECTIVE amount due: amount_to_pay if staff
   // overrode it in Financial Records, otherwise computed_billable_amount
-  // (rate x completed trips). (See src/lib/paymentDue.ts for the same
-  // rule applied to the Payments Due report.)
+  // (rate x completed trips) -- PLUS damage_charges (approved Client
+  // damage, lib/damageCharges.ts). (See src/lib/paymentDue.ts for the
+  // same rule applied to the Payments Due report.)
   rate: number | null
   total_trips: number
   completed_trips: number
   total_contract_value: number
   computed_billable_amount: number
   amount_to_pay: number | null
+  damage_charges: number
   billable_amount: number
   amount_paid: number
   balance_due: number
@@ -88,10 +95,23 @@ function BookingsSection() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Active')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const linkedBookingId = Number(searchParams.get('booking')) || null
 
   useEffect(() => {
     loadBookings()
   }, [])
+
+  // Open the booking named in the link once the list has loaded.
+  const linkedBooking = linkedBookingId
+    ? (bookings.find((b) => b.booking_id === linkedBookingId) ?? null)
+    : null
+  const shownBooking = selectedBooking ?? linkedBooking
+
+  function closeDetail() {
+    setSelectedBooking(null)
+    if (linkedBookingId) setSearchParams({}, { replace: true })
+  }
 
   async function loadBookings() {
     setLoading(true)
@@ -160,6 +180,16 @@ function BookingsSection() {
       return
     }
 
+
+    // Approved Client damage charges, added on top of the delivery amount.
+    const { byBooking: damageByBooking, error: damageError } =
+      await loadClientDamageChargesByBooking(bookingIds)
+    if (damageError) {
+      setError(damageError)
+      setLoading(false)
+      return
+    }
+
     const clientNameById = new Map(
       (clientsResult.data ?? []).map((c) => [c.client_id, c.client_name]),
     )
@@ -203,7 +233,8 @@ function BookingsSection() {
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
-        const billableAmount = b.amount_to_pay ?? computedBillableAmount
+        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
+        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -219,6 +250,7 @@ function BookingsSection() {
           total_contract_value: rate * totalTrips,
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
+          damage_charges: damageCharges,
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
@@ -389,12 +421,12 @@ function BookingsSection() {
         </div>
       </div>
 
-      {selectedBooking && (
+      {shownBooking && (
         <BookingDetailModal
-          booking={selectedBooking}
-          onClose={() => setSelectedBooking(null)}
+          booking={shownBooking}
+          onClose={closeDetail}
           onChanged={() => {
-            setSelectedBooking(null)
+            closeDetail()
             loadBookings()
           }}
         />

@@ -162,13 +162,22 @@ export async function approveStatusRelogRequest({
   let applyError: string | null = null
 
   if (request.target_type === 'itinerary' && request.itinerary_id !== null) {
-    const { error: updateError } = await supabase
+    // Only applies if the trip is still at the status the request was
+    // made against -- otherwise the driver/dispatch moved it since.
+    const { data: updated, error: updateError } = await supabase
       .from('itineraries')
       .update({ itinerary_status: request.requested_status })
       .eq('itinerary_id', request.itinerary_id)
+      .eq('itinerary_status', request.current_status)
+      .select('itinerary_id')
+      .maybeSingle()
 
     if (updateError) {
       applyError = updateError.message
+    } else if (!updated) {
+      applyError =
+        `The trip is no longer "${request.current_status}" -- it changed after ` +
+        'this request was made. Reject it and ask for a new one if still needed.'
     } else {
       await supabase.from('dispatch_status_logs').insert({
         itinerary_id: request.itinerary_id,
@@ -254,4 +263,37 @@ export async function loadMyPendingWorkOrderRelogIds(employeeId: number): Promis
     .not('work_order_id', 'is', null)
 
   return (data ?? []).map((row) => row.work_order_id as number)
+}
+
+export type MyItineraryRelogRequest = {
+  request_id: number
+  itinerary_id: number
+  current_status: string
+  requested_status: string
+  reason: string
+  status: string
+  resolution_note: string | null
+  created_at: string
+}
+
+// Dispatcher side: this employee's own trip correction requests (every
+// status, newest first) -- the Dispatch Board shows them in "My
+// correction requests" and hides "Request correction" on trips that
+// already have a Pending one. Readable via status_relog_requests_select_own.
+export async function loadMyItineraryRelogRequests(employeeId: number): Promise<{
+  requests: MyItineraryRelogRequest[]
+  error: string | null
+}> {
+  const { data, error } = await supabase
+    .from('status_relog_requests')
+    .select(
+      'request_id, itinerary_id, current_status, requested_status, reason, status, resolution_note, created_at',
+    )
+    .eq('requested_by_employee_id', employeeId)
+    .not('itinerary_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (error) return { requests: [], error: error.message }
+  return { requests: data as MyItineraryRelogRequest[], error: null }
 }

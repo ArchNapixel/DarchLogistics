@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { freeVehicleIfIdle } from '../../../lib/fleetStatus'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { PAYMENT_TERMS_LABELS, formatDate } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
@@ -357,26 +358,17 @@ function BookingDetailModal({
       cancelledTrips = data ?? []
 
       // Free any truck/trailer that was assigned to a cancelled trip --
-      // same best-effort "Available" update the Dispatch Board does when
-      // a trip finishes or a vehicle is unassigned.
+      // only if it's In Transit and not on another active trip
+      // (lib/fleetStatus.ts), so a vehicle in the shop or out on a
+      // different booking is left alone. Best effort.
       for (const trip of cancelledTrips) {
         if (trip.plate_number) {
-          supabase
-            .from('truck_profiles')
-            .update({ current_status: 'Available' })
-            .eq('plate_number', trip.plate_number)
-            .then(({ error }) => {
-              if (error) console.error('Failed to free up truck status:', error)
-            })
+          const err = await freeVehicleIfIdle(trip.plate_number, null)
+          if (err) console.error('Failed to free up truck status:', err)
         }
         if (trip.trailer_id !== null) {
-          supabase
-            .from('trailers')
-            .update({ current_status: 'Available' })
-            .eq('trailer_id', trip.trailer_id)
-            .then(({ error }) => {
-              if (error) console.error('Failed to free up trailer status:', error)
-            })
+          const err = await freeVehicleIfIdle(null, trip.trailer_id)
+          if (err) console.error('Failed to free up trailer status:', err)
         }
       }
 
@@ -514,6 +506,12 @@ function BookingDetailModal({
               (booking.amount_to_pay !== null ? ' (manually set)' : '')
             }
           />
+          {booking.damage_charges > 0 && (
+            <InfoRow
+              label="Incl. damage charges"
+              value={formatMoney(booking.damage_charges)}
+            />
+          )}
           <InfoRow label="Amount paid" value={formatMoney(booking.amount_paid)} />
           <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
         </div>

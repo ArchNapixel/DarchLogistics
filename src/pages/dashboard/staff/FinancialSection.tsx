@@ -2,14 +2,17 @@
 // same Booking type/loading logic as BookingsSection.tsx (rate is per
 // trip, so billable_amount = amount_to_pay override if staff has set
 // one, otherwise computed_billable_amount = rate x trips Delivered so
-// far -- see BookingsSection.tsx / src/lib/paymentDue.ts for the full
-// rule). This page is the one place that WRITES amount_to_pay and
+// far -- plus approved Client damage charges on top, see
+// BookingsSection.tsx / src/lib/paymentDue.ts / src/lib/damageCharges.ts
+// for the full rule). amount_to_pay is only ever the DELIVERY amount --
+// damage is never written into it. This page is the one place that WRITES amount_to_pay and
 // amount_paid; the Payments Due panel/tab (Bookings page, Reports page)
 // and the client portal are read-only views of the same numbers.
 import { useEffect, useState } from 'react'
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
 import { supabase } from '../../../lib/supabaseClient'
+import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 
 function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
@@ -25,8 +28,9 @@ function FinancialActionModal({
   onUpdated: (booking: Booking) => void
 }) {
   const [paymentAmount, setPaymentAmount] = useState('')
+  // The override is the delivery amount only (damage is added on top).
   const [overrideAmount, setOverrideAmount] = useState(
-    String(booking.billable_amount),
+    String(booking.billable_amount - booking.damage_charges),
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,9 +85,9 @@ function FinancialActionModal({
       setError('Amount to pay must be zero or greater.')
       return
     }
-    if (total < booking.amount_paid) {
+    if (total + booking.damage_charges < booking.amount_paid) {
       setError(
-        `Amount to pay can't be less than what's already been paid (${formatMoney(booking.amount_paid)}).`,
+        `Amount to pay (plus damage charges) can't be less than what's already been paid (${formatMoney(booking.amount_paid)}).`,
       )
       return
     }
@@ -92,8 +96,8 @@ function FinancialActionModal({
       { amount_to_pay: total },
       {
         amount_to_pay: total,
-        billable_amount: total,
-        balance_due: total - booking.amount_paid,
+        billable_amount: total + booking.damage_charges,
+        balance_due: total + booking.damage_charges - booking.amount_paid,
       },
     )
   }
@@ -104,8 +108,8 @@ function FinancialActionModal({
       { amount_to_pay: null },
       {
         amount_to_pay: null,
-        billable_amount: booking.computed_billable_amount,
-        balance_due: booking.computed_billable_amount - booking.amount_paid,
+        billable_amount: booking.computed_billable_amount + booking.damage_charges,
+        balance_due: booking.computed_billable_amount + booking.damage_charges - booking.amount_paid,
       },
     )
   }
@@ -160,6 +164,11 @@ function FinancialActionModal({
                 </span>
               )}
             </p>
+            {booking.damage_charges > 0 && (
+              <p className="text-xs text-slate-500">
+                incl. {formatMoney(booking.damage_charges)} damage charges
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs text-slate-400">Amount paid</p>
@@ -183,6 +192,8 @@ function FinancialActionModal({
           <h4 className="font-medium text-slate-900">Override amount to pay</h4>
           <p className="mt-1 text-xs text-slate-500">
             Defaults to rate x trips completed ({formatMoney(booking.computed_billable_amount)}).
+            This is the delivery amount only -- approved damage charges
+            ({formatMoney(booking.damage_charges)}) are always added on top.
             Override this for a discount or special arrangement -- it stays
             fixed at your override even as more trips complete, until you
             reset it.
@@ -205,7 +216,7 @@ function FinancialActionModal({
 }
 
 // Paid Full / Partial Payment both track against the FULL contract
-// value (rate x all trips), not just trips completed so far -- a client
+// value (rate x all trips) plus damage charges, not just trips completed so far -- a client
 // can pay in advance before delivery finishes. Whichever one is used
 // first locks in amount_to_pay at that target (the existing override if
 // staff already set a discount via Manage, otherwise the full contract
@@ -213,8 +224,14 @@ function FinancialActionModal({
 // switches from trip-based to full-contract-based from then on --
 // consistent everywhere, since every view already reads the same
 // amount_to_pay override (see paymentDue.ts).
-function getPaymentTarget(booking: Booking): number {
+// Delivery part only -- this is what gets written to amount_to_pay.
+function getDeliveryTarget(booking: Booking): number {
   return booking.amount_to_pay ?? booking.total_contract_value
+}
+
+// Everything the client owes in total: delivery + damage charges.
+function getPaymentTarget(booking: Booking): number {
+  return getDeliveryTarget(booking) + booking.damage_charges
 }
 
 function FinancialSection() {
@@ -285,6 +302,16 @@ function FinancialSection() {
       return
     }
 
+
+    // Approved Client damage charges, added on top of the delivery amount.
+    const { byBooking: damageByBooking, error: damageError } =
+      await loadClientDamageChargesByBooking(bookingIds)
+    if (damageError) {
+      setError(damageError)
+      setLoading(false)
+      return
+    }
+
     const clientNameById = new Map(
       clientsResult.data.map((c) => [c.client_id, c.client_name]),
     )
@@ -313,7 +340,8 @@ function FinancialSection() {
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
-        const billableAmount = b.amount_to_pay ?? computedBillableAmount
+        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
+        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -329,6 +357,7 @@ function FinancialSection() {
           total_contract_value: rate * totalTrips,
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
+          damage_charges: damageCharges,
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
@@ -361,7 +390,7 @@ function FinancialSection() {
 
     const { error: updateError } = await supabase
       .from('bookings')
-      .update({ amount_to_pay: target, amount_paid: target })
+      .update({ amount_to_pay: getDeliveryTarget(booking), amount_paid: target })
       .eq('booking_id', booking.booking_id)
 
     setPayingId(null)
@@ -402,7 +431,7 @@ function FinancialSection() {
 
     const { error: updateError } = await supabase
       .from('bookings')
-      .update({ amount_to_pay: target, amount_paid: booking.amount_paid + amount })
+      .update({ amount_to_pay: getDeliveryTarget(booking), amount_paid: booking.amount_paid + amount })
       .eq('booking_id', booking.booking_id)
 
     setPayingId(null)

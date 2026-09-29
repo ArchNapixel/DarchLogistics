@@ -15,7 +15,8 @@
 // - billable_amount = the EFFECTIVE amount currently due:
 //   bookings.amount_to_pay if staff has manually overridden it in
 //   Financial Records (FinancialSection.tsx -- e.g. a discount or
-//   special arrangement), otherwise computed_billable_amount
+//   special arrangement), otherwise computed_billable_amount -- PLUS
+//   damage_charges (approved Client damage, lib/damageCharges.ts)
 // - balance_due = billable_amount - amount_paid (what's currently owed)
 // Payments themselves are recorded in Financial Records, not here --
 // this module only computes what's owed and when; it doesn't write
@@ -27,8 +28,8 @@
 // stays fixed at that override until changed again).
 //
 // Due date rule: once at least one itinerary is Delivered, the date
-// used is the latest delivery_receipts.received_at among the delivered
-// ones (the real recorded delivery moment -- itineraries.trip_date_to
+// used is the latest moment one of them was marked Delivered
+// (dispatch_status_logs, new_status 'Delivered' -- itineraries.trip_date_to
 // is just the original plan and never gets updated when a trip actually
 // finishes). Before any itinerary is delivered, there's nothing
 // billable yet, so the due date shown is just an estimate based on the
@@ -44,6 +45,7 @@
 // whether that's because nothing's billable yet, or because more will
 // become billable as remaining trips complete.
 import { supabase } from './supabaseClient'
+import { loadClientDamageChargesByBooking } from './damageCharges'
 
 export type PaymentDueRow = {
   booking_id: number
@@ -57,6 +59,7 @@ export type PaymentDueRow = {
   total_contract_value: number
   computed_billable_amount: number
   amount_to_pay_override: number | null
+  damage_charges: number
   billable_amount: number
   amount_paid: number
   balance_due: number
@@ -174,20 +177,30 @@ export async function loadPaymentDueReport(
     return { rows: [], error: itinerariesResult.error.message }
   }
 
+  const { byBooking: damageByBooking, error: damageError } =
+    await loadClientDamageChargesByBooking(bookingIds)
+  if (damageError) {
+    return { rows: [], error: damageError }
+  }
+
   const deliveredItineraryIds = itinerariesResult.data
     .filter((i) => i.itinerary_status === 'Delivered')
     .map((i) => i.itinerary_id)
 
-  const { data: receiptRows, error: receiptError } =
+  // When each trip was marked Delivered on the Dispatch Board. Oldest
+  // first, so the Map below keeps the latest one per trip.
+  const { data: deliveredLogRows, error: deliveredLogError } =
     deliveredItineraryIds.length > 0
       ? await supabase
-          .from('delivery_receipts')
-          .select('itinerary_id, received_at')
+          .from('dispatch_status_logs')
+          .select('itinerary_id, status_changed_at')
           .in('itinerary_id', deliveredItineraryIds)
+          .eq('new_status', 'Delivered')
+          .order('status_changed_at', { ascending: true })
       : { data: [], error: null }
 
-  if (receiptError) {
-    return { rows: [], error: receiptError.message }
+  if (deliveredLogError) {
+    return { rows: [], error: deliveredLogError.message }
   }
 
   const clientNameById = new Map(
@@ -200,7 +213,7 @@ export async function loadPaymentDueReport(
     placesResult.data.map((p) => [p.place_id, p.place_name]),
   )
   const receivedAtByItinerary = new Map(
-    (receiptRows ?? []).map((r) => [r.itinerary_id, r.received_at]),
+    (deliveredLogRows ?? []).map((r) => [r.itinerary_id, r.status_changed_at as string]),
   )
 
   const itinerariesByBooking = new Map<
@@ -236,7 +249,8 @@ export async function loadPaymentDueReport(
       const rate = booking.rate_of_delivery_service ?? 0
       const totalContractValue = rate * totalTrips
       const computedBillableAmount = rate * completedTrips
-      const billableAmount = booking.amount_to_pay ?? computedBillableAmount
+      const damageCharges = damageByBooking.get(booking.booking_id) ?? 0
+      const billableAmount = (booking.amount_to_pay ?? computedBillableAmount) + damageCharges
       const amountPaid = booking.amount_paid ?? 0
       const balanceDue = billableAmount - amountPaid
 
@@ -278,6 +292,7 @@ export async function loadPaymentDueReport(
         total_contract_value: totalContractValue,
         computed_billable_amount: computedBillableAmount,
         amount_to_pay_override: booking.amount_to_pay,
+        damage_charges: damageCharges,
         billable_amount: billableAmount,
         amount_paid: amountPaid,
         balance_due: balanceDue,

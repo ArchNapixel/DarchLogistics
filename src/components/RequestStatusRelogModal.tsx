@@ -11,6 +11,7 @@ function RequestStatusRelogModal({
   workOrderId,
   currentStatus,
   statusOptions,
+  statusLabels = {},
   employeeId,
   onClose,
   onRequested,
@@ -20,6 +21,9 @@ function RequestStatusRelogModal({
   workOrderId?: number
   currentStatus: string
   statusOptions: string[]
+  // Display names for status values ("PickedUp" -> "Picked Up"); a value
+  // with no entry is shown as-is.
+  statusLabels?: Record<string, string>
   employeeId: number
   onClose: () => void
   onRequested: () => void
@@ -73,7 +77,7 @@ function RequestStatusRelogModal({
         </div>
 
         <p className="mt-2 text-sm text-slate-500">
-          Currently <span className="font-medium text-slate-700">{currentStatus}</span>. This
+          Currently <span className="font-medium text-slate-700">{statusLabels[currentStatus] ?? currentStatus}</span>. This
           needs admin approval before it takes effect.
         </p>
 
@@ -91,7 +95,7 @@ function RequestStatusRelogModal({
             >
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {statusLabels[status] ?? status}
                 </option>
               ))}
             </select>

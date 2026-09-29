@@ -53,9 +53,9 @@ before creating it.
 - Driver task flow — fully built and wired to real Supabase tables:
   - Section 1: My Tasks trip list
   - Section 2: Update Trip Status (advances `itineraries.itinerary_status` 
-    step by step, logs each change to `dispatch_status_logs`; marking a trip 
-    "Delivered" opens DeliveryReceiptModal, which records `delivery_receipts` 
-    and, if damaged, `delivery_damage_records`)
+    step by step up to **In Transit only**, logs each change to
+    `dispatch_status_logs`. Drivers can't mark Delivered — see the
+    2026-09-29 receipts-removal note under Dispatch Board)
   - Section 3: Report Issue (inserts into `issue_reports`)
   - Section 4: Add Trip Expense (inserts into `itinerary_expenses`)
   - **2026-09-29 driver-portal audit fixes:** trip lists, History,
@@ -64,10 +64,7 @@ before creating it.
     longer sees or gets paid for the trip). Status advance is one
     "Mark as X" button + confirm, guarded with
     `.eq('itinerary_status', current).select().maybeSingle()`, blocked
-    out of Awaiting until a truck is assigned. DeliveryReceiptModal
-    reuses an existing receipt (`itinerary_id` is UNIQUE) so retries
-    work, and Partial/Missing now create a `delivery_damage_records` row
-    too. Truck/trailer are freed on Delivered by the DB trigger
+    out of Awaiting until a truck is assigned. Truck/trailer are freed on Delivered by the DB trigger
     `free_vehicles_on_delivery` (SECURITY DEFINER, only if still
     `In Transit` and not on another active trip) — the Dispatch Board's
     JS version was removed. Helpers now get the same trip list
@@ -79,11 +76,10 @@ before creating it.
     `delivery_damage_records` SELECT/UPDATE for staff (Damage Charges
     was empty before), `itinerary_expenses` INSERT restricted to the
     active crew member + SELECT for staff + SELECT own rows
-    (`itinerary_expenses_select_own`), and `delivery_receipts` SELECT
-    for the trip's active Helper (`delivery_receipts_select_own_helper`).
+    (`itinerary_expenses_select_own`).
     My History trip rows (Driver/Helper) are clickable → `TripDetailModal`
     (inside `HistorySection.tsx`): client name, trip rate, route, dates,
-    truck/trailer, delivery receipt, own expenses. Client name + rate
+    truck/trailer, own expenses. Client name + rate
     come from the RPC `get_trip_client_and_rate(p_itinerary_id)`
     (SECURITY DEFINER, returns only those 2 fields and only if the
     caller is active crew on that trip) — crew still can't read
@@ -188,7 +184,58 @@ before creating it.
   trailer are also assignable per itinerary — `itineraries` has its own
   `plate_number`/`trailer_id` columns, and the Dispatch Board writes to
   them directly (plain overwrite, no assignment-history table, unlike
-  the Driver/Helper crew assignment above). **Booking status is kept in
+  the Driver/Helper crew assignment above).
+  **2026-09-29 dispatcher audit — delivery receipts removed:**
+  `delivery_receipts` table dropped, `DeliveryReceiptModal` deleted.
+  Only Dispatcher/Admin mark a trip Delivered: choosing Delivered on
+  the board opens `staff/MarkDeliveredModal.tsx` (cargo condition +
+  optional damage → `delivery_damage_records`, which now has
+  `itinerary_id` instead of `delivery_receipt_id`; INSERT is staff-only,
+  `delivery_damage_records_insert_staff`). The Delivered log row's
+  `status_changed_at` is the delivery date for payroll/Payments Due
+  (old receipt dates were backfilled into `dispatch_status_logs`).
+  Board status changes are guarded (`.eq('itinerary_status', prev)`
+  + `.select().maybeSingle()`), Dispatcher's dropdown offers only the
+  next step, nobody can leave Awaiting without a truck, and status
+  correction requests only offer earlier statuses; approving one is
+  guarded the same way (`statusRelogRequests.ts`). The Completed
+  (Delivered) table is read-only for crew/truck/trailer (Admin keeps
+  the status dropdown) and starts collapsed. Truck/trailer dropdowns
+  disable vehicles that are Under Maintenance / Out of Service; one on
+  another active trip stays assignable (on purpose — a vehicle can be
+  booked on several trips), just labelled "(on booking #X)". Same
+  hint-only label for drivers/helpers; Deactivated/Terminated employees
+  are left out of the crew dropdowns. Reassigning crew deactivates every
+  active row for that role on the trip (not just the one on screen), so
+  a trip never ends up with two active drivers. Dispatchers see "My
+  Correction Requests" at the bottom of the board
+  (`loadMyItineraryRelogRequests`, last 20, with Admin's note), and a
+  trip with a Pending request shows "Correction pending" instead of a
+  second request button. Board also has a search box (booking #,
+  places, crew, plates), a Refresh button, formatted dates, and booking
+  numbers link to `/dashboard/bookings?booking=ID` (BookingsSection
+  opens that booking's detail on load). The header bell
+  (`ComplianceExpiryAlerts`) now shows driver license/medical expiries
+  to Dispatchers too. Damage Charges' approve checks the update matched
+  a row. **Damage billing:** an approved `charge_to = 'Client'` damage
+  record is added ON TOP of the booking's delivery amount everywhere a
+  balance is computed (`loadClientDamageChargesByBooking` in
+  `lib/damageCharges.ts`, used by paymentDue.ts, BookingsSection,
+  ClientBookingHistoryModal, FinancialSection; `Booking.damage_charges`
+  / `PaymentDueRow.damage_charges`). `amount_to_pay` stays the delivery
+  amount only — Paid Full/Partial write the delivery target there and
+  never fold damage in. Clients read their own approved Client damage
+  via `delivery_damage_records_select_own_client`. **Reporting damage:**
+  Dispatcher/Admin only — either "Mark delivered" (button on In Transit
+  board rows, or Delivered in the dropdown → `MarkDeliveredModal`), or
+  "Report Damage" on the Damage Charges page (`ReportDamageModal`, any
+  of the last 200 delivered trips). Both share `DamageFields.tsx` +
+  `damageInputError`/`insertDamageRecord` in `lib/damageCharges.ts`.
+  Fleet status changes go
+  through `lib/fleetStatus.ts` (`setVehicleStatus` only flips from the
+  expected status, `freeVehicleIfIdle` only frees an In Transit vehicle
+  with no other active trip) — also used by `BookingDetailModal`'s
+  cancel and `workOrderStatusLog.ts`. **Booking status is kept in
   sync by a DB trigger** (`sync_booking_status` on `itineraries`,
   SECURITY DEFINER, added 2026-09-28 — replaced the old
   `lib/bookingStatus.ts` JS helper, which only ever handled Delivered
@@ -236,7 +283,8 @@ before creating it.
   read-only on Edit, no switching. Daily/Monthly/Hourly still work in `payslip.ts` for
   older rows but can't be chosen, and saving such an employee converts
   them to Weekly Salary;
-  trip date = `delivery_receipts.received_at` in Manila time. Everyone
+  trip date = latest `dispatch_status_logs` row with
+  `new_status = 'Delivered'`, in Manila time. Everyone
   else is paid against attendance: Daily Fixed, Weekly Salary (÷6 × paid
   days — Helpers), Monthly Salary (÷30), Hourly. No daily allowance
   anymore. `commission_basis`/`commission_per_trip` columns are legacy,
@@ -383,7 +431,7 @@ before creating it.
   it) or rejects (`staff/StatusRelogRequestsSection.tsx`).
 - Damage Charges (Dispatcher + Admin, `/dashboard/damage-charges`,
   `staff/DamageChargesSection.tsx`) — resolves `delivery_damage_records`
-  back through `delivery_receipts` → `itineraries` → `bookings`/`clients`/
+  through `delivery_damage_records.itinerary_id` → `itineraries` → `bookings`/`clients`/
   `places` to let staff decide whether a damage charge goes to the
   Client or stays a Company cost.
 - Client Delinquency & Reviews (staff side; the client-facing review
@@ -431,8 +479,9 @@ before creating it.
   from the Inventory page) — a Sun–Sat weekly stock/usage snapshot,
   downloaded client-side as a CSV blob, no server involvement.
 - Financial Records / Payments Due — `lib/paymentDue.ts` calculates what
-  each client owes from delivered trips, payment terms, and delivery
-  receipt dates. FinancialSection (`/dashboard/financial-records`) is
+  each client owes from delivered trips, payment terms, and the
+  Delivered timestamp in `dispatch_status_logs` (clients read their own
+  via `dispatch_status_logs_select_own_client`). FinancialSection (`/dashboard/financial-records`) is
   where staff record/override payments on `bookings.amount_to_pay` /
   `amount_paid`. `PaymentDuePanel` (read-only, shown beside Bookings) and
   the Reports "Payments Due" tab reuse the same calculation.
@@ -486,7 +535,7 @@ console.log leftovers, every other write correctly checks its result.
 Live DB is a snake_case subset of the full design doc (see memory) — not
 all 88 tables exist yet. Tables actually queried by the app right now
 (confirmed via grep of `.from(...)` calls in `src/`):
-`bookings`, `clients`, `delivery_damage_records`, `delivery_receipts`,
+`bookings`, `clients`, `delivery_damage_records`,
 `dispatch_status_logs`, `employees`, `issue_reports`, `itineraries`,
 `itinerary_crews`, `itinerary_expenses`, `places`, `quote_requests`,
 `trailers`, `truck_profiles`, `users`, `work_orders`,
@@ -680,8 +729,9 @@ went on, but almost certainly needs a policy:**
   `is_staff()` — it needs to check that the itinerary is actually
   assigned to the logged-in driver via `itinerary_crews`, not a flat role
   check.
-- `delivery_receipts` / `delivery_damage_records` — `INSERT` for Drivers
-  (`DeliveryReceiptModal.tsx`)
+- ~~`delivery_receipts` / `delivery_damage_records` INSERT for Drivers~~
+  — obsolete: `delivery_receipts` was dropped 2026-09-29, damage is
+  staff-only now
 - `issue_reports` — `INSERT` for Drivers (`ReportIssueModal.tsx`)
 - `itinerary_expenses` — `INSERT` for Drivers (`AddExpenseModal.tsx`)
 - `users` — `UPDATE` for a Client claiming their own pending row on first

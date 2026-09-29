@@ -3,6 +3,7 @@
 // and CompleteWorkOrderModal.tsx), mirroring how dispatch_status_logs
 // tracks itinerary status changes.
 import { supabase } from './supabaseClient'
+import { setVehicleStatus } from './fleetStatus'
 
 export async function logWorkOrderStatusChange({
   workOrderId,
@@ -29,28 +30,8 @@ export async function logWorkOrderStatusChange({
 // should be free again. Any other status means the vehicle is in the shop.
 const CLOSED_STATUSES = ['Completed', 'Cancelled']
 
-// Flips a truck's or trailer's current_status from one value to another,
-// but ONLY if it's still at `from` -- so a truck that's already out on a
-// trip ("In Transit") is never overwritten.
-async function setVehicleStatus(
-  plateNumber: string | null,
-  trailerId: number | null,
-  from: string,
-  to: string,
-) {
-  const { error } = plateNumber
-    ? await supabase
-        .from('truck_profiles')
-        .update({ current_status: to })
-        .eq('plate_number', plateNumber)
-        .eq('current_status', from)
-    : await supabase
-        .from('trailers')
-        .update({ current_status: to })
-        .eq('trailer_id', trailerId)
-        .eq('current_status', from)
-  return error?.message ?? null
-}
+// setVehicleStatus (only flips a vehicle still at the expected status)
+// lives in fleetStatus.ts -- shared with the Dispatch Board.
 
 // The one place a work order's status gets changed directly (everything
 // except "Completed", which goes through CompleteWorkOrderModal.tsx).

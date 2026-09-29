@@ -13,6 +13,7 @@
 // ClientsSection's already-loaded data instead of being refetched here.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import BookingDetailModal from './BookingDetailModal'
 import { BookingStatusBadge, type Booking } from './BookingsSection'
 
@@ -95,6 +96,16 @@ function ClientBookingHistoryModal({
       return
     }
 
+
+    // Approved Client damage charges, added on top of the delivery amount.
+    const { byBooking: damageByBooking, error: damageError } =
+      await loadClientDamageChargesByBooking(bookingIds)
+    if (damageError) {
+      setError(damageError)
+      setLoading(false)
+      return
+    }
+
     const placeNameById = new Map(
       placesResult.data.map((p) => [p.place_id, p.place_name]),
     )
@@ -120,7 +131,8 @@ function ClientBookingHistoryModal({
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
-        const billableAmount = b.amount_to_pay ?? computedBillableAmount
+        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
+        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -136,6 +148,7 @@ function ClientBookingHistoryModal({
           total_contract_value: rate * totalTrips,
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
+          damage_charges: damageCharges,
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,

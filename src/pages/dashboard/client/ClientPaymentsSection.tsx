@@ -89,6 +89,12 @@ function ClientPaymentsSection({
                     (₱{row.amount_paid.toLocaleString()} already paid)
                   </span>
                 )}
+                {row.damage_charges > 0 && (
+                  <span className="text-slate-400">
+                    {' '}
+                    · incl. ₱{row.damage_charges.toLocaleString()} damage charges
+                  </span>
+                )}
               </span>
               <span>
                 {row.due_date ? `Due ${formatDate(row.due_date)}` : 'Due date TBD'}

@@ -9,12 +9,13 @@
 //
 // Admin and Dispatcher are both "staff" (isStaff()) for broader checks
 // elsewhere, but no longer share a route tree here: Dispatcher gets a
-// restricted sidebar (Dispatch Board, Bookings, Quotations only -- no
-// Employees/Payroll/Fleet/Maintenance/Inventory/Reports/Settings) and
-// lands on the Dispatch Board directly instead of the KPI dashboard,
-// since managing it is their actual job. DispatchBoardSection.tsx
-// itself further restricts what a Dispatcher can edit there (status is
-// Admin-only; driver/truck/trailer assignment stays editable for both).
+// restricted sidebar (Dispatch Board, Bookings, Damage Charges,
+// Quotations, My Payslips -- no Employees/Payroll/Fleet/Maintenance/
+// Inventory/Reports/Settings) and lands on the Dispatch Board directly
+// instead of the KPI dashboard, since managing it is their actual job.
+// DispatchBoardSection.tsx itself further restricts what a Dispatcher
+// can do there (status only one step forward, backward moves go through
+// a correction request; crew/truck/trailer assignment same as Admin).
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { isAdmin, isDispatcher, isEmployee } from '../../lib/roles'
