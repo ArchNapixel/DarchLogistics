@@ -660,7 +660,7 @@ function QuoteReviewModal({
   const showProfitabilityPanel = approvedBookingId === null && distanceForCalc > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-4 py-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center sm:py-8">
       <div className="flex w-full max-w-4xl flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-center">
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-lg lg:max-w-lg">
         <div className="flex items-center justify-between">

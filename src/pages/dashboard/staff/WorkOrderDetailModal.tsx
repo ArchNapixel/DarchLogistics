@@ -138,7 +138,7 @@ function WorkOrderDetailModal({
   const isClosed = status === 'Completed' || status === 'Cancelled'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-bold text-slate-900">

@@ -158,7 +158,7 @@ function ComplianceExpiryAlerts() {
               panel, without a document-level listener. */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
 
-          <div className="absolute right-0 top-full z-40 mt-2 w-80 rounded-lg border border-slate-200 bg-white shadow-lg">
+          <div className="fixed inset-x-4 top-16 z-40 rounded-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border border-slate-200 bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
               <p className="text-sm font-semibold text-slate-900">
                 Compliance expiry notifications

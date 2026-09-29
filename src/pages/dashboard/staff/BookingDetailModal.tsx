@@ -401,7 +401,7 @@ function BookingDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
       <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div>

@@ -623,7 +623,7 @@ function CompleteWorkOrderModal({
 
   if (success) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
         <div className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow-lg">
           <p className="text-3xl">✅</p>
           <h3 className="mt-2 text-lg font-bold text-slate-900">
@@ -644,7 +644,7 @@ function CompleteWorkOrderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
