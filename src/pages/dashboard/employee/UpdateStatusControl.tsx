@@ -1,10 +1,16 @@
 // UpdateStatusControl: lets a driver advance an itinerary's status one
 // step at a time through the fixed flow: Awaiting -> Dispatched ->
-// PickedUp -> InTransit -> Delivered. The dropdown only ever offers the
-// current status and the single valid next step, so skipping steps or
-// going backward isn't possible. Moving to "Delivered" opens
-// DeliveryReceiptModal instead of updating immediately.
-import { useState, type ChangeEvent } from 'react'
+// PickedUp -> InTransit -> Delivered. It's a single "Mark as <next>"
+// button (with a confirm, since only Admin can move a status back), so
+// skipping steps or going backward isn't possible. Moving to "Delivered"
+// opens DeliveryReceiptModal instead of updating immediately.
+//
+// The update only applies if the trip is still at the status this
+// screen shows (.eq on itinerary_status) and checks a row actually
+// changed -- so a dispatcher's newer change isn't overwritten, and a
+// silent RLS no-op (e.g. the driver was reassigned off this trip) shows
+// an error instead of looking like it worked.
+import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import DeliveryReceiptModal from './DeliveryReceiptModal'
@@ -17,13 +23,25 @@ const STATUS_FLOW = [
   'Delivered',
 ]
 
+// Same wording as the Dispatch Board's STATUS_LABELS.
+export const TRIP_STATUS_LABELS: Record<string, string> = {
+  Awaiting: 'Awaiting',
+  Dispatched: 'Dispatched',
+  PickedUp: 'Picked Up',
+  InTransit: 'In Transit',
+  Delivered: 'Delivered',
+  Cancelled: 'Cancelled',
+}
+
 function UpdateStatusControl({
   itineraryId,
   currentStatus,
+  hasTruck,
   onStatusChanged,
 }: {
   itineraryId: number
   currentStatus: string
+  hasTruck: boolean
   onStatusChanged: (itineraryId: number, newStatus: string) => void
 }) {
   const { employeeId } = useAuth()
@@ -39,17 +57,30 @@ function UpdateStatusControl({
   // -- nothing further to advance to.
   if (!nextStatus) return null
 
+  const nextLabel = TRIP_STATUS_LABELS[nextStatus] ?? nextStatus
+
   async function advanceTo(newStatus: string) {
     setUpdating(true)
     setError(null)
 
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('itineraries')
       .update({ itinerary_status: newStatus })
       .eq('itinerary_id', itineraryId)
+      .eq('itinerary_status', currentStatus)
+      .select('itinerary_id')
+      .maybeSingle()
 
     if (updateError) {
       setError(updateError.message)
+      setUpdating(false)
+      return
+    }
+    if (!updated) {
+      setError(
+        'This trip was not updated -- its status may have been changed by ' +
+          'dispatch, or it is no longer assigned to you. Reload the page.',
+      )
       setUpdating(false)
       return
     }
@@ -79,31 +110,36 @@ function UpdateStatusControl({
     }
   }
 
-  function handleSelectChange(e: ChangeEvent<HTMLSelectElement>) {
-    const selected = e.target.value
-    if (selected !== nextStatus) return
-
-    if (selected === 'Delivered') {
+  function handleClick() {
+    if (nextStatus === 'Delivered') {
       setShowDeliveryModal(true)
       return
     }
-
-    advanceTo(selected)
+    if (!window.confirm(`Mark this trip as "${nextLabel}"? This can't be undone from your side.`)) {
+      return
+    }
+    advanceTo(nextStatus!)
   }
+
+  // A trip can't leave Awaiting without a truck on it.
+  const blockedNoTruck = currentStatus === 'Awaiting' && !hasTruck
 
   return (
     <div className="mt-3">
       {error && <p className="mb-2 text-sm text-red-700">{error}</p>}
 
-      <select
-        value={currentStatus}
-        onChange={handleSelectChange}
-        disabled={updating}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+      <button
+        onClick={handleClick}
+        disabled={updating || blockedNoTruck}
+        className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 sm:w-auto"
       >
-        <option value={currentStatus}>{currentStatus}</option>
-        <option value={nextStatus}>Mark as {nextStatus}</option>
-      </select>
+        {updating ? 'Saving...' : `Mark as ${nextLabel}`}
+      </button>
+      {blockedNoTruck && (
+        <p className="mt-1 text-xs text-slate-500">
+          Waiting for dispatch to assign a truck.
+        </p>
+      )}
 
       {showDeliveryModal && (
         <DeliveryReceiptModal

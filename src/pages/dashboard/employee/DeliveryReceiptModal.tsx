@@ -1,7 +1,12 @@
 // DeliveryReceiptModal: shown when a driver marks a trip "Delivered".
 // Records the delivery_receipts row (and, if the cargo arrived damaged,
-// a delivery_damage_records row), then updates the itinerary's status
-// and logs the change in dispatch_status_logs.
+// short or missing, a delivery_damage_records row so it shows up on the
+// Damage Charges page), then updates the itinerary's status and logs
+// the change in dispatch_status_logs.
+//
+// Retry-safe: delivery_receipts.itinerary_id is UNIQUE, so if an earlier
+// attempt already saved the receipt and failed on a later step, the
+// existing receipt is reused instead of failing on the duplicate.
 import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -11,6 +16,13 @@ const fieldClasses =
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type DeliveryCondition = 'Good' | 'Damaged' | 'Partial' | 'Missing'
+
+// Every condition except Good means some loss staff must decide on.
+const LOSS_LABELS: Record<Exclude<DeliveryCondition, 'Good'>, string> = {
+  Damaged: 'What was damaged?',
+  Partial: 'What was short / not delivered?',
+  Missing: 'What went missing?',
+}
 
 function DeliveryReceiptModal({
   itineraryId,
@@ -32,50 +44,77 @@ function DeliveryReceiptModal({
   const [chargeTo, setChargeTo] = useState<'Client' | 'Company'>('Client')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Remembers which steps already succeeded, so pressing Confirm again
+  // after a failure doesn't record the damage twice.
+  const [damageSaved, setDamageSaved] = useState(false)
+
+  const hasLoss = condition !== 'Good'
 
   async function handleSubmit() {
     if (!receiverName.trim()) {
       setError('Enter the receiver name.')
       return
     }
-    if (
-      condition === 'Damaged' &&
-      (!damageDescription.trim() || !estimatedCost)
-    ) {
-      setError('Enter a damage description and estimated cost.')
+    if (hasLoss && (!damageDescription.trim() || !estimatedCost)) {
+      setError('Describe the problem and enter an estimated cost.')
+      return
+    }
+    if (hasLoss && Number(estimatedCost) < 0) {
+      setError('Estimated cost can\'t be negative.')
       return
     }
 
     setSubmitting(true)
     setError(null)
 
-    // 1. Record the delivery receipt.
-    const { data: receipt, error: receiptError } = await supabase
+    // 1. Record the delivery receipt -- or reuse the one an earlier,
+    // partly-failed attempt already saved.
+    const { data: existingReceipt, error: existingError } = await supabase
       .from('delivery_receipts')
-      .insert({
-        itinerary_id: itineraryId,
-        receiver_name: receiverName,
-        receiver_contact: receiverContact || null,
-        delivery_condition: condition,
-        received_at: new Date().toISOString(),
-        recorded_by: employeeId,
-      })
       .select('delivery_receipt_id')
-      .single()
+      .eq('itinerary_id', itineraryId)
+      .maybeSingle()
 
-    if (receiptError || !receipt) {
-      setError(receiptError?.message ?? 'Could not save delivery receipt.')
+    if (existingError) {
+      setError(existingError.message)
       setSubmitting(false)
       return
     }
 
-    // 2. If damaged, also record the damage details.
-    if (condition === 'Damaged') {
+    let receiptId = existingReceipt?.delivery_receipt_id as number | undefined
+    if (receiptId === undefined) {
+      const { data: receipt, error: receiptError } = await supabase
+        .from('delivery_receipts')
+        .insert({
+          itinerary_id: itineraryId,
+          receiver_name: receiverName,
+          receiver_contact: receiverContact || null,
+          delivery_condition: condition,
+          received_at: new Date().toISOString(),
+          recorded_by: employeeId,
+        })
+        .select('delivery_receipt_id')
+        .single()
+
+      if (receiptError || !receipt) {
+        setError(receiptError?.message ?? 'Could not save delivery receipt.')
+        setSubmitting(false)
+        return
+      }
+      receiptId = receipt.delivery_receipt_id as number
+    }
+
+    // 2. If anything was damaged/short/missing, record it for staff.
+    // ponytail: damageSaved only survives while this modal is open -- a
+    // retry after closing/reopening can add a second damage row (staff
+    // can spot it on Damage Charges). Drivers can't read
+    // delivery_damage_records to check; add a SELECT policy if it matters.
+    if (hasLoss && !damageSaved) {
       const { error: damageError } = await supabase
         .from('delivery_damage_records')
         .insert({
-          delivery_receipt_id: receipt.delivery_receipt_id,
-          damage_description: damageDescription,
+          delivery_receipt_id: receiptId,
+          damage_description: `${condition}: ${damageDescription.trim()}`,
           estimated_damage_cost: Number(estimatedCost),
           charge_to: chargeTo,
         })
@@ -85,23 +124,38 @@ function DeliveryReceiptModal({
         setSubmitting(false)
         return
       }
+      setDamageSaved(true)
     }
 
-    // 3. Update the itinerary's status.
-    const { error: statusError } = await supabase
+    // 3. Update the itinerary's status -- only if it's still where this
+    // screen thinks it is, and check a row really changed (RLS no-op).
+    const { data: updated, error: statusError } = await supabase
       .from('itineraries')
       .update({ itinerary_status: 'Delivered' })
       .eq('itinerary_id', itineraryId)
+      .eq('itinerary_status', currentStatus)
+      .select('itinerary_id')
+      .maybeSingle()
 
     if (statusError) {
       setError(statusError.message)
       setSubmitting(false)
       return
     }
+    if (!updated) {
+      setError(
+        'The receipt was saved, but the trip status was not updated -- it ' +
+          'may have been changed by dispatch, or it is no longer assigned ' +
+          'to you. Reload the page and check with dispatch.',
+      )
+      setSubmitting(false)
+      return
+    }
 
-    // The booking's own status (Delivered once every trip is) follows
-    // automatically -- the sync_booking_status trigger on itineraries
-    // handles it in the database, for every status change.
+    // The booking's own status (Delivered once every trip is) and freeing
+    // the truck/trailer both follow automatically -- the
+    // sync_booking_status and free_vehicles_on_delivery triggers on
+    // itineraries handle them in the database.
 
     // 4. Log the status change.
     const { error: logError } = await supabase
@@ -115,9 +169,14 @@ function DeliveryReceiptModal({
 
     setSubmitting(false)
 
+    // The trip IS delivered at this point -- don't leave the driver stuck
+    // in the modal over a log failure (a retry would now fail the status
+    // guard above). Warn, then carry on.
     if (logError) {
-      setError(logError.message)
-      return
+      window.alert(
+        `Delivery saved, but recording it in the dispatch log failed ` +
+          `(${logError.message}). Please tell dispatch.`,
+      )
     }
 
     onDelivered()
@@ -171,10 +230,10 @@ function DeliveryReceiptModal({
             </select>
           </label>
 
-          {condition === 'Damaged' && (
+          {condition !== 'Good' && (
             <>
               <label className={labelClasses}>
-                Damage description
+                {LOSS_LABELS[condition]}
                 <textarea
                   value={damageDescription}
                   onChange={(e) => setDamageDescription(e.target.value)}

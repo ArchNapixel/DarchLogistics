@@ -546,36 +546,10 @@ function DispatchBoardSection() {
     // below fails -- reflect the real status on screen either way, and
     // only use the log failure to show a warning, not to hide the change
     // that actually happened.
-    if (newStatus === 'Delivered') {
-      // Trip's done -- free up whatever truck/trailer were on it. Best
-      // effort: the itinerary status change itself already went through,
-      // so a failure here isn't worth blocking on or alarming the user
-      // over (matches the "not blocking" tone of the log-failure warning
-      // just below).
-      const finishedRow = rows.find((r) => r.itinerary_id === itineraryId)
-      if (finishedRow?.plate_number) {
-        supabase
-          .from('truck_profiles')
-          .update({ current_status: 'Available' })
-          .eq('plate_number', finishedRow.plate_number)
-          .then(({ error }) => {
-            if (error) console.error('Failed to free up truck status:', error)
-          })
-      }
-      if (finishedRow?.trailer_id) {
-        supabase
-          .from('trailers')
-          .update({ current_status: 'Available' })
-          .eq('trailer_id', finishedRow.trailer_id)
-          .then(({ error }) => {
-            if (error) console.error('Failed to free up trailer status:', error)
-          })
-      }
-
-      // The booking's own status follows automatically -- the
-      // sync_booking_status trigger on itineraries handles it in the
-      // database, for every status change (not just Delivered).
-    }
+    // On "Delivered", freeing the truck/trailer (free_vehicles_on_delivery)
+    // and the booking's own status (sync_booking_status) both follow
+    // automatically -- triggers on itineraries handle them in the
+    // database, for the Driver's delivery flow too.
 
     // Delivered trips stay in `rows` and move into the Completed table
     // (grouped at render time) instead of disappearing.

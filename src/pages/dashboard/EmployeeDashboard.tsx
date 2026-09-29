@@ -2,8 +2,10 @@
 // for both roles, only the role badge text differs, plus Mechanics get
 // an extra Task Board below "My Tasks" for accepting unassigned work
 // orders (their own assigned work comes first), and their header also
-// holds "Schedule Maintenance" and "Submit Inspection Report" -- every
-// mechanic action lives in one place. Accepting a work order on the
+// holds "Schedule Maintenance". Every role's header has "Issue
+// Maintenance Request" and "Report Issue" (labelled "Submit Inspection
+// Report" for Mechanics) -- the Driver's report buttons used to sit
+// inside the trip list, now every action is in one place. Accepting a work order on the
 // Task Board bumps tasksRefreshKey, which is passed as
 // MyTasksSection's `key` -- changing a component's key remounts it, so
 // this is a lightweight way to make the newly-accepted work order show
@@ -56,21 +58,21 @@ function EmployeeDashboard() {
           </button>
 
           {role === 'Mechanic' && (
-            <>
-              <button
-                onClick={() => setShowScheduleMaintenance(true)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Schedule Maintenance
-              </button>
-              <button
-                onClick={() => setShowInspectionReport(true)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Submit Inspection Report
-              </button>
-            </>
+            <button
+              onClick={() => setShowScheduleMaintenance(true)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Schedule Maintenance
+            </button>
           )}
+          {/* Every employee role can report an issue -- about a vehicle
+              or general (InspectionReportModal covers both). */}
+          <button
+            onClick={() => setShowInspectionReport(true)}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            {role === 'Mechanic' ? 'Submit Inspection Report' : 'Report Issue'}
+          </button>
         </div>
       </div>
 

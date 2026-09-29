@@ -1,14 +1,21 @@
-// DriverTasks: shows the logged-in driver's assigned trips (upcoming +
-// in-progress). itinerary_crews is the link table between an employee
-// and an itinerary; we filter it to crew_role = 'Driver' to find which
-// itineraries belong to this driver.
+// DriverTasks: shows the logged-in driver's (or helper's) assigned trips
+// that aren't finished yet. itinerary_crews is the link table between an
+// employee and an itinerary; we filter it to this crew role and to
+// is_active = true -- the Dispatch Board keeps a reassigned driver's old
+// row as is_active: false, and that trip isn't theirs any more.
+//
+// Trips already on the road are listed first ("On the road"), then the
+// ones not started yet ("Upcoming"). Only a Driver can advance status;
+// a Helper sees the same list read-only, plus Add Expense.
+//
+// Report Issue / Inspection and Issue Maintenance Request live in the
+// EmployeeDashboard header, not here.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import UpdateStatusControl from './UpdateStatusControl'
-import ReportIssueModal from './ReportIssueModal'
+import { formatDate } from '../../../lib/quoteRequest'
+import UpdateStatusControl, { TRIP_STATUS_LABELS } from './UpdateStatusControl'
 import AddExpenseModal from './AddExpenseModal'
-import InspectionReportModal from './InspectionReportModal'
 
 type Trip = {
   itinerary_id: number
@@ -17,6 +24,9 @@ type Trip = {
   itinerary_status: string
   pickup_place_name: string
   delivery_place_name: string
+  plate_number: string | null
+  trailer_label: string | null
+  expenses: { amount: number; description: string }[]
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -32,29 +42,28 @@ export function StatusBadge({ status }: { status: string }) {
   const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
   return (
     <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
+      {TRIP_STATUS_LABELS[status] ?? status}
     </span>
   )
 }
 
-function DriverTasks() {
+function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
   const { employeeId } = useAuth()
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showReportIssue, setShowReportIssue] = useState(false)
-  const [showInspectionReport, setShowInspectionReport] = useState(false)
   const [expenseTripId, setExpenseTripId] = useState<number | null>(null)
 
-  async function loadTrips(driverEmployeeId: number) {
+  async function loadTrips(crewEmployeeId: number) {
     setLoading(true)
 
-    // 1. Which itineraries is this driver assigned to?
+    // 1. Which itineraries is this person currently assigned to?
     const { data: crewRows, error: crewError } = await supabase
       .from('itinerary_crews')
       .select('itinerary_id')
-      .eq('employee_id', driverEmployeeId)
-      .eq('crew_role', 'Driver')
+      .eq('employee_id', crewEmployeeId)
+      .eq('crew_role', crewRole)
+      .eq('is_active', true)
 
     if (crewError) {
       setError(crewError.message)
@@ -74,7 +83,7 @@ function DriverTasks() {
     const { data: itineraries, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
-        'itinerary_id, trip_date_from, trip_date_to, itinerary_status, place_of_pickup_id, place_of_delivery_id',
+        'itinerary_id, trip_date_from, trip_date_to, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
       )
       .in('itinerary_id', itineraryIds)
       .not('itinerary_status', 'in', '(Delivered,Cancelled)')
@@ -86,7 +95,8 @@ function DriverTasks() {
       return
     }
 
-    // 3. Look up pickup/delivery place names (itineraries only stores IDs).
+    // 3. Place names, trailer plates, and this person's own logged
+    // expenses (itineraries only stores IDs) -- in parallel.
     const placeIds = Array.from(
       new Set(
         itineraries.flatMap((trip) => [
@@ -95,23 +105,43 @@ function DriverTasks() {
         ]),
       ),
     )
+    const trailerIds = itineraries
+      .map((trip) => trip.trailer_id)
+      .filter((id): id is number => id !== null)
+    const openIds = itineraries.map((trip) => trip.itinerary_id)
 
-    const { data: places, error: placesError } =
+    const [placesResult, trailersResult, expensesResult] = await Promise.all([
       placeIds.length > 0
-        ? await supabase
-            .from('places')
-            .select('place_id, place_name')
-            .in('place_id', placeIds)
-        : { data: [], error: null }
+        ? supabase.from('places').select('place_id, place_name').in('place_id', placeIds)
+        : Promise.resolve({ data: [] as { place_id: number; place_name: string }[], error: null }),
+      trailerIds.length > 0
+        ? supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
+        : Promise.resolve({ data: [] as { trailer_id: number; plate_number: string | null }[], error: null }),
+      openIds.length > 0
+        ? supabase
+            .from('itinerary_expenses')
+            .select('itinerary_id, amount, description')
+            .in('itinerary_id', openIds)
+            .eq('employee_id', crewEmployeeId)
+            .order('created_at', { ascending: true })
+        : Promise.resolve({
+            data: [] as { itinerary_id: number; amount: number; description: string }[],
+            error: null,
+          }),
+    ])
 
-    if (placesError) {
-      setError(placesError.message)
+    const lookupError = placesResult.error ?? trailersResult.error ?? expensesResult.error
+    if (lookupError) {
+      setError(lookupError.message)
       setLoading(false)
       return
     }
 
     const placeNameById = new Map(
-      places.map((place) => [place.place_id, place.place_name]),
+      (placesResult.data ?? []).map((place) => [place.place_id, place.place_name]),
+    )
+    const trailerPlateById = new Map(
+      (trailersResult.data ?? []).map((t) => [t.trailer_id, t.plate_number]),
     )
 
     setTrips(
@@ -123,6 +153,12 @@ function DriverTasks() {
         pickup_place_name: placeNameById.get(trip.place_of_pickup_id) ?? '—',
         delivery_place_name:
           placeNameById.get(trip.place_of_delivery_id) ?? '—',
+        plate_number: trip.plate_number,
+        trailer_label:
+          trip.trailer_id !== null
+            ? (trailerPlateById.get(trip.trailer_id) ?? `Trailer #${trip.trailer_id}`)
+            : null,
+        expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === trip.itinerary_id),
       })),
     )
     setError(null)
@@ -130,7 +166,13 @@ function DriverTasks() {
   }
 
   useEffect(() => {
-    if (employeeId) loadTrips(employeeId)
+    if (employeeId) {
+      loadTrips(employeeId)
+    } else {
+      // Account has no linked employees row (users.employee_id is null)
+      // -- nothing to look up, don't sit on "Loading..." forever.
+      setLoading(false)
+    }
   }, [employeeId])
 
   // Called by UpdateStatusControl after a successful status change.
@@ -151,81 +193,111 @@ function DriverTasks() {
     )
   }
 
-  // "Report Issue" isn't tied to a specific trip, so it's available no
-  // matter what the trip list below is showing (loading/error/empty/list).
-  let tripListContent
-  if (loading) {
-    tripListContent = <p className="text-slate-500">Loading your trips...</p>
-  } else if (error) {
-    tripListContent = <p className="text-red-700">{error}</p>
-  } else if (trips.length === 0) {
-    tripListContent = <p className="text-slate-500">Nothing assigned yet.</p>
-  } else {
-    tripListContent = (
-      <div className="grid gap-4">
-        {trips.map((trip) => (
-          <div
-            key={trip.itinerary_id}
-            className="rounded-xl border border-slate-200 p-5"
-          >
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">
-                {trip.pickup_place_name} → {trip.delivery_place_name}
+  if (!employeeId) {
+    return (
+      <p className="text-red-700">
+        Your account is not linked to an employee record, so no trips can be
+        shown. Ask an admin to fix it.
+      </p>
+    )
+  }
+  if (loading) return <p className="text-slate-500">Loading your trips...</p>
+  if (error) return <p className="text-red-700">{error}</p>
+  if (trips.length === 0) {
+    return <p className="text-slate-500">Nothing assigned yet.</p>
+  }
+
+  function renderTrip(trip: Trip) {
+    const onTheRoad = trip.itinerary_status !== 'Awaiting'
+    const expenseTotal = trip.expenses.reduce((sum, e) => sum + Number(e.amount), 0)
+
+    return (
+      <div
+        key={trip.itinerary_id}
+        className={`rounded-xl border p-5 ${
+          onTheRoad ? 'border-slate-900' : 'border-slate-200'
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <p className="font-semibold text-slate-900">
+            {trip.pickup_place_name} → {trip.delivery_place_name}
+          </p>
+          <StatusBadge status={trip.itinerary_status} />
+        </div>
+        <p className="mt-1 text-sm text-slate-500">
+          {formatDate(trip.trip_date_from)}
+          {trip.trip_date_to ? ` – ${formatDate(trip.trip_date_to)}` : ''}
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Truck:{' '}
+          {trip.plate_number ?? <span className="text-slate-400">not assigned yet</span>}
+          {' · '}Trailer:{' '}
+          {trip.trailer_label ?? <span className="text-slate-400">none</span>}
+        </p>
+
+        {crewRole === 'Driver' && (
+          <UpdateStatusControl
+            itineraryId={trip.itinerary_id}
+            currentStatus={trip.itinerary_status}
+            hasTruck={trip.plate_number !== null}
+            onStatusChanged={handleStatusChanged}
+          />
+        )}
+
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {trip.expenses.length > 0 && (
+            <div className="mb-2 text-sm text-slate-600">
+              <p className="font-medium text-slate-700">
+                Your expenses: ₱{expenseTotal.toLocaleString()}
               </p>
-              <StatusBadge status={trip.itinerary_status} />
+              {trip.expenses.map((e, i) => (
+                <p key={i} className="text-xs text-slate-500">
+                  ₱{Number(e.amount).toLocaleString()} · {e.description}
+                </p>
+              ))}
             </div>
-            <p className="mt-1 text-sm text-slate-500">
-              {trip.trip_date_from}
-              {trip.trip_date_to ? ` – ${trip.trip_date_to}` : ''}
-            </p>
-            <UpdateStatusControl
-              itineraryId={trip.itinerary_id}
-              currentStatus={trip.itinerary_status}
-              onStatusChanged={handleStatusChanged}
-            />
-            <button
-              onClick={() => setExpenseTripId(trip.itinerary_id)}
-              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Add Expense
-            </button>
-          </div>
-        ))}
+          )}
+          <button
+            onClick={() => setExpenseTripId(trip.itinerary_id)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Add Expense
+          </button>
+        </div>
       </div>
     )
   }
 
+  const onTheRoad = trips.filter((t) => t.itinerary_status !== 'Awaiting')
+  const upcoming = trips.filter((t) => t.itinerary_status === 'Awaiting')
+
   return (
-    <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={() => setShowInspectionReport(true)}
-          className="mr-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-        >
-          Submit Inspection Report
-        </button>
-        <button
-          onClick={() => setShowReportIssue(true)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-        >
-          Report Issue
-        </button>
-      </div>
-
-      {tripListContent}
-
-      {showReportIssue && (
-        <ReportIssueModal onClose={() => setShowReportIssue(false)} />
+    <div className="grid gap-6">
+      {onTheRoad.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            On the road
+          </h3>
+          <div className="grid gap-4">{onTheRoad.map(renderTrip)}</div>
+        </div>
       )}
-
-      {showInspectionReport && (
-        <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
+      {upcoming.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Upcoming
+          </h3>
+          <div className="grid gap-4">{upcoming.map(renderTrip)}</div>
+        </div>
       )}
 
       {expenseTripId !== null && (
         <AddExpenseModal
           itineraryId={expenseTripId}
-          onClose={() => setExpenseTripId(null)}
+          onClose={() => {
+            setExpenseTripId(null)
+            // Refresh so a just-added expense shows on the trip card.
+            loadTrips(employeeId)
+          }}
         />
       )}
     </div>

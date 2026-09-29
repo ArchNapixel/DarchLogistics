@@ -182,6 +182,9 @@ async function buildCommissionTripLineItems(
     .select('itinerary_id')
     .eq('employee_id', employee.employee_id)
     .eq('crew_role', 'Driver')
+    // A driver swapped off the trip (Dispatch Board keeps their row as
+    // is_active: false) didn't drive it -- only the active driver is paid.
+    .eq('is_active', true)
 
   if (crewError) {
     return { lineItems: [], error: crewError.message }

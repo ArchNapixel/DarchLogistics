@@ -1,3 +1,8 @@
+// InspectionReportModal: a Driver's or Mechanic's issue report into
+// issue_reports -- either about a specific truck/trailer (saved as real
+// plate_number/trailer_id columns so staff's "Convert to Work Order" can
+// pre-select it) or a general issue with no vehicle. This replaced the
+// Driver's separate ReportIssueModal, which saved no vehicle at all.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -58,6 +63,12 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
           plateNumber: null,
           trailerId: trailer.trailer_id,
         })),
+        {
+          key: 'general',
+          label: 'General issue (no specific vehicle)',
+          plateNumber: null,
+          trailerId: null,
+        },
       ]
 
       setVehicles(options)
@@ -93,7 +104,10 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
       // pre-select the vehicle (ConvertIssueToWorkOrderModal.tsx).
       plate_number: vehicle.plateNumber,
       trailer_id: vehicle.trailerId,
-      description: `Inspection report for ${vehicle.label}: ${findings.trim()}`,
+      description:
+        vehicle.key === 'general'
+          ? findings.trim()
+          : `Inspection report for ${vehicle.label}: ${findings.trim()}`,
       severity,
       notes: notes.trim() || null,
     })
@@ -113,8 +127,8 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         {done ? (
           <>
-            <h3 className="text-lg font-bold text-slate-900">Inspection report submitted</h3>
-            <p className="mt-3 text-sm text-slate-600">Staff can now review the vehicle findings.</p>
+            <h3 className="text-lg font-bold text-slate-900">Report submitted</h3>
+            <p className="mt-3 text-sm text-slate-600">Staff can now review your report.</p>
             <div className="mt-6 flex justify-end">
               <button onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Done</button>
             </div>
@@ -122,7 +136,7 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Submit Inspection Report</h3>
+              <h3 className="text-lg font-bold text-slate-900">Report Issue / Inspection</h3>
               <button onClick={onClose} disabled={submitting} className="text-slate-400 hover:text-slate-700">✕</button>
             </div>
 
@@ -135,13 +149,13 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
             ) : (
               <div className="mt-4 grid gap-4">
                 <label className={labelClasses}>
-                  Vehicle inspected
+                  Vehicle
                   <select value={vehicleKey} onChange={(event) => setVehicleKey(event.target.value)} className={fieldClasses}>
                     {vehicles.map((vehicle) => <option key={vehicle.key} value={vehicle.key}>{vehicle.label}</option>)}
                   </select>
                 </label>
                 <label className={labelClasses}>
-                  Findings
+                  What did you find?
                   <textarea value={findings} onChange={(event) => setFindings(event.target.value)} rows={3} className={fieldClasses} placeholder="Describe what you found" />
                 </label>
                 <label className={labelClasses}>

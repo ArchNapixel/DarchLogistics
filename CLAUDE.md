@@ -58,6 +58,36 @@ before creating it.
     and, if damaged, `delivery_damage_records`)
   - Section 3: Report Issue (inserts into `issue_reports`)
   - Section 4: Add Trip Expense (inserts into `itinerary_expenses`)
+  - **2026-09-29 driver-portal audit fixes:** trip lists, History,
+    EmployeeDetailModal and driver commission (`payslip.ts`) all filter
+    `itinerary_crews.is_active = true` (a reassigned-off driver no
+    longer sees or gets paid for the trip). Status advance is one
+    "Mark as X" button + confirm, guarded with
+    `.eq('itinerary_status', current).select().maybeSingle()`, blocked
+    out of Awaiting until a truck is assigned. DeliveryReceiptModal
+    reuses an existing receipt (`itinerary_id` is UNIQUE) so retries
+    work, and Partial/Missing now create a `delivery_damage_records` row
+    too. Truck/trailer are freed on Delivered by the DB trigger
+    `free_vehicles_on_delivery` (SECURITY DEFINER, only if still
+    `In Transit` and not on another active trip) — the Dispatch Board's
+    JS version was removed. Helpers now get the same trip list
+    read-only (`DriverTasks crewRole="Helper"`). `ReportIssueModal` was
+    deleted — `InspectionReportModal` covers it with a "General issue"
+    option, launched from the EmployeeDashboard header for every role.
+    Trip expenses show on the driver's trip card and in staff
+    `BookingDetailModal`'s trips table. RLS added the same day:
+    `delivery_damage_records` SELECT/UPDATE for staff (Damage Charges
+    was empty before), `itinerary_expenses` INSERT restricted to the
+    active crew member + SELECT for staff + SELECT own rows
+    (`itinerary_expenses_select_own`), and `delivery_receipts` SELECT
+    for the trip's active Helper (`delivery_receipts_select_own_helper`).
+    My History trip rows (Driver/Helper) are clickable → `TripDetailModal`
+    (inside `HistorySection.tsx`): client name, trip rate, route, dates,
+    truck/trailer, delivery receipt, own expenses. Client name + rate
+    come from the RPC `get_trip_client_and_rate(p_itinerary_id)`
+    (SECURITY DEFINER, returns only those 2 fields and only if the
+    caller is active crew on that trip) — crew still can't read
+    `bookings`/`clients` directly, on purpose (payment balances).
 - Mechanic work orders — fully rebuilt. Maintenance section (staff), 
   Create Work Order modal, Task Board (mechanics self-assign unclaimed 
   orders, race-safe accept), and MechanicTasks (status dropdown) are all 

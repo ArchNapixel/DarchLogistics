@@ -58,6 +58,9 @@ type Trip = {
   trailer_plate: string | null
   driver: string | null
   helper: string | null
+  // Expenses the crew logged on this trip (itinerary_expenses, via the
+  // driver's "Add Expense" button).
+  expenses: { amount: number; description: string }[]
 }
 
 type Details = {
@@ -158,7 +161,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const tripIds = trips.map((t) => t.itinerary_id)
   const trailerIds = trips.map((t) => t.trailer_id).filter((id): id is number => id !== null)
 
-  const [crewsResult, trailersResult] = await Promise.all([
+  const [crewsResult, trailersResult, expensesResult] = await Promise.all([
     tripIds.length > 0
       ? supabase
           .from('itinerary_crews')
@@ -172,9 +175,20 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     trailerIds.length > 0
       ? supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
       : Promise.resolve({ data: [] as { trailer_id: number; plate_number: string | null }[], error: null }),
+    tripIds.length > 0
+      ? supabase
+          .from('itinerary_expenses')
+          .select('itinerary_id, amount, description')
+          .in('itinerary_id', tripIds)
+          .order('created_at', { ascending: true })
+      : Promise.resolve({
+          data: [] as { itinerary_id: number; amount: number; description: string }[],
+          error: null,
+        }),
   ])
-  if (crewsResult.error ?? trailersResult.error) {
-    return { error: (crewsResult.error ?? trailersResult.error)!.message }
+  const extraError = crewsResult.error ?? trailersResult.error ?? expensesResult.error
+  if (extraError) {
+    return { error: extraError.message }
   }
 
   const crews = crewsResult.data ?? []
@@ -228,6 +242,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         trailer_plate: t.trailer_id !== null ? (trailerPlateById.get(t.trailer_id) ?? null) : null,
         driver: crewName(t.itinerary_id, 'Driver'),
         helper: crewName(t.itinerary_id, 'Helper'),
+        expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === t.itinerary_id),
       })),
     },
   }
@@ -525,6 +540,7 @@ function BookingDetailModal({
                     <th className="px-3 py-2 font-medium">Date</th>
                     <th className="px-3 py-2 font-medium">Driver</th>
                     <th className="px-3 py-2 font-medium">Truck / trailer</th>
+                    <th className="px-3 py-2 font-medium">Expenses</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -555,6 +571,22 @@ function BookingDetailModal({
                         {trip.trailer_id !== null
                           ? (trip.trailer_plate ?? `Trailer #${trip.trailer_id}`)
                           : <span className="text-slate-400">no trailer</span>}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {trip.expenses.length === 0 ? (
+                          <span className="text-slate-400">None</span>
+                        ) : (
+                          <>
+                            <span className="font-medium text-slate-900">
+                              {formatMoney(trip.expenses.reduce((sum, e) => sum + Number(e.amount), 0))}
+                            </span>
+                            {trip.expenses.map((e, i) => (
+                              <span key={i} className="block text-xs text-slate-500">
+                                {formatMoney(Number(e.amount))} · {e.description}
+                              </span>
+                            ))}
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}

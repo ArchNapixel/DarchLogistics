@@ -121,6 +121,7 @@ function DriverHelperDetail({
       .select('itinerary_id')
       .eq('employee_id', employeeId)
       .eq('crew_role', crewRole)
+      .eq('is_active', true) // skip trips they were reassigned off of
 
     if (crewError) {
       setError(crewError.message)

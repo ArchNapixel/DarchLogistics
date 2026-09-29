@@ -24,6 +24,10 @@ function AddExpenseModal({
   const [done, setDone] = useState(false)
 
   async function handleSubmit() {
+    if (!employeeId) {
+      setError('Your account is not linked to an employee record. Ask an admin to fix it.')
+      return
+    }
     const amountValue = Number(amount)
     if (!amount || amountValue <= 0) {
       setError('Enter an amount greater than 0.')
