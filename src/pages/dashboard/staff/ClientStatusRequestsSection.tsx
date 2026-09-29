@@ -8,8 +8,9 @@ import {
   respondToStatusRequest,
   type PendingStatusRequest,
 } from '../../../lib/clientStatusRequests'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
-function ClientStatusRequestsSection() {
+function ClientStatusRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
   const [requests, setRequests] = useState<PendingStatusRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,12 +45,12 @@ function ClientStatusRequestsSection() {
       return
     }
 
-    const input = window.prompt(`Response for ${request.client_name}?`)
+    const input = await promptDialog({
+      title: `Respond to ${request.client_name}`,
+      message: 'This response is sent back to the client.',
+      confirmLabel: 'Send response',
+    })
     if (input === null) return
-    if (!input.trim()) {
-      setActionError('Enter a response before sending.')
-      return
-    }
 
     setRespondingId(request.request_id)
     setActionError(null)
@@ -68,6 +69,7 @@ function ClientStatusRequestsSection() {
     }
 
     setRequests((prev) => prev.filter((r) => r.request_id !== request.request_id))
+    onChanged?.()
   }
 
   if (loading) {

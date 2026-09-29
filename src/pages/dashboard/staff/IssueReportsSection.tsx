@@ -31,7 +31,7 @@ function SeverityBadge({ severity }: { severity: string }) {
   )
 }
 
-function IssueReportsSection() {
+function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   const [reports, setReports] = useState<IssueReport[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +43,13 @@ function IssueReportsSection() {
   useEffect(() => {
     load()
   }, [])
+
+  // The green banner fades out on its own after a few seconds.
+  useEffect(() => {
+    if (!successMessage) return
+    const timer = setTimeout(() => setSuccessMessage(null), 4000)
+    return () => clearTimeout(timer)
+  }, [successMessage])
 
   async function load() {
     setLoading(true)
@@ -135,6 +142,7 @@ function IssueReportsSection() {
 
     setReports((prev) => prev.filter((r) => r.issue_report_id !== report.issue_report_id))
     setSuccessMessage('Report marked as worked on.')
+    onChanged?.()
   }
 
   if (loading) {
@@ -217,6 +225,7 @@ function IssueReportsSection() {
               prev.filter((r) => r.issue_report_id !== convertingReport.issue_report_id),
             )
             setSuccessMessage('Work order created and report marked as worked on.')
+            onChanged?.()
             setConvertingReport(null)
           }}
         />

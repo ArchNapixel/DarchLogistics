@@ -109,6 +109,8 @@ export async function loadPaymentDueReport(
     bookingsQuery = bookingsQuery.eq('client_id', clientId)
   }
 
+  // ponytail: Supabase returns at most 1000 rows per request, so past 1000
+  // open bookings the oldest would silently drop -- page with .range() then.
   const { data: bookingRows, error: bookingError } = await bookingsQuery
 
   if (bookingError) {
@@ -136,7 +138,9 @@ export async function loadPaymentDueReport(
   )
   const bookingIds = bookingRows.map((b) => b.booking_id)
 
-  const [clientsResult, quotesResult, placesResult, itinerariesResult] =
+  // Damage charges only need the booking ids, so they load alongside the
+  // rest instead of as a separate round afterwards.
+  const [clientsResult, quotesResult, placesResult, itinerariesResult, damageResult] =
     await Promise.all([
       supabase
         .from('clients')
@@ -162,6 +166,7 @@ export async function loadPaymentDueReport(
         // contract -- otherwise a partly cancelled booking could never
         // reach "all trips done" and would stay on the report forever.
         .neq('itinerary_status', 'Cancelled'),
+      loadClientDamageChargesByBooking(bookingIds),
     ])
 
   if (clientsResult.error) {
@@ -177,8 +182,7 @@ export async function loadPaymentDueReport(
     return { rows: [], error: itinerariesResult.error.message }
   }
 
-  const { byBooking: damageByBooking, error: damageError } =
-    await loadClientDamageChargesByBooking(bookingIds)
+  const { byBooking: damageByBooking, error: damageError } = damageResult
   if (damageError) {
     return { rows: [], error: damageError }
   }

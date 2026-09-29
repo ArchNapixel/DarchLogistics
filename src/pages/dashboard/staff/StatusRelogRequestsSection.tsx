@@ -11,8 +11,9 @@ import {
   rejectStatusRelogRequest,
   type PendingRelogRequest,
 } from '../../../lib/statusRelogRequests'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
-function StatusRelogRequestsSection() {
+function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
   const [requests, setRequests] = useState<PendingRelogRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,6 +64,7 @@ function StatusRelogRequestsSection() {
     }
 
     setRequests((prev) => prev.filter((r) => r.request_id !== request.request_id))
+    onChanged?.()
   }
 
   async function handleReject(request: PendingRelogRequest) {
@@ -73,12 +75,13 @@ function StatusRelogRequestsSection() {
       return
     }
 
-    const note = window.prompt(`Reason for rejecting this request for ${request.target_label}?`)
+    const note = await promptDialog({
+      title: 'Reject request',
+      message: `Why is the request for ${request.target_label} being rejected?`,
+      confirmLabel: 'Reject',
+      danger: true,
+    })
     if (note === null) return
-    if (!note.trim()) {
-      setActionError('Enter a reason before rejecting.')
-      return
-    }
 
     setBusyId(request.request_id)
     setActionError(null)
@@ -97,6 +100,7 @@ function StatusRelogRequestsSection() {
     }
 
     setRequests((prev) => prev.filter((r) => r.request_id !== request.request_id))
+    onChanged?.()
   }
 
   if (loading) {

@@ -112,7 +112,7 @@ export type WorkOrderStatusLogEntry = {
   changed_at: string
 }
 
-export async function loadWorkOrderStatusLog(): Promise<{
+export async function loadWorkOrderStatusLog(limit?: number): Promise<{
   entries: WorkOrderStatusLogEntry[]
   error: string | null
 }> {
@@ -120,6 +120,7 @@ export async function loadWorkOrderStatusLog(): Promise<{
     .from('work_order_status_log')
     .select('log_id, work_order_id, previous_status, new_status, changed_by, created_at')
     .order('created_at', { ascending: false })
+    .limit(limit ?? 100000)
 
   if (error) {
     return { entries: [], error: error.message }

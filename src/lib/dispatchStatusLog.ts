@@ -13,7 +13,7 @@ export type DispatchStatusLogEntry = {
   changed_at: string
 }
 
-export async function loadDispatchStatusLog(): Promise<{
+export async function loadDispatchStatusLog(limit?: number): Promise<{
   entries: DispatchStatusLogEntry[]
   error: string | null
 }> {
@@ -21,7 +21,8 @@ export async function loadDispatchStatusLog(): Promise<{
     supabase
       .from('dispatch_status_logs')
       .select('log_id, itinerary_id, previous_status, new_status, changed_by, status_changed_at')
-      .order('status_changed_at', { ascending: false }),
+      .order('status_changed_at', { ascending: false })
+      .limit(limit ?? 100000),
   )
 }
 

@@ -8,9 +8,9 @@ import Footer from '../components/Footer'
 import QuoteForm from '../components/QuoteForm'
 
 const steps = [
-  'Dispatch reviews dimensions and tonnage against available trailers.',
-  'We confirm whether the load needs escort or permits.',
-  'You get a rate and a pickup slot, same business day.',
+  'We check your load against our trailers.',
+  'We confirm escort and permit needs.',
+  'You get a rate and pickup slot the same day.',
 ]
 
 function QuoteRequestPage() {
@@ -28,11 +28,10 @@ function QuoteRequestPage() {
             Quote Request
           </p>
           <h1 className="mt-3 font-display text-3xl font-semibold uppercase leading-tight text-white sm:text-5xl">
-            Tell us what has to move
+            Tell us what to move
           </h1>
           <p className="mt-4 max-w-xl text-slate-200">
-            Dispatch replies with a rate the same business day. Urgent port
-            pickups are flagged first.
+            Rates the same business day.
           </p>
         </div>
       </div>
@@ -48,7 +47,7 @@ function QuoteRequestPage() {
               <>
                 <div className="border border-slate-300 bg-white p-5">
                   <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
-                    What Happens Next
+                    Next Steps
                   </p>
                   <ol className="mt-3 flex flex-col gap-3 text-sm text-slate-700">
                     {steps.map((step, index) => (

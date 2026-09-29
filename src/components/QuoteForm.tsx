@@ -116,12 +116,12 @@ function QuoteForm({
       onSubmit={handleSubmit}
       submitting={submitting}
       submitError={submitError}
-      submitLabel="Send quote request"
+      submitLabel="Send"
       aside={aside}
       contactSection={
         <div className="grid gap-4 border border-slate-200 bg-white p-4 sm:grid-cols-2">
           <p className="text-sm font-semibold text-slate-900 sm:col-span-2">
-            Where should we send the quote?
+            Contact
           </p>
           <Field label="Name or company" error={contactErrors.clientName}>
             <TextInput

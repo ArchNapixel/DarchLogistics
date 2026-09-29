@@ -16,8 +16,9 @@ import {
   rejectMaintenanceRequest,
   type PendingMaintenanceRequest,
 } from '../../../lib/maintenanceRequests'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
-function MaintenanceRequestsSection() {
+function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const { role, employeeId } = useAuth()
   const canDecide = isAdmin(role)
 
@@ -70,6 +71,7 @@ function MaintenanceRequestsSection() {
     }
 
     setRequests((prev) => prev.filter((r) => r.request_id !== request.request_id))
+    onChanged?.()
   }
 
   async function handleReject(request: PendingMaintenanceRequest) {
@@ -80,12 +82,13 @@ function MaintenanceRequestsSection() {
       return
     }
 
-    const reason = window.prompt('Reason for rejecting this maintenance request?')
+    const reason = await promptDialog({
+      title: 'Reject maintenance request',
+      message: `Why is the request for ${request.vehicle_label} being rejected?`,
+      confirmLabel: 'Reject',
+      danger: true,
+    })
     if (reason === null) return
-    if (!reason.trim()) {
-      setActionError('A rejection reason is required.')
-      return
-    }
 
     setDecidingId(request.request_id)
     setActionError(null)
@@ -104,6 +107,7 @@ function MaintenanceRequestsSection() {
     }
 
     setRequests((prev) => prev.filter((r) => r.request_id !== request.request_id))
+    onChanged?.()
   }
 
   if (loading) {

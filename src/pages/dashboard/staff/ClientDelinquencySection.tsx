@@ -21,8 +21,10 @@ import {
   type OverdueRiskClient,
   type DelinquencyLogEntry,
 } from '../../../lib/clientDelinquency'
+import { promptDialog } from '../../../components/ConfirmDialog'
+import { LoadMore, LOG_PAGE_SIZE } from '../../../components/LoadMore'
 
-function ClientDelinquencySection() {
+function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
   const [delinquent, setDelinquent] = useState<CurrentDelinquentClient[]>([])
   const [overdueRisk, setOverdueRisk] = useState<OverdueRiskClient[]>([])
@@ -32,17 +34,19 @@ function ClientDelinquencySection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyClientId, setBusyClientId] = useState<number | null>(null)
 
+  const [limit, setLimit] = useState(LOG_PAGE_SIZE)
+
   useEffect(() => {
-    load()
-  }, [])
+    load(limit)
+  }, [limit])
 
-  async function load() {
-    setLoading(true)
-
+  // No setLoading(true) here: after Mark/Unmark or "Show more" the page
+  // updates in place instead of flashing back to "Loading".
+  async function load(rowLimit: number) {
     const [thresholdResult, delinquentResult, historyResult] = await Promise.all([
       loadDelinquencyThresholdDays(),
       loadCurrentlyDelinquentClients(),
-      loadDelinquencyLog(),
+      loadDelinquencyLog(rowLimit),
     ])
 
     if (delinquentResult.error) {
@@ -80,12 +84,14 @@ function ClientDelinquencySection() {
       return
     }
 
-    const reason = window.prompt(`Reason for marking ${clientName} as delinquent?`, suggestedReason)
+    const reason = await promptDialog({
+      title: `Mark ${clientName} as delinquent`,
+      message: 'Why is this client being flagged?',
+      defaultValue: suggestedReason,
+      confirmLabel: 'Mark delinquent',
+      danger: true,
+    })
     if (reason === null) return
-    if (!reason.trim()) {
-      setActionError('Enter a reason before saving.')
-      return
-    }
 
     setBusyClientId(clientId)
     setActionError(null)
@@ -103,7 +109,8 @@ function ClientDelinquencySection() {
       return
     }
 
-    load()
+    load(limit)
+    onChanged?.()
   }
 
   async function handleUnmark(clientId: number, clientName: string) {
@@ -114,12 +121,12 @@ function ClientDelinquencySection() {
       return
     }
 
-    const reason = window.prompt(`Reason for clearing ${clientName}'s delinquent status?`)
+    const reason = await promptDialog({
+      title: `Clear ${clientName}'s status`,
+      message: 'Why is the delinquent flag being removed?',
+      confirmLabel: 'Clear status',
+    })
     if (reason === null) return
-    if (!reason.trim()) {
-      setActionError('Enter a reason before saving.')
-      return
-    }
 
     setBusyClientId(clientId)
     setActionError(null)
@@ -137,7 +144,8 @@ function ClientDelinquencySection() {
       return
     }
 
-    load()
+    load(limit)
+    onChanged?.()
   }
 
   if (loading) {
@@ -266,6 +274,7 @@ function ClientDelinquencySection() {
           </table>
         </div>
       )}
+      <LoadMore shown={history.length} limit={limit} onMore={() => setLimit((n) => n + LOG_PAGE_SIZE)} />
     </div>
   )
 }

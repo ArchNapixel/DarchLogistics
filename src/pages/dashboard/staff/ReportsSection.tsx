@@ -1,14 +1,15 @@
-// ReportsSection: "Overview" shows real activity counts across the
-// other report tabs (issue reports, client requests, payslip issues,
-// work order completions/acceptances) as clickable cards that jump
-// straight to that tab. "Payments Due" is real, backed by
-// src/lib/paymentDue.ts -- the full breakdown across every client,
-// versus the simplified version on the Bookings page's side panel
-// (PaymentDuePanel.tsx). View-only: payments are recorded (and the
-// billable amount overridden, if needed) in Financial Records
-// (FinancialSection.tsx) instead. See paymentDue.ts for the due-date
-// rule and the override behavior.
-import { useEffect, useState } from 'react'
+// ReportsSection: one page, four groups.
+//   Overview      -- counts of what needs attention, click to jump
+//   Needs action  -- the approve/reject queues, one chip each
+//   Clients       -- payments due, reviews, delinquency
+//   Logs          -- read-only history
+// Each chip just renders the existing section component, so nothing
+// those sections do was changed. "Payments Due" is view-only, backed by
+// src/lib/paymentDue.ts (payments are recorded in Financial Records --
+// FinancialSection.tsx). See paymentDue.ts for the due-date rule.
+import { Fragment, useState } from 'react'
+import { useCachedLoad } from '../../../lib/useCachedLoad'
+import { SkeletonCards, SkeletonTable } from '../../../components/Skeleton'
 import {
   loadPaymentDueReport,
   formatDaysUntilDue,
@@ -18,11 +19,8 @@ import {
 import { supabase } from '../../../lib/supabaseClient'
 import { loadPendingStatusRequests } from '../../../lib/clientStatusRequests'
 import { loadPendingPayslipIssues } from '../../../lib/payslipIssueReports'
-import { loadWorkOrderAcceptanceLog } from '../../../lib/workOrderAcceptanceLog'
-import { loadWorkOrderCompletions } from '../../../lib/workOrderCompletions'
 import { loadPendingMaintenanceSchedules } from '../../../lib/maintenanceSchedules'
 import { loadPendingMaintenanceRequests } from '../../../lib/maintenanceRequests'
-import { loadAllReviews, averageRating } from '../../../lib/clientReviews'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
 import { loadPendingRelogRequests } from '../../../lib/statusRelogRequests'
 import IssueReportsSection from './IssueReportsSection'
@@ -38,224 +36,7 @@ import StatusRelogRequestsSection from './StatusRelogRequestsSection'
 import DispatchStatusLogSection from './DispatchStatusLogSection'
 import WorkOrderStatusLogSection from './WorkOrderStatusLogSection'
 
-const TABS = [
-  'Overview',
-  'Payments Due',
-  'Issue Reports',
-  'Client Requests',
-  'Work Order Completions',
-  'Work Order Acceptance',
-  'Payslip Issues',
-  'Maintenance Schedules',
-  'Maintenance Requests',
-  'Client Reviews',
-  'Client Standing',
-  'Status Relog Requests',
-  'Dispatch Status Log',
-  'Work Order Status Log',
-] as const
-type Tab = (typeof TABS)[number]
-
-type ReportActivityCard = {
-  tab: Tab
-  label: string
-  value: number
-  subtitle: string
-  // Mono accent ramp only -- no arbitrary per-card colors. Varying the
-  // step (not the hue) is what gives each card its own weight.
-  accent: 'bg-accent-100' | 'bg-accent-300' | 'bg-accent-500' | 'bg-accent-700' | 'bg-accent-900'
-}
-
-// The tab counts, loaded once for the whole Reports page: the same
-// numbers fill the Overview cards and the badges on the tab strip, so
-// fetching them per-tab would just repeat these ten queries.
-function useReportActivity() {
-  const [cards, setCards] = useState<ReportActivityCard[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function load() {
-    const [
-      issueReportsResult,
-      clientRequestsResult,
-      payslipIssuesResult,
-      completionsResult,
-      acceptancesResult,
-      maintenanceSchedulesResult,
-      maintenanceRequestsResult,
-      reviewsResult,
-      delinquentResult,
-      relogRequestsResult,
-    ] = await Promise.all([
-      supabase.from('issue_reports').select('*', { count: 'exact', head: true }),
-      loadPendingStatusRequests(),
-      loadPendingPayslipIssues(),
-      loadWorkOrderCompletions(),
-      loadWorkOrderAcceptanceLog(),
-      loadPendingMaintenanceSchedules(),
-      loadPendingMaintenanceRequests(),
-      loadAllReviews(),
-      loadCurrentlyDelinquentClients(),
-      loadPendingRelogRequests(),
-    ])
-
-    const loadError =
-      issueReportsResult.error?.message ??
-      clientRequestsResult.error ??
-      payslipIssuesResult.error ??
-      completionsResult.error ??
-      acceptancesResult.error ??
-      maintenanceSchedulesResult.error ??
-      maintenanceRequestsResult.error ??
-      reviewsResult.error ??
-      delinquentResult.error ??
-      relogRequestsResult.error
-
-    if (loadError) {
-      setError(loadError)
-      return
-    }
-
-    setError(null)
-    setCards([
-      {
-        tab: 'Issue Reports',
-        label: 'Issue Reports',
-        value: issueReportsResult.count ?? 0,
-        subtitle: 'Total reported by drivers',
-        accent: 'bg-accent-900',
-      },
-      {
-        tab: 'Client Requests',
-        label: 'Client Requests',
-        value: clientRequestsResult.requests.length,
-        subtitle: 'Awaiting a response',
-        accent: 'bg-accent-500',
-      },
-      {
-        tab: 'Payslip Issues',
-        label: 'Payslip Issues',
-        value: payslipIssuesResult.reports.length,
-        subtitle: 'Awaiting resolution',
-        accent: 'bg-accent-300',
-      },
-      {
-        tab: 'Work Order Completions',
-        label: 'Work Orders Completed',
-        value: completionsResult.completions.length,
-        subtitle: 'Total finished by mechanics',
-        accent: 'bg-accent-900',
-      },
-      {
-        tab: 'Work Order Acceptance',
-        label: 'Work Orders Accepted',
-        value: acceptancesResult.entries.length,
-        subtitle: 'Total acceptance events logged',
-        accent: 'bg-accent-500',
-      },
-      {
-        tab: 'Maintenance Schedules',
-        label: 'Maintenance Schedules',
-        value: maintenanceSchedulesResult.schedules.length,
-        subtitle: 'Upcoming, flagged by mechanics',
-        accent: 'bg-accent-300',
-      },
-      {
-        tab: 'Maintenance Requests',
-        label: 'Maintenance Requests',
-        value: maintenanceRequestsResult.requests.length,
-        subtitle: 'Awaiting admin approval',
-        accent: 'bg-accent-700',
-      },
-      {
-        tab: 'Client Reviews',
-        label: 'Client Reviews',
-        value: reviewsResult.reviews.length,
-        subtitle:
-          averageRating(reviewsResult.reviews) !== null
-            ? `Avg ${averageRating(reviewsResult.reviews)!.toFixed(1)} / 5`
-            : 'No reviews yet',
-        accent: 'bg-accent-500',
-      },
-      {
-        tab: 'Client Standing',
-        label: 'Delinquent Clients',
-        value: delinquentResult.clients.length,
-        subtitle: 'Currently flagged',
-        accent: 'bg-accent-900',
-      },
-      {
-        tab: 'Status Relog Requests',
-        label: 'Status Relog Requests',
-        value: relogRequestsResult.requests.length,
-        subtitle: 'Awaiting admin approval',
-        accent: 'bg-accent-500',
-      },
-    ])
-  }
-
-  return { cards, error }
-}
-
-function OverviewTab({
-  cards,
-  error,
-  onNavigate,
-}: {
-  cards: ReportActivityCard[] | null
-  error: string | null
-  onNavigate: (tab: Tab) => void
-}) {
-  // Decorative fill, not a precise proportion: 6% floor so a 0-value
-  // card still shows a sliver of track, scaled against the loudest
-  // card in the current batch.
-  const maxValue = cards ? Math.max(...cards.map((card) => card.value), 1) : 1
-
-  return (
-    <div>
-      <h3 className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
-        Report Activity
-      </h3>
-
-      {error && (
-        <p className="mt-3 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-          {error}
-        </p>
-      )}
-
-      {!error && !cards && (
-        <p className="mt-3 font-ui text-neutral-500">Loading report activity...</p>
-      )}
-
-      {cards && (
-        <div className="mt-3 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {cards.map((card) => (
-            <button
-              key={card.tab}
-              onClick={() => onNavigate(card.tab)}
-              className="reports-blueprint-card px-[22px] pt-[22px] pb-5 text-left hover:border-accent-500/60"
-            >
-              <p className="font-ui text-base text-reports-ink">{card.label}</p>
-              <p className="font-condensed mt-2.5 text-[36px] leading-none font-bold text-reports-ink">
-                {card.value}
-              </p>
-              <p className="mt-2.5 font-ui text-[13px] text-neutral-600">{card.subtitle}</p>
-              <div className="mt-4 h-1.5 w-full bg-neutral-200">
-                <div
-                  className={`h-full ${card.accent}`}
-                  style={{ width: `${Math.max(6, (card.value / maxValue) * 100)}%` }}
-                />
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+// ---------- Layout: groups and their chips ----------
 
 const BASE_DATE_SOURCE_LABELS: Record<PaymentDueRow['base_date_source'], string> = {
   actual: 'Actual delivery',
@@ -263,45 +44,23 @@ const BASE_DATE_SOURCE_LABELS: Record<PaymentDueRow['base_date_source'], string>
   unknown: 'Unknown',
 }
 
+// Payments Due: 8 columns; the rest of the detail opens under the row.
 function PaymentsDueTab() {
-  const [rows, setRows] = useState<PaymentDueRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data } = useCachedLoad('reports:payments-due', loadPaymentDueReport)
+  const [openId, setOpenId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function load() {
-    setLoading(true)
-
-    const { rows: loadedRows, error: loadError } = await loadPaymentDueReport()
-
-    if (loadError) {
-      setError(loadError)
-      setLoading(false)
-      return
-    }
-
-    setRows(loadedRows)
-    setError(null)
-    setLoading(false)
-  }
-
-  if (loading) {
-    return <p className="text-slate-500">Loading payment due report...</p>
-  }
-
+  if (!data) return <SkeletonTable cols={8} />
+  const { rows, error } = data
   if (rows.length === 0 && !error) {
     return <p className="text-slate-500">No outstanding balances right now.</p>
   }
 
+  const money = (n: number) => `₱${n.toLocaleString()}`
+
   return (
     <div>
       {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </p>
+        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -310,81 +69,84 @@ function PaymentsDueTab() {
             <tr>
               <th className="px-4 py-3 font-medium">Booking</th>
               <th className="px-4 py-3 font-medium">Client</th>
-              <th className="px-4 py-3 font-medium">Origin → Destination</th>
-              <th className="px-4 py-3 font-medium">Rate/Trip</th>
-              <th className="px-4 py-3 font-medium">Trips</th>
-              <th className="px-4 py-3 font-medium">Contract Value</th>
+              <th className="px-4 py-3 font-medium">Route</th>
               <th className="px-4 py-3 font-medium">Billable</th>
               <th className="px-4 py-3 font-medium">Paid</th>
               <th className="px-4 py-3 font-medium">Balance</th>
-              <th className="px-4 py-3 font-medium">Terms</th>
-              <th className="px-4 py-3 font-medium">Base Date</th>
-              <th className="px-4 py-3 font-medium">Due Date</th>
+              <th className="px-4 py-3 font-medium">Due</th>
               <th className="px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
-              const due = formatDaysUntilDue(row.days_until_due)
+              // Nothing delivered yet: the due date is only an estimate, so
+              // don't flag it "Overdue" -- there's nothing to pay yet.
+              const notBillable = row.completed_trips === 0 && row.billable_amount <= 0
+              const due = notBillable
+                ? { label: 'Not billable yet', tone: 'unknown' as const }
+                : formatDaysUntilDue(row.days_until_due)
+              const open = openId === row.booking_id
               return (
-                <tr
-                  key={row.booking_id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 text-slate-900">
-                    #{row.booking_id}
-                  </td>
-                  <td className="px-4 py-3 text-slate-900">
-                    {row.client_name}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.pickup_place_name} → {row.delivery_place_name}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.rate_per_trip != null
-                      ? `₱${row.rate_per_trip.toLocaleString()}`
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.completed_trips}/{row.total_trips}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    ₱{row.total_contract_value.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    ₱{row.billable_amount.toLocaleString()}
-                    {row.amount_to_pay_override !== null && (
-                      <span className="ml-1.5 text-xs text-slate-400">
-                        (overridden)
+                <Fragment key={row.booking_id}>
+                  <tr
+                    onClick={() => setOpenId(open ? null : row.booking_id)}
+                    className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                  >
+                    <td className="px-4 py-3 text-slate-900">#{row.booking_id}</td>
+                    <td className="px-4 py-3 text-slate-900">{row.client_name}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.pickup_place_name} → {row.delivery_place_name}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{money(row.billable_amount)}</td>
+                    <td className="px-4 py-3 text-slate-600">{money(row.amount_paid)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {money(row.balance_due)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{row.due_date ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}>
+                        {due.label}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    ₱{row.amount_paid.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    ₱{row.balance_due.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.payment_terms}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.base_date ?? '—'}
-                    <span className="ml-1.5 text-xs text-slate-400">
-                      ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.due_date ?? '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}
-                    >
-                      {due.label}
-                    </span>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="border-b border-slate-100 bg-slate-50">
+                      <td colSpan={8} className="px-4 py-3">
+                        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                          <div>
+                            <dt className="text-xs text-slate-500">Rate / trip</dt>
+                            <dd className="text-slate-900">
+                              {row.rate_per_trip != null ? money(row.rate_per_trip) : '—'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Trips done</dt>
+                            <dd className="text-slate-900">
+                              {row.completed_trips}/{row.total_trips}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Contract value</dt>
+                            <dd className="text-slate-900">{money(row.total_contract_value)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Terms</dt>
+                            <dd className="text-slate-900">{row.payment_terms}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Base date</dt>
+                            <dd className="text-slate-900">
+                              {row.base_date ?? '—'} ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
+                            </dd>
+                          </div>
+                        </dl>
+                        {row.amount_to_pay_override !== null && (
+                          <p className="mt-2 text-xs text-slate-500">Billable amount was overridden.</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>
@@ -394,69 +156,208 @@ function PaymentsDueTab() {
   )
 }
 
-const TAB_COMPONENTS: Partial<Record<Tab, () => React.JSX.Element>> = {
-  'Payments Due': PaymentsDueTab,
-  'Issue Reports': IssueReportsSection,
-  'Client Requests': ClientStatusRequestsSection,
-  'Work Order Completions': WorkOrderCompletionsSection,
-  'Work Order Acceptance': WorkOrderAcceptanceLogSection,
-  'Payslip Issues': PayslipIssueReportsSection,
-  'Maintenance Schedules': MaintenanceSchedulesSection,
-  'Maintenance Requests': MaintenanceRequestsSection,
-  'Client Reviews': ClientReviewsSection,
-  'Client Standing': ClientDelinquencySection,
-  'Status Relog Requests': StatusRelogRequestsSection,
-  'Dispatch Status Log': DispatchStatusLogSection,
-  'Work Order Status Log': WorkOrderStatusLogSection,
+// onChanged: a queue tells the page "I just approved/rejected something" so the badges re-count.
+type Item = { label: string; Component: (props: { onChanged?: () => void }) => React.JSX.Element }
+type Group = { name: string; items: Item[] }
+
+const GROUPS: Group[] = [
+  { name: 'Overview', items: [] },
+  {
+    name: 'Needs action',
+    items: [
+      { label: 'Issue Reports', Component: IssueReportsSection },
+      { label: 'Client Requests', Component: ClientStatusRequestsSection },
+      { label: 'Payslip Issues', Component: PayslipIssueReportsSection },
+      { label: 'Maintenance Requests', Component: MaintenanceRequestsSection },
+      { label: 'Maintenance Schedules', Component: MaintenanceSchedulesSection },
+      { label: 'Status Relog Requests', Component: StatusRelogRequestsSection },
+    ],
+  },
+  {
+    name: 'Clients',
+    items: [
+      { label: 'Payments Due', Component: PaymentsDueTab },
+      { label: 'Reviews', Component: ClientReviewsSection },
+      { label: 'Standing', Component: ClientDelinquencySection },
+    ],
+  },
+  {
+    name: 'Logs',
+    items: [
+      { label: 'Work Orders Completed', Component: WorkOrderCompletionsSection },
+      { label: 'Work Orders Accepted', Component: WorkOrderAcceptanceLogSection },
+      { label: 'Work Order Status', Component: WorkOrderStatusLogSection },
+      { label: 'Dispatch Status', Component: DispatchStatusLogSection },
+    ],
+  },
+]
+
+// ---------- Counts (pending work only) ----------
+
+// Loaded once for the page: the same numbers fill the Overview and the
+// badges on the group tabs and chips. Key = chip label.
+async function loadCounts(): Promise<{ counts: Record<string, number> | null; error: string | null }> {
+  const [issues, clientReqs, payslips, mReqs, mScheds, relogs, delinquent] = await Promise.all([
+    supabase
+      .from('issue_reports')
+      .select('*', { count: 'exact', head: true })
+      .or('worked_on.is.null,worked_on.eq.false'),
+    loadPendingStatusRequests(),
+    loadPendingPayslipIssues(),
+    loadPendingMaintenanceRequests(),
+    loadPendingMaintenanceSchedules(),
+    loadPendingRelogRequests(),
+    loadCurrentlyDelinquentClients(),
+  ])
+
+  const loadError =
+    issues.error?.message ??
+    clientReqs.error ??
+    payslips.error ??
+    mReqs.error ??
+    mScheds.error ??
+    relogs.error ??
+    delinquent.error
+  if (loadError) return { counts: null, error: loadError }
+
+  return {
+    error: null,
+    counts: {
+      'Issue Reports': issues.count ?? 0,
+      'Client Requests': clientReqs.requests.length,
+      'Payslip Issues': payslips.reports.length,
+      'Maintenance Requests': mReqs.requests.length,
+      'Maintenance Schedules': mScheds.schedules.length,
+      'Status Relog Requests': relogs.requests.length,
+      Standing: delinquent.clients.length,
+    },
+  }
+}
+
+const OVERVIEW_SUBTITLES: Record<string, string> = {
+  'Issue Reports': 'Not yet worked on',
+  'Client Requests': 'Awaiting a response',
+  'Payslip Issues': 'Awaiting resolution',
+  'Maintenance Requests': 'Awaiting approval',
+  'Maintenance Schedules': 'Upcoming',
+  'Status Relog Requests': 'Awaiting approval',
+  Standing: 'Delinquent clients',
+}
+
+function Badge({ n }: { n: number }) {
+  if (n <= 0) return null
+  return (
+    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
+      {n}
+    </span>
+  )
+}
+
+function Overview({
+  counts,
+  error,
+  onOpen,
+}: {
+  counts: Record<string, number> | null
+  error: string | null
+  onOpen: (group: string, item: string) => void
+}) {
+  if (error) return <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+  if (!counts) return <SkeletonCards />
+
+  // Only things with something waiting.
+  const pending = GROUPS.flatMap((group) =>
+    group.items
+      .filter((item) => (counts[item.label] ?? 0) > 0)
+      .map((item) => ({ group: group.name, label: item.label, value: counts[item.label] })),
+  )
+
+  if (pending.length === 0) return <p className="text-slate-500">Nothing needs action right now.</p>
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {pending.map((p) => (
+        <button
+          key={p.label}
+          onClick={() => onOpen(p.group, p.label)}
+          className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400"
+        >
+          <p className="text-2xl font-bold text-slate-900">{p.value}</p>
+          <p className="mt-1 text-sm font-medium text-slate-700">{p.label}</p>
+          <p className="text-xs text-slate-500">{OVERVIEW_SUBTITLES[p.label]}</p>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function ReportsSection() {
-  const [activeTab, setActiveTab] = useState<Tab>('Overview')
-  const { cards, error: cardsError } = useReportActivity()
-  const ActiveTabComponent = activeTab === 'Overview' ? null : TAB_COMPONENTS[activeTab]
+  const [groupName, setGroupName] = useState('Overview')
+  const [itemLabel, setItemLabel] = useState('')
+  const { data: loaded, refresh: refreshCounts } = useCachedLoad('reports:counts', loadCounts)
+  const counts = loaded?.counts ?? null
+  const error = loaded?.error ?? null
 
-  // Only the tabs that have an Overview card get a badge -- Payments
-  // Due and the two status logs aren't counted there, and Overview
-  // itself is the summary, so none of them get one.
-  const countByTab = new Map(cards?.map((card) => [card.tab, card.value]))
+  const group = GROUPS.find((g) => g.name === groupName)!
+  const item = group.items.find((i) => i.label === itemLabel) ?? group.items[0]
+  const count = (label: string) => counts?.[label] ?? 0
+  // "Standing" is a status, not work waiting -- keep it out of the group badge.
+  const groupCount = (g: Group) =>
+    g.items.reduce((sum, i) => sum + (i.label === 'Standing' ? 0 : count(i.label)), 0)
+
+  function open(group: string, item: string) {
+    setGroupName(group)
+    setItemLabel(item)
+    // Counts may have changed since the last look (e.g. after acting on a queue).
+    refreshCounts()
+  }
 
   return (
-    <div className="bg-reports-bg -m-6 p-6">
-      <h2 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
-        Reports
-      </h2>
+    <div>
+      <h2 className="text-xl font-bold text-slate-900">Reports</h2>
 
-      <div className="mt-5 flex flex-wrap gap-7 border-b border-reports-hairline">
-        {TABS.map((tab) => {
-          const count = countByTab.get(tab)
+      <div className="mt-4 flex gap-2 border-b border-slate-200">
+        {GROUPS.map((g) => (
+          <button
+            key={g.name}
+            onClick={() => open(g.name, '')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium ${
+              groupName === g.name
+                ? 'border-b-2 border-slate-900 text-slate-900'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {g.name}
+            <Badge n={groupCount(g)} />
+          </button>
+        ))}
+      </div>
 
-          return (
+      {item && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {group.items.map((i) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`font-ui flex items-center gap-2 pb-2.5 text-[15px] ${
-                activeTab === tab
-                  ? 'border-b-2 border-accent-700 font-semibold text-reports-ink'
-                  : 'text-neutral-600 hover:text-neutral-800'
+              key={i.label}
+              onClick={() => open(group.name, i.label)}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${
+                i.label === item.label
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-300 text-slate-700 hover:border-slate-500'
               }`}
             >
-              {tab}
-              {count !== undefined && count > 0 && (
-                <span className="font-condensed bg-accent-700 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white">
-                  {count}
+              {i.label}
+              {count(i.label) > 0 && (
+                <span className={i.label === item.label ? 'text-slate-300' : 'text-slate-500'}>
+                  {count(i.label)}
                 </span>
               )}
             </button>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-6">
-        {activeTab === 'Overview' ? (
-          <OverviewTab cards={cards} error={cardsError} onNavigate={setActiveTab} />
-        ) : (
-          ActiveTabComponent && <ActiveTabComponent />
-        )}
+      <div className="mt-5">
+        {item ? <item.Component onChanged={refreshCounts} /> : <Overview counts={counts} error={error} onOpen={open} />}
       </div>
     </div>
   )

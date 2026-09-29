@@ -19,7 +19,7 @@ export type WorkOrderCompletion = {
   parts_used: { item_name_text: string; quantity: number }[]
 }
 
-export async function loadWorkOrderCompletions(): Promise<{
+export async function loadWorkOrderCompletions(limit?: number): Promise<{
   completions: WorkOrderCompletion[]
   error: string | null
 }> {
@@ -29,6 +29,7 @@ export async function loadWorkOrderCompletions(): Promise<{
       'completion_id, work_order_id, employee_id, description, odometer_reading, next_service_date, notes, completed_at',
     )
     .order('completed_at', { ascending: false })
+    .limit(limit ?? 100000)
 
   if (completionsError) {
     return { completions: [], error: completionsError.message }

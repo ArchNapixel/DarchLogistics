@@ -2,6 +2,7 @@
 // status change -- who changed it, from what, to what, and when.
 // Backed by work_order_status_log.
 import { useEffect, useState } from 'react'
+import { LoadMore, LOG_PAGE_SIZE } from '../../../components/LoadMore'
 import {
   loadWorkOrderStatusLog,
   type WorkOrderStatusLogEntry,
@@ -12,13 +13,15 @@ function WorkOrderStatusLogSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
+  const [limit, setLimit] = useState(LOG_PAGE_SIZE)
 
-  async function load() {
-    setLoading(true)
-    const { entries: loaded, error: loadError } = await loadWorkOrderStatusLog()
+  useEffect(() => {
+    load(limit)
+  }, [limit])
+
+  // No setLoading(true) here: "Show more" keeps the table on screen.
+  async function load(rowLimit: number) {
+    const { entries: loaded, error: loadError } = await loadWorkOrderStatusLog(rowLimit)
 
     if (loadError) {
       setError(loadError)
@@ -44,31 +47,34 @@ function WorkOrderStatusLogSection() {
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-slate-500">
-          <tr>
-            <th className="px-4 py-3 font-medium">Work Order</th>
-            <th className="px-4 py-3 font-medium">Change</th>
-            <th className="px-4 py-3 font-medium">Changed By</th>
-            <th className="px-4 py-3 font-medium">When</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.log_id} className="border-b border-slate-100 last:border-0">
-              <td className="px-4 py-3 text-slate-900">{entry.work_order_number}</td>
-              <td className="px-4 py-3 text-slate-600">
-                {entry.previous_status} → {entry.new_status}
-              </td>
-              <td className="px-4 py-3 text-slate-600">{entry.changed_by_name}</td>
-              <td className="px-4 py-3 text-slate-600">
-                {new Date(entry.changed_at).toLocaleString()}
-              </td>
+    <div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-slate-200 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Work Order</th>
+              <th className="px-4 py-3 font-medium">Change</th>
+              <th className="px-4 py-3 font-medium">Changed By</th>
+              <th className="px-4 py-3 font-medium">When</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={entry.log_id} className="border-b border-slate-100 last:border-0">
+                <td className="px-4 py-3 text-slate-900">{entry.work_order_number}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {entry.previous_status} → {entry.new_status}
+                </td>
+                <td className="px-4 py-3 text-slate-600">{entry.changed_by_name}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {new Date(entry.changed_at).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <LoadMore shown={entries.length} limit={limit} onMore={() => setLimit((n) => n + LOG_PAGE_SIZE)} />
     </div>
   )
 }

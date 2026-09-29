@@ -29,7 +29,7 @@ export type WorkOrderAcceptanceEntry = {
   accepted_at: string
 }
 
-export async function loadWorkOrderAcceptanceLog(): Promise<{
+export async function loadWorkOrderAcceptanceLog(limit?: number): Promise<{
   entries: WorkOrderAcceptanceEntry[]
   error: string | null
 }> {
@@ -37,6 +37,7 @@ export async function loadWorkOrderAcceptanceLog(): Promise<{
     .from('work_order_acceptance_log')
     .select('log_id, work_order_id, employee_id, accepted_at')
     .order('accepted_at', { ascending: false })
+    .limit(limit ?? 100000)
 
   if (error) {
     return { entries: [], error: error.message }

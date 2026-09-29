@@ -8,8 +8,9 @@ import {
   resolvePayslipIssue,
   type PendingPayslipIssue,
 } from '../../../lib/payslipIssueReports'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
-function PayslipIssueReportsSection() {
+function PayslipIssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
   const [reports, setReports] = useState<PendingPayslipIssue[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,12 +45,12 @@ function PayslipIssueReportsSection() {
       return
     }
 
-    const input = window.prompt(`Resolution note for ${report.employee_name}?`)
+    const input = await promptDialog({
+      title: `Resolve ${report.employee_name}'s report`,
+      message: 'Add a note on how it was resolved.',
+      confirmLabel: 'Resolve',
+    })
     if (input === null) return
-    if (!input.trim()) {
-      setActionError('Enter a resolution note before saving.')
-      return
-    }
 
     setResolvingId(report.report_id)
     setActionError(null)
@@ -68,6 +69,7 @@ function PayslipIssueReportsSection() {
     }
 
     setReports((prev) => prev.filter((r) => r.report_id !== report.report_id))
+    onChanged?.()
   }
 
   if (loading) {

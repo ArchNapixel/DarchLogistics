@@ -144,9 +144,9 @@ function NewQuoteModal({
               .filter(Boolean)
               .join(' or ')}
             nextSteps={[
-              'Our team reviews your route, cargo, and proposed rate.',
-              "If anything needs adjusting, we'll contact you before approving.",
-              'Once approved, it appears under My Bookings with its trip schedule.',
+              'We review your route, cargo and rate.',
+              "We'll contact you if anything changes.",
+              'Once approved, it appears in My Bookings.',
             ]}
             actionLabel="Done"
             onAction={onCreated}
@@ -162,7 +162,7 @@ function NewQuoteModal({
             onSubmit={handleSubmit}
             submitting={submitting}
             submitError={submitError}
-            submitLabel="Send quote request"
+            submitLabel="Send"
             contactSection={
               <p className="border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                 {contactInfo ? (

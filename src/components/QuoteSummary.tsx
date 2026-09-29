@@ -60,10 +60,10 @@ function Stop({ letter, location }: { letter: 'A' | 'B'; location: LocationValue
         {chosen ? (
           formatLocationDisplay(location)
         ) : (
-          <Muted>{letter === 'A' ? 'Pickup not set' : 'Delivery not set'}</Muted>
+          <Muted>—</Muted>
         )}
         {chosen && location.lat !== null && (
-          <span className="block text-xs text-green-700">Exact spot pinned</span>
+          <span className="block text-xs text-green-700">Pinned</span>
         )}
       </span>
     </div>
@@ -103,23 +103,23 @@ export function QuoteSummary({
         {form.cargoDescription.trim() ? (
           <span className="text-slate-600">{form.cargoDescription.trim()}</span>
         ) : (
-          <Muted>No description yet</Muted>
+          <Muted>—</Muted>
         )}
       </Section>
 
-      <Section title="Schedule & terms" onEdit={onEditStep && (() => onEditStep('schedule'))}>
+      <Section title="Schedule" onEdit={onEditStep && (() => onEditStep('schedule'))}>
         <span>
           Pickup:{' '}
-          {form.preferredPickupDate ? formatDate(form.preferredPickupDate) : <Muted>not set</Muted>}
+          {form.preferredPickupDate ? formatDate(form.preferredPickupDate) : <Muted>—</Muted>}
         </span>
         <span>
           Delivery:{' '}
           {form.isLastDayOfPortStorage === 'Yes' ? (
-            <span className="font-medium text-amber-700">Priority, dispatch will call</span>
+            <span className="font-medium text-amber-700">Urgent</span>
           ) : form.preferredDeliveryDate ? (
             formatDate(form.preferredDeliveryDate)
           ) : (
-            <Muted>not set</Muted>
+            <Muted>—</Muted>
           )}
         </span>
         <span>Payment: {PAYMENT_TERMS_LABELS[form.paymentTerms]}</span>
@@ -171,13 +171,12 @@ export function QuoteSubmitted({
           </svg>
         </span>
         <div>
-          <h3 className="text-xl font-semibold text-slate-900">Quote request received</h3>
+          <h3 className="text-xl font-semibold text-slate-900">Quote received</h3>
           <p className="mt-1 text-sm text-slate-600">
-            Your reference number is{' '}
+            Reference{' '}
             <span className="font-mono text-base font-semibold tracking-wider text-slate-900">
               {referenceCode}
             </span>
-            . Mention it if you call us about this request.
           </p>
         </div>
       </div>
@@ -185,7 +184,7 @@ export function QuoteSubmitted({
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <div>
           <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            What happens next
+            Next
           </p>
           <ol className="mt-2 flex flex-col gap-2 text-sm text-slate-700">
             {nextSteps.map((step, index) => (
@@ -196,7 +195,7 @@ export function QuoteSubmitted({
             ))}
           </ol>
           <p className="mt-4 text-sm text-slate-600">
-            We'll reach you at <span className="font-medium text-slate-900">{contactLine}</span>.
+            Contact: <span className="font-medium text-slate-900">{contactLine}</span>.
           </p>
         </div>
         <div className="border border-slate-200 bg-slate-50 p-4">

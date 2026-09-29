@@ -145,7 +145,7 @@ export function RouteFields({
       />
       {cities.length > 0 && (
         <p className="col-span-full text-xs text-slate-500">
-          Serving {cities.join(', ')}. Elsewhere? Call{' '}
+          {cities.join(', ')} only. Others:{' '}
           <a href="tel:09660475467" className="font-medium text-slate-700 underline">
             0966 047 5467
           </a>
@@ -273,10 +273,10 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
       {form.isLastDayOfPortStorage === 'Yes' ? (
         <div className="col-span-full flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-3">
           <span className="mt-0.5 shrink-0 border border-amber-700 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-800 uppercase">
-            Priority
+            Urgent
           </span>
           <p className="text-sm text-slate-700">
-            Flagged for same-day dispatch. We'll call to confirm drop-off.
+            Same-day dispatch. We'll call.
           </p>
         </div>
       ) : (

@@ -13,7 +13,7 @@ import {
   type PendingMaintenanceSchedule,
 } from '../../../lib/maintenanceSchedules'
 
-function MaintenanceSchedulesSection() {
+function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
   const [schedules, setSchedules] = useState<PendingMaintenanceSchedule[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,6 +64,7 @@ function MaintenanceSchedulesSection() {
     }
 
     setSchedules((prev) => prev.filter((s) => s.schedule_id !== schedule.schedule_id))
+    onChanged?.()
   }
 
   if (loading) {

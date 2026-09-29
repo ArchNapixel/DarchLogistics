@@ -99,18 +99,14 @@ function sameSpot(a: LocationValue, b: LocationValue): boolean {
   return norm(a.detail) === norm(b.detail)
 }
 
-// Checks every shipment field and returns a message for each one with
-// a problem (empty object = all good). Number(...) on an empty/invalid
-// string gives NaN, which would otherwise be sent to Supabase and
-// silently saved as null -- caught here instead.
 // Contact checks shared by the public form and staff's phone-in modal.
 // Return an error message, or null when fine.
 // Phone: PH mobile (09xx / +639xx) or landline with area code.
 export function phoneError(phone: string): string | null {
   const digits = phone.replace(/[\s()-]/g, '')
-  if (!digits) return 'Enter a number we can call.'
+  if (!digits) return 'Enter a phone number.'
   if (!/^(?:\+?63|0)(?:9\d{9}|[2-8]\d{7,9})$/.test(digits)) {
-    return 'Enter a valid PH number, e.g. 0917 123 4567.'
+    return 'Invalid PH number.'
   }
   return null
 }
@@ -119,7 +115,7 @@ export function phoneError(phone: string): string | null {
 export function emailError(email: string): string | null {
   const value = email.trim()
   if (value && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(value)) {
-    return 'Enter a valid email, or leave blank.'
+    return 'Invalid email.'
   }
   return null
 }
@@ -127,57 +123,61 @@ export function emailError(email: string): string | null {
 // Heaviest load one trailer can carry.
 export const MAX_WEIGHT_TONS = 45
 
+// Checks every shipment field and returns a message for each one with
+// a problem (empty object = all good). Number(...) on an empty/invalid
+// string gives NaN, which would otherwise be sent to Supabase and
+// silently saved as null -- caught here instead.
 export function validateShipment(form: ShipmentForm): FieldErrors {
   const errors: FieldErrors = {}
   const { pickup, delivery } = form
 
   if (!pickup.city || !pickup.barangay) {
-    errors.pickup = 'Choose the pickup city and barangay.'
+    errors.pickup = 'Select city and barangay.'
   }
   if (!delivery.city || !delivery.barangay) {
-    errors.delivery = 'Choose the delivery city and barangay.'
+    errors.delivery = 'Select city and barangay.'
   } else if (!errors.pickup && sameSpot(pickup, delivery)) {
     errors.delivery =
-      'Pickup and delivery are the same place. Add a landmark or pin the exact spots to tell them apart.'
+      'Same as pickup. Add a landmark or pin.'
   }
 
   if (!form.cargoDescription.trim()) {
-    errors.cargoDescription = 'Describe the cargo.'
+    errors.cargoDescription = 'Required.'
   }
   const weight = Number(form.weight)
   if (!form.weight || Number.isNaN(weight) || weight <= 0) {
-    errors.weight = 'Enter a weight above 0 tons.'
+    errors.weight = 'Enter a weight.'
   } else if (weight > MAX_WEIGHT_TONS) {
-    errors.weight = `Maximum is ${MAX_WEIGHT_TONS} tons.`
+    errors.weight = `Max ${MAX_WEIGHT_TONS} tons.`
   } else if (!/^\d+(\.\d{1,2})?$/.test(form.weight)) {
-    errors.weight = 'Use up to 2 decimal places.'
+    errors.weight = 'Max 2 decimals.'
   }
   const deliveryOrderCount = Number(form.deliveryOrderCount)
   if (!Number.isInteger(deliveryOrderCount) || deliveryOrderCount <= 0) {
-    errors.deliveryOrderCount = 'Enter a whole number of deliveries (1 or more).'
+    errors.deliveryOrderCount = 'Enter 1 or more.'
   }
 
   if (!form.preferredPickupDate) {
-    errors.preferredPickupDate = 'Choose a pickup date.'
+    errors.preferredPickupDate = 'Select a date.'
   } else if (form.preferredPickupDate < todayDateString()) {
-    errors.preferredPickupDate = "Pickup date can't be in the past."
+    errors.preferredPickupDate = 'Date is in the past.'
   }
   if (form.isLastDayOfPortStorage === 'No') {
     if (!form.preferredDeliveryDate) {
-      errors.preferredDeliveryDate = 'Choose a delivery date.'
+      errors.preferredDeliveryDate = 'Select a date.'
     } else if (
       form.preferredPickupDate &&
       form.preferredDeliveryDate < form.preferredPickupDate
     ) {
-      errors.preferredDeliveryDate = "Delivery date can't be before the pickup date."
+      errors.preferredDeliveryDate = 'Before pickup date.'
     }
   }
 
   const proposedRate = Number(form.proposedRate)
   if (!form.proposedRate || Number.isNaN(proposedRate) || proposedRate <= 0) {
-    errors.proposedRate = 'Enter a rate above ₱0.'
+    errors.proposedRate = 'Enter a rate.'
   } else if (!/^\d+(\.\d{1,2})?$/.test(form.proposedRate)) {
-    errors.proposedRate = 'Use up to 2 decimal places.'
+    errors.proposedRate = 'Max 2 decimals.'
   }
 
   return errors

@@ -67,7 +67,7 @@ async function withNamesJoined(rows: {
 }
 
 // Full history, newest first -- the read-only audit trail.
-export async function loadDelinquencyLog(): Promise<{
+export async function loadDelinquencyLog(limit?: number): Promise<{
   entries: DelinquencyLogEntry[]
   error: string | null
 }> {
@@ -75,6 +75,7 @@ export async function loadDelinquencyLog(): Promise<{
     .from('client_delinquency_log')
     .select('log_id, client_id, action, reason, changed_by_employee_id, created_at')
     .order('created_at', { ascending: false })
+    .limit(limit ?? 100000)
 
   if (error) {
     return { entries: [], error: error.message }
