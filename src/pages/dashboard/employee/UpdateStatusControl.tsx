@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 // The driver's part of the flow -- Delivered is set by dispatch.
 const STATUS_FLOW = [
@@ -116,8 +117,13 @@ function UpdateStatusControl({
     }
   }
 
-  function handleClick() {
-    if (!window.confirm(`Mark this trip as "${nextLabel}"? This can't be undone from your side.`)) {
+  async function handleClick() {
+    if (
+      !(await confirmDialog({
+        message: `Mark this trip as "${nextLabel}"? This can't be undone from your side.`,
+        confirmLabel: `Mark as ${nextLabel}`,
+      }))
+    ) {
       return
     }
     advanceTo(nextStatus!)

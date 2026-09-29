@@ -9,6 +9,7 @@ import AddInventoryItemModal, {
   type EditableInventoryItem,
 } from './AddInventoryItemModal'
 import InventoryReportModal from './InventoryReportModal'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type InventoryItem = {
   item_id: number
@@ -73,7 +74,14 @@ function InventorySection() {
   }
 
   async function handleDelete(item: InventoryItem) {
-    if (!window.confirm(`Delete ${item.name}? This cannot be undone.`)) {
+    if (
+      !(await confirmDialog({
+        title: `Delete ${item.name}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    ) {
       return
     }
 

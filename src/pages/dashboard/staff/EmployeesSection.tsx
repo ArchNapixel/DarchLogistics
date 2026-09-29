@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
 import EmployeeDetailModal from './EmployeeDetailModal'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 // Only these positions have trips/work orders to show a detail view
 // for -- Admin/Dispatcher don't.
@@ -112,7 +113,14 @@ function EmployeesSection() {
         ? `Deactivate ${employee.name}? They'll be removed from the active roster and, if they have a login, signed out and blocked from logging back in. Their records (payslips, history, etc.) stay fully intact.`
         : `Reactivate ${employee.name}? They'll return to the active roster and be able to log in again.`
 
-    if (!window.confirm(confirmMessage)) return
+    if (
+      !(await confirmDialog({
+        message: confirmMessage,
+        title: statusName === 'Deactivated' ? `Deactivate ${employee.name}?` : `Reactivate ${employee.name}?`,
+        confirmLabel: statusName,
+      }))
+    )
+      return
 
     setSavingStatusId(employee.employee_id)
     setActionError(null)
@@ -133,7 +141,14 @@ function EmployeesSection() {
   }
 
   async function handleDelete(employee: Employee) {
-    if (!window.confirm(`Delete ${employee.name}? This cannot be undone.`)) {
+    if (
+      !(await confirmDialog({
+        title: `Delete ${employee.name}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    ) {
       return
     }
 

@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 import AddTruckModal from './AddTruckModal'
 import AddTrailerModal, { type EditableTrailer } from './AddTrailerModal'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type Truck = {
   plate_number: string
@@ -68,7 +69,14 @@ function FleetSection() {
   }, [])
 
   async function handleDeleteTruck(truck: Truck) {
-    if (!window.confirm(`Delete truck ${truck.plate_number}? This cannot be undone.`)) {
+    if (
+      !(await confirmDialog({
+        title: `Delete truck ${truck.plate_number}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    ) {
       return
     }
 
@@ -104,9 +112,12 @@ function FleetSection() {
 
   async function handleDeleteTrailer(trailer: Trailer) {
     if (
-      !window.confirm(
-        `Delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`}? This cannot be undone.`,
-      )
+      !(await confirmDialog({
+        title: `Delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
     ) {
       return
     }

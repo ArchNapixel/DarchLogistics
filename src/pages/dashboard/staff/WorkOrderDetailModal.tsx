@@ -18,6 +18,7 @@ import { loadWorkOrderNotes, type WorkOrderNote } from '../../../lib/workOrderNo
 import { loadWorkOrderPartsLog, type LoggedPart } from '../../../lib/workOrderPartsLog'
 import { formatDate } from '../../../lib/quoteRequest'
 import { ALL_STATUSES, StatusBadge } from '../employee/MechanicTasks'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 export type WorkOrderDetail = {
   work_order_id: number
@@ -72,9 +73,11 @@ function WorkOrderDetailModal({
   async function handleStatusChange(newStatus: string) {
     if (
       newStatus === 'Cancelled' &&
-      !window.confirm(
-        `Cancel ${order.work_order_number}? The ${order.vehicle_label.toLowerCase()} will be set back to Available.`,
-      )
+      !(await confirmDialog({
+        message: `Cancel ${order.work_order_number}? The ${order.vehicle_label.toLowerCase()} will be set back to Available.`,
+        confirmLabel: 'Cancel order',
+        danger: true,
+      }))
     ) {
       return
     }

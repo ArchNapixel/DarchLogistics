@@ -15,6 +15,7 @@ import {
 import LocationPicker from './LocationPicker'
 import { citiesFrom, loadLocationReference } from '../lib/locationReference'
 import {
+  MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
   todayDateString,
   type FieldErrors,
@@ -144,7 +145,7 @@ export function RouteFields({
       />
       {cities.length > 0 && (
         <p className="col-span-full text-xs text-slate-500">
-          We currently serve {cities.join(', ')}. For anywhere else, call dispatch at{' '}
+          Serving {cities.join(', ')}. Elsewhere? Call{' '}
           <a href="tel:09660475467" className="font-medium text-slate-700 underline">
             0966 047 5467
           </a>
@@ -173,7 +174,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
       />
 
       <ToggleGroup
-        label="Trailer size"
+        label="Trailer"
         options={[
           { value: '20ft', label: '20 ft' },
           { value: '40ft', label: '40 ft' },
@@ -182,7 +183,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         onChange={(value) => setField('containerType', value)}
       />
 
-      <Field label="Total weight" hint="(tons)" error={errors.weight}>
+      <Field label="Weight" hint="(tons)" error={errors.weight}>
         <input
           type="number"
           name="weight"
@@ -190,6 +191,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
           value={form.weight}
           onChange={handleChange}
           min="0"
+          max={MAX_WEIGHT_TONS}
           step="0.01"
           placeholder="e.g. 24.5"
           aria-invalid={errors.weight ? true : undefined}
@@ -197,11 +199,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         />
       </Field>
 
-      <Field
-        label="Number of deliveries"
-        hint="(one truck trip each)"
-        error={errors.deliveryOrderCount}
-      >
+      <Field label="Deliveries" hint="(trips)" error={errors.deliveryOrderCount}>
         <input
           type="number"
           name="deliveryOrderCount"
@@ -216,13 +214,13 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         />
       </Field>
 
-      <Field label="What are we moving?" error={errors.cargoDescription} wide>
+      <Field label="Cargo details" error={errors.cargoDescription} wide>
         <textarea
           name="cargoDescription"
           value={form.cargoDescription}
           onChange={handleChange}
           rows={3}
-          placeholder="What it is, how it's packed, and anything the crew should know (e.g. fragile, lifting points)"
+          placeholder="What it is, packing, handling notes"
           aria-invalid={errors.cargoDescription ? true : undefined}
           className={inputClasses(!!errors.cargoDescription)}
         />
@@ -255,7 +253,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
       </Field>
 
       <div className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-        <span>Is this the last day of free port storage?</span>
+        <span>Last free storage day?</span>
         <div role="radiogroup" className="flex items-center gap-6 py-2">
           {(['Yes', 'No'] as const).map((option) => (
             <label key={option} className="flex items-center gap-2 font-normal">
@@ -266,7 +264,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
                 onChange={() => setField('isLastDayOfPortStorage', option)}
                 className="accent-slate-900"
               />
-              {option === 'Yes' ? 'Yes, pickup is urgent' : 'No'}
+              {option}
             </label>
           ))}
         </div>
@@ -278,9 +276,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
             Priority
           </span>
           <p className="text-sm text-slate-700">
-            We'll flag this for same-day dispatch review. Delivery follows the
-            port gate slot, so there's no delivery date to pick; dispatch will
-            call you to confirm the drop-off window.
+            Flagged for same-day dispatch. We'll call to confirm drop-off.
           </p>
         </div>
       ) : (
@@ -297,7 +293,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         </Field>
       )}
 
-      <Field label="Proposed rate per delivery" hint="(PHP)" error={errors.proposedRate}>
+      <Field label="Rate per delivery" hint="(PHP)" error={errors.proposedRate}>
         <input
           type="number"
           name="proposedRate"
@@ -312,7 +308,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         />
         {showTotal && (
           <span className="text-xs font-normal text-slate-500">
-            ₱{(rate * deliveryCount).toLocaleString('en-PH')} total for {deliveryCount} deliveries
+            ₱{(rate * deliveryCount).toLocaleString('en-PH')} total
           </span>
         )}
       </Field>

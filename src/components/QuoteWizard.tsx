@@ -30,7 +30,7 @@ const STEPS = [
   },
   {
     id: 'schedule',
-    title: 'Schedule & terms',
+    title: 'Schedule',
     fields: [
       'preferredPickupDate',
       'isLastDayOfPortStorage',
@@ -187,7 +187,7 @@ function QuoteWizard({
           tabIndex={-1}
           className="mt-6 scroll-mt-24 text-lg font-semibold text-slate-900 focus:outline-none"
         >
-          {isReview ? 'Check your details and send' : step.title}
+          {isReview ? 'Review' : step.title}
         </h3>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -234,7 +234,7 @@ function QuoteWizard({
               ? submitting
                 ? 'Sending…'
                 : submitLabel
-              : `Continue to ${STEPS[stepIndex + 1].title.toLowerCase()}`}
+              : 'Next'}
           </button>
         </div>
       </form>
@@ -242,7 +242,7 @@ function QuoteWizard({
       <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
         {!isReview && (
           <div className="hidden border border-slate-200 bg-white p-4 lg:block">
-            <p className="mb-3 text-sm font-semibold text-slate-900">Your quote so far</p>
+            <p className="mb-3 text-sm font-semibold text-slate-900">Summary</p>
             <QuoteSummary form={form} />
           </div>
         )}

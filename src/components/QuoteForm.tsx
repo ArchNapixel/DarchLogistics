@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabaseClient'
 import QuoteWizard from './QuoteWizard'
 import { Field, TextInput } from './QuoteShipmentFields'
 import { QuoteSubmitted } from './QuoteSummary'
-import { buildQuoteRow, useShipmentForm } from '../lib/quoteRequest'
+import { buildQuoteRow, emailError, phoneError, useShipmentForm } from '../lib/quoteRequest'
 
 type Contact = { clientName: string; contactNumber: string; contactEmail: string }
 type ContactErrors = Partial<Record<keyof Contact, string>>
@@ -22,15 +22,10 @@ function validateContact(contact: Contact): ContactErrors {
   if (!contact.clientName.trim()) {
     errors.clientName = 'Enter your name or company name.'
   }
-  const digits = contact.contactNumber.replace(/[\s()-]/g, '')
-  if (!digits) {
-    errors.contactNumber = 'Enter a number we can call you on.'
-  } else if (!/^\+?\d{7,13}$/.test(digits)) {
-    errors.contactNumber = 'Enter a valid phone number, e.g. 0917 123 4567.'
-  }
-  if (contact.contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.contactEmail.trim())) {
-    errors.contactEmail = 'Enter a valid email address, or leave it blank.'
-  }
+  const phone = phoneError(contact.contactNumber)
+  if (phone) errors.contactNumber = phone
+  const email = emailError(contact.contactEmail)
+  if (email) errors.contactEmail = email
   return errors
 }
 

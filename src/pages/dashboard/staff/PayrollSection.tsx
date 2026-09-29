@@ -33,6 +33,7 @@ import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
 import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
 import AttendanceSection from './AttendanceSection'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type PayrollEntry = {
   payroll_id: number
@@ -209,10 +210,13 @@ function PayrollSection() {
   // on it are lost; a hold is kept.
   async function handleRegenerate(entry: PayrollEntry) {
     if (
-      !window.confirm(
-        `Recalculate ${entry.employee_name}'s draft (${entry.period}) from the current trips and attendance? ` +
+      !(await confirmDialog({
+        message:
+          `Recalculate ${entry.employee_name}'s draft (${entry.period}) from the current trips and attendance? ` +
           `Any edits you made to it will be lost.`,
-      )
+        confirmLabel: 'Regenerate',
+        danger: true,
+      }))
     ) {
       return
     }
@@ -389,14 +393,16 @@ function PayrollSection() {
           </p>
           {draftIds.length > 0 && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    `Finalize and release ${draftIds.length} draft payslip${draftIds.length === 1 ? '' : 's'} to employees?` +
+                  await confirmDialog({
+                    message:
+                      `Finalize and release ${draftIds.length} draft payslip${draftIds.length === 1 ? '' : 's'} to employees?` +
                       (heldCount + inProgressCount > 0
                         ? ' Drafts on hold or with the week still in progress are skipped.'
                         : ''),
-                  )
+                    confirmLabel: 'Finalize',
+                  })
                 ) {
                   handleFinalize(draftIds, 'all')
                 }

@@ -17,7 +17,7 @@ import {
   ScheduleFields,
   TextInput,
 } from '../../../components/QuoteShipmentFields'
-import { buildQuoteRow, useShipmentForm } from '../../../lib/quoteRequest'
+import { buildQuoteRow, emailError, phoneError, useShipmentForm } from '../../../lib/quoteRequest'
 
 type ClientFields = {
   clientName: string
@@ -118,9 +118,10 @@ function NewQuoteRequestModal({
     }
     if (clientMode === 'new') {
       if (!clientFields.clientName.trim()) foundClientErrors.clientName = 'Enter the client name.'
-      if (!clientFields.contactNumber.trim()) {
-        foundClientErrors.contactNumber = 'Enter a contact number.'
-      }
+      const phone = phoneError(clientFields.contactNumber)
+      if (phone) foundClientErrors.contactNumber = phone
+      const email = emailError(clientFields.contactEmail)
+      if (email) foundClientErrors.contactEmail = email
     }
     setClientErrors(foundClientErrors)
 
@@ -256,11 +257,12 @@ function NewQuoteRequestModal({
                       invalid={!!clientErrors.contactNumber}
                     />
                   </Field>
-                  <Field label="Email" hint="(optional)" wide>
+                  <Field label="Email" hint="(optional)" error={clientErrors.contactEmail} wide>
                     <TextInput
                       type="email"
                       value={clientFields.contactEmail}
                       onChange={(e) => setClientField('contactEmail', e.target.value)}
+                      invalid={!!clientErrors.contactEmail}
                     />
                   </Field>
                 </div>

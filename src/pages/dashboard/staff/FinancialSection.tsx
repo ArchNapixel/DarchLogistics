@@ -13,6 +13,7 @@ import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
@@ -376,11 +377,13 @@ function FinancialSection() {
       return
     }
     if (
-      !window.confirm(
-        `Mark booking #${booking.booking_id} as fully paid? This records ` +
+      !(await confirmDialog({
+        message:
+          `Mark booking #${booking.booking_id} as fully paid? This records ` +
           `the remaining ${formatMoney(remaining)} as paid, for a total of ` +
           `${formatMoney(target)}.`,
-      )
+        confirmLabel: 'Mark paid',
+      }))
     ) {
       return
     }

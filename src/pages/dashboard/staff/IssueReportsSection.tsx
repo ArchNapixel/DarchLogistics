@@ -11,6 +11,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import ConvertIssueToWorkOrderModal, {
   type ConvertibleIssueReport,
 } from './ConvertIssueToWorkOrderModal'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type IssueReport = ConvertibleIssueReport & {
   itinerary_id: number | null
@@ -97,7 +98,12 @@ function IssueReportsSection() {
   }
 
   async function handleMarkWorkedOn(report: IssueReport) {
-    if (!window.confirm(`Mark this report from ${report.employee_name} as worked on?`)) {
+    if (
+      !(await confirmDialog({
+        message: `Mark this report from ${report.employee_name} as worked on?`,
+        confirmLabel: 'Mark worked on',
+      }))
+    ) {
       return
     }
 

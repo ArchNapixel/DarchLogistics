@@ -103,6 +103,30 @@ function sameSpot(a: LocationValue, b: LocationValue): boolean {
 // a problem (empty object = all good). Number(...) on an empty/invalid
 // string gives NaN, which would otherwise be sent to Supabase and
 // silently saved as null -- caught here instead.
+// Contact checks shared by the public form and staff's phone-in modal.
+// Return an error message, or null when fine.
+// Phone: PH mobile (09xx / +639xx) or landline with area code.
+export function phoneError(phone: string): string | null {
+  const digits = phone.replace(/[\s()-]/g, '')
+  if (!digits) return 'Enter a number we can call.'
+  if (!/^(?:\+?63|0)(?:9\d{9}|[2-8]\d{7,9})$/.test(digits)) {
+    return 'Enter a valid PH number, e.g. 0917 123 4567.'
+  }
+  return null
+}
+
+// Email is optional: blank is fine.
+export function emailError(email: string): string | null {
+  const value = email.trim()
+  if (value && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(value)) {
+    return 'Enter a valid email, or leave blank.'
+  }
+  return null
+}
+
+// Heaviest load one trailer can carry.
+export const MAX_WEIGHT_TONS = 45
+
 export function validateShipment(form: ShipmentForm): FieldErrors {
   const errors: FieldErrors = {}
   const { pickup, delivery } = form
@@ -122,7 +146,11 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
   }
   const weight = Number(form.weight)
   if (!form.weight || Number.isNaN(weight) || weight <= 0) {
-    errors.weight = 'Enter the weight in tons.'
+    errors.weight = 'Enter a weight above 0 tons.'
+  } else if (weight > MAX_WEIGHT_TONS) {
+    errors.weight = `Maximum is ${MAX_WEIGHT_TONS} tons.`
+  } else if (!/^\d+(\.\d{1,2})?$/.test(form.weight)) {
+    errors.weight = 'Use up to 2 decimal places.'
   }
   const deliveryOrderCount = Number(form.deliveryOrderCount)
   if (!Number.isInteger(deliveryOrderCount) || deliveryOrderCount <= 0) {
@@ -147,7 +175,9 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
 
   const proposedRate = Number(form.proposedRate)
   if (!form.proposedRate || Number.isNaN(proposedRate) || proposedRate <= 0) {
-    errors.proposedRate = 'Enter your proposed rate per delivery.'
+    errors.proposedRate = 'Enter a rate above ₱0.'
+  } else if (!/^\d+(\.\d{1,2})?$/.test(form.proposedRate)) {
+    errors.proposedRate = 'Use up to 2 decimal places.'
   }
 
   return errors

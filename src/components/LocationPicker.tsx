@@ -9,7 +9,7 @@
 // The map pin is saved as lat/lng (the most precise thing we know about
 // the location -- QuoteReviewModal routes between the two pins for the
 // trip distance, and it's copied onto the booking for drivers). A pin
-// (map click or "Use my current location") is reverse-geocoded to
+// (map click or "Use my location") is reverse-geocoded to
 // *suggest* a city/barangay:
 //   - a spot that can't be placed in a serviced city changes nothing
 //   - otherwise the pin, city and barangay are replaced together; a
@@ -34,10 +34,10 @@ import { geocodePlace, reverseGeocode } from '../lib/geocoding'
 import { pickupIcon, deliveryIcon, DEFAULT_CENTER } from '../lib/leafletIcons'
 import type { LocationValue, RecentLocation } from '../lib/quoteRequest'
 
-const STOP_LABELS = { pickup: 'Pickup location', delivery: 'Delivery location' }
+const STOP_LABELS = { pickup: 'Pickup', delivery: 'Delivery' }
 
 const selectClasses =
-  'rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400'
+  'border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400'
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({
@@ -150,7 +150,7 @@ function LocationPicker({
   async function placePin(lat: number, lng: number) {
     const pinId = ++latestPin.current
     setPendingPin([lat, lng])
-    setMapNote('Finding that spot…')
+    setMapNote('Finding spot…')
 
     const address = await reverseGeocode(lat, lng)
     if (pinId !== latestPin.current) return
@@ -159,12 +159,12 @@ function LocationPicker({
     // A spot we can't place in a serviced city changes nothing -- the
     // form keeps whatever (consistent) pick it had before.
     if (!address) {
-      setMapNote("We couldn't look up that spot. Try again, or choose from the lists above.")
+      setMapNote("Couldn't look up that spot. Try again.")
       return
     }
     const match = matchLocation(rows, address)
     if (!match) {
-      setMapNote("That spot is outside the area we serve. Choose a spot in one of our cities.")
+      setMapNote("Outside our service area.")
       return
     }
 
@@ -184,19 +184,19 @@ function LocationPicker({
 
     setMapNote(
       match.barangay
-        ? `Pinned in Brgy. ${match.barangay}, ${match.city}. If the barangay is wrong, change it above.`
-        : `Pinned in ${match.city}. Choose the barangay above.`,
+        ? `Brgy. ${match.barangay}, ${match.city}`
+        : `${match.city}. Pick the barangay.`,
     )
   }
 
   function locateMe() {
     if (!navigator.geolocation) {
-      setMapNote("Your browser can't share its location. Click the map instead.")
+      setMapNote("Location unavailable. Click the map.")
       return
     }
     setShowMap(true)
     setLocating(true)
-    setMapNote('Finding your location…')
+    setMapNote('Locating…')
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocating(false)
@@ -208,8 +208,8 @@ function LocationPicker({
         setLocating(false)
         setMapNote(
           geoError.code === geoError.PERMISSION_DENIED
-            ? 'Location access is blocked. Allow it in your browser settings, or click the map instead.'
-            : "We couldn't find your location. Click the map instead.",
+            ? 'Location blocked. Click the map.'
+            : "Location not found. Click the map.",
         )
       },
       { enableHighAccuracy: true, timeout: 10000 },
@@ -238,7 +238,7 @@ function LocationPicker({
     if (items.length === 0) return null
     return (
       <div className="col-span-full flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-slate-500">{title}</span>
+        {title && <span className="text-xs font-medium text-slate-500">{title}</span>}
         {items.map((location, index) => {
           const selected = isSelected(location)
           return (
@@ -265,13 +265,17 @@ function LocationPicker({
   return (
     <fieldset
       aria-invalid={error ? true : undefined}
-      className={`col-span-full grid gap-3 border bg-white p-4 sm:grid-cols-2 ${
+      className={`col-span-full grid gap-3 border bg-white p-4 sm:grid-cols-2 sm:gap-x-4 ${
         error ? 'border-red-400' : 'border-slate-200'
       }`}
     >
-      <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
+      <legend className="sr-only">{STOP_LABELS[stop]}</legend>
+      {/* Visible heading lives inside the grid: a flex <legend> straddles the border and breaks the layout */}
+      <div
+        aria-hidden="true"
+        className="col-span-full flex items-center gap-2 text-sm font-semibold text-slate-800"
+      >
         <span
-          aria-hidden="true"
           className={`flex h-5 w-5 items-center justify-center text-[11px] font-bold text-white ${
             stop === 'pickup' ? 'bg-brand-steel' : 'bg-brand-navy'
           }`}
@@ -279,12 +283,12 @@ function LocationPicker({
           {stop === 'pickup' ? 'A' : 'B'}
         </span>
         {STOP_LABELS[stop]}
-      </legend>
+      </div>
 
       {loadError && <p className="col-span-full text-sm text-red-600">{loadError}</p>}
 
-      {renderShortcuts('Your recent locations', recentLocations)}
-      {renderShortcuts('Ports & terminals', namedShortcuts)}
+      {renderShortcuts('Recent', recentLocations)}
+      {renderShortcuts('', namedShortcuts)}
 
       <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
         City
@@ -301,7 +305,7 @@ function LocationPicker({
           }
           className={selectClasses}
         >
-          <option value="">Choose a city</option>
+          <option value="">Select</option>
           {cities.map((city) => (
             <option key={city} value={city}>
               {city}
@@ -318,7 +322,7 @@ function LocationPicker({
           disabled={!value.city}
           className={selectClasses}
         >
-          <option value="">{value.city ? 'Choose a barangay' : 'Choose a city first'}</option>
+          <option value="">{value.city ? 'Select' : '—'}</option>
           {barangays.map((barangay) => (
             <option key={barangay} value={barangay}>
               {barangay}
@@ -328,15 +332,12 @@ function LocationPicker({
       </label>
 
       <label className="col-span-full flex flex-col gap-1 text-sm font-medium text-slate-700">
-        <span>
-          Building, street, or landmark{' '}
-          <span className="font-normal text-slate-400">(optional)</span>
-        </span>
+        Address
         <input
           type="text"
           value={value.detail}
           onChange={(e) => onChange({ ...value, detail: e.target.value })}
-          placeholder="e.g. Warehouse 3, Km 7 Lanang"
+          placeholder="Street, building, landmark (optional)"
           className={selectClasses}
         />
       </label>
@@ -355,7 +356,7 @@ function LocationPicker({
           className="inline-flex items-center gap-1.5 border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
         >
           <PinIcon />
-          {showMap ? 'Hide map' : savedPin ? 'Move pin on map' : 'Pin exact spot on map'}
+          {showMap ? 'Hide map' : savedPin ? 'Move pin' : 'Pin on map'}
         </button>
         <button
           type="button"
@@ -363,12 +364,12 @@ function LocationPicker({
           disabled={locating}
           className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50"
         >
-          Use my current location
+          Use my location
         </button>
         {savedPin && (
           <span className="ml-auto inline-flex items-center gap-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1 font-medium text-green-700">
-              <PinIcon /> Exact spot pinned
+              <PinIcon /> Pinned
             </span>
             <button
               type="button"
@@ -411,7 +412,7 @@ function LocationPicker({
             </MapContainer>
           </div>
           <p className="mt-1.5 text-xs text-slate-500" aria-live="polite">
-            {mapNote ?? `Click the map where the ${stop === 'pickup' ? 'pickup' : 'delivery'} happens.`}
+            {mapNote ?? 'Click the map to drop a pin.'}
           </p>
         </div>
       )}
