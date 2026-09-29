@@ -65,6 +65,11 @@ function ClientProfileSection({
       setSaveError('Enter a name and phone number.')
       return
     }
+    // Loose check only -- catches typos like a missing "@" or ".com".
+    if (emailInput.trim() && !/^\S+@\S+\.\S+$/.test(emailInput.trim())) {
+      setSaveError('Enter a valid email address, e.g. name@company.com.')
+      return
+    }
 
     setSaving(true)
     setSaveError(null)

@@ -10,8 +10,16 @@ import {
   DUE_TONE_STYLES,
   type PaymentDueRow,
 } from '../../../lib/paymentDue'
+import { formatDate } from '../../../lib/quoteRequest'
 
-function ClientPaymentsSection({ clientId }: { clientId: number }) {
+function ClientPaymentsSection({
+  clientId,
+  onLoaded,
+}: {
+  clientId: number
+  // Hands the rows up to ClientDashboard for its summary strip.
+  onLoaded?: (rows: PaymentDueRow[]) => void
+}) {
   const [rows, setRows] = useState<PaymentDueRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +40,7 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
     }
 
     setRows(loadedRows)
+    onLoaded?.(loadedRows)
     setError(null)
     setLoading(false)
   }
@@ -82,7 +91,7 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
                 )}
               </span>
               <span>
-                {row.due_date ? `Due ${row.due_date}` : 'Due date TBD'}
+                {row.due_date ? `Due ${formatDate(row.due_date)}` : 'Due date TBD'}
               </span>
             </div>
           </div>

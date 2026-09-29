@@ -124,7 +124,9 @@ function ClientReviewSection() {
 
       {lastSavedAt && (
         <p className="mt-2 text-xs text-slate-400">
-          Last updated {new Date(lastSavedAt).toLocaleDateString()}
+          Last updated {new Date(lastSavedAt).toLocaleDateString()} · Editing
+          your review sends it back to our team before it can appear on our
+          homepage.
         </p>
       )}
 

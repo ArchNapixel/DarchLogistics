@@ -43,9 +43,17 @@ export async function requestClientStatus({
   return { error: error?.message ?? null }
 }
 
+export type PendingStatusRequest = ClientStatusRequest & {
+  client_name: string
+  pickup_place_name: string
+  delivery_place_name: string
+}
+
+// The client's own history, with the booking's route attached so the
+// portal can show "Davao → Panabo" instead of just "Booking #12".
 export async function loadStatusRequestsForClient(
   clientId: number,
-): Promise<{ requests: ClientStatusRequest[]; error: string | null }> {
+): Promise<{ requests: PendingStatusRequest[]; error: string | null }> {
   const { data, error } = await supabase
     .from('client_status_requests')
     .select(REQUEST_COLUMNS)
@@ -56,13 +64,7 @@ export async function loadStatusRequestsForClient(
     return { requests: [], error: error.message }
   }
 
-  return { requests: data, error: null }
-}
-
-export type PendingStatusRequest = ClientStatusRequest & {
-  client_name: string
-  pickup_place_name: string
-  delivery_place_name: string
+  return withClientAndRoute(data)
 }
 
 export async function loadPendingStatusRequests(): Promise<{
@@ -78,6 +80,15 @@ export async function loadPendingStatusRequests(): Promise<{
   if (error) {
     return { requests: [], error: error.message }
   }
+
+  return withClientAndRoute(rows)
+}
+
+// Looks up client name + pickup/delivery place names for each request
+// (joined in JS, same lookup-by-id pattern as the rest of the app).
+async function withClientAndRoute(
+  rows: ClientStatusRequest[],
+): Promise<{ requests: PendingStatusRequest[]; error: string | null }> {
   if (rows.length === 0) {
     return { requests: [], error: null }
   }

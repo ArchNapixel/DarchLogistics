@@ -1,5 +1,5 @@
 // ClientStatusRequestModal: lets a client ask staff for a status update
-// on one of their bookings. Lands in the admin Reports page's "Client
+// on one trip (itinerary) of one of their bookings. Lands in the admin Reports page's "Client
 // Requests" tab for staff to respond to.
 import { useState } from 'react'
 import { requestClientStatus } from '../../../lib/clientStatusRequests'
@@ -7,12 +7,14 @@ import { requestClientStatus } from '../../../lib/clientStatusRequests'
 function ClientStatusRequestModal({
   clientId,
   bookingId,
+  itineraryId,
   route,
   onClose,
   onRequested,
 }: {
   clientId: number
   bookingId: number
+  itineraryId: number
   route: string
   onClose: () => void
   onRequested: () => void
@@ -33,6 +35,7 @@ function ClientStatusRequestModal({
     const { error: requestError } = await requestClientStatus({
       clientId,
       bookingId,
+      itineraryId,
       message: message.trim(),
     })
 
@@ -50,7 +53,9 @@ function ClientStatusRequestModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
         <h3 className="text-lg font-bold text-slate-900">Request a Status Update</h3>
-        <p className="mt-1 text-sm text-slate-500">{route}</p>
+        <p className="mt-1 text-sm text-slate-500">
+          Trip #{itineraryId} · {route}
+        </p>
 
         {error && (
           <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

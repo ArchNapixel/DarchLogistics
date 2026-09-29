@@ -51,7 +51,17 @@ export async function loadWorkOrderStatusLog(): Promise<{
     return { entries: [], error: null }
   }
 
-  const employeeIds = Array.from(new Set(rows.map((r) => r.changed_by)))
+  // changed_by is null when the change was made from a staff login with
+  // no linked employees row (see CLAUDE.md) -- skip those in the lookup,
+  // since .in() with a null sends the text "null" and Postgres rejects it
+  // as an integer.
+  const employeeIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.changed_by as number | null)
+        .filter((id): id is number => id !== null),
+    ),
+  )
   const workOrderIds = Array.from(new Set(rows.map((r) => r.work_order_id)))
 
   const [employeesResult, workOrdersResult] = await Promise.all([
@@ -81,7 +91,10 @@ export async function loadWorkOrderStatusLog(): Promise<{
       work_order_number: workOrderNumberById.get(row.work_order_id) ?? `#${row.work_order_id}`,
       previous_status: row.previous_status,
       new_status: row.new_status,
-      changed_by_name: employeeNameById.get(row.changed_by) ?? `Employee #${row.changed_by}`,
+      changed_by_name:
+        row.changed_by !== null
+          ? (employeeNameById.get(row.changed_by) ?? `Employee #${row.changed_by}`)
+          : 'Unknown (no linked employee)',
       changed_at: row.created_at,
     })),
     error: null,

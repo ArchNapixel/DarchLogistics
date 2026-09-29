@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import {
   loadStatusRequestsForClient,
-  type ClientStatusRequest,
+  type PendingStatusRequest,
 } from '../../../lib/clientStatusRequests'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -28,7 +28,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function MyStatusRequestsSection() {
   const { clientId } = useAuth()
-  const [requests, setRequests] = useState<ClientStatusRequest[]>([])
+  const [requests, setRequests] = useState<PendingStatusRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,10 +73,21 @@ function MyStatusRequestsSection() {
       {requests.map((request) => (
         <div key={request.request_id} className="rounded-xl border border-slate-200 p-4">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-slate-500">
-              Booking #{request.booking_id} ·{' '}
-              {new Date(request.created_at).toLocaleDateString()}
-            </p>
+            <div>
+              <p className="text-sm font-medium text-slate-900">
+                {request.pickup_place_name} → {request.delivery_place_name}
+              </p>
+              <p className="text-xs text-slate-500">
+                Booking #{request.booking_id}
+                {request.itinerary_id !== null && ` · Trip #${request.itinerary_id}`}
+                {' · '}
+                {new Date(request.created_at).toLocaleDateString('en-PH', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </p>
+            </div>
             <StatusBadge status={request.status} />
           </div>
           <p className="mt-2 text-sm text-slate-900">{request.message}</p>

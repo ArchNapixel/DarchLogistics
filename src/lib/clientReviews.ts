@@ -82,6 +82,10 @@ export async function saveMyReview({
       rating,
       comment: comment.trim() || null,
       updated_at: new Date().toISOString(),
+      // Any edit takes the review off the public landing page until
+      // staff re-feature it -- otherwise a client could change the text
+      // of an already-approved featured review with no one checking.
+      is_featured: false,
     },
     { onConflict: 'client_id' },
   )

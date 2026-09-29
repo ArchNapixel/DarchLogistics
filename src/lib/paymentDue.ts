@@ -74,10 +74,13 @@ const PAYMENT_TERM_DAYS: Record<string, number> = {
   '30Days': 30,
 }
 
+// Done in UTC on purpose: building the date at local midnight and then
+// calling toISOString() shifts it back a day in Manila (UTC+8).
 function addDays(dateStr: string, days: number): string {
-  const date = new Date(`${dateStr}T00:00:00`)
-  date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
+  const [year, month, day] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days))
+    .toISOString()
+    .slice(0, 10)
 }
 
 function daysFromToday(dateStr: string): number {
@@ -151,7 +154,11 @@ export async function loadPaymentDueReport(
       supabase
         .from('itineraries')
         .select('itinerary_id, booking_id, itinerary_status')
-        .in('booking_id', bookingIds),
+        .in('booking_id', bookingIds)
+        // Cancelled trips aren't billed and don't count toward the
+        // contract -- otherwise a partly cancelled booking could never
+        // reach "all trips done" and would stay on the report forever.
+        .neq('itinerary_status', 'Cancelled'),
     ])
 
   if (clientsResult.error) {

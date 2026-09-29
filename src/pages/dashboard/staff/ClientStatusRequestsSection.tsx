@@ -98,6 +98,7 @@ function ClientStatusRequestsSection() {
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
                   {request.client_name} — Booking #{request.booking_id}
+                  {request.itinerary_id !== null && ` · Trip #${request.itinerary_id}`}
                 </p>
                 <span className="text-xs text-slate-500">
                   {new Date(request.created_at).toLocaleDateString()}

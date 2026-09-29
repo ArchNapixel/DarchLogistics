@@ -6,10 +6,10 @@
 // e.g. several containers under one booking) so the "Delivery Date"
 // shown on the collapsed card can be computed without an extra fetch --
 // it's the latest itinerary trip_date_to if any itinerary has one set,
-// otherwise there's no confirmed delivery date yet, so it falls back to
-// booking_date (the client's originally preferred date, carried over
-// from the quote at approval time). The same fallback applies per
-// itinerary in the expanded list. Relies on the
+// otherwise the card shows booking_date labelled as the preferred PICKUP
+// date (that's what Approve copies into it -- it was previously shown
+// as a delivery date by mistake). Status requests are asked per trip
+// ("Ask about this trip"), not per booking. Relies on the
 // itineraries_select_own_client RLS policy (booking_id ->
 // bookings.client_id -> users.auth_user_id) since clients previously
 // had no way to read itineraries at all.
@@ -20,6 +20,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { formatDate } from '../../../lib/quoteRequest'
 import ClientStatusRequestModal from './ClientStatusRequestModal'
 
 type Itinerary = {
@@ -29,7 +30,7 @@ type Itinerary = {
   trip_date_to: string | null
 }
 
-type Booking = {
+export type Booking = {
   booking_id: number
   booking_status: string
   booking_date: string
@@ -66,6 +67,7 @@ const ITINERARY_STATUS_LABELS: Record<string, string> = {
   PickedUp: 'Picked Up',
   InTransit: 'In Transit',
   Delivered: 'Delivered',
+  Cancelled: 'Cancelled',
 }
 
 const ITINERARY_STATUS_STYLES: Record<string, string> = {
@@ -74,6 +76,7 @@ const ITINERARY_STATUS_STYLES: Record<string, string> = {
   PickedUp: 'bg-purple-100 text-purple-700',
   InTransit: 'bg-orange-100 text-orange-700',
   Delivered: 'bg-green-100 text-green-700',
+  Cancelled: 'bg-red-100 text-red-700',
 }
 
 function ItineraryStatusBadge({ status }: { status: string }) {
@@ -110,10 +113,23 @@ function getConfirmedDeliveryDate(booking: Booking): string | null {
   return dates.reduce((latest, date) => (date > latest ? date : latest))
 }
 
+// Delivered and Cancelled bookings are finished -- everything else is
+// still active (Draft/Confirmed/InProgress/...).
+export function isActiveBooking(booking: Booking): boolean {
+  return (
+    booking.booking_status !== 'Delivered' &&
+    booking.booking_status !== 'Cancelled'
+  )
+}
+
 function MyBookingsSection({
   onStatusRequested,
+  onLoaded,
 }: {
   onStatusRequested?: () => void
+  // Hands the loaded list up to ClientDashboard for its summary strip,
+  // so it doesn't need a second fetch.
+  onLoaded?: (bookings: Booking[]) => void
 }) {
   const { clientId } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -122,9 +138,13 @@ function MyBookingsSection({
   const [expandedBookingId, setExpandedBookingId] = useState<number | null>(
     null,
   )
-  const [requestingBooking, setRequestingBooking] = useState<Booking | null>(
-    null,
-  )
+  const [showPast, setShowPast] = useState(false)
+  // The trip the client is asking about (status requests are per trip,
+  // not per booking).
+  const [requesting, setRequesting] = useState<{
+    booking: Booking
+    itinerary: Itinerary
+  } | null>(null)
 
   useEffect(() => {
     if (clientId) {
@@ -210,8 +230,7 @@ function MyBookingsSection({
       itinerariesByBookingId.set(row.booking_id, list)
     })
 
-    setBookings(
-      bookingRows.map((b) => ({
+    const loadedBookings = bookingRows.map((b) => ({
         booking_id: b.booking_id,
         booking_status: b.booking_status,
         booking_date: b.booking_date,
@@ -222,8 +241,9 @@ function MyBookingsSection({
         delivery_place_name:
           placeNameById.get(b.place_of_delivery_id) ?? '—',
         itineraries: itinerariesByBookingId.get(b.booking_id) ?? [],
-      })),
-    )
+      }))
+    setBookings(loadedBookings)
+    onLoaded?.(loadedBookings)
     setError(null)
     setLoading(false)
   }
@@ -240,12 +260,48 @@ function MyBookingsSection({
     return <p className="text-slate-500">No bookings yet.</p>
   }
 
+  const activeCount = bookings.filter(isActiveBooking).length
+  const visibleBookings = bookings.filter(
+    (booking) => isActiveBooking(booking) !== showPast,
+  )
+
   return (
     <div className="grid gap-4">
-      {bookings.map((booking) => {
+      <div className="flex gap-2">
+        {[
+          { label: `Active (${activeCount})`, past: false },
+          { label: `Past (${bookings.length - activeCount})`, past: true },
+        ].map((tab) => (
+          <button
+            key={tab.label}
+            onClick={() => setShowPast(tab.past)}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              showPast === tab.past
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {visibleBookings.length === 0 && (
+        <p className="text-slate-500">
+          {showPast
+            ? 'No delivered or cancelled bookings yet.'
+            : 'No active bookings right now. Send a new quote request to book a trip.'}
+        </p>
+      )}
+
+      {visibleBookings.map((booking) => {
         const confirmedDeliveryDate = getConfirmedDeliveryDate(booking)
-        const deliveryDate = confirmedDeliveryDate ?? booking.booking_date
         const isExpanded = expandedBookingId === booking.booking_id
+        // Cancelled trips aren't billed, so they don't count toward the
+        // contract value (same rule as lib/paymentDue.ts).
+        const billableTripCount = booking.itineraries.filter(
+          (itinerary) => itinerary.itinerary_status !== 'Cancelled',
+        ).length
 
         return (
           <div
@@ -281,48 +337,48 @@ function MyBookingsSection({
                 label="Contract Value"
                 value={
                   booking.rate_of_delivery_service != null
-                    ? `₱${(booking.rate_of_delivery_service * booking.itineraries.length).toLocaleString()}`
+                    ? `₱${(booking.rate_of_delivery_service * billableTripCount).toLocaleString()}`
                     : '—'
                 }
               />
               <div className="col-span-2 sm:col-span-4">
-                <Field
-                  label="Delivery Date"
-                  value={
-                    <>
-                      {deliveryDate}
-                      {!confirmedDeliveryDate && (
+                {/* booking_date is the quote's preferred PICKUP date (set
+                    on Approve), so it's only ever shown as that -- never
+                    passed off as a delivery date. */}
+                {confirmedDeliveryDate ? (
+                  <Field
+                    label="Delivery Date"
+                    value={formatDate(confirmedDeliveryDate)}
+                  />
+                ) : (
+                  <Field
+                    label="Preferred Pickup"
+                    value={
+                      <>
+                        {formatDate(booking.booking_date)}
                         <span className="ml-1.5 text-xs font-normal text-slate-400">
-                          (preferred date — not yet confirmed)
+                          (delivery date not scheduled yet)
                         </span>
-                      )}
-                    </>
-                  }
-                />
+                      </>
+                    }
+                  />
+                )}
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4">
               <button
                 onClick={() =>
                   setExpandedBookingId(isExpanded ? null : booking.booking_id)
                 }
                 className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
               >
-                {isExpanded ? 'Hide' : 'View'} itineraries (
-                {booking.itineraries.length})
+                {isExpanded ? 'Hide' : 'View'} trips ({booking.itineraries.length})
                 <span
                   className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                 >
                   ▾
                 </span>
-              </button>
-
-              <button
-                onClick={() => setRequestingBooking(booking)}
-                className="text-sm font-medium text-slate-600 underline hover:text-slate-900"
-              >
-                Request Status Update
               </button>
             </div>
 
@@ -330,63 +386,62 @@ function MyBookingsSection({
               <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
                 {booking.itineraries.length === 0 && (
                   <p className="text-sm text-slate-500">
-                    No itineraries yet for this booking.
+                    No trips scheduled yet for this booking.
                   </p>
                 )}
 
-                {booking.itineraries.map((itinerary) => {
-                  const itineraryHasConfirmedDate =
-                    itinerary.trip_date_to !== null
-                  const itineraryDeliveryDate =
-                    itinerary.trip_date_to ?? booking.booking_date
-
-                  return (
-                    <div
-                      key={itinerary.itinerary_id}
-                      className="rounded-lg bg-slate-50 p-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-slate-900">
-                          Itinerary #{itinerary.itinerary_id}
-                        </p>
-                        <ItineraryStatusBadge
-                          status={itinerary.itinerary_status}
-                        />
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <Field label="Pickup" value={itinerary.trip_date_from} />
-                        <Field
-                          label="Delivery"
-                          value={
-                            <>
-                              {itineraryDeliveryDate}
-                              {!itineraryHasConfirmedDate && (
-                                <span className="text-xs font-normal text-slate-400">
-                                  {' '}
-                                  (est.)
-                                </span>
-                              )}
-                            </>
-                          }
-                        />
-                      </div>
+                {booking.itineraries.map((itinerary) => (
+                  <div
+                    key={itinerary.itinerary_id}
+                    className="rounded-lg bg-slate-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-slate-900">
+                        Trip #{itinerary.itinerary_id}
+                      </p>
+                      <ItineraryStatusBadge status={itinerary.itinerary_status} />
                     </div>
-                  )
-                })}
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Field
+                        label="Pickup"
+                        value={formatDate(itinerary.trip_date_from)}
+                      />
+                      <Field
+                        label="Delivery"
+                        value={
+                          itinerary.trip_date_to
+                            ? formatDate(itinerary.trip_date_to)
+                            : 'Not scheduled yet'
+                        }
+                      />
+                    </div>
+                    {/* Status requests are per trip. Nothing to ask about
+                        on a cancelled one. */}
+                    {itinerary.itinerary_status !== 'Cancelled' && (
+                      <button
+                        onClick={() => setRequesting({ booking, itinerary })}
+                        className="mt-2 text-sm font-medium text-slate-600 underline hover:text-slate-900"
+                      >
+                        Ask about this trip
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )
       })}
 
-      {requestingBooking && clientId && (
+      {requesting && clientId && (
         <ClientStatusRequestModal
           clientId={clientId}
-          bookingId={requestingBooking.booking_id}
-          route={`${requestingBooking.pickup_place_name} → ${requestingBooking.delivery_place_name}`}
-          onClose={() => setRequestingBooking(null)}
+          bookingId={requesting.booking.booking_id}
+          itineraryId={requesting.itinerary.itinerary_id}
+          route={`${requesting.booking.pickup_place_name} → ${requesting.booking.delivery_place_name}`}
+          onClose={() => setRequesting(null)}
           onRequested={() => {
-            setRequestingBooking(null)
+            setRequesting(null)
             onStatusRequested?.()
           }}
         />

@@ -48,7 +48,7 @@ async function loadLogRows(
           itinerary_id: number
           previous_status: string
           new_status: string
-          changed_by: number
+          changed_by: number | null
           status_changed_at: string
         }[]
       | null
@@ -64,7 +64,13 @@ async function loadLogRows(
     return { entries: [], error: null }
   }
 
-  const employeeIds = Array.from(new Set(rows.map((r) => r.changed_by)))
+  // changed_by is null when the change was made from a staff login with
+  // no linked employees row (see CLAUDE.md) -- skip those in the lookup,
+  // since .in() with a null sends the text "null" and Postgres rejects it
+  // as an integer.
+  const employeeIds = Array.from(
+    new Set(rows.map((r) => r.changed_by).filter((id): id is number => id !== null)),
+  )
   const { data: employees, error: employeesError } = await supabase
     .from('employees')
     .select('employee_id, full_name')
@@ -82,7 +88,10 @@ async function loadLogRows(
       itinerary_id: row.itinerary_id,
       previous_status: row.previous_status,
       new_status: row.new_status,
-      changed_by_name: employeeNameById.get(row.changed_by) ?? `Employee #${row.changed_by}`,
+      changed_by_name:
+        row.changed_by !== null
+          ? (employeeNameById.get(row.changed_by) ?? `Employee #${row.changed_by}`)
+          : 'Unknown (no linked employee)',
       changed_at: row.status_changed_at,
     })),
     error: null,
