@@ -8,10 +8,14 @@
 // Mechanics: reads real completed/cancelled work_orders assigned to
 // them, joined with trailers for the vehicle label when the work order
 // is for a trailer rather than a truck (same pattern as
-// MaintenanceSection.tsx).
+// MaintenanceSection.tsx). The date shown is when the job was actually
+// completed (latest work_order_completions.completed_at -- a reopened job
+// can have more than one), newest first; Cancelled jobs have no
+// completion, so they show their scheduled date instead.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { formatDate } from '../../../lib/quoteRequest'
 
 type HistoryStatus = 'Completed' | 'Cancelled'
 
@@ -175,20 +179,57 @@ function HistorySection() {
       trailers.map((t) => [t.trailer_id, t.plate_number]),
     )
 
-    setHistory(
-      orders.map((order) => {
-        const vehicleLabel = order.plate_number
-          ? `Truck ${order.plate_number}`
-          : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`
+    const { data: completions, error: completionError } =
+      orders.length > 0
+        ? await supabase
+            .from('work_order_completions')
+            .select('work_order_id, completed_at')
+            .in('work_order_id', orders.map((o) => o.work_order_id))
+        : { data: [], error: null }
 
-        return {
-          history_id: order.work_order_id,
-          date: order.scheduled_start_date ?? '—',
-          description: `${order.work_order_number} — ${order.maintenance_type} (${vehicleLabel})`,
-          status: order.work_order_status === 'Completed' ? 'Completed' : 'Cancelled',
-        }
-      }),
-    )
+    if (completionError) {
+      setError(completionError.message)
+      setLoading(false)
+      return
+    }
+
+    // Latest completion per work order, as a timestamp (ms).
+    const completedAtById = new Map<number, number>()
+    for (const c of completions) {
+      const time = new Date(c.completed_at).getTime()
+      if (time > (completedAtById.get(c.work_order_id) ?? 0)) {
+        completedAtById.set(c.work_order_id, time)
+      }
+    }
+
+    const entries = orders.map((order) => {
+      const vehicleLabel = order.plate_number
+        ? `Truck ${order.plate_number}`
+        : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`
+      const completedAt = completedAtById.get(order.work_order_id)
+      const sortTime =
+        completedAt ??
+        (order.scheduled_start_date ? new Date(order.scheduled_start_date).getTime() : 0)
+
+      return {
+        sortTime,
+        history_id: order.work_order_id,
+        date: completedAt
+          ? new Date(completedAt).toLocaleDateString('en-PH', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : order.scheduled_start_date
+            ? formatDate(order.scheduled_start_date)
+            : '—',
+        description: `${order.work_order_number} — ${order.maintenance_type} (${vehicleLabel})`,
+        status: (order.work_order_status === 'Completed' ? 'Completed' : 'Cancelled') as HistoryStatus,
+      }
+    })
+
+    entries.sort((a, b) => b.sortTime - a.sortTime)
+    setHistory(entries)
     setError(null)
     setLoading(false)
   }

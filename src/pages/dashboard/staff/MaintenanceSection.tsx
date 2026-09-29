@@ -2,7 +2,9 @@
 // (Active vs Completed tabs, matching the Trucks/Trailers tab pattern
 // in FleetSection.tsx), plus a list of mechanics and how many active
 // work orders each currently has, so staff can see who's free before
-// assigning a new one.
+// assigning a new one. Clicking a work order number opens
+// WorkOrderDetailModal (mechanic's notes/parts so far, reassign, change
+// status or cancel).
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
@@ -10,15 +12,11 @@ import CreateWorkOrderModal from './CreateWorkOrderModal'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 import MaintenanceRequestsSection from './MaintenanceRequestsSection'
 import MaintenanceCostReportModal from './MaintenanceCostReportModal'
+import WorkOrderDetailModal, { type WorkOrderDetail } from './WorkOrderDetailModal'
+import { formatDate } from '../../../lib/quoteRequest'
 
-type WorkOrder = {
-  work_order_id: number
-  work_order_number: string
-  vehicle_label: string
+type WorkOrder = WorkOrderDetail & {
   mechanic_name: string
-  maintenance_type: string
-  work_order_status: string
-  scheduled_start_date: string | null
 }
 
 type Mechanic = {
@@ -63,6 +61,8 @@ function MaintenanceSection() {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showCostReport, setShowCostReport] = useState(false)
+  const [openOrderId, setOpenOrderId] = useState<number | null>(null)
+  const openOrder = workOrders.find((o) => o.work_order_id === openOrderId) ?? null
 
   useEffect(() => {
     loadData()
@@ -74,7 +74,7 @@ function MaintenanceSection() {
     const { data: orderRows, error: orderError } = await supabase
       .from('work_orders')
       .select(
-        'work_order_id, work_order_number, plate_number, trailer_id, assigned_mechanic_id, maintenance_type, work_order_status, scheduled_start_date',
+        'work_order_id, work_order_number, plate_number, trailer_id, assigned_mechanic_id, maintenance_type, work_description, work_order_status, scheduled_start_date',
       )
       .order('scheduled_start_date', { ascending: true })
 
@@ -117,6 +117,10 @@ function MaintenanceSection() {
       orderRows.map((row) => ({
         work_order_id: row.work_order_id,
         work_order_number: row.work_order_number,
+        plate_number: row.plate_number,
+        trailer_id: row.trailer_id,
+        assigned_mechanic_id: row.assigned_mechanic_id,
+        work_description: row.work_description,
         vehicle_label: row.plate_number
           ? `Truck: ${row.plate_number}`
           : `Trailer: ${trailerPlateById.get(row.trailer_id) ?? `#${row.trailer_id}`}`,
@@ -224,8 +228,13 @@ function MaintenanceSection() {
                           key={order.work_order_id}
                           className="border-b border-slate-100 last:border-0"
                         >
-                          <td className="px-4 py-3 text-slate-900">
-                            {order.work_order_number}
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setOpenOrderId(order.work_order_id)}
+                              className="font-medium text-slate-900 underline hover:text-slate-600"
+                            >
+                              {order.work_order_number}
+                            </button>
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             {order.vehicle_label}
@@ -240,7 +249,9 @@ function MaintenanceSection() {
                             <StatusBadge status={order.work_order_status} />
                           </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {order.scheduled_start_date ?? 'N/A'}
+                            {order.scheduled_start_date
+                              ? formatDate(order.scheduled_start_date)
+                              : 'N/A'}
                           </td>
                         </tr>
                       ))}
@@ -284,6 +295,16 @@ function MaintenanceSection() {
 
       {showCostReport && (
         <MaintenanceCostReportModal onClose={() => setShowCostReport(false)} />
+      )}
+
+      {openOrder && (
+        <WorkOrderDetailModal
+          key={openOrder.work_order_id}
+          order={openOrder}
+          mechanics={mechanics}
+          onClose={() => setOpenOrderId(null)}
+          onChanged={loadData}
+        />
       )}
 
       {showCreate && (

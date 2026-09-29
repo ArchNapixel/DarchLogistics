@@ -1,6 +1,7 @@
 // ConvertIssueToWorkOrderModal: staff turns a vehicle-related issue
-// report into a real work order. issue_reports doesn't link to a
-// specific truck/trailer, so staff must pick one here -- everything
+// report into a real work order. If the report names a truck/trailer
+// (issue_reports.plate_number / trailer_id -- set by the mechanic's
+// Inspection Report), it's pre-selected; otherwise staff picks one here -- everything
 // else is pre-filled from the report but fully editable before
 // confirming (a review/edit step, not a one-click auto-convert).
 //
@@ -59,6 +60,8 @@ export type ConvertibleIssueReport = {
   severity: string
   notes: string | null
   reported_at: string
+  plate_number: string | null
+  trailer_id: number | null
 }
 
 function ConvertIssueToWorkOrderModal({
@@ -91,7 +94,7 @@ function ConvertIssueToWorkOrderModal({
 
     const { data: trucks, error: truckError } = await supabase
       .from('truck_profiles')
-      .select('plate_number, model')
+      .select('plate_number, model, current_status')
       .order('plate_number', { ascending: true })
 
     if (truckError) {
@@ -102,7 +105,7 @@ function ConvertIssueToWorkOrderModal({
 
     const { data: trailers, error: trailerError } = await supabase
       .from('trailers')
-      .select('trailer_id, plate_number, trailer_type')
+      .select('trailer_id, plate_number, trailer_type, current_status')
       .order('trailer_id', { ascending: true })
 
     if (trailerError) {
@@ -123,20 +126,31 @@ function ConvertIssueToWorkOrderModal({
       return
     }
 
-    setVehicleOptions([
+    const options: VehicleOption[] = [
       ...trucks.map((t) => ({
         key: `truck-${t.plate_number}`,
-        label: `Truck: ${t.plate_number}${t.model ? ` (${t.model})` : ''}`,
+        label: `Truck: ${t.plate_number}${t.model ? ` (${t.model})` : ''}${t.current_status === 'In Transit' ? ' — In Transit' : ''}`,
         plateNumber: t.plate_number,
         trailerId: null,
       })),
       ...trailers.map((t) => ({
         key: `trailer-${t.trailer_id}`,
-        label: `Trailer: ${t.plate_number ?? `#${t.trailer_id}`} (${t.trailer_type})`,
+        label: `Trailer: ${t.plate_number ?? `#${t.trailer_id}`} (${t.trailer_type})${t.current_status === 'In Transit' ? ' — In Transit' : ''}`,
         plateNumber: null,
         trailerId: t.trailer_id,
       })),
-    ])
+    ]
+    setVehicleOptions(options)
+    // Pre-select the report's vehicle if it has one, else the first
+    // option -- without this the dropdown only LOOKED selected and
+    // Convert failed with "Select a truck or trailer".
+    setSelectedVehicleKey(
+      report.plate_number
+        ? `truck-${report.plate_number}`
+        : report.trailer_id !== null
+          ? `trailer-${report.trailer_id}`
+          : (options[0]?.key ?? ''),
+    )
     setMechanics(mechanicRows)
     setLoadingOptions(false)
   }
@@ -179,15 +193,19 @@ function ConvertIssueToWorkOrderModal({
     // 2. Reflect the open work order on the Fleet page -- best-effort,
     // doesn't block marking the report handled since the work order
     // itself (the actual thing the mechanic needs) already exists.
+    // Skipped for a vehicle currently out on a trip ("In Transit") --
+    // it shouldn't show as in the shop mid-delivery.
     const { error: statusError } = selectedVehicle.plateNumber
       ? await supabase
           .from('truck_profiles')
           .update({ current_status: 'Under Maintenance' })
           .eq('plate_number', selectedVehicle.plateNumber)
+          .or('current_status.is.null,current_status.neq."In Transit"')
       : await supabase
           .from('trailers')
           .update({ current_status: 'Under Maintenance' })
           .eq('trailer_id', selectedVehicle.trailerId)
+          .or('current_status.is.null,current_status.neq."In Transit"')
 
     // 3. Mark the issue report handled.
     // .select().maybeSingle() so a blocked UPDATE (no matching RLS

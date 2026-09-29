@@ -1,7 +1,10 @@
 // EmployeeDashboard: shown to both Driver and Mechanic -- identical view
 // for both roles, only the role badge text differs, plus Mechanics get
-// an extra Task Board above "My Tasks" for accepting unassigned work
-// orders. Accepting one bumps tasksRefreshKey, which is passed as
+// an extra Task Board below "My Tasks" for accepting unassigned work
+// orders (their own assigned work comes first), and their header also
+// holds "Schedule Maintenance" and "Submit Inspection Report" -- every
+// mechanic action lives in one place. Accepting a work order on the
+// Task Board bumps tasksRefreshKey, which is passed as
 // MyTasksSection's `key` -- changing a component's key remounts it, so
 // this is a lightweight way to make the newly-accepted work order show
 // up in "My Tasks" immediately without wiring a shared data store
@@ -13,6 +16,7 @@ import MyTasksSection from './employee/MyTasksSection'
 import TaskBoard from './employee/TaskBoard'
 import ScheduleMaintenanceModal from './employee/ScheduleMaintenanceModal'
 import IssueMaintenanceRequestModal from './employee/IssueMaintenanceRequestModal'
+import InspectionReportModal from './employee/InspectionReportModal'
 
 function EmployeeDashboard() {
   const { username, role, employeeId } = useAuth()
@@ -21,6 +25,7 @@ function EmployeeDashboard() {
   const [scheduledMessage, setScheduledMessage] = useState<string | null>(null)
   const [showIssueRequest, setShowIssueRequest] = useState(false)
   const [requestMessage, setRequestMessage] = useState<string | null>(null)
+  const [showInspectionReport, setShowInspectionReport] = useState(false)
 
   return (
     <div>
@@ -51,12 +56,20 @@ function EmployeeDashboard() {
           </button>
 
           {role === 'Mechanic' && (
-            <button
-              onClick={() => setShowScheduleMaintenance(true)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Schedule Maintenance
-            </button>
+            <>
+              <button
+                onClick={() => setShowScheduleMaintenance(true)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Schedule Maintenance
+              </button>
+              <button
+                onClick={() => setShowInspectionReport(true)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Submit Inspection Report
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -73,6 +86,10 @@ function EmployeeDashboard() {
         </p>
       )}
 
+      <div className="mt-8">
+        <MyTasksSection key={tasksRefreshKey} />
+      </div>
+
       {role === 'Mechanic' && (
         <div className="mt-8">
           <TaskBoard
@@ -80,10 +97,6 @@ function EmployeeDashboard() {
           />
         </div>
       )}
-
-      <div className="mt-8">
-        <MyTasksSection key={tasksRefreshKey} />
-      </div>
 
       {showScheduleMaintenance && employeeId && (
         <ScheduleMaintenanceModal
@@ -94,6 +107,10 @@ function EmployeeDashboard() {
             setScheduledMessage('Maintenance schedule sent to admin.')
           }}
         />
+      )}
+
+      {showInspectionReport && (
+        <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
       )}
 
       {showIssueRequest && employeeId && (

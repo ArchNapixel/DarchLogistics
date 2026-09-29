@@ -25,6 +25,102 @@ export async function logWorkOrderStatusChange({
   return { error: error?.message ?? null }
 }
 
+// A job is "closed" once it's Completed or Cancelled -- its vehicle
+// should be free again. Any other status means the vehicle is in the shop.
+const CLOSED_STATUSES = ['Completed', 'Cancelled']
+
+// Flips a truck's or trailer's current_status from one value to another,
+// but ONLY if it's still at `from` -- so a truck that's already out on a
+// trip ("In Transit") is never overwritten.
+async function setVehicleStatus(
+  plateNumber: string | null,
+  trailerId: number | null,
+  from: string,
+  to: string,
+) {
+  const { error } = plateNumber
+    ? await supabase
+        .from('truck_profiles')
+        .update({ current_status: to })
+        .eq('plate_number', plateNumber)
+        .eq('current_status', from)
+    : await supabase
+        .from('trailers')
+        .update({ current_status: to })
+        .eq('trailer_id', trailerId)
+        .eq('current_status', from)
+  return error?.message ?? null
+}
+
+// The one place a work order's status gets changed directly (everything
+// except "Completed", which goes through CompleteWorkOrderModal.tsx).
+// Used by MechanicTasks.tsx, the admin WorkOrderDetailModal.tsx, and
+// approving a Status Relog Request. It:
+//   1. Updates the status ONLY if it's still `previousStatus` (someone
+//      else may have changed it meanwhile), and uses .select() so an RLS
+//      silent no-op shows up as an error instead of fake success.
+//   2. Logs the change to work_order_status_log (best effort).
+//   3. Keeps the vehicle's fleet status in sync: closing a job (Cancelled)
+//      frees the vehicle; reopening a closed job puts it back in the shop.
+// `statusChanged` tells the caller whether step 1 went through -- an
+// error can still come back with statusChanged: true if only step 3 failed.
+export async function changeWorkOrderStatus({
+  workOrderId,
+  plateNumber,
+  trailerId,
+  previousStatus,
+  newStatus,
+  changedByEmployeeId,
+}: {
+  workOrderId: number
+  plateNumber: string | null
+  trailerId: number | null
+  previousStatus: string
+  newStatus: string
+  changedByEmployeeId: number | null
+}): Promise<{ error: string | null; statusChanged: boolean }> {
+  const { data: updated, error: updateError } = await supabase
+    .from('work_orders')
+    .update({ work_order_status: newStatus })
+    .eq('work_order_id', workOrderId)
+    .eq('work_order_status', previousStatus)
+    .select('work_order_id')
+    .maybeSingle()
+
+  if (updateError) {
+    return { error: updateError.message, statusChanged: false }
+  }
+  if (!updated) {
+    return {
+      error: `This work order is no longer "${previousStatus}" -- someone else changed it. Reload the page and try again.`,
+      statusChanged: false,
+    }
+  }
+
+  if (changedByEmployeeId !== null) {
+    logWorkOrderStatusChange({ workOrderId, previousStatus, newStatus, changedByEmployeeId })
+  }
+
+  const wasClosed = CLOSED_STATUSES.includes(previousStatus)
+  const isClosed = CLOSED_STATUSES.includes(newStatus)
+  let vehicleError: string | null = null
+
+  if (!wasClosed && isClosed) {
+    vehicleError = await setVehicleStatus(plateNumber, trailerId, 'Under Maintenance', 'Available')
+  } else if (wasClosed && !isClosed) {
+    vehicleError = await setVehicleStatus(plateNumber, trailerId, 'Available', 'Under Maintenance')
+  }
+
+  if (vehicleError) {
+    return {
+      error: `Status changed to ${newStatus}, but the vehicle's fleet status could not be updated (${vehicleError}). Check it on the Fleet page.`,
+      statusChanged: true,
+    }
+  }
+
+  return { error: null, statusChanged: true }
+}
+
 export type WorkOrderStatusLogEntry = {
   log_id: number
   work_order_id: number

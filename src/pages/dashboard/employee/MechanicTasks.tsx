@@ -1,26 +1,33 @@
 // MechanicTasks: shows the logged-in mechanic's assigned work orders,
 // found via work_orders.assigned_mechanic_id. Status is a free-choice
-// dropdown (ALL_STATUSES), not a fixed progression -- the mechanic can
-// set it to whatever actually applies, in any order. New work orders
-// get assigned here by accepting them on the Task Board (TaskBoard.tsx)
-// first.
+// dropdown (ALL_STATUSES minus "Completed"), not a fixed progression --
+// the mechanic can set it to whatever actually applies, in any order,
+// including Cancelled. New work orders get assigned here by accepting
+// them on the Task Board (TaskBoard.tsx) first.
 //
-// Picking "Completed" doesn't update the status directly -- it opens
-// CompleteWorkOrderModal, which requires a description + parts-used
-// breakdown before the work order can actually be marked complete.
+// Status changes go through changeWorkOrderStatus() (workOrderStatusLog.ts),
+// which also frees the truck/trailer when a job is Cancelled.
+//
+// Completing is its own "Mark Complete" button (on the card and in
+// AccessWorkOrderModal), which opens CompleteWorkOrderModal -- it
+// requires a description + parts-used breakdown before the work order
+// can actually be marked complete.
 //
 // Completed work orders drop off the main list above (the load query
 // excludes them), so a "Recently Completed" list below it is the only
 // place a mechanic can flag one they finished by mistake -- "Request
 // Correction" submits a status_relog_requests row for Admin to approve
-// (see statusRelogRequests.ts) rather than reopening it directly.
+// (see statusRelogRequests.ts) rather than reopening it directly. Once
+// requested, the link is replaced by "Correction requested" so the same
+// request can't be sent twice.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
+import { changeWorkOrderStatus } from '../../../lib/workOrderStatusLog'
+import { loadMyPendingWorkOrderRelogIds } from '../../../lib/statusRelogRequests'
+import { formatDate } from '../../../lib/quoteRequest'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
-import InspectionReportModal from './InspectionReportModal'
 import AccessWorkOrderModal from './AccessWorkOrderModal'
 
 const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
@@ -37,6 +44,9 @@ export type WorkOrder = {
   scheduled_start_date: string | null
 }
 
+export const WORK_ORDER_COLUMNS =
+  'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date'
+
 const STATUS_STYLES: Record<string, string> = {
   Created: 'bg-gray-100 text-gray-700',
   Scheduled: 'bg-blue-100 text-blue-700',
@@ -49,7 +59,9 @@ const STATUS_STYLES: Record<string, string> = {
 // A free-choice dropdown, not a fixed progression -- the mechanic picks
 // whatever status actually applies (including going back to "On Hold"
 // or jumping straight to "Cancelled"), rather than being forced through
-// one status at a time.
+// one status at a time. "Completed" is kept in this list (other screens
+// use it for labels), but the dropdowns leave it out -- completing is
+// the separate "Mark Complete" button.
 export const ALL_STATUSES = [
   'Created',
   'Scheduled',
@@ -68,10 +80,43 @@ export function StatusBadge({ status }: { status: string }) {
   )
 }
 
+// Adds the "Truck ABC-123" / "Trailer XYZ-789" label -- trailers need a
+// lookup, since work_orders only stores trailer_id for them. Also used by
+// TaskBoard.tsx.
+export async function withVehicleLabels(
+  rows: Omit<WorkOrder, 'vehicle_label'>[],
+): Promise<{ orders: WorkOrder[]; error: string | null }> {
+  const trailerIds = Array.from(
+    new Set(rows.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
+  )
+
+  const { data: trailers, error } =
+    trailerIds.length > 0
+      ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
+      : { data: [], error: null }
+
+  if (error) {
+    return { orders: [], error: error.message }
+  }
+
+  const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
+
+  return {
+    orders: rows.map((order) => ({
+      ...order,
+      vehicle_label: order.plate_number
+        ? `Truck ${order.plate_number}`
+        : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
+    })),
+    error: null,
+  }
+}
+
 function MechanicTasks() {
   const { employeeId } = useAuth()
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [recentlyCompleted, setRecentlyCompleted] = useState<WorkOrder[]>([])
+  const [pendingRelogIds, setPendingRelogIds] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -79,7 +124,6 @@ function MechanicTasks() {
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
   const [reopeningOrder, setReopeningOrder] = useState<WorkOrder | null>(null)
-  const [showInspectionReport, setShowInspectionReport] = useState(false)
   const [accessingOrderId, setAccessingOrderId] = useState<number | null>(null)
   const accessingOrder = orders.find((o) => o.work_order_id === accessingOrderId) ?? null
 
@@ -95,9 +139,7 @@ function MechanicTasks() {
 
     const { data, error } = await supabase
       .from('work_orders')
-      .select(
-        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date',
-      )
+      .select(WORK_ORDER_COLUMNS)
       .eq('assigned_mechanic_id', mechanicEmployeeId)
       .not('work_order_status', 'in', '(Completed,Cancelled)')
       .order('scheduled_start_date', { ascending: true })
@@ -108,31 +150,14 @@ function MechanicTasks() {
       return
     }
 
-    const trailerIds = Array.from(
-      new Set(data.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
-    )
-
-    const { data: trailers, error: trailerError } =
-      trailerIds.length > 0
-        ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
-        : { data: [], error: null }
-
-    if (trailerError) {
-      setError(trailerError.message)
+    const labelled = await withVehicleLabels(data)
+    if (labelled.error) {
+      setError(labelled.error)
       setLoading(false)
       return
     }
 
-    const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
-
-    setOrders(
-      data.map((order) => ({
-        ...order,
-        vehicle_label: order.plate_number
-          ? `Truck ${order.plate_number}`
-          : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
-      })),
-    )
+    setOrders(labelled.orders)
     setError(null)
     setLoading(false)
   }
@@ -142,76 +167,49 @@ function MechanicTasks() {
   // work_order_completions.completed_at) -- just enough to catch a
   // "wait, I marked the wrong one" a little after the fact.
   async function loadRecentlyCompleted(mechanicEmployeeId: number) {
-    const { data, error: loadError } = await supabase
-      .from('work_orders')
-      .select(
-        'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date',
-      )
-      .eq('assigned_mechanic_id', mechanicEmployeeId)
-      .eq('work_order_status', 'Completed')
-      .order('work_order_id', { ascending: false })
-      .limit(10)
+    const [{ data, error: loadError }, pendingIds] = await Promise.all([
+      supabase
+        .from('work_orders')
+        .select(WORK_ORDER_COLUMNS)
+        .eq('assigned_mechanic_id', mechanicEmployeeId)
+        .eq('work_order_status', 'Completed')
+        .order('work_order_id', { ascending: false })
+        .limit(10),
+      loadMyPendingWorkOrderRelogIds(mechanicEmployeeId),
+    ])
 
+    setPendingRelogIds(pendingIds)
     if (loadError || !data) return
 
-    const trailerIds = Array.from(
-      new Set(data.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
-    )
-
-    const { data: trailers } =
-      trailerIds.length > 0
-        ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
-        : { data: [] }
-
-    const trailerPlateById = new Map((trailers ?? []).map((t) => [t.trailer_id, t.plate_number]))
-
-    setRecentlyCompleted(
-      data.map((order) => ({
-        ...order,
-        vehicle_label: order.plate_number
-          ? `Truck ${order.plate_number}`
-          : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
-      })),
-    )
+    const labelled = await withVehicleLabels(data)
+    if (!labelled.error) setRecentlyCompleted(labelled.orders)
   }
 
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
-    if (newStatus === 'Completed') {
-      setCompletingOrder(order)
-      setAccessingOrderId(null)
-      return
-    }
-
     setUpdatingId(order.work_order_id)
     setActionError(null)
+    setSuccessMessage(null)
 
-    const { error: updateError } = await supabase
-      .from('work_orders')
-      .update({ work_order_status: newStatus })
-      .eq('work_order_id', order.work_order_id)
+    const { error: changeError, statusChanged } = await changeWorkOrderStatus({
+      workOrderId: order.work_order_id,
+      plateNumber: order.plate_number,
+      trailerId: order.trailer_id,
+      previousStatus: order.work_order_status,
+      newStatus,
+      changedByEmployeeId: employeeId ?? null,
+    })
 
     setUpdatingId(null)
 
-    if (updateError) {
-      setActionError(updateError.message)
-      return
-    }
-
-    // Best effort -- the status change above already succeeded even if
-    // this fails, same reasoning as dispatch_status_logs elsewhere.
-    if (employeeId) {
-      logWorkOrderStatusChange({
-        workOrderId: order.work_order_id,
-        previousStatus: order.work_order_status,
-        newStatus,
-        changedByEmployeeId: employeeId,
-      })
-    }
+    if (changeError) setActionError(changeError)
+    if (!statusChanged) return
 
     if (newStatus === 'Cancelled') {
       // Matches the load filter (Completed/Cancelled excluded) -- drop
       // it off the list instead of showing a status it'll never leave.
       setOrders((prev) => prev.filter((o) => o.work_order_id !== order.work_order_id))
+      setAccessingOrderId(null)
+      if (!changeError) setSuccessMessage(`${order.work_order_number} cancelled.`)
     } else {
       setOrders((prev) =>
         prev.map((o) =>
@@ -223,6 +221,11 @@ function MechanicTasks() {
     }
   }
 
+  function startCompleting(order: WorkOrder) {
+    setAccessingOrderId(null)
+    setCompletingOrder(order)
+  }
+
   function handleWorkOrderCompleted() {
     if (completingOrder) {
       setSuccessMessage(`${completingOrder.work_order_number} marked complete.`)
@@ -231,6 +234,7 @@ function MechanicTasks() {
       )
     }
     setCompletingOrder(null)
+    if (employeeId) loadRecentlyCompleted(employeeId)
   }
 
   if (loading) {
@@ -243,14 +247,9 @@ function MechanicTasks() {
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={() => setShowInspectionReport(true)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-        >
-          Submit Inspection Report
-        </button>
-      </div>
+      <p className="mb-4 text-sm text-slate-500">
+        {orders.length} active work order{orders.length === 1 ? '' : 's'} assigned to you
+      </p>
 
       {actionError && (
         <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -265,7 +264,9 @@ function MechanicTasks() {
       )}
 
       {orders.length === 0 ? (
-        <p className="text-slate-500">Nothing assigned yet.</p>
+        <p className="text-slate-500">
+          Nothing assigned right now -- accept one from the Task Board below.
+        </p>
       ) : (
         <div className="grid gap-4">
           {orders.map((order) => (
@@ -273,12 +274,13 @@ function MechanicTasks() {
               key={order.work_order_id}
               className="rounded-xl border border-slate-200 p-5"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold text-slate-900">
                   {order.work_order_number} — {order.vehicle_label}
                 </p>
                 <StatusBadge status={order.work_order_status} />
               </div>
+              <p className="mt-1 text-sm text-slate-600">{order.maintenance_type}</p>
               {order.work_description && (
                 <p className="mt-1 text-sm text-slate-600">
                   {order.work_description}
@@ -286,16 +288,24 @@ function MechanicTasks() {
               )}
               {order.scheduled_start_date && (
                 <p className="mt-1 text-sm text-slate-500">
-                  Scheduled: {order.scheduled_start_date}
+                  Scheduled: {formatDate(order.scheduled_start_date)}
                 </p>
               )}
 
-              <button
-                onClick={() => setAccessingOrderId(order.work_order_id)}
-                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
-              >
-                Access Work Order
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => setAccessingOrderId(order.work_order_id)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Open Work Order
+                </button>
+                <button
+                  onClick={() => startCompleting(order)}
+                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                >
+                  Mark Complete
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -316,12 +326,16 @@ function MechanicTasks() {
                   </p>
                   <StatusBadge status={order.work_order_status} />
                 </div>
-                <button
-                  onClick={() => setReopeningOrder(order)}
-                  className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
-                >
-                  Request correction
-                </button>
+                {pendingRelogIds.includes(order.work_order_id) ? (
+                  <span className="text-xs text-slate-400">Correction requested</span>
+                ) : (
+                  <button
+                    onClick={() => setReopeningOrder(order)}
+                    className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                  >
+                    Request correction
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -348,12 +362,14 @@ function MechanicTasks() {
           statusOptions={REOPEN_STATUS_OPTIONS}
           employeeId={employeeId}
           onClose={() => setReopeningOrder(null)}
-          onRequested={() => setReopeningOrder(null)}
+          onRequested={() => {
+            setPendingRelogIds((prev) => [...prev, reopeningOrder.work_order_id])
+            setSuccessMessage(
+              `Correction for ${reopeningOrder.work_order_number} sent to admin for approval.`,
+            )
+            setReopeningOrder(null)
+          }}
         />
-      )}
-
-      {showInspectionReport && (
-        <InspectionReportModal onClose={() => setShowInspectionReport(false)} />
       )}
 
       {accessingOrder && employeeId && (
@@ -362,6 +378,7 @@ function MechanicTasks() {
           employeeId={employeeId}
           updating={updatingId === accessingOrder.work_order_id}
           onStatusChange={handleStatusChange}
+          onMarkComplete={() => startCompleting(accessingOrder)}
           onClose={() => setAccessingOrderId(null)}
         />
       )}

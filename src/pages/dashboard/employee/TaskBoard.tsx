@@ -14,32 +14,17 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderAcceptance } from '../../../lib/workOrderAcceptanceLog'
+import { formatDate } from '../../../lib/quoteRequest'
+import {
+  StatusBadge,
+  WORK_ORDER_COLUMNS,
+  withVehicleLabels,
+  type WorkOrder,
+} from './MechanicTasks'
 
-type AvailableWorkOrder = {
-  work_order_id: number
-  work_order_number: string
-  plate_number: string
-  maintenance_type: string
-  work_description: string | null
-  work_order_status: string
-  scheduled_start_date: string | null
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Created: 'bg-gray-100 text-gray-700',
-  Scheduled: 'bg-blue-100 text-blue-700',
-  'In Progress': 'bg-orange-100 text-orange-700',
-  'On Hold': 'bg-yellow-100 text-yellow-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
+// Same shape as a mechanic's own work orders -- includes trailer_id, so
+// trailer jobs show "Trailer XYZ" instead of "Truck null".
+type AvailableWorkOrder = WorkOrder
 
 function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
   const { employeeId } = useAuth()
@@ -57,9 +42,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
 
     const { data, error: loadError } = await supabase
       .from('work_orders')
-      .select(
-        'work_order_id, work_order_number, plate_number, maintenance_type, work_description, work_order_status, scheduled_start_date',
-      )
+      .select(WORK_ORDER_COLUMNS)
       .is('assigned_mechanic_id', null)
       .not('work_order_status', 'in', '(Completed,Cancelled)')
       .order('scheduled_start_date', { ascending: true })
@@ -70,7 +53,14 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
       return
     }
 
-    setOrders(data)
+    const labelled = await withVehicleLabels(data)
+    if (labelled.error) {
+      setError(labelled.error)
+      setLoading(false)
+      return
+    }
+
+    setOrders(labelled.orders)
     setError(null)
     setLoading(false)
   }
@@ -121,7 +111,14 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">Task Board</h2>
+      <h2 className="text-lg font-semibold text-slate-900">
+        Task Board
+        {!loading && (
+          <span className="ml-2 text-sm font-normal text-slate-500">
+            {orders.length} available
+          </span>
+        )}
+      </h2>
       <p className="mt-1 text-sm text-slate-500">
         Work orders waiting for a mechanic -- accept one to add it to your
         own task list.
@@ -151,7 +148,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
-                  {order.work_order_number} — Truck {order.plate_number}
+                  {order.work_order_number} — {order.vehicle_label}
                 </p>
                 <StatusBadge status={order.work_order_status} />
               </div>
@@ -165,7 +162,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
               )}
               {order.scheduled_start_date && (
                 <p className="mt-1 text-sm text-slate-500">
-                  Scheduled: {order.scheduled_start_date}
+                  Scheduled: {formatDate(order.scheduled_start_date)}
                 </p>
               )}
 

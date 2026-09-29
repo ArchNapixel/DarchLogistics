@@ -11,6 +11,8 @@ type Severity = 'Minor' | 'Major'
 type VehicleOption = {
   key: string
   label: string
+  plateNumber: string | null
+  trailerId: number | null
 }
 
 function InspectionReportModal({ onClose }: { onClose: () => void }) {
@@ -47,10 +49,14 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
         ...trucksResult.data.map((truck) => ({
           key: `truck-${truck.plate_number}`,
           label: `Truck: ${truck.plate_number}${truck.model ? ` (${truck.model})` : ''}`,
+          plateNumber: truck.plate_number,
+          trailerId: null,
         })),
         ...trailersResult.data.map((trailer) => ({
           key: `trailer-${trailer.trailer_id}`,
           label: `Trailer: ${trailer.plate_number ?? `#${trailer.trailer_id}`} (${trailer.trailer_type})`,
+          plateNumber: null,
+          trailerId: trailer.trailer_id,
         })),
       ]
 
@@ -83,6 +89,10 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
 
     const { error: insertError } = await supabase.from('issue_reports').insert({
       employee_id: employeeId,
+      // Stored as real columns too, so "Convert to Work Order" can
+      // pre-select the vehicle (ConvertIssueToWorkOrderModal.tsx).
+      plate_number: vehicle.plateNumber,
+      trailer_id: vehicle.trailerId,
       description: `Inspection report for ${vehicle.label}: ${findings.trim()}`,
       severity,
       notes: notes.trim() || null,

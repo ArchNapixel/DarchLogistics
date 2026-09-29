@@ -48,7 +48,7 @@ function IssueReportsSection() {
 
     const { data: rows, error: loadError } = await supabase
       .from('issue_reports')
-      .select('issue_report_id, employee_id, itinerary_id, description, severity, notes, reported_at')
+      .select('issue_report_id, employee_id, itinerary_id, plate_number, trailer_id, description, severity, notes, reported_at')
       .or('worked_on.is.null,worked_on.eq.false')
       .order('reported_at', { ascending: false })
 
@@ -84,6 +84,8 @@ function IssueReportsSection() {
         issue_report_id: row.issue_report_id,
         employee_name: nameById.get(row.employee_id) ?? `Employee #${row.employee_id}`,
         itinerary_id: row.itinerary_id,
+        plate_number: row.plate_number,
+        trailer_id: row.trailer_id,
         description: row.description,
         severity: row.severity,
         notes: row.notes,

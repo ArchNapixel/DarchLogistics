@@ -90,9 +90,54 @@ export async function loadInventoryItems(): Promise<{
   return { items: data, error: null }
 }
 
-// Re-checks stock fresh right before decrementing (same race-guard
-// pattern as CompleteWorkOrderModal.tsx), so two mechanics logging the
-// same part at once can't push stock negative.
+// Takes `quantity` off an item's stock (a negative quantity puts stock
+// back). The write only lands if stock is STILL the value just read
+// (.eq('quantity', ...)), so two mechanics using the same part at the
+// same moment can't overwrite each other's deduction -- a plain
+// read-then-write would silently lose one of them. If someone else got
+// in between, it re-reads and tries again (a few times).
+// Shared by logPartUsed() below and CompleteWorkOrderModal.tsx.
+export async function decrementStock(
+  itemId: number,
+  quantity: number,
+): Promise<{ error: string | null }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: current, error: readError } = await supabase
+      .from('inventory_items')
+      .select('quantity')
+      .eq('item_id', itemId)
+      .single()
+
+    if (readError || !current) {
+      return { error: readError?.message ?? 'Could not read current stock.' }
+    }
+    if (current.quantity < quantity) {
+      return { error: `Only ${current.quantity} in stock -- not enough for ${quantity}.` }
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('inventory_items')
+      .update({ quantity: current.quantity - quantity })
+      .eq('item_id', itemId)
+      .eq('quantity', current.quantity)
+      .select('item_id')
+      .maybeSingle()
+
+    if (updateError) {
+      return { error: updateError.message }
+    }
+    if (updated) {
+      return { error: null }
+    }
+    // 0 rows matched: stock changed since we read it -- loop and re-read.
+  }
+
+  return { error: 'Stock for this item kept changing while saving. Try again.' }
+}
+
+// Deducts stock FIRST (race-guarded, see decrementStock), then records
+// the log row. If recording fails, the stock is put back so the two
+// never disagree.
 export async function logPartUsed({
   workOrderId,
   itemId,
@@ -106,18 +151,19 @@ export async function logPartUsed({
   quantity: number
   employeeId: number
 }): Promise<{ error: string | null }> {
-  const { data: current, error: readError } = await supabase
+  const { data: item, error: readError } = await supabase
     .from('inventory_items')
-    .select('quantity, unit_cost')
+    .select('unit_cost')
     .eq('item_id', itemId)
     .single()
 
-  if (readError || !current) {
-    return { error: readError?.message ?? 'Could not read current stock.' }
+  if (readError || !item) {
+    return { error: readError?.message ?? 'Could not read this item.' }
   }
 
-  if (current.quantity < quantity) {
-    return { error: `Only ${current.quantity} in stock -- not enough for ${quantity}.` }
+  const { error: stockError } = await decrementStock(itemId, quantity)
+  if (stockError) {
+    return { error: stockError }
   }
 
   const { error: logError } = await supabase.from('work_order_parts_log').insert({
@@ -125,22 +171,16 @@ export async function logPartUsed({
     item_id: itemId,
     item_name_text: itemName,
     quantity,
-    unit_cost: current.unit_cost,
+    unit_cost: item.unit_cost,
     employee_id: employeeId,
   })
 
   if (logError) {
-    return { error: logError.message }
-  }
-
-  const { error: decrementError } = await supabase
-    .from('inventory_items')
-    .update({ quantity: current.quantity - quantity })
-    .eq('item_id', itemId)
-
-  if (decrementError) {
+    const { error: restoreError } = await decrementStock(itemId, -quantity)
     return {
-      error: `Logged the part, but could not decrement stock (${decrementError.message}). This needs manual review.`,
+      error: restoreError
+        ? `Could not log the part (${logError.message}), and ${quantity} was already taken off stock and could not be put back. This needs manual review.`
+        : `Could not log the part (${logError.message}). Stock was not changed.`,
     }
   }
 

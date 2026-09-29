@@ -1,7 +1,8 @@
 // AccessWorkOrderModal: opened from "Access Work Order" on a mechanic's
 // task list -- one place to see the full job (vehicle, maintenance
 // type, description, schedule), change its status (same free-choice
-// ALL_STATUSES dropdown that used to live inline on the card), and add
+// ALL_STATUSES dropdown, minus "Completed" -- that's the separate "Mark
+// Complete" button, which hands off to CompleteWorkOrderModal), and add
 // progress notes while actually working it (workOrderNotes.ts) --
 // separate from the final description/parts breakdown recorded at
 // Completion. Status changes and the eventual Completed hand-off are
@@ -21,6 +22,7 @@ import {
   type InventoryItemOption,
 } from '../../../lib/workOrderPartsLog'
 import { ALL_STATUSES, StatusBadge, type WorkOrder } from './MechanicTasks'
+import { formatDate } from '../../../lib/quoteRequest'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -30,12 +32,14 @@ function AccessWorkOrderModal({
   employeeId,
   updating,
   onStatusChange,
+  onMarkComplete,
   onClose,
 }: {
   order: WorkOrder
   employeeId: number
   updating: boolean
   onStatusChange: (order: WorkOrder, newStatus: string) => void
+  onMarkComplete: () => void
   onClose: () => void
 }) {
   const [notes, setNotes] = useState<WorkOrderNote[]>([])
@@ -186,7 +190,7 @@ function AccessWorkOrderModal({
           {order.scheduled_start_date && (
             <div className="flex items-center justify-between">
               <span className="text-slate-500">Scheduled</span>
-              <span className="text-slate-900">{order.scheduled_start_date}</span>
+              <span className="text-slate-900">{formatDate(order.scheduled_start_date)}</span>
             </div>
           )}
           {order.work_description && (
@@ -197,22 +201,31 @@ function AccessWorkOrderModal({
           )}
         </div>
 
-        <label className="mt-4 flex items-center gap-2 text-sm text-slate-600">
-          Status:
-          <StatusBadge status={order.work_order_status} />
-          <select
-            value={order.work_order_status}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            Status:
+            <StatusBadge status={order.work_order_status} />
+            <select
+              value={order.work_order_status}
+              disabled={updating}
+              onChange={(e) => onStatusChange(order, e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+            >
+              {ALL_STATUSES.filter((status) => status !== 'Completed').map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            onClick={onMarkComplete}
             disabled={updating}
-            onChange={(e) => onStatusChange(order, e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-900"
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {ALL_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
+            Mark Complete
+          </button>
+        </div>
 
         <div className="mt-6 border-t border-slate-200 pt-4">
           <h4 className="text-sm font-semibold text-slate-700">Parts Used</h4>
@@ -248,11 +261,12 @@ function AccessWorkOrderModal({
                     <button
                       key={item.item_id}
                       type="button"
+                      disabled={item.quantity <= 0}
                       onClick={() => {
                         setSelectedItem(item)
                         setPartSearch(item.name)
                       }}
-                      className={`flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 ${
+                      className={`flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${
                         selectedItem?.item_id === item.item_id ? 'bg-slate-100' : ''
                       }`}
                     >
@@ -261,7 +275,7 @@ function AccessWorkOrderModal({
                         <span className="text-xs text-slate-400">({item.item_type})</span>
                       </span>
                       <span className="text-xs font-medium text-slate-600">
-                        {item.quantity} in stock
+                        {item.quantity > 0 ? `${item.quantity} in stock` : 'Out of stock'}
                       </span>
                     </button>
                   ))

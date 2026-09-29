@@ -6,6 +6,7 @@
 // direct change) or rejects it. Exactly one of itinerary_id/work_order_id
 // is ever set (enforced by a DB check constraint).
 import { supabase } from './supabaseClient'
+import { changeWorkOrderStatus } from './workOrderStatusLog'
 
 export type RelogTargetType = 'itinerary' | 'work_order'
 
@@ -123,14 +124,15 @@ export async function loadPendingRelogRequests(): Promise<{
   }
 }
 
-// Approving both applies the real status change (and logs it to the
-// same table a direct change would use) AND marks the request Approved
-// -- two writes, not wrapped in a DB transaction (same known limitation
-// as QuoteReviewModal/payslip.ts). If the status update succeeds but
-// marking the request Approved fails, the request is left Pending even
-// though the status already changed -- rare, and re-approving it is
-// harmless (it would just reapply the same status), so this doesn't
-// need a "needs manual review" message the way money-affecting flows do.
+// Approving both marks the request Approved AND applies the real status
+// change (logged to the same table a direct change would use) -- not
+// wrapped in a DB transaction (same known limitation as elsewhere).
+//
+// The request is claimed FIRST (Pending -> Approved, race-guarded), and
+// only the admin who wins that claim applies the change -- same pattern
+// as approveMaintenanceRequest(). Applying first (as before) let two
+// admins approving at once each apply and log it. If applying fails, the
+// request is put back to Pending so it can be retried or rejected.
 export async function approveStatusRelogRequest({
   request,
   resolvedByEmployeeId,
@@ -138,41 +140,7 @@ export async function approveStatusRelogRequest({
   request: PendingRelogRequest
   resolvedByEmployeeId: number
 }): Promise<{ error: string | null }> {
-  if (request.target_type === 'itinerary' && request.itinerary_id !== null) {
-    const { error: updateError } = await supabase
-      .from('itineraries')
-      .update({ itinerary_status: request.requested_status })
-      .eq('itinerary_id', request.itinerary_id)
-
-    if (updateError) {
-      return { error: updateError.message }
-    }
-
-    await supabase.from('dispatch_status_logs').insert({
-      itinerary_id: request.itinerary_id,
-      previous_status: request.current_status,
-      new_status: request.requested_status,
-      changed_by: resolvedByEmployeeId,
-    })
-  } else if (request.target_type === 'work_order' && request.work_order_id !== null) {
-    const { error: updateError } = await supabase
-      .from('work_orders')
-      .update({ work_order_status: request.requested_status })
-      .eq('work_order_id', request.work_order_id)
-
-    if (updateError) {
-      return { error: updateError.message }
-    }
-
-    await supabase.from('work_order_status_log').insert({
-      work_order_id: request.work_order_id,
-      previous_status: request.current_status,
-      new_status: request.requested_status,
-      changed_by: resolvedByEmployeeId,
-    })
-  }
-
-  const { error: resolveError } = await supabase
+  const { data: claimed, error: claimError } = await supabase
     .from('status_relog_requests')
     .update({
       status: 'Approved',
@@ -181,8 +149,70 @@ export async function approveStatusRelogRequest({
     })
     .eq('request_id', request.request_id)
     .eq('status', 'Pending')
+    .select('request_id')
+    .maybeSingle()
 
-  return { error: resolveError?.message ?? null }
+  if (claimError) {
+    return { error: claimError.message }
+  }
+  if (!claimed) {
+    return { error: 'This request was already approved or rejected by someone else.' }
+  }
+
+  let applyError: string | null = null
+
+  if (request.target_type === 'itinerary' && request.itinerary_id !== null) {
+    const { error: updateError } = await supabase
+      .from('itineraries')
+      .update({ itinerary_status: request.requested_status })
+      .eq('itinerary_id', request.itinerary_id)
+
+    if (updateError) {
+      applyError = updateError.message
+    } else {
+      await supabase.from('dispatch_status_logs').insert({
+        itinerary_id: request.itinerary_id,
+        previous_status: request.current_status,
+        new_status: request.requested_status,
+        changed_by: resolvedByEmployeeId,
+      })
+    }
+  } else if (request.target_type === 'work_order' && request.work_order_id !== null) {
+    // Need the vehicle so reopening a Completed/Cancelled job puts its
+    // truck/trailer back to "Under Maintenance" (changeWorkOrderStatus).
+    const { data: order, error: orderError } = await supabase
+      .from('work_orders')
+      .select('plate_number, trailer_id')
+      .eq('work_order_id', request.work_order_id)
+      .single()
+
+    if (orderError || !order) {
+      applyError = orderError?.message ?? 'Could not load the work order.'
+    } else {
+      const { error, statusChanged } = await changeWorkOrderStatus({
+        workOrderId: request.work_order_id,
+        plateNumber: order.plate_number,
+        trailerId: order.trailer_id,
+        previousStatus: request.current_status,
+        newStatus: request.requested_status,
+        changedByEmployeeId: resolvedByEmployeeId,
+      })
+      // If the status DID change (only the vehicle sync failed), keep the
+      // request Approved and just surface the message.
+      if (statusChanged) return { error }
+      applyError = error
+    }
+  }
+
+  if (applyError) {
+    await supabase
+      .from('status_relog_requests')
+      .update({ status: 'Pending', resolved_by_employee_id: null, resolved_at: null })
+      .eq('request_id', request.request_id)
+    return { error: `${applyError} The request was put back to Pending.` }
+  }
+
+  return { error: null }
 }
 
 export async function rejectStatusRelogRequest({
@@ -194,7 +224,7 @@ export async function rejectStatusRelogRequest({
   resolvedByEmployeeId: number
   resolutionNote: string
 }): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('status_relog_requests')
     .update({
       status: 'Rejected',
@@ -204,6 +234,24 @@ export async function rejectStatusRelogRequest({
     })
     .eq('request_id', requestId)
     .eq('status', 'Pending')
+    .select('request_id')
+    .maybeSingle()
 
-  return { error: error?.message ?? null }
+  if (error) return { error: error.message }
+  if (!updated) return { error: 'This request was already approved or rejected by someone else.' }
+  return { error: null }
+}
+
+// Mechanic side: work order ids that already have a Pending request from
+// this employee, so MechanicTasks.tsx can hide "Request correction" on
+// them instead of letting the same request be sent twice.
+export async function loadMyPendingWorkOrderRelogIds(employeeId: number): Promise<number[]> {
+  const { data } = await supabase
+    .from('status_relog_requests')
+    .select('work_order_id')
+    .eq('requested_by_employee_id', employeeId)
+    .eq('status', 'Pending')
+    .not('work_order_id', 'is', null)
+
+  return (data ?? []).map((row) => row.work_order_id as number)
 }

@@ -33,11 +33,26 @@
 //      CreateWorkOrderModal.tsx). For a truck (plate_number set), also
 //      sync truck_profiles.current_odometer / next_service_date /
 //      last_service_date.
-import { useEffect, useState } from 'react'
+//
+// Retry-safe: `progress` remembers which steps already succeeded, so if
+// a later step fails and the mechanic clicks "Mark Complete" again, the
+// completion row / parts rows aren't inserted twice and stock isn't
+// deducted twice -- it picks up where it left off.
+//
+// Reopened jobs: if this work order was completed before (then reopened
+// through a Status Relog Request), only parts logged AFTER that earlier
+// completion are copied in -- the older ones are already on the earlier
+// completion, and copying them again would double-count them in the
+// maintenance cost report.
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
-import { loadWorkOrderPartsLog, type LoggedPart } from '../../../lib/workOrderPartsLog'
+import {
+  decrementStock,
+  loadWorkOrderPartsLog,
+  type LoggedPart,
+} from '../../../lib/workOrderPartsLog'
 import { ITEM_TYPES } from '../staff/AddInventoryItemModal'
 
 const fieldClasses =
@@ -124,12 +139,37 @@ function CompleteWorkOrderModal({
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
 
+  // Which submit steps already succeeded (see "Retry-safe" above).
+  const progress = useRef({
+    completionId: null as number | null,
+    decrementedRowKeys: new Set<number>(),
+    statusDone: false,
+  })
+
   useEffect(() => {
     loadInventory()
-    loadWorkOrderPartsLog(workOrderId).then(({ parts: logged, error }) => {
-      if (!error) setAlreadyLoggedParts(logged)
-    })
+    loadAlreadyLoggedParts()
   }, [workOrderId])
+
+  async function loadAlreadyLoggedParts() {
+    const [{ parts: logged, error }, { data: lastCompletion }] = await Promise.all([
+      loadWorkOrderPartsLog(workOrderId),
+      supabase
+        .from('work_order_completions')
+        .select('completed_at')
+        .eq('work_order_id', workOrderId)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+    if (error) return
+
+    // Only parts logged since the previous completion (if any).
+    const since = lastCompletion ? new Date(lastCompletion.completed_at).getTime() : null
+    setAlreadyLoggedParts(
+      since ? logged.filter((p) => new Date(p.used_at).getTime() > since) : logged,
+    )
+  }
 
   async function loadInventory() {
     setLoadingInventory(true)
@@ -296,7 +336,11 @@ function CompleteWorkOrderModal({
     // Re-check stock for existing (not brand-new) items right before we
     // touch anything -- someone else may have used the same part since
     // this modal's inventory list loaded.
-    const existingRows = parts.filter((row) => !row.addingNew)
+    // (Rows already deducted on an earlier attempt are skipped -- their
+    // stock is naturally lower now.)
+    const existingRows = parts.filter(
+      (row) => !row.addingNew && !progress.current.decrementedRowKeys.has(row.key),
+    )
     const freshPriceById = new Map<number, number | null>()
     if (existingRows.length > 0) {
       const ids = existingRows.map((row) => row.itemId as number)
@@ -335,6 +379,7 @@ function CompleteWorkOrderModal({
 
     // 1. Create any brand-new inventory items, capturing their new item_id.
     const resolvedParts: {
+      rowKey: number
       itemId: number
       quantity: number
       label: string
@@ -368,6 +413,7 @@ function CompleteWorkOrderModal({
 
         createdItemNames.push(row.search.trim())
         resolvedParts.push({
+          rowKey: row.key,
           itemId: newItem.item_id,
           quantity: Number(row.quantityUsed),
           label: row.search.trim(),
@@ -397,6 +443,7 @@ function CompleteWorkOrderModal({
         ])
       } else {
         resolvedParts.push({
+          rowKey: row.key,
           itemId: row.itemId as number,
           quantity: Number(row.quantityUsed),
           label: row.search,
@@ -410,130 +457,125 @@ function CompleteWorkOrderModal({
         ? ` New inventory item(s) already created: ${createdItemNames.join(', ')}.`
         : ''
 
-    // 2. Insert the completion record.
-    const { data: completion, error: completionError } = await supabase
-      .from('work_order_completions')
-      .insert({
-        work_order_id: workOrderId,
-        employee_id: employeeId,
-        description: description.trim(),
-        odometer_reading: odometerValue,
-        next_service_date: nextServiceDate || null,
-        notes: notes.trim() || null,
-        completed_at: new Date().toISOString(),
-      })
-      .select('completion_id')
-      .single()
-
-    if (completionError || !completion) {
-      setFormError(
-        `Could not save the completion record (${completionError?.message ?? 'no data returned'}).${newItemsNote} This needs manual review.`,
-      )
-      setSubmitting(false)
-      return
-    }
-
-    // 3. Insert the parts-used rows, linked to that completion -- both
-    // the ones entered fresh here AND the ones already logged mid-job
-    // (their stock was decremented already, when they were logged --
-    // this just carries them into the completion record for reporting).
-    const allPartsForCompletion = [
-      ...resolvedParts.map((p) => ({
-        completion_id: completion.completion_id,
-        item_id: p.itemId,
-        item_name_text: p.label,
-        quantity: p.quantity,
-        unit_cost: p.unitCost,
-      })),
-      ...alreadyLoggedParts.map((p) => ({
-        completion_id: completion.completion_id,
-        item_id: p.item_id,
-        item_name_text: p.item_name_text,
-        quantity: p.quantity,
-        unit_cost: p.unit_cost,
-      })),
-    ]
-
-    if (allPartsForCompletion.length > 0) {
-      const { error: partsError } = await supabase
-        .from('work_order_parts_used')
-        .insert(allPartsForCompletion)
-
-      if (partsError) {
-        setFormError(
-          `Completion record #${completion.completion_id} was saved, but the parts used could not be recorded (${partsError.message}).${newItemsNote} This needs manual review -- inventory was not adjusted and the work order is still not marked Completed.`,
-        )
-        setSubmitting(false)
-        return
-      }
-    }
-
-    // 4. Decrement inventory for each part, one at a time (read-then-write,
-    // no atomic decrement available without an RPC).
-    for (const part of resolvedParts) {
-      const { data: current, error: readError } = await supabase
-        .from('inventory_items')
-        .select('quantity')
-        .eq('item_id', part.itemId)
+    // 2 + 3 run only once -- on a retry after a later step failed, the
+    // completion and its parts rows already exist (see "Retry-safe").
+    if (progress.current.completionId === null) {
+      // 2. Insert the completion record.
+      const { data: completion, error: completionError } = await supabase
+        .from('work_order_completions')
+        .insert({
+          work_order_id: workOrderId,
+          employee_id: employeeId,
+          description: description.trim(),
+          odometer_reading: odometerValue,
+          next_service_date: nextServiceDate || null,
+          notes: notes.trim() || null,
+          completed_at: new Date().toISOString(),
+        })
+        .select('completion_id')
         .single()
 
-      if (readError || !current) {
+      if (completionError || !completion) {
         setFormError(
-          `Completion #${completion.completion_id} and its parts were saved, but stock for "${part.label}" could not be read to update it (${readError?.message ?? 'no data returned'}). This needs manual review -- the work order is still not marked Completed.`,
+          `Could not save the completion record (${completionError?.message ?? 'no data returned'}).${newItemsNote} This needs manual review.`,
         )
         setSubmitting(false)
         return
       }
 
-      if (current.quantity < part.quantity) {
-        setFormError(
-          `Completion #${completion.completion_id} and its parts were saved, but "${part.label}" now has only ${current.quantity} in stock -- not enough to cover the ${part.quantity} used. Its stock was NOT decremented. This needs manual review -- the work order is still not marked Completed.`,
-        )
-        setSubmitting(false)
-        return
+      // 3. Insert the parts-used rows, linked to that completion -- both
+      // the ones entered fresh here AND the ones already logged mid-job
+      // (their stock was decremented already, when they were logged --
+      // this just carries them into the completion record for reporting).
+      const allPartsForCompletion = [
+        ...resolvedParts.map((p) => ({
+          completion_id: completion.completion_id,
+          item_id: p.itemId,
+          item_name_text: p.label,
+          quantity: p.quantity,
+          unit_cost: p.unitCost,
+        })),
+        ...alreadyLoggedParts.map((p) => ({
+          completion_id: completion.completion_id,
+          item_id: p.item_id,
+          item_name_text: p.item_name_text,
+          quantity: p.quantity,
+          unit_cost: p.unit_cost,
+        })),
+      ]
+
+      if (allPartsForCompletion.length > 0) {
+        const { error: partsError } = await supabase
+          .from('work_order_parts_used')
+          .insert(allPartsForCompletion)
+
+        if (partsError) {
+          setFormError(
+            `Completion record #${completion.completion_id} was saved, but the parts used could not be recorded (${partsError.message}).${newItemsNote} This needs manual review -- inventory was not adjusted and the work order is still not marked Completed.`,
+          )
+          setSubmitting(false)
+          return
+        }
       }
 
-      const { error: decrementError } = await supabase
-        .from('inventory_items')
-        .update({ quantity: current.quantity - part.quantity })
-        .eq('item_id', part.itemId)
-
-      if (decrementError) {
-        setFormError(
-          `Completion #${completion.completion_id} was saved, but stock for "${part.label}" could not be updated (${decrementError.message}). This needs manual review -- the work order is still not marked Completed.`,
-        )
-        setSubmitting(false)
-        return
-      }
+      progress.current.completionId = completion.completion_id
     }
 
-    // 5. Mark the work order Completed.
-    const { error: statusError } = await supabase
-      .from('work_orders')
-      .update({ work_order_status: 'Completed' })
-      .eq('work_order_id', workOrderId)
+    const completionId = progress.current.completionId
 
-    if (statusError) {
-      setFormError(
-        `Completion #${completion.completion_id} and inventory were saved, but the work order status could not be updated to Completed (${statusError.message}). This needs manual review.`,
-      )
-      setSubmitting(false)
-      return
+    // 4. Decrement inventory for each freshly entered part (race-guarded
+    // in decrementStock). Parts already deducted on an earlier attempt
+    // are skipped.
+    for (const part of resolvedParts) {
+      if (progress.current.decrementedRowKeys.has(part.rowKey)) continue
+
+      const { error: stockError } = await decrementStock(part.itemId, part.quantity)
+
+      if (stockError) {
+        setFormError(
+          `Completion #${completionId} was saved, but stock for "${part.label}" could not be updated (${stockError}). Fix the quantity or restock it, then click Mark Complete again -- the completion won't be saved twice.`,
+        )
+        setSubmitting(false)
+        return
+      }
+
+      progress.current.decrementedRowKeys.add(part.rowKey)
     }
 
-    // Best effort -- the status change above already succeeded even if
-    // this fails.
-    if (employeeId) {
-      logWorkOrderStatusChange({
-        workOrderId,
-        previousStatus,
-        newStatus: 'Completed',
-        changedByEmployeeId: employeeId,
-      })
+    // 5. Mark the work order Completed. .select() so an RLS silent no-op
+    // (0 rows updated, no error) is caught instead of showing success.
+    if (!progress.current.statusDone) {
+      const { data: statusRow, error: statusError } = await supabase
+        .from('work_orders')
+        .update({ work_order_status: 'Completed' })
+        .eq('work_order_id', workOrderId)
+        .select('work_order_id')
+        .maybeSingle()
+
+      if (statusError || !statusRow) {
+        setFormError(
+          `Completion #${completionId} and inventory were saved, but the work order status could not be updated to Completed (${statusError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
+        )
+        setSubmitting(false)
+        return
+      }
+
+      progress.current.statusDone = true
+
+      // Best effort -- the status change above already succeeded even if
+      // this fails.
+      if (employeeId) {
+        logWorkOrderStatusChange({
+          workOrderId,
+          previousStatus,
+          newStatus: 'Completed',
+          changedByEmployeeId: employeeId,
+        })
+      }
     }
 
     // 6. Reset the vehicle's fleet status, and for a truck job also sync
-    // odometer / service dates.
+    // odometer / service dates. .select() catches a silent no-op here too.
     if (plateNumber) {
       const truckUpdates: Record<string, string | number> = {
         current_status: 'Available',
@@ -544,27 +586,31 @@ function CompleteWorkOrderModal({
         truckUpdates.last_service_date = new Date().toISOString().slice(0, 10)
       }
 
-      const { error: truckError } = await supabase
+      const { data: truckRow, error: truckError } = await supabase
         .from('truck_profiles')
         .update(truckUpdates)
         .eq('plate_number', plateNumber)
+        .select('plate_number')
+        .maybeSingle()
 
-      if (truckError) {
+      if (truckError || !truckRow) {
         setFormError(
-          `Work order was marked Completed, but the truck profile could not be updated (${truckError.message}). This needs manual review.`,
+          `Work order was marked Completed, but the truck profile could not be updated (${truckError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
         )
         setSubmitting(false)
         return
       }
     } else if (trailerId !== null) {
-      const { error: trailerError } = await supabase
+      const { data: trailerRow, error: trailerError } = await supabase
         .from('trailers')
         .update({ current_status: 'Available' })
         .eq('trailer_id', trailerId)
+        .select('trailer_id')
+        .maybeSingle()
 
-      if (trailerError) {
+      if (trailerError || !trailerRow) {
         setFormError(
-          `Work order was marked Completed, but the trailer's status could not be updated (${trailerError.message}). This needs manual review.`,
+          `Work order was marked Completed, but the trailer's status could not be updated (${trailerError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
         )
         setSubmitting(false)
         return

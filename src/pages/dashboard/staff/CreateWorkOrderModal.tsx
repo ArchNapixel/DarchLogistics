@@ -64,7 +64,7 @@ function CreateWorkOrderModal({
 
     const { data: trucks, error: truckError } = await supabase
       .from('truck_profiles')
-      .select('plate_number, model')
+      .select('plate_number, model, current_status')
       .order('plate_number', { ascending: true })
 
     if (truckError) {
@@ -75,7 +75,7 @@ function CreateWorkOrderModal({
 
     const { data: trailers, error: trailerError } = await supabase
       .from('trailers')
-      .select('trailer_id, plate_number, trailer_type')
+      .select('trailer_id, plate_number, trailer_type, current_status')
       .order('trailer_id', { ascending: true })
 
     if (trailerError) {
@@ -99,13 +99,13 @@ function CreateWorkOrderModal({
     const options: VehicleOption[] = [
       ...trucks.map((t) => ({
         key: `truck-${t.plate_number}`,
-        label: `Truck: ${t.plate_number}${t.model ? ` (${t.model})` : ''}`,
+        label: `Truck: ${t.plate_number}${t.model ? ` (${t.model})` : ''}${t.current_status === 'In Transit' ? ' — In Transit' : ''}`,
         plateNumber: t.plate_number,
         trailerId: null,
       })),
       ...trailers.map((t) => ({
         key: `trailer-${t.trailer_id}`,
-        label: `Trailer: ${t.plate_number ?? `#${t.trailer_id}`} (${t.trailer_type})`,
+        label: `Trailer: ${t.plate_number ?? `#${t.trailer_id}`} (${t.trailer_type})${t.current_status === 'In Transit' ? ' — In Transit' : ''}`,
         plateNumber: null,
         trailerId: t.trailer_id,
       })),
@@ -157,15 +157,19 @@ function CreateWorkOrderModal({
     // Reflect the open work order on the Fleet page -- reverted back to
     // "Available" when the mechanic marks this work order Completed
     // (CompleteWorkOrderModal.tsx).
+    // Skipped for a vehicle currently out on a trip ("In Transit") --
+    // it shouldn't show as in the shop mid-delivery.
     const { error: statusError } = selectedVehicle.plateNumber
       ? await supabase
           .from('truck_profiles')
           .update({ current_status: 'Under Maintenance' })
           .eq('plate_number', selectedVehicle.plateNumber)
+          .or('current_status.is.null,current_status.neq."In Transit"')
       : await supabase
           .from('trailers')
           .update({ current_status: 'Under Maintenance' })
           .eq('trailer_id', selectedVehicle.trailerId)
+          .or('current_status.is.null,current_status.neq."In Transit"')
 
     setSubmitting(false)
 
