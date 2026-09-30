@@ -29,9 +29,6 @@ import {
   type PayslipLineItem,
 } from '../../../lib/payslip'
 import EditDraftPayslipModal, { type DraftToEdit } from './EditDraftPayslipModal'
-import IssueCashAdvanceModal from './IssueCashAdvanceModal'
-import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
-import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type PayrollEntry = {
@@ -90,7 +87,6 @@ function PayrollSection() {
   const [generating, setGenerating] = useState(false)
   // Employees the auto-generator couldn't make a draft for (e.g. no rate set)
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([])
-  const [showIssueAdvance, setShowIssueAdvance] = useState(false)
   const [markingPaidId, setMarkingPaidId] = useState<number | null>(null)
   // payroll_id being finalized/discarded, or 'all' for Finalize All
   const [reviewingId, setReviewingId] = useState<number | 'all' | null>(null)
@@ -99,7 +95,6 @@ function PayrollSection() {
     Record<number, PayslipLineItem[]>
   >({})
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
-  const [showLedger, setShowLedger] = useState(false)
 
   useEffect(() => {
     generateThenLoad()
@@ -310,34 +305,7 @@ function PayrollSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Payroll</h2>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowLedger((visible) => !visible)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {showLedger ? 'Hide Cash Advance Ledger' : 'View Cash Advance Ledger'}
-          </button>
-          <button
-            onClick={() => setShowIssueAdvance(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Issue Cash Advance
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <CashAdvanceRequestsSection />
-      </div>
-
-      {showLedger && (
-        <section className="mt-6 border-t border-slate-200 pt-6">
-          <h3 className="text-lg font-semibold text-slate-900">Cash Advance Ledger</h3>
-          <div className="mt-4"><CashAdvanceLedgerSection /></div>
-        </section>
-      )}
+      <h2 className="text-xl font-bold text-slate-900">Payroll</h2>
 
       {actionError && (
         <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -603,13 +571,6 @@ function PayrollSection() {
             setEditingDraft(null)
             loadPayroll()
           }}
-        />
-      )}
-
-      {showIssueAdvance && (
-        <IssueCashAdvanceModal
-          onClose={() => setShowIssueAdvance(false)}
-          onIssued={() => setShowIssueAdvance(false)}
         />
       )}
     </div>

@@ -288,7 +288,7 @@ before creating it.
   else is paid against attendance: Daily Fixed, Weekly Salary (÷6 × paid
   days — Helpers), Monthly Salary (÷30), Hourly. No daily allowance
   anymore. `commission_basis`/`commission_per_trip` columns are legacy,
-  unused since 2026-09-28. In `IssuePayslipModal` the admin can override
+  unused since 2026-09-28. In `EditDraftPayslipModal` the admin can override
   any auto line amount or add manual lines; changes are tagged in the
   saved line description ("adjusted by admin, auto: ₱X").
   **Government deductions (2026-09-28):** `lib/governmentContributions.ts`
@@ -333,15 +333,23 @@ before creating it.
   subtracted — use Regenerate. A draft can't be finalized until its week
   is over (`finalizePayslips` requires `payroll_period_end` < today,
   Manila). Top-up isn't atomic (ponytail comment in payslip.ts). Weeks
-  older than last week aren't back-filled. Admin
-  issues payslips (`IssuePayslipModal`, previews line items, lets admin
-  apply a cash-advance deduction bounded by outstanding balance) and cash
-  advances directly (`IssueCashAdvanceModal`, inserts into
-  `cash_advances` with `status: 'Approved'` implicitly via its DB
-  default, never auto-deducted). PayrollSection (`/dashboard/payroll`)
-  lists/marks-paid. Employees see their own payslip history
+  older than last week aren't back-filled. The draft editor lets admin
+  apply a cash-advance deduction bounded by outstanding balance.
+  **Overlapping-run guard (2026-09-29):** `generateDraftPayslips()` runs
+  are queued one after another per browser tab (React StrictMode fired
+  Payroll's open-effect twice and double-added trips), and every run
+  first calls `healDraft()`, which deletes duplicate trip lines
+  (same `itinerary_id` twice) and corrects a draft's gross. Only guards
+  one tab — two admins at once still need a Postgres function.
+  Cash advances are issued directly by admin (`IssueCashAdvanceModal`,
+  inserts into `cash_advances` with `status: 'Approved'` implicitly via
+  its DB default, never auto-deducted) — from the **Cash Advance** page
+  (see below), no longer from Payroll. PayrollSection
+  (`/dashboard/payroll`) lists/finalizes/marks-paid drafts and payslips.
+  Employees see their own payslip history
   (`MyPayslipSection`/`MyPayslipPage`), Dispatchers via their own
-  restricted view (`DispatcherPayslipSection`). `issuePayslip()` isn't
+  restricted view (`DispatcherPayslipSection`). `issuePayslip()` (now
+  only called internally by the draft generator) isn't
   wrapped in a DB transaction — a failure partway surfaces a "needs
   manual review" error naming the created `payroll_id` instead of
   failing silently.
@@ -362,17 +370,21 @@ before creating it.
     Requests" list with status badges), mounted in `MyPayslipPage.tsx`
     only — `DispatcherPayslipSection.tsx` is untouched. Staff side:
     `staff/CashAdvanceRequestsSection.tsx`, a "Pending Cash Advance
-    Requests" panel on the Payroll page with Approve/Reject (Reject
+    Requests" panel on the Cash Advance page with Approve/Reject (Reject
     prompts for a reason via `window.prompt`, same pattern as
     `FinancialSection.tsx`). `getOutstandingCashAdvance()` in
     `payslip.ts` was fixed to filter `status = 'Approved'` — a
     `'Pending'` request hasn't actually been given to the employee yet,
     so it must not inflate what gets deducted from their next payslip.
   - "View Cash Advance Ledger" — **superseded**: a real dedicated ledger
-    page now exists, `staff/CashAdvanceLedgerSection.tsx`, toggleable as
-    a panel on the Payroll page (this replaces the earlier note in this
-    file that called the gap "effectively covered" by the payslip-modal
-    balance display alone — that's no longer the only way to see it).
+    page now exists, `staff/CashAdvanceLedgerSection.tsx`, always shown
+    on the Cash Advance page (no toggle).
+    **2026-09-30: Cash Advance is its own tab** — Human Resource →
+    Cash Advance (`/dashboard/cash-advance`, Admin only,
+    `staff/CashAdvanceSection.tsx`). It just composes the Issue Cash
+    Advance button/modal, the pending-requests panel and the ledger,
+    all of which used to sit on the Payroll page (Payroll no longer has
+    any cash-advance UI; payslip cash-advance deductions are unchanged).
     Note for later: `getOutstandingCashAdvance()`
     is a pooled running balance (`sum of Approved cash_advances.amount`
     minus `sum of payroll_payslips.cash_advance_deducted`, both summed
@@ -384,8 +396,20 @@ before creating it.
     (e.g. "is this specific ₱500 advance paid off"), that can't be
     read from existing data and would need new tracking (FIFO
     attribution would be the natural choice).
-  - Attendance (`staff/AttendanceSection.tsx`, toggleable panel on the
-    Payroll page alongside the Cash Advance Ledger) and Payslip Issue
+  - Attendance (`staff/AttendanceSection.tsx`) — **its own tab** under
+    Human Resource → Attendance (`/dashboard/attendance`, Admin only;
+    no longer a Payroll panel, moved in the 2026-09-30 "attendance
+    overhaul"). One table per Sun–Sat week (arrows to change week): a
+    row per current employee (not Deactivated/Terminated, **Drivers
+    excluded** — they're paid per trip) and a Present/Leave/Absent
+    dropdown per day, saved on change via `saveAttendanceRecord()`
+    (upsert on employee+date; Present quietly stores 8 hours,
+    `DEFAULT_HOURS`, hours aren't typed any more — only legacy Hourly
+    payslips read them). Future days disabled; a finished day with no
+    row counts as Absent automatically (no row written — payroll only
+    pays Present/Leave rows); never locked, so after correcting a day
+    that's already on a draft use Edit/Regenerate on that payslip. "All
+    present" per day header. And Payslip Issue
     Reports (`staff/PayslipIssueReportsSection.tsx` on the staff side,
     `employee/ReportPayslipIssueModal.tsx` + `MyPayslipIssueReportsSection.tsx`
     on the employee side, mounted in `MyPayslipPage.tsx`) — an employee
@@ -492,18 +516,47 @@ before creating it.
 - "My History" (`/dashboard/history`, HistorySection) — Driver/Helper see
   real trip history via `itinerary_crews` → `itineraries` (filtered by
   `crew_role`), Mechanic sees real work order history via `work_orders`.
-- Reports (`/dashboard/reports`, ReportsSection) — **fully real now**, not
-  partial: 11 of its 14 tabs are new. "Overview" — **superseded**: this
-  file previously said it was hardcoded `// MOCK DATA`; that's no longer
-  true, it now pulls live counts from 9 real tables (`issue_reports`,
-  `client_status_requests`, `payslip_issue_reports`,
-  `work_order_completions`, `work_order_acceptance_log`,
-  `maintenance_schedules`, `maintenance_requests`, `client_reviews`,
-  `client_delinquency_log`) as clickable navigation cards. "Payments Due"
-  still reuses `paymentDue.ts` as before.
+- Reports (`/dashboard/reports`, ReportsSection) — fully real, grouped
+  tabs (reworked; the old "14 tabs" description is gone): **Overview**
+  (clickable cards with live *pending* counts: Issue Reports, Client
+  Requests, Payslip Issues, Maintenance Requests, Maintenance Schedules,
+  Status Relog Requests, delinquent clients — badges on the other tabs
+  use the same numbers, and queues call `onChanged` to re-count),
+  **Needs action** (Issue Reports, Client Requests, Payslip Issues,
+  Maintenance Requests, Maintenance Schedules, Status Relog Requests),
+  **Clients** (Payments Due — reuses `paymentDue.ts`; Reviews; Standing =
+  delinquency), **Logs** (Work Orders Completed/Accepted/Status,
+  Dispatch Status — read-only, paged with `components/LoadMore.tsx`,
+  newest rows first). Uses `lib/useCachedLoad.ts` (show last result
+  instantly, refetch quietly; in-memory only).
+- Maintenance page **Cost Report** (`staff/MaintenanceCostReportModal.tsx`
+  + `lib/maintenanceCostReport.ts`) — pick a month, see fleet
+  maintenance cost per vehicle and per work order, CSV download. Cost =
+  **parts only** (`work_order_parts_used.quantity × unit_cost`, no labor
+  — mechanics are on salary), counted in the month the work order was
+  *completed*; parts with null `unit_cost` count as ₱0 but are flagged.
+  `unit_cost` is a price column on `inventory_items` (edited in
+  AddInventoryItemModal, shown in InventorySection) and is copied onto
+  `work_order_parts_log` / `work_order_parts_used` rows when a part is
+  used, so later price changes don't rewrite history.
+- Dashboard shell/UX helpers (2026-09-29 "nav bar upgrades"/"dynamic ui"):
+  `DashboardLayout` sidebar is a phone slide-in drawer with hover/click
+  category flyouts (Admin sidebar: Dashboard; Operations = Quotations,
+  Bookings, Clients, Dispatch Board; Human Resource = Employees,
+  Attendance, Payroll, Cash Advance; Maintenance = Truck Monitoring,
+  Fleet, Maintenance, Inventory; Reports; Financial Records; ⚙ Settings
+  link in the layout, not the sidebar list). `components/ConfirmDialog.tsx`
+  (`confirmDialog()` / `promptDialog()`, `<ConfirmHost />` mounted in
+  main.tsx) replaces `window.confirm`/`prompt` in ~14 files — it only
+  falls back to the browser's if the host isn't mounted; two spots still
+  call `window.prompt` directly (`CashAdvanceRequestsSection`,
+  `FinancialSection`). `components/Skeleton.tsx` loading placeholders.
+  `components/ComingSoonPage.tsx` is now unused (every sidebar link has
+  a real page).
 
 ## Currently in progress
-Nothing is actively mid-build right now.
+Nothing is actively mid-build right now. (Last CLAUDE.md sync: 2026-09-30,
+against the code at commit d5982c8 plus the uncommitted Cash Advance tab.)
 
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —
