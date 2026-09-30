@@ -31,6 +31,7 @@ import FleetSection from './staff/FleetSection'
 import MaintenanceSection from './staff/MaintenanceSection'
 import InventorySection from './staff/InventorySection'
 import EmployeesSection from './staff/EmployeesSection'
+import AttendanceSection from './staff/AttendanceSection'
 import PayrollSection from './staff/PayrollSection'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
@@ -56,6 +57,7 @@ const staffLinks = [
     label: 'Human Resource',
     children: [
       { label: 'Employees', to: '/dashboard/employees' },
+      { label: 'Attendance', to: '/dashboard/attendance' },
       { label: 'Payroll', to: '/dashboard/payroll' },
     ],
   },
@@ -119,6 +121,7 @@ function DashboardRouter() {
           <Route path="maintenance-monitoring" element={<TruckMaintenanceMonitoringSection />} />
           <Route path="inventory" element={<InventorySection />} />
           <Route path="employees" element={<EmployeesSection />} />
+          <Route path="attendance" element={<AttendanceSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="reports" element={<ReportsSection />} />
           <Route path="financial-records" element={<FinancialSection />} />

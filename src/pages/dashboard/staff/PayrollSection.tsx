@@ -32,7 +32,6 @@ import EditDraftPayslipModal, { type DraftToEdit } from './EditDraftPayslipModal
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
 import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
-import AttendanceSection from './AttendanceSection'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type PayrollEntry = {
@@ -101,7 +100,6 @@ function PayrollSection() {
   >({})
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
   const [showLedger, setShowLedger] = useState(false)
-  const [showAttendance, setShowAttendance] = useState(false)
 
   useEffect(() => {
     generateThenLoad()
@@ -322,12 +320,6 @@ function PayrollSection() {
             {showLedger ? 'Hide Cash Advance Ledger' : 'View Cash Advance Ledger'}
           </button>
           <button
-            onClick={() => setShowAttendance((visible) => !visible)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {showAttendance ? 'Hide Attendance' : 'Record Attendance'}
-          </button>
-          <button
             onClick={() => setShowIssueAdvance(true)}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
@@ -344,13 +336,6 @@ function PayrollSection() {
         <section className="mt-6 border-t border-slate-200 pt-6">
           <h3 className="text-lg font-semibold text-slate-900">Cash Advance Ledger</h3>
           <div className="mt-4"><CashAdvanceLedgerSection /></div>
-        </section>
-      )}
-
-      {showAttendance && (
-        <section className="mt-6 border-t border-slate-200 pt-6">
-          <h3 className="text-lg font-semibold text-slate-900">Employee Attendance</h3>
-          <div className="mt-4"><AttendanceSection /></div>
         </section>
       )}
 

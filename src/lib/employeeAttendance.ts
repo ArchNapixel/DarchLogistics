@@ -10,6 +10,8 @@ export type AttendanceRecord = {
   attendance_status: AttendanceStatus
   hours_worked: number | null
   notes: string | null
+  // Set once a payslip used this day -- the daily roster locks such rows.
+  paid_payroll_id: number | null
 }
 
 export async function loadAttendanceRecords(
@@ -18,7 +20,7 @@ export async function loadAttendanceRecords(
 ): Promise<{ records: AttendanceRecord[]; error: string | null }> {
   const { data: rows, error } = await supabase
     .from('employee_attendance')
-    .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, notes')
+    .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, notes, paid_payroll_id')
     .gte('attendance_date', startDate)
     .lte('attendance_date', endDate)
     .order('attendance_date', { ascending: false })
