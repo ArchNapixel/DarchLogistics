@@ -59,7 +59,9 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    // h-screen caps the shell at the window height: only <main> scrolls, so
+    // the sidebar (and Settings at its bottom) always fits on screen.
+    <div className="flex h-screen flex-col bg-slate-50">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           {sidebarLinks.length > 0 && (
@@ -101,7 +103,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         </div>
       </header>
 
-      <div className="flex flex-1">
+      <div className="flex min-h-0 flex-1">
         {sidebarLinks.length > 0 && (
           <>
             {/* Dark backdrop behind the phone drawer; tap it to close */}
@@ -118,7 +120,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             current page stays visually distinct against the blue. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto bg-brand-steel md:overflow-visible p-4 transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0 md:self-start ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto bg-brand-steel md:overflow-visible p-4 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
@@ -242,7 +244,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </>
         )}
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </div>
