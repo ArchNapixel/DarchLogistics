@@ -12,6 +12,8 @@ type Truck = {
   year: number | null
   current_status: string | null
   last_service_date: string | null
+  current_odometer: number | null
+  next_service_date: string | null
 }
 
 type Trailer = {
@@ -41,6 +43,51 @@ function FleetStatusBadge({ status }: { status: string | null }) {
   )
 }
 
+// Read-only popup shown when a truck/trailer row is clicked.
+// `rows` is a list of [label, value] pairs to display.
+function VehicleDetailModal({
+  title,
+  status,
+  rows,
+  onClose,
+}: {
+  title: string
+  status: string | null
+  rows: [string, string][]
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+          <FleetStatusBadge status={status} />
+        </div>
+        <dl className="mt-4 space-y-2 text-sm">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4">
+              <dt className="text-slate-500">{label}</dt>
+              <dd className="text-right text-slate-900">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <button
+          onClick={onClose}
+          className="mt-6 w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const TABS = ['Trucks', 'Trailers'] as const
 type Tab = (typeof TABS)[number]
 
@@ -61,6 +108,8 @@ function FleetSection() {
   const [showAddTrailer, setShowAddTrailer] = useState(false)
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null)
   const [editingTrailer, setEditingTrailer] = useState<Trailer | null>(null)
+  const [viewingTruck, setViewingTruck] = useState<Truck | null>(null)
+  const [viewingTrailer, setViewingTrailer] = useState<Trailer | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -159,7 +208,9 @@ function FleetSection() {
 
       const { data: truckData, error: truckError } = await supabase
         .from('truck_profiles')
-        .select('plate_number, model, year, current_status, last_service_date')
+        .select(
+          'plate_number, model, year, current_status, last_service_date, current_odometer, next_service_date',
+        )
         .order('plate_number', { ascending: true })
 
       if (truckError) throw truckError
@@ -248,7 +299,8 @@ function FleetSection() {
               {trucks.map((truck) => (
                 <tr
                   key={truck.plate_number}
-                  className="border-b border-slate-100 last:border-0"
+                  onClick={() => setViewingTruck(truck)}
+                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                 >
                   <td className="px-4 py-3 text-slate-900">{truck.plate_number}</td>
                   <td className="px-4 py-3 text-slate-600">{truck.model || 'N/A'}</td>
@@ -258,7 +310,8 @@ function FleetSection() {
                   <td className="px-4 py-3 text-slate-600">
                     {truck.last_service_date || 'N/A'}
                   </td>
-                  <td className="px-4 py-3">
+                  {/* stopPropagation so action buttons don't also open the detail popup */}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-3">
                       <button
                         onClick={() =>
@@ -306,7 +359,8 @@ function FleetSection() {
               {trailers.map((trailer) => (
                 <tr
                   key={trailer.trailer_id}
-                  className="border-b border-slate-100 last:border-0"
+                  onClick={() => setViewingTrailer(trailer)}
+                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                 >
                   <td className="px-4 py-3 text-slate-900">
                     {trailer.plate_number || 'N/A'}
@@ -315,7 +369,7 @@ function FleetSection() {
                   <td className="px-4 py-3">
                     <FleetStatusBadge status={trailer.current_status} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-3">
                       <button
                         onClick={() =>
@@ -350,6 +404,42 @@ function FleetSection() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {viewingTruck && (
+        <VehicleDetailModal
+          title={`Truck ${viewingTruck.plate_number}`}
+          status={viewingTruck.current_status}
+          onClose={() => setViewingTruck(null)}
+          rows={[
+            ['Plate Number', viewingTruck.plate_number],
+            ['Model', viewingTruck.model || 'N/A'],
+            ['Year', viewingTruck.year?.toString() ?? 'N/A'],
+            [
+              'Odometer',
+              viewingTruck.current_odometer != null
+                ? `${viewingTruck.current_odometer.toLocaleString()} km`
+                : 'N/A',
+            ],
+            ['Last Service Date', viewingTruck.last_service_date || 'N/A'],
+            ['Next Service Date', viewingTruck.next_service_date || 'N/A'],
+          ]}
+        />
+      )}
+
+      {/* Trailers have no model/odometer columns, so show what the table has */}
+      {viewingTrailer && (
+        <VehicleDetailModal
+          title={`Trailer ${viewingTrailer.plate_number ?? `#${viewingTrailer.trailer_id}`}`}
+          status={viewingTrailer.current_status}
+          onClose={() => setViewingTrailer(null)}
+          rows={[
+            ['Plate Number', viewingTrailer.plate_number || 'N/A'],
+            ['Type', viewingTrailer.trailer_type],
+            ['Registration Number', viewingTrailer.registration_number || 'N/A'],
+            ['Last Maintenance Date', viewingTrailer.last_maintenance_date || 'N/A'],
+          ]}
+        />
       )}
 
       {workOrderVehicle && (
