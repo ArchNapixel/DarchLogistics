@@ -409,7 +409,14 @@ before creating it.
     row counts as Absent automatically (no row written — payroll only
     pays Present/Leave rows); never locked, so after correcting a day
     that's already on a draft use Edit/Regenerate on that payslip. "All
-    present" per day header. And Payslip Issue
+    present" per day header. **My Attendance** (2026-09-30,
+    `employee/MyAttendanceSection.tsx`, `/dashboard/attendance` in the
+    Mechanic/Helper/Dispatcher trees, sidebar link "My Attendance";
+    **Drivers get no link or route**) — read-only week view of the
+    logged-in employee's own days, same auto-Absent rule, uses
+    `loadAttendanceRecords(start, end, onlyEmployeeId)`. Needs the
+    `employee_attendance_select_own` RLS policy (SQL given in chat).
+    And Payslip Issue
     Reports (`staff/PayslipIssueReportsSection.tsx` on the staff side,
     `employee/ReportPayslipIssueModal.tsx` + `MyPayslipIssueReportsSection.tsx`
     on the employee side, mounted in `MyPayslipPage.tsx`) — an employee

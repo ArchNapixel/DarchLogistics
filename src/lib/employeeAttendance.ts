@@ -17,13 +17,17 @@ export type AttendanceRecord = {
 export async function loadAttendanceRecords(
   startDate: string,
   endDate: string,
+  // Only this employee's rows (the "My Attendance" page)
+  onlyEmployeeId?: number,
 ): Promise<{ records: AttendanceRecord[]; error: string | null }> {
-  const { data: rows, error } = await supabase
+  let query = supabase
     .from('employee_attendance')
     .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, notes, paid_payroll_id')
     .gte('attendance_date', startDate)
     .lte('attendance_date', endDate)
     .order('attendance_date', { ascending: false })
+  if (onlyEmployeeId !== undefined) query = query.eq('employee_id', onlyEmployeeId)
+  const { data: rows, error } = await query
 
   if (error) return { records: [], error: error.message }
   if (!rows || rows.length === 0) return { records: [], error: null }

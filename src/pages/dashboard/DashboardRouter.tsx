@@ -42,6 +42,7 @@ import DamageChargesSection from './staff/DamageChargesSection'
 import TruckMaintenanceMonitoringSection from './staff/TruckMaintenanceMonitoringSection'
 import HistorySection from './employee/HistorySection'
 import MyPayslipPage from './employee/MyPayslipPage'
+import MyAttendanceSection from './employee/MyAttendanceSection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -81,14 +82,18 @@ const dispatcherLinks = [
   { label: 'Bookings', to: '/dashboard/bookings' },
   { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
+  { label: 'My Attendance', to: '/dashboard/attendance' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 
 const employeeLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'My History', to: '/dashboard/history' },
+  { label: 'My Attendance', to: '/dashboard/attendance' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
+// Drivers are paid per trip, so they have no attendance page
+const driverLinks = employeeLinks.filter((link) => link.to !== '/dashboard/attendance')
 
 function CenteredMessage({ text }: { text: string }) {
   return (
@@ -147,6 +152,7 @@ function DashboardRouter() {
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
+          <Route path="attendance" element={<MyAttendanceSection />} />
           <Route path="payslips" element={<DispatcherPayslipSection />} />
           <Route
             path="*"
@@ -160,9 +166,10 @@ function DashboardRouter() {
   if (isEmployee(role)) {
     return (
       <Routes>
-        <Route element={<DashboardLayout sidebarLinks={employeeLinks} />}>
+        <Route element={<DashboardLayout sidebarLinks={role === 'Driver' ? driverLinks : employeeLinks} />}>
           <Route index element={<EmployeeDashboard />} />
           <Route path="history" element={<HistorySection />} />
+          {role !== 'Driver' && <Route path="attendance" element={<MyAttendanceSection />} />}
           <Route path="payslips" element={<MyPayslipPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
