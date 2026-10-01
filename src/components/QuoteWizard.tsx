@@ -14,7 +14,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { CargoFields, RouteFields, ScheduleFields, type SectionProps } from './QuoteShipmentFields'
 import { QuoteSummary } from './QuoteSummary'
+import QuoteSummaryDrawer from './QuoteSummaryDrawer'
 import {
+  useSummaryDrawer,
   validateShipment,
   type FieldErrors,
   type RecentLocation,
@@ -77,6 +79,7 @@ function QuoteWizard({
   const [furthestStep, setFurthestStep] = useState(0)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const hasMoved = useRef(false)
+  const summaryDrawer = useSummaryDrawer(form)
   const step = STEPS[stepIndex]
   const isReview = step.id === 'review'
 
@@ -248,6 +251,15 @@ function QuoteWizard({
         )}
         {aside}
       </aside>
+      <QuoteSummaryDrawer
+        open={summaryDrawer.open && !isReview}
+        form={form}
+        onClose={summaryDrawer.dismiss}
+        onReview={() => {
+          summaryDrawer.dismiss()
+          editStep('review')
+        }}
+      />
     </div>
   )
 }

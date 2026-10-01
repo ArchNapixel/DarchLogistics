@@ -22,11 +22,13 @@ import {
   TextInput,
 } from '../../../components/QuoteShipmentFields'
 import { QuoteSummary } from '../../../components/QuoteSummary'
+import QuoteSummaryDrawer from '../../../components/QuoteSummaryDrawer'
 import {
   buildQuoteRow,
   emailError,
   phoneError,
   useShipmentForm,
+  useSummaryDrawer,
   type ShipmentForm,
 } from '../../../lib/quoteRequest'
 
@@ -89,6 +91,7 @@ function NewQuoteRequestModal({
   onCreated: () => void
 }) {
   const { form, setField, errors, setErrors, reset } = useShipmentForm()
+  const summaryDrawer = useSummaryDrawer(form)
   // Set once saved: shows the confirmation instead of the form.
   const [created, setCreated] = useState<{
     code: string
@@ -413,6 +416,8 @@ function NewQuoteRequestModal({
           {submitting ? 'Creating…' : 'Create quote'}
         </button>
       </div>
+
+      <QuoteSummaryDrawer open={summaryDrawer.open} form={form} onClose={summaryDrawer.dismiss} />
     </>,
   )
 }

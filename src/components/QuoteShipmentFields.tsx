@@ -7,8 +7,8 @@
 // validateShipment in lib/quoteRequest.ts).
 import type { ChangeEvent, InputHTMLAttributes, ReactNode } from 'react'
 import LocationPicker from './LocationPicker'
+import DateRangePicker from './DateRangePicker'
 import {
-  MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
   todayDateString,
   type FieldErrors,
@@ -177,14 +177,11 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
 
       <Field label="Weight" hint="(tons)" error={errors.weight}>
         <input
-          type="number"
+          type="text"
           name="weight"
           inputMode="decimal"
           value={form.weight}
-          onChange={handleChange}
-          min="0"
-          max={MAX_WEIGHT_TONS}
-          step="0.01"
+          onChange={(e) => setField('weight', e.target.value.replace(/[^\d.]/g, ''))}
           placeholder="e.g. 24.5"
           aria-invalid={errors.weight ? true : undefined}
           className={inputClasses(!!errors.weight)}
@@ -193,13 +190,11 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
 
       <Field label="Deliveries" hint="(trips)" error={errors.deliveryOrderCount}>
         <input
-          type="number"
+          type="text"
           name="deliveryOrderCount"
           inputMode="numeric"
           value={form.deliveryOrderCount}
-          onChange={handleChange}
-          min="1"
-          step="1"
+          onChange={(e) => setField('deliveryOrderCount', e.target.value.replace(/\D/g, ''))}
           placeholder="e.g. 3"
           aria-invalid={errors.deliveryOrderCount ? true : undefined}
           className={inputClasses(!!errors.deliveryOrderCount)}
@@ -232,17 +227,19 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
 
   return (
     <>
-      <Field label="Pickup date" error={errors.preferredPickupDate}>
-        <input
-          type="date"
-          name="preferredPickupDate"
-          value={form.preferredPickupDate}
-          onChange={handleChange}
-          min={todayDateString()}
-          aria-invalid={errors.preferredPickupDate ? true : undefined}
-          className={inputClasses(!!errors.preferredPickupDate)}
-        />
-      </Field>
+      <DateRangePicker
+        which="start"
+        single={form.isLastDayOfPortStorage === 'Yes'}
+        label="Pickup date"
+        start={form.preferredPickupDate}
+        end={form.preferredDeliveryDate}
+        min={todayDateString()}
+        onChange={(start, end) => {
+          setField('preferredPickupDate', start)
+          setField('preferredDeliveryDate', end)
+        }}
+        error={errors.preferredPickupDate}
+      />
 
       <div className="flex flex-col gap-1 text-sm font-medium text-slate-700">
         <span>Last free storage day?</span>
@@ -272,17 +269,18 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
           </p>
         </div>
       ) : (
-        <Field label="Delivery date" error={errors.preferredDeliveryDate}>
-          <input
-            type="date"
-            name="preferredDeliveryDate"
-            value={form.preferredDeliveryDate}
-            onChange={handleChange}
-            min={form.preferredPickupDate || todayDateString()}
-            aria-invalid={errors.preferredDeliveryDate ? true : undefined}
-            className={inputClasses(!!errors.preferredDeliveryDate)}
-          />
-        </Field>
+        <DateRangePicker
+          which="end"
+          label="Delivery date"
+          start={form.preferredPickupDate}
+          end={form.preferredDeliveryDate}
+          min={todayDateString()}
+          onChange={(start, end) => {
+            setField('preferredPickupDate', start)
+            setField('preferredDeliveryDate', end)
+          }}
+          error={errors.preferredDeliveryDate}
+        />
       )}
 
       <Field label="Rate per delivery" hint="(PHP)" error={errors.proposedRate}>

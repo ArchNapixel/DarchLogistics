@@ -4,7 +4,7 @@
 // three ways a quote gets in: the public QuoteForm, the client portal's
 // NewQuoteModal, and staff's NewQuoteRequestModal. Each channel only
 // adds its own client-identity columns on top of buildQuoteRow().
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 // One end of the route, as picked in components/LocationPicker.tsx.
@@ -262,6 +262,31 @@ export function useShipmentForm() {
   }
 
   return { form, setField, errors, setErrors, reset }
+}
+
+// When to slide the QuoteSummaryDrawer in: once every shipment field is
+// valid, held for a second so it doesn't pop up mid-typing (e.g. after
+// the first digit of the rate). Closing keeps it closed until the form
+// goes incomplete again.
+export function useSummaryDrawer(form: ShipmentForm) {
+  const [filledIn, setFilledIn] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+  const complete = Object.keys(validateShipment(form)).length === 0
+  const [wasComplete, setWasComplete] = useState(complete)
+  if (wasComplete !== complete) {
+    setWasComplete(complete)
+    if (!complete) {
+      setFilledIn(false)
+      setDismissed(false)
+    }
+  }
+  useEffect(() => {
+    if (!complete) return
+    const timer = setTimeout(() => setFilledIn(true), 1000)
+    return () => clearTimeout(timer)
+  }, [complete])
+
+  return { open: filledIn && !dismissed, dismiss: () => setDismissed(true) }
 }
 
 // A location from one of the client's own past bookings, offered as a
