@@ -57,6 +57,8 @@ type DispatchRow = {
   assigned_helper_name: string | null
   plate_number: string | null
   trailer_id: number | null
+  // From the booking (Flatbed/Skeletal). null = booking has no requirement (older ones).
+  required_trailer_type: string | null
 }
 
 type DriverOption = {
@@ -72,6 +74,7 @@ type TruckOption = {
 type TrailerOption = {
   trailer_id: number
   plate_number: string | null
+  trailer_type: string | null
   current_status: string | null
 }
 
@@ -397,7 +400,10 @@ function DispatchTable({
                     className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
-                    {trailers.map((trailer) => {
+                    {/* Only trailers of the type the booking asked for (when it asked for one) */}
+                    {trailers
+                      .filter((t) => !row.required_trailer_type || t.trailer_type === row.required_trailer_type)
+                      .map((trailer) => {
                       const hint = vehicleHint(
                         row,
                         allRows,
@@ -507,7 +513,7 @@ function DispatchBoardSection() {
     // regardless.
     const [trucksResult, trailersResult] = await Promise.all([
       supabase.from('truck_profiles').select('plate_number, current_status').order('plate_number'),
-      supabase.from('trailers').select('trailer_id, plate_number, current_status').order('trailer_id'),
+      supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').order('trailer_id'),
     ])
 
     if (trucksResult.error) {
@@ -520,6 +526,21 @@ function DispatchBoardSection() {
       setLoading(false)
       return
     }
+
+    // Which trailer type each booking asked for (bookings.trailer_type).
+    const bookingIds = [...new Set(itineraryRows.map((it) => it.booking_id))]
+    const { data: bookingTypeRows, error: bookingTypeError } = await supabase
+      .from('bookings')
+      .select('booking_id, trailer_type')
+      .in('booking_id', bookingIds)
+    if (bookingTypeError) {
+      setError(bookingTypeError.message)
+      setLoading(false)
+      return
+    }
+    const trailerTypeByBooking = new Map(
+      bookingTypeRows.map((b) => [b.booking_id as number, b.trailer_type as string | null]),
+    )
 
     setTrucks(trucksResult.data)
     setTrailers(trailersResult.data)
@@ -689,6 +710,7 @@ function DispatchBoardSection() {
               : null,
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
+          required_trailer_type: trailerTypeByBooking.get(it.booking_id) ?? null,
         }
       }),
     )
@@ -936,6 +958,14 @@ function DispatchBoardSection() {
     previousTrailerId: number | null,
     trailerId: number | null,
   ) {
+    // Guard the dropdown filter: the trailer must match what the booking asked for.
+    const row = rows.find((r) => r.itinerary_id === itineraryId)
+    const picked = trailers.find((t) => t.trailer_id === trailerId)
+    if (row?.required_trailer_type && picked && picked.trailer_type !== row.required_trailer_type) {
+      setError(`This booking needs a ${row.required_trailer_type} trailer.`)
+      return
+    }
+
     setSavingId(itineraryId)
     setError(null)
 

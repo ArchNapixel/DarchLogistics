@@ -37,7 +37,7 @@ import type { LocationValue, RecentLocation } from '../lib/quoteRequest'
 const STOP_LABELS = { pickup: 'Pickup', delivery: 'Delivery' }
 
 const selectClasses =
-  'border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400'
+  'border-2 border-slate-300 bg-white px-3 py-2 text-slate-900 transition-colors hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400'
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({
@@ -89,6 +89,9 @@ function LocationPicker({
   const [rows, setRows] = useState<LocationReferenceRow[]>([])
   const [namedLocations, setNamedLocations] = useState<NamedLocation[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  // false = quick picks only; true = manual City/Barangay/Address + map.
+  // Starts open if a location is already filled in (e.g. stepping back in the wizard).
+  const [specific, setSpecific] = useState(value.city !== '')
   const [showMap, setShowMap] = useState(false)
   // Shown the instant a spot is chosen, before the lookup finishes.
   const [pendingPin, setPendingPin] = useState<[number, number] | null>(null)
@@ -237,7 +240,7 @@ function LocationPicker({
   function renderShortcuts(title: string, items: RecentLocation[]) {
     if (items.length === 0) return null
     return (
-      <div className="col-span-full flex flex-wrap items-center gap-2">
+      <>
         {title && <span className="text-xs font-medium text-slate-500">{title}</span>}
         {items.map((location, index) => {
           const selected = isSelected(location)
@@ -248,7 +251,7 @@ function LocationPicker({
               onClick={() => pickShortcut(location)}
               title={`${location.detail ? `${location.detail}, ` : ''}Brgy. ${location.barangay}, ${location.city}`}
               aria-pressed={selected}
-              className={`max-w-[14rem] truncate border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`w-32 truncate border-2 px-3 py-1.5 text-center text-sm font-medium transition-colors ${
                 selected
                   ? 'border-slate-900 bg-slate-900 text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-500 hover:bg-slate-50'
@@ -258,15 +261,15 @@ function LocationPicker({
             </button>
           )
         })}
-      </div>
+      </>
     )
   }
 
   return (
     <fieldset
       aria-invalid={error ? true : undefined}
-      className={`col-span-full grid gap-3 border bg-white p-4 sm:grid-cols-2 sm:gap-x-4 ${
-        error ? 'border-red-400' : 'border-slate-200'
+      className={`col-span-full grid gap-3 border-2 bg-white p-4 sm:grid-cols-2 sm:gap-x-4 ${
+        error ? 'border-red-400' : 'border-slate-300'
       }`}
     >
       <legend className="sr-only">{STOP_LABELS[stop]}</legend>
@@ -287,10 +290,35 @@ function LocationPicker({
 
       {loadError && <p className="col-span-full text-sm text-red-600">{loadError}</p>}
 
-      {renderShortcuts('Recent', recentLocations)}
-      {renderShortcuts('', namedShortcuts)}
+      {/* Quick picks first; "Select specific" swaps them for the manual inputs + map */}
+      {!specific && (
+        <div className="col-span-full flex flex-wrap items-center gap-2">
+          {renderShortcuts('Recent', recentLocations)}
+          {renderShortcuts('', namedShortcuts)}
+          <button
+              type="button"
+              onClick={() => setSpecific(true)}
+              className="inline-flex w-32 items-center justify-center gap-1.5 border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+            >
+              <PinIcon />
+              Select
+            </button>
+        </div>
+      )}
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+      {specific && (
+        <div className="col-span-full">
+          <button
+            type="button"
+            onClick={() => setSpecific(false)}
+            className="text-sm font-medium text-slate-600 underline hover:text-slate-900"
+          >
+            ← Back to quick picks
+          </button>
+        </div>
+      )}
+
+      {specific && <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
         City
         <select
           value={value.city}
@@ -312,9 +340,9 @@ function LocationPicker({
             </option>
           ))}
         </select>
-      </label>
+      </label>}
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+      {specific && <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
         Barangay
         <select
           value={value.barangay}
@@ -329,9 +357,9 @@ function LocationPicker({
             </option>
           ))}
         </select>
-      </label>
+      </label>}
 
-      <label className="col-span-full flex flex-col gap-1 text-sm font-medium text-slate-700">
+      {specific && <label className="col-span-full flex flex-col gap-1 text-sm font-medium text-slate-700">
         Address
         <input
           type="text"
@@ -340,7 +368,7 @@ function LocationPicker({
           placeholder="Street, building, landmark (optional)"
           className={selectClasses}
         />
-      </label>
+      </label>}
 
       {error && (
         <p className="col-span-full text-sm text-red-600" role="alert">
@@ -348,12 +376,12 @@ function LocationPicker({
         </p>
       )}
 
-      <div className="col-span-full flex flex-wrap items-center gap-2">
+      {specific && <div className="col-span-full flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setShowMap((prev) => !prev)}
           aria-expanded={showMap}
-          className="inline-flex items-center gap-1.5 border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
         >
           <PinIcon />
           {showMap ? 'Hide map' : savedPin ? 'Move pin' : 'Pin on map'}
@@ -383,11 +411,11 @@ function LocationPicker({
             </button>
           </span>
         )}
-      </div>
+      </div>}
 
-      {showMap && (
+      {specific && showMap && (
         <div className="col-span-full">
-          <div className="h-80 w-full overflow-hidden border border-slate-300">
+          <div className="h-80 w-full overflow-hidden border-2 border-slate-300">
             <MapContainer
               center={savedPin ?? DEFAULT_CENTER}
               zoom={savedPin ? 16 : 11}

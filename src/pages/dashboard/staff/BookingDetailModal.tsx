@@ -70,6 +70,7 @@ type Details = {
   cargo_description: string | null
   weight: number | null
   container_type: string | null
+  trailer_type: string | null
   payment_terms: string | null
   pickup: string
   delivery: string
@@ -131,7 +132,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, cancellation_reason, cancelled_at',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, cancellation_reason, cancelled_at',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -224,6 +225,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       cargo_description: b.cargo_description,
       weight: b.weight,
       container_type: b.container_type,
+      trailer_type: b.trailer_type,
       payment_terms: b.payment_terms,
       pickup: location(b.place_of_pickup_id, b.pickup_address_detail),
       delivery: location(b.place_of_delivery_id, b.delivery_address_detail),
@@ -472,7 +474,8 @@ function BookingDetailModal({
                 label="Type"
                 value={[
                   details.cargo_type === 'Loose' ? 'Loose cargo' : details.cargo_type,
-                  details.container_type && `${details.container_type} trailer`,
+                  details.container_type &&
+                    `${details.container_type}${details.trailer_type ? ` ${details.trailer_type.toLowerCase()}` : ''} trailer`,
                   details.weight != null && `${details.weight} t`,
                 ]
                   .filter(Boolean)

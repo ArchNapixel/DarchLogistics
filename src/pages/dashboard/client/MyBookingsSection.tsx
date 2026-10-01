@@ -36,6 +36,7 @@ export type Booking = {
   booking_date: string
   cargo_type: string
   container_type: string
+  trailer_type: string | null
   rate_of_delivery_service: number | null
   pickup_place_name: string
   delivery_place_name: string
@@ -160,7 +161,7 @@ function MyBookingsSection({
     const { data: bookingRows, error: bookingError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, booking_status, booking_date, cargo_type, container_type, rate_of_delivery_service, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_status, booking_date, cargo_type, container_type, trailer_type, rate_of_delivery_service, place_of_pickup_id, place_of_delivery_id',
       )
       .eq('client_id', id)
       .order('booking_date', { ascending: false })
@@ -236,6 +237,7 @@ function MyBookingsSection({
         booking_date: b.booking_date,
         cargo_type: b.cargo_type,
         container_type: b.container_type,
+        trailer_type: b.trailer_type,
         rate_of_delivery_service: b.rate_of_delivery_service,
         pickup_place_name: placeNameById.get(b.place_of_pickup_id) ?? '—',
         delivery_place_name:
@@ -324,7 +326,10 @@ function MyBookingsSection({
 
             <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Field label="Cargo" value={booking.cargo_type} />
-              <Field label="Container" value={booking.container_type} />
+              <Field
+                label="Trailer"
+                value={`${booking.container_type}${booking.trailer_type ? ` ${booking.trailer_type}` : ''}`}
+              />
               <Field
                 label="Rate/Trip"
                 value={

@@ -40,6 +40,7 @@ export type QuoteRequest = {
   cargo_description: string
   weight: number
   container_type: string
+  trailer_type: string | null
   payment_terms: string
   proposed_rate: number | null
   preferred_pickup_date: string | null

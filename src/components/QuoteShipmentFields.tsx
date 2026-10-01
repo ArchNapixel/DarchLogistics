@@ -5,15 +5,8 @@
 // One set of markup, so no channel can drift from the others. Each
 // field shows its own error message right under it (errors come from
 // validateShipment in lib/quoteRequest.ts).
-import {
-  useEffect,
-  useState,
-  type ChangeEvent,
-  type InputHTMLAttributes,
-  type ReactNode,
-} from 'react'
+import type { ChangeEvent, InputHTMLAttributes, ReactNode } from 'react'
 import LocationPicker from './LocationPicker'
-import { citiesFrom, loadLocationReference } from '../lib/locationReference'
 import {
   MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
@@ -31,8 +24,8 @@ export type SectionProps = {
 }
 
 function inputClasses(hasError: boolean) {
-  return `border bg-white px-3 py-2 text-slate-900 focus:outline-none ${
-    hasError ? 'border-red-400 focus:border-red-500' : 'border-slate-300 focus:border-slate-500'
+  return `border-2 bg-white px-3 py-2 text-slate-900 transition-colors focus:outline-none ${
+    hasError ? 'border-red-400 hover:bg-red-50 focus:border-red-500' : 'border-slate-300 hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500'
   }`
 }
 
@@ -101,10 +94,10 @@ function ToggleGroup<T extends string>({
             type="button"
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
-            className={`flex-1 border px-3 py-2 text-sm font-medium transition-colors [&:not(:first-child)]:-ml-px ${
+            className={`flex-1 border-2 px-3 py-2 text-sm font-medium transition-colors [&:not(:first-child)]:-ml-px ${
               value === option.value
                 ? 'relative border-slate-900 bg-slate-900 text-white'
-                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                : 'border-slate-300 bg-white text-slate-700 hover:relative hover:border-slate-500 hover:bg-slate-50'
             }`}
           >
             {option.label}
@@ -121,12 +114,6 @@ export function RouteFields({
   errors,
   recentLocations,
 }: SectionProps & { recentLocations?: RecentLocation[] }) {
-  const [cities, setCities] = useState<string[]>([])
-
-  useEffect(() => {
-    loadLocationReference().then(({ rows }) => setCities(citiesFrom(rows)))
-  }, [])
-
   return (
     <>
       <LocationPicker
@@ -143,15 +130,6 @@ export function RouteFields({
         error={errors.delivery}
         recentLocations={recentLocations}
       />
-      {cities.length > 0 && (
-        <p className="col-span-full text-xs text-slate-500">
-          {cities.join(', ')} only. Others:{' '}
-          <a href="tel:09660475467" className="font-medium text-slate-700 underline">
-            0966 047 5467
-          </a>
-          .
-        </p>
-      )}
     </>
   )
 }
@@ -174,7 +152,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
       />
 
       <ToggleGroup
-        label="Trailer"
+        label="Trailer size"
         options={[
           { value: '20ft', label: '20 ft' },
           { value: '40ft', label: '40 ft' },
@@ -182,6 +160,20 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         value={form.containerType}
         onChange={(value) => setField('containerType', value)}
       />
+
+      <Field label="Trailer type" error={errors.trailerType}>
+        <select
+          name="trailerType"
+          value={form.trailerType}
+          onChange={(e) => setField('trailerType', e.target.value as ShipmentForm['trailerType'])}
+          aria-invalid={errors.trailerType ? true : undefined}
+          className={inputClasses(!!errors.trailerType)}
+        >
+          <option value="">Select</option>
+          <option value="Flatbed">Flatbed</option>
+          <option value="Skeletal">Skeletal</option>
+        </select>
+      </Field>
 
       <Field label="Weight" hint="(tons)" error={errors.weight}>
         <input

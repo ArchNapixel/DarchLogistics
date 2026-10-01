@@ -538,6 +538,7 @@ function QuoteReviewModal({
         cargo_description: quote.cargo_description,
         weight: quote.weight,
         container_type: quote.container_type,
+        trailer_type: quote.trailer_type,
         payment_terms: paymentTerms,
         // Approving IS the confirmation. From here the booking's status
         // follows its itineraries automatically (sync_booking_status
@@ -737,6 +738,7 @@ function QuoteReviewModal({
               />
               <InfoRow label="Cargo type" value={quote.cargo_type} />
               <InfoRow label="Trailer size" value={quote.container_type} />
+              <InfoRow label="Trailer type" value={quote.trailer_type ?? '—'} />
               <InfoRow label="Weight (tons)" value={String(quote.weight)} />
               <InfoRow
                 label="Number of deliveries"

@@ -119,7 +119,7 @@ function QuoteForm({
       submitLabel="Send"
       aside={aside}
       contactSection={
-        <div className="grid gap-4 border border-slate-200 bg-white p-4 sm:grid-cols-2">
+        <div className="grid gap-4 border-2 border-slate-300 bg-white p-4 sm:grid-cols-2">
           <p className="text-sm font-semibold text-slate-900 sm:col-span-2">
             Contact
           </p>

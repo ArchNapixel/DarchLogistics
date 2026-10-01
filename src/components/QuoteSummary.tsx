@@ -92,7 +92,7 @@ export function QuoteSummary({
 
       <Section title="Cargo" onEdit={onEditStep && (() => onEditStep('cargo'))}>
         <span>
-          {form.cargoType === 'Loose' ? 'Loose cargo' : 'Container'} · {form.containerType} trailer
+          {form.cargoType === 'Loose' ? 'Loose cargo' : 'Container'} · {form.containerType} {form.trailerType.toLowerCase()} trailer
           {Number(form.weight) > 0 && ` · ${form.weight} t`}
         </span>
         {hasCount && (

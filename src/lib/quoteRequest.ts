@@ -33,6 +33,8 @@ export type ShipmentForm = {
   cargoDescription: string
   weight: string
   containerType: '20ft' | '40ft'
+  // Flatbed or Skeletal -- '' until the customer picks one (required).
+  trailerType: '' | 'Flatbed' | 'Skeletal'
   preferredPickupDate: string
   paymentTerms: 'Cash' | '7Days' | '14Days' | '30Days'
   proposedRate: string
@@ -53,6 +55,7 @@ export const emptyShipment: ShipmentForm = {
   cargoDescription: '',
   weight: '',
   containerType: '20ft',
+  trailerType: '',
   preferredPickupDate: '',
   paymentTerms: 'Cash',
   proposedRate: '',
@@ -141,6 +144,9 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
       'Same as pickup. Add a landmark or pin.'
   }
 
+  if (!form.trailerType) {
+    errors.trailerType = 'Select a trailer type.'
+  }
   if (!form.cargoDescription.trim()) {
     errors.cargoDescription = 'Required.'
   }
@@ -220,6 +226,7 @@ export function buildQuoteRow(form: ShipmentForm) {
       cargo_description: form.cargoDescription.trim(),
       weight: Number(form.weight),
       container_type: form.containerType,
+      trailer_type: form.trailerType,
       preferred_pickup_date: form.preferredPickupDate,
       payment_terms: form.paymentTerms,
       proposed_rate: Number(form.proposedRate),
