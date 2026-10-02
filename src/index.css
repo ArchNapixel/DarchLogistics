@@ -92,3 +92,20 @@ html {
     bottom -4px left -4px,
     bottom -4px right -4px;
 }
+
+/* Landing page motion. Entrance fade-up for the hero (staggered with
+   inline animation-delay) and a slow zoom on the hero photo. Everything
+   is wrapped in motion-safe: where used, so reduced-motion users get a
+   still page. Scroll-triggered reveals live in components/Reveal.tsx. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slow-zoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+@theme {
+  --animate-fade-up: fade-up 0.8s ease-out both;
+  --animate-slow-zoom: slow-zoom 24s ease-in-out infinite alternate;
+}

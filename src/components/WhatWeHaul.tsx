@@ -1,7 +1,9 @@
 // WhatWeHaul: "the two jobs most haulers turn down" section --
 // heavy-lift/breakbulk and time-critical port drayage. The photos use
 // a blue duotone treatment (grayscale + a steel-blue overlay) to match
-// the design instead of plain color photos.
+// the design instead of plain color photos. Blocks fade up on scroll
+// (Reveal) and photos zoom slightly on hover.
+import Reveal from './Reveal'
 const jobs = [
   {
     number: '01',
@@ -21,15 +23,21 @@ const jobs = [
 
 function DuotonePhoto({ src, caption }: { src: string; caption: string }) {
   return (
+    <Reveal>
     <figure>
       <div className="relative overflow-hidden rounded-lg">
-        <img src={src} alt={caption} className="h-56 w-full object-cover grayscale sm:h-64" />
+        <img
+          src={src}
+          alt={caption}
+          className="h-56 w-full object-cover grayscale transition-transform duration-700 hover:scale-105 sm:h-64"
+        />
         <div className="absolute inset-0 bg-brand-steel/50 mix-blend-multiply" />
       </div>
       <figcaption className="mt-2 text-xs font-semibold tracking-[0.1em] text-slate-500 uppercase">
         {caption}
       </figcaption>
     </figure>
+    </Reveal>
   )
 }
 
@@ -37,7 +45,7 @@ function WhatWeHaul() {
   return (
     <section id="heavy-lift" className="bg-brand-paper py-20">
       <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-2">
-        <div>
+        <Reveal>
           <p className="text-xs font-semibold tracking-[0.2em] text-brand-steel-dark uppercase">
             What We Actually Haul
           </p>
@@ -54,7 +62,10 @@ function WhatWeHaul() {
 
           <div className="mt-8 flex flex-col">
             {jobs.map((job) => (
-              <div key={job.number} className="border-t border-slate-300 py-6">
+              <div
+                key={job.number}
+                className="border-t border-slate-300 py-6 transition-transform duration-300 hover:translate-x-2"
+              >
                 <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
                   {job.number} — {job.label}
                 </p>
@@ -66,7 +77,7 @@ function WhatWeHaul() {
             ))}
             <div className="border-t border-slate-300" />
           </div>
-        </div>
+        </Reveal>
 
         <div className="flex flex-col gap-6">
           <DuotonePhoto

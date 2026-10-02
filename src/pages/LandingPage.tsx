@@ -7,6 +7,7 @@ import ServicesGrid from '../components/ServicesGrid'
 import ClientTestimonials from '../components/ClientTestimonials'
 import QuoteCta from '../components/QuoteCta'
 import Footer from '../components/Footer'
+import Reveal from '../components/Reveal'
 
 function LandingPage() {
   return (
@@ -15,7 +16,9 @@ function LandingPage() {
       <Hero />
       <WhatWeHaul />
       <ServicesGrid />
-      <ClientTestimonials />
+      <Reveal>
+        <ClientTestimonials />
+      </Reveal>
       <QuoteCta />
       <Footer />
     </div>
