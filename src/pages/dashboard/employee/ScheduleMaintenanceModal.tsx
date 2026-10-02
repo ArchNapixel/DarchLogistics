@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import {
   createMaintenanceSchedule,
   MAINTENANCE_INTERVALS,
+  SCHEDULE_TYPES,
   type MaintenanceInterval,
 } from '../../../lib/maintenanceSchedules'
 
@@ -33,7 +34,7 @@ function ScheduleMaintenanceModal({
 }) {
   const [vehicleOptions, setVehicleOptions] = useState<VehicleOption[]>([])
   const [selectedVehicleKey, setSelectedVehicleKey] = useState('')
-  const [maintenanceType, setMaintenanceType] = useState('')
+  const [maintenanceType, setMaintenanceType] = useState<string>(SCHEDULE_TYPES[0])
   const [dueInterval, setDueInterval] = useState<MaintenanceInterval>(MAINTENANCE_INTERVALS[0])
   const [notes, setNotes] = useState('')
   const [loadingOptions, setLoadingOptions] = useState(true)
@@ -159,13 +160,17 @@ function ScheduleMaintenanceModal({
 
             <label className={labelClasses}>
               What maintenance is needed?
-              <input
-                type="text"
+              <select
                 value={maintenanceType}
                 onChange={(e) => setMaintenanceType(e.target.value)}
-                placeholder="e.g. Oil change"
                 className={fieldClasses}
-              />
+              >
+                {SCHEDULE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className={labelClasses}>

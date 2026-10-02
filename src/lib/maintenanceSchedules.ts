@@ -4,6 +4,19 @@
 // instead of only finding out once something actually breaks.
 import { supabase } from './supabaseClient'
 
+// What can be scheduled -- a dropdown in both schedule modals.
+export const SCHEDULE_TYPES = [
+  'Oil Change',
+  'Tire Rotation / Replacement',
+  'Brake Inspection',
+  'Engine Tune-up',
+  'Transmission Service',
+  'Battery Check',
+  'Wheel Alignment',
+  'General Inspection',
+  'Other',
+] as const
+
 export const MAINTENANCE_INTERVALS = ['1 month', '3 months', '6 months'] as const
 export type MaintenanceInterval = (typeof MAINTENANCE_INTERVALS)[number]
 

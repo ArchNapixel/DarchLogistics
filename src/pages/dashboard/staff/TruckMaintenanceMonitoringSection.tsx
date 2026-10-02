@@ -5,6 +5,7 @@ import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import {
   createMaintenanceSchedule,
   MAINTENANCE_INTERVALS,
+  SCHEDULE_TYPES,
   type MaintenanceInterval,
 } from '../../../lib/maintenanceSchedules'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
@@ -101,7 +102,7 @@ function AssignTruckScheduleModal({
   onSaved: () => void
 }) {
   const [plateNumber, setPlateNumber] = useState(trucks[0]?.plate_number ?? '')
-  const [maintenanceType, setMaintenanceType] = useState('')
+  const [maintenanceType, setMaintenanceType] = useState<string>(SCHEDULE_TYPES[0])
   const [interval, setInterval] = useState<MaintenanceInterval>(MAINTENANCE_INTERVALS[0])
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -160,7 +161,9 @@ function AssignTruckScheduleModal({
           </label>
           <label className={labelClasses}>
             Maintenance type
-            <input value={maintenanceType} onChange={(event) => setMaintenanceType(event.target.value)} placeholder="e.g. Oil change" className={fieldClasses} />
+            <select value={maintenanceType} onChange={(event) => setMaintenanceType(event.target.value)} className={fieldClasses}>
+              {SCHEDULE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
           </label>
           <label className={labelClasses}>
             Due in
