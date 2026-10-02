@@ -134,7 +134,7 @@ function ComplianceExpiryAlerts() {
       <button
         onClick={handleToggle}
         aria-label="Notifications"
-        className="flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        className="flex items-center justify-center rounded-lg p-2 text-white/90 hover:bg-brand-steel-dark hover:text-white"
       >
         <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
           <path

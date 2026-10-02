@@ -77,7 +77,7 @@ html {
 .reports-blueprint-card {
   position: relative;
   background-color: transparent;
-  border: 1px solid var(--color-reports-hairline);
+  border: 2px solid var(--color-accent-300);
   border-radius: 0;
   background-repeat: no-repeat;
   background-size: 9px 9px;

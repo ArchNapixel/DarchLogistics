@@ -62,7 +62,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
     // h-screen caps the shell at the window height: only <main> scrolls, so
     // the sidebar (and Settings at its bottom) always fits on screen.
     <div className="flex h-screen flex-col bg-slate-50">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+      <header className="flex items-center justify-between border-b border-brand-steel-dark bg-brand-steel px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           {sidebarLinks.length > 0 && (
             <button
@@ -70,7 +70,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               aria-label="Toggle navigation"
               aria-expanded={drawerOpen}
               aria-controls="dashboard-sidebar"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-900 md:hidden"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/60 text-white md:hidden"
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path
@@ -82,7 +82,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               </svg>
             </button>
           )}
-          <Link to={homePath} className="text-lg font-bold text-slate-900">
+          <Link to={homePath} className="text-lg font-bold text-white">
             Darch Logistics
           </Link>
         </div>
@@ -90,7 +90,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         <div className="flex items-center gap-2 sm:gap-4">
           <ComplianceExpiryAlerts />
           {/* Name is hidden on the smallest screens to keep the bar on one line */}
-          <span className="hidden font-medium text-slate-900 sm:inline">
+          <span className="hidden font-medium text-white sm:inline">
             {username}
           </span>
           <RoleBadge role={role} />
