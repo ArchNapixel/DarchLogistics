@@ -22,6 +22,7 @@ assert.equal(rangeStartManila({ months: 12 }, new Date('2026-10-02T04:00:00Z')),
 assert.equal(rangeStartManila({ months: 6 }, new Date('2026-03-15T04:00:00Z')), '2025-09-15')
 
 // Day periods include today: 7 days = today + 6 before; crosses month/year ends.
+assert.equal(rangeStartManila({ days: 1 }, new Date('2026-10-01T23:00:00Z')), '2026-10-02')
 assert.equal(rangeStartManila({ days: 7 }, new Date('2026-10-02T04:00:00Z')), '2026-09-26')
 assert.equal(rangeStartManila({ days: 14 }, new Date('2026-10-02T04:00:00Z')), '2026-09-19')
 assert.equal(rangeStartManila({ days: 7 }, new Date('2026-01-03T04:00:00Z')), '2025-12-28')

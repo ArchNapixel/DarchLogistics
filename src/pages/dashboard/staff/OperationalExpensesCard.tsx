@@ -48,36 +48,15 @@ function OperationalExpensesCard({
 
   const lines = data
     ? [
+        { label: 'Payroll', value: data.payroll },
+        { label: 'Employer contributions', value: data.employerShares },
+        { label: 'Diesel (logged)', value: data.dieselActual },
         {
-          label: 'Payroll (gross pay)',
-          note: 'Includes driver commission and per-trip fees',
-          value: data.payroll,
-        },
-        {
-          label: 'Employer contributions',
-          note: 'SSS, PhilHealth, Pag-IBIG',
-          value: data.employerShares,
-        },
-        {
-          label: 'Diesel (logged)',
-          note: 'Fuel the crew recorded',
-          value: data.dieselActual,
-        },
-        {
-          label: 'Diesel (estimated)',
-          note: `${data.estimatedTrips} delivered ${data.estimatedTrips === 1 ? 'trip' : 'trips'} with no fuel logged, from the quote calculator`,
+          label: `Diesel (estimated, ${data.estimatedTrips} ${data.estimatedTrips === 1 ? 'trip' : 'trips'})`,
           value: data.dieselEstimated,
         },
-        {
-          label: 'Other trip expenses',
-          note: 'Tolls, parking, other',
-          value: data.tripExpenses,
-        },
-        {
-          label: 'Damage charged to company',
-          note: 'Approved damage the company absorbs',
-          value: data.damageCompany,
-        },
+        { label: 'Tolls & other trip costs', value: data.tripExpenses },
+        { label: 'Company-paid damage', value: data.damageCompany },
       ]
     : []
 
@@ -99,20 +78,19 @@ function OperationalExpensesCard({
             <>
               {data.draftPayroll > 0 && (
                 <p className="mt-1 font-ui text-xs text-neutral-500">
-                  Includes {peso(data.draftPayroll)} from draft payslips (not yet finalized) --
-                  this changes as payroll is edited.
+                  Includes {peso(data.draftPayroll)} in draft payslips.
                 </p>
               )}
               {data.dieselPriceMissing && (
                 <p className="mt-1 font-ui text-xs text-amber-700">
-                  No diesel price set under Settings, so estimated diesel shows ₱0.
+                  No diesel price set in Settings.
                 </p>
               )}
               {data.tripsMissingDistance > 0 && (
                 <p className="mt-1 font-ui text-xs text-amber-700">
-                  {data.tripsMissingDistance} delivered{' '}
-                  {data.tripsMissingDistance === 1 ? 'trip has' : 'trips have'} no distance on
-                  the booking, so its diesel estimate is ₱0.
+                  {data.tripsMissingDistance}{' '}
+                  {data.tripsMissingDistance === 1 ? 'trip has' : 'trips have'} no distance
+                  (estimated as ₱0).
                 </p>
               )}
 
@@ -141,7 +119,6 @@ function OperationalExpensesCard({
                         />
                       </div>
                     )}
-                    <p className="mt-1 text-xs text-neutral-400">{line.note}</p>
                   </li>
                 ))}
               </ul>

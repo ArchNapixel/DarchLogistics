@@ -99,7 +99,7 @@ function MaintenanceExpensesCard({
   return (
     <div className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
       <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
-        Maintenance Expenses <span className="normal-case">(parts used)</span>
+        Maintenance Expenses <span className="normal-case">(parts)</span>
       </p>
 
       {error ? (
@@ -114,24 +114,24 @@ function MaintenanceExpensesCard({
             <>
               {data.inProgressCost > 0 && (
                 <p className="mt-1 font-ui text-xs text-neutral-500">
-                  Includes {peso(data.inProgressCost)} on work orders still in progress.
+                  Includes {peso(data.inProgressCost)} from open work orders.
                 </p>
               )}
               {data.unpricedLines > 0 && (
                 <p className="mt-1 font-ui text-xs text-amber-700">
-                  {data.unpricedLines} part {data.unpricedLines === 1 ? 'entry has' : 'entries have'} no
-                  price on record and count as ₱0. Set prices on the Inventory page.
+                  {data.unpricedLines} {data.unpricedLines === 1 ? 'part has' : 'parts have'} no price
+                  (counted as ₱0).
                 </p>
               )}
 
               {data.byType.length === 0 ? (
                 <p className="mt-4 font-ui text-sm text-neutral-500">
-                  No maintenance parts used in this period.
+                  No parts used in this period.
                 </p>
               ) : (
                 <>
                   <p className="mt-5 font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
-                    Cost by item type
+                    By item type
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-6">
                     {data.total > 0 && <Pie slices={data.byType} />}
@@ -158,7 +158,7 @@ function MaintenanceExpensesCard({
                   </div>
 
                   <p className="mt-5 font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
-                    Biggest items
+                    Top items
                   </p>
                   <ul className="mt-2 font-ui text-sm">
                     {data.topItems.map((item) => (
@@ -168,9 +168,7 @@ function MaintenanceExpensesCard({
                       >
                         <span className="text-reports-ink">
                           {item.name}{' '}
-                          <span className="text-neutral-400">
-                            · {item.type} · {item.quantity} used
-                          </span>
+                          <span className="text-neutral-400">× {item.quantity}</span>
                         </span>
                         <span className="text-neutral-600">{peso(item.cost)}</span>
                       </li>

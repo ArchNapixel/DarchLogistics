@@ -34,6 +34,7 @@ function ItineraryStatusBadge({ status }: { status: string }) {
 // The period dropdown. Each `period` is one fixed object so the expense
 // cards (which reload when it changes) don't reload on every render.
 const REVENUE_RANGES = [
+  { value: '1D', label: 'Today', period: { days: 1 } },
   { value: '1W', label: '1 Week', period: { days: 7 } },
   { value: '2W', label: '2 Weeks', period: { days: 14 } },
   { value: '1M', label: '1 Month', period: { months: 1 } },
@@ -357,9 +358,6 @@ function StaffDashboard() {
             Total Revenue <span className="normal-case">(collected)</span>
           </p>
           <div className="flex items-center gap-2">
-            <span className="hidden font-ui text-xs text-neutral-400 sm:inline">
-              Period for revenue and expenses
-            </span>
             <select
               value={revenueRange}
               onChange={(e) =>

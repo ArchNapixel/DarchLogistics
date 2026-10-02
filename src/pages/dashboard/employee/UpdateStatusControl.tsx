@@ -23,12 +23,15 @@ const STATUS_FLOW = [
   'InTransit',
 ]
 
-// Same wording as the Dispatch Board's STATUS_LABELS.
+// Same wording as the Dispatch Board's STATUS_LABELS, except InTransit:
+// it's the driver's last step, so to the driver it means "I've arrived and
+// delivered" (dispatch then confirms it as Delivered). The stored status is
+// still 'InTransit', and other screens still call it In Transit.
 export const TRIP_STATUS_LABELS: Record<string, string> = {
   Awaiting: 'Awaiting',
   Dispatched: 'Dispatched',
   PickedUp: 'Picked Up',
-  InTransit: 'In Transit',
+  InTransit: 'Arrived / Delivered',
   Delivered: 'Delivered',
   Cancelled: 'Cancelled',
 }
@@ -52,11 +55,11 @@ function UpdateStatusControl({
   const nextStatus =
     currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
 
-  // In Transit: the rest is up to dispatch.
+  // Last driver step: the rest is up to dispatch.
   if (currentStatus === 'InTransit') {
     return (
       <p className="mt-3 text-xs text-slate-500">
-        Dispatch will mark this trip Delivered once it arrives.
+        Waiting for dispatch to confirm the delivery.
       </p>
     )
   }
@@ -120,7 +123,10 @@ function UpdateStatusControl({
   async function handleClick() {
     if (
       !(await confirmDialog({
-        message: `Mark this trip as "${nextLabel}"? This can't be undone from your side.`,
+        message:
+          nextStatus === 'InTransit'
+            ? `Confirm you've arrived and delivered? Dispatch will then confirm it. This can't be undone from your side.`
+            : `Mark this trip as "${nextLabel}"? This can't be undone from your side.`,
         confirmLabel: `Mark as ${nextLabel}`,
       }))
     ) {
