@@ -62,7 +62,7 @@ function OperationalExpensesCard({
 
   return (
     <div className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
-      <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+      <p className="font-ui text-sm font-medium text-neutral-500">
         Operational Expenses
       </p>
 

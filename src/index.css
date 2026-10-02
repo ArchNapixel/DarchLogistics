@@ -53,13 +53,12 @@ html {
   --color-accent-900: #243342;
 }
 
-/* Stat card: white, rounded, soft shadow (class name kept so existing
+/* Stat card: white, flat, hairline border (class name kept so existing
    usages keep working). */
 .reports-blueprint-card {
   background-color: #fff;
   border: 1px solid var(--color-reports-hairline);
-  border-radius: 16px;
-  box-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 12px rgb(16 24 40 / 0.04);
+  border-radius: 8px;
 }
 
 /* Modern feel: smooth hover/focus changes on every button and link. */

@@ -98,7 +98,7 @@ function MaintenanceExpensesCard({
 
   return (
     <div className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
-      <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+      <p className="font-ui text-sm font-medium text-neutral-500">
         Maintenance Expenses <span className="normal-case">(parts)</span>
       </p>
 
@@ -130,7 +130,7 @@ function MaintenanceExpensesCard({
                 </p>
               ) : (
                 <>
-                  <p className="mt-5 font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+                  <p className="mt-5 font-ui text-sm font-medium text-neutral-500">
                     By item type
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-6">
@@ -157,7 +157,7 @@ function MaintenanceExpensesCard({
                     </ul>
                   </div>
 
-                  <p className="mt-5 font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+                  <p className="mt-5 font-ui text-sm font-medium text-neutral-500">
                     Top items
                   </p>
                   <ul className="mt-2 font-ui text-sm">

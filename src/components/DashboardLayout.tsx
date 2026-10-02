@@ -22,27 +22,59 @@ type SidebarLink = {
   children?: { label: string; to: string }[]
 }
 
-// Symbol shown beside each sidebar tab, looked up by its label.
+// Icon shown beside each sidebar tab, looked up by its label. Each value is
+// an SVG path drawn on a 24x24 grid (simple outline style, no icon library).
+const HOME = 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z'
+const CLOCK = 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2'
+const FILE =
+  'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8'
 const TAB_ICONS: Record<string, string> = {
-  Dashboard: '🏠',
-  Reports: '📊',
-  'Payment Tracking': '💳',
-  Quotations: '📝',
-  Bookings: '📅',
-  Clients: '👥',
-  'Dispatch Board': '🚚',
-  Employees: '🧑‍💼',
-  Attendance: '🕒',
-  'My Attendance': '🕒',
-  Payroll: '💰',
-  'Cash Advance': '💵',
-  'Truck Monitoring': '📍',
-  Fleet: '🚛',
-  Maintenance: '🔧',
-  Inventory: '📦',
-  'Damage Charges': '⚠️',
-  'My Payslips': '🧾',
-  'My History': '📜',
+  Dashboard: HOME,
+  Reports: 'M18 20V10M12 20V4M6 20v-6',
+  'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
+  Quotations: FILE,
+  Bookings: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+  Clients:
+    'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+  'Dispatch Board':
+    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  Employees: 'M2 7h20v14H2zM16 7V3H8v4',
+  Attendance: CLOCK,
+  'My Attendance': CLOCK,
+  Payroll: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  'Cash Advance': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  'Truck Monitoring':
+    'M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  Fleet:
+    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  Maintenance:
+    'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z',
+  Inventory: 'M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8',
+  'Damage Charges':
+    'M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
+  'My Payslips': 'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
+  Settings:
+    'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  'My History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+}
+
+function TabIcon({ label }: { label: string }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mr-2.5 inline-block shrink-0"
+      aria-hidden="true"
+    >
+      <path d={TAB_ICONS[label] ?? 'M12 12h.01'} />
+    </svg>
+  )
 }
 
 function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
@@ -103,8 +135,10 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           )}
           {/* Logo: dark rounded badge with a truck + two-tone wordmark */}
           <Link to={homePath} className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-lg shadow-sm">
-              🚚
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={TAB_ICONS.Fleet} />
+              </svg>
             </span>
             <span className="font-display text-2xl font-semibold uppercase tracking-wide text-slate-900">
               Darch <span className="font-medium text-brand-steel">Logistics</span>
@@ -155,16 +189,14 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         end
                         onClick={closeNav}
                         className={({ isActive }) =>
-                          `rounded-lg px-3 py-2 text-sm font-medium ${
+                          `flex items-center rounded-lg px-3 py-2 text-sm font-medium ${
                             isActive
                               ? 'bg-slate-900 text-white'
                               : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                           }`
                         }
                       >
-                        <span className="mr-2 inline-block w-5 text-center">
-                          {TAB_ICONS[link.label] ?? "•"}
-                        </span>
+                        <TabIcon label={link.label} />
                         {link.label}
                       </NavLink>
                     )
@@ -190,16 +222,14 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           end
                           onClick={closeNav}
                           className={({ isActive }) =>
-                            `rounded-lg px-3 py-2 text-sm font-medium ${
+                            `flex items-center rounded-lg px-3 py-2 text-sm font-medium ${
                               isActive
                                 ? 'bg-slate-900 text-white'
                                 : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                             }`
                           }
                         >
-                          <span className="mr-2 inline-block w-5 text-center">
-                            {TAB_ICONS[child.label] ?? '•'}
-                          </span>
+                          <TabIcon label={child.label} />
                           {child.label}
                         </NavLink>
                       ))}
@@ -213,12 +243,13 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   to="/dashboard/settings"
                   onClick={closeNav}
                   className={({ isActive }) =>
-                    `mt-4 border-t border-slate-200 px-3 pt-4 text-sm font-medium ${
+                    `mt-4 flex items-center border-t border-slate-200 px-3 pt-4 text-sm font-medium ${
                       isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
                     }`
                   }
                 >
-                  ⚙ Settings
+                  <TabIcon label="Settings" />
+                  Settings
                 </NavLink>
               )}
             </aside>

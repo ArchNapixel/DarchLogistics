@@ -350,7 +350,7 @@ function StaffDashboard() {
 
       <div className="reports-blueprint-card mt-8 px-[22px] pt-[22px] pb-5">
         <div className="flex items-center justify-between">
-          <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+          <p className="font-ui text-sm font-medium text-neutral-500">
             Total Revenue <span className="normal-case">(collected)</span>
           </p>
           <div className="flex items-center gap-2">
@@ -394,7 +394,7 @@ function StaffDashboard() {
         {summaryCards.map((card) => (
           <div key={card.label} className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
             <p className="font-ui text-base text-reports-ink">{card.label}</p>
-            <p className="font-condensed mt-2.5 text-[36px] leading-none font-bold text-reports-ink">
+            <p className="font-condensed mt-2.5 text-[34px] leading-none font-semibold text-reports-ink">
               {loading ? '--' : card.value}
             </p>
           </div>
@@ -402,7 +402,7 @@ function StaffDashboard() {
       </div>
 
       <div className="mt-8">
-        <h2 className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
+        <h2 className="font-ui text-sm font-medium text-neutral-500">
           Today's Deliveries
         </h2>
 
