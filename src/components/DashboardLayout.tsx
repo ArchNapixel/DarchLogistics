@@ -182,7 +182,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         className={triggerClass}
                       >
                         {link.label}
-                        <span className="text-xs text-white/60">
+                        <span className="text-2xl font-bold leading-none text-white/80">
                           {isOpen ? '⌄' : '›'}
                         </span>
                       </button>
