@@ -42,6 +42,7 @@ import {
 import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
+import { showToast } from '../../../components/Toast'
 
 type DispatchRow = {
   itinerary_id: number
@@ -59,6 +60,20 @@ type DispatchRow = {
   trailer_id: number | null
   // From the booking (Flatbed/Skeletal). null = booking has no requirement (older ones).
   required_trailer_type: string | null
+}
+
+// A trip is "Assigned" (vs "Needs Assignment") once it has a driver,
+// truck and trailer -- this is what decides which board table it's in.
+function isFullyAssigned(r: DispatchRow) {
+  return r.assigned_employee_id !== null && r.plate_number !== null && r.trailer_id !== null
+}
+
+// Pop-up when a change moves a trip from Needs Assignment to Assigned,
+// since the row just jumps tables and is easy to miss.
+function toastIfNowAssigned(before: DispatchRow | undefined, change: Partial<DispatchRow>) {
+  if (before && !isFullyAssigned(before) && isFullyAssigned({ ...before, ...change })) {
+    showToast(`Booking #${before.booking_id} has been Assigned.`)
+  }
 }
 
 type DriverOption = {
@@ -863,6 +878,12 @@ function DispatchBoardSection() {
 
     setSavingId(null)
 
+    if (crewRole === 'Driver') {
+      toastIfNowAssigned(rows.find((r) => r.itinerary_id === itineraryId), {
+        assigned_employee_id: newEmployeeId,
+      })
+    }
+
     const newCrewName =
       newEmployeeId !== null
         ? (crewRole === 'Driver' ? drivers : helpers).find(
@@ -943,6 +964,7 @@ function DispatchBoardSection() {
         r.itinerary_id === itineraryId ? { ...r, plate_number: plateNumber } : r,
       ),
     )
+    toastIfNowAssigned(rows.find((r) => r.itinerary_id === itineraryId), { plate_number: plateNumber })
 
     await syncFleetStatus(
       plateNumber ? { plate: plateNumber, trailerId: null } : null,
@@ -985,6 +1007,7 @@ function DispatchBoardSection() {
         r.itinerary_id === itineraryId ? { ...r, trailer_id: trailerId } : r,
       ),
     )
+    toastIfNowAssigned(row, { trailer_id: trailerId })
 
     await syncFleetStatus(
       trailerId !== null ? { plate: null, trailerId } : null,
@@ -1013,8 +1036,7 @@ function DispatchBoardSection() {
       )
   const activeRows = visibleRows.filter((r) => r.status !== 'Delivered')
   const completedRows = visibleRows.filter((r) => r.status === 'Delivered')
-  const hasFullCrew = (r: DispatchRow) =>
-    r.assigned_employee_id !== null && r.plate_number !== null && r.trailer_id !== null
+  const hasFullCrew = isFullyAssigned
   const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
   const assignedRows = activeRows.filter(hasFullCrew)
 

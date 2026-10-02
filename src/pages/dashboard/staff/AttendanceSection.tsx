@@ -127,10 +127,50 @@ function AttendanceSection() {
       <h2 className="text-xl font-bold text-slate-900">Attendance</h2>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">&larr; Previous week</button>
-        <span className="text-sm font-medium text-slate-900">{formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}</span>
-        <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} disabled={weekStart >= thisWeekStart} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next week &rarr;</button>
-        {weekStart !== thisWeekStart && <button onClick={() => setWeekStart(thisWeekStart)} className="text-sm font-medium text-slate-700 underline">This week</button>}
+        {/* One joined control: [<] week label [>]. */}
+        <div className="inline-flex items-center overflow-hidden rounded-lg border border-slate-300 bg-white">
+          <button
+            onClick={() => setWeekStart(shiftDate(weekStart, -7))}
+            aria-label="Previous week"
+            title="Previous week"
+            className="px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-100"
+          >
+            &lsaquo;
+          </button>
+          <span className="min-w-44 border-x border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-900">
+            {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
+          </span>
+          <button
+            onClick={() => setWeekStart(shiftDate(weekStart, 7))}
+            disabled={weekStart >= thisWeekStart}
+            aria-label="Next week"
+            title="Next week"
+            className="px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+          >
+            &rsaquo;
+          </button>
+        </div>
+
+        {/* Calendar: pick any date to jump straight to its week (no future dates). */}
+        <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+          Jump to date
+          <input
+            type="date"
+            max={today}
+            value={weekStart}
+            onChange={(e) => e.target.value && setWeekStart(weekStartOf(e.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+
+        {weekStart !== thisWeekStart && (
+          <button
+            onClick={() => setWeekStart(thisWeekStart)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            This week
+          </button>
+        )}
       </div>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

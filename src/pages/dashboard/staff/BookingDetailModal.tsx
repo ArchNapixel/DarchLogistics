@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { showToast } from '../../../components/Toast'
 import { freeVehicleIfIdle } from '../../../lib/fleetStatus'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { PAYMENT_TERMS_LABELS, formatDate } from '../../../lib/quoteRequest'
@@ -399,6 +400,13 @@ function BookingDetailModal({
       return
     }
 
+    // The parent closes this modal in onChanged, so the confirmation has
+    // to be a global toast rather than something inside the modal.
+    showToast(
+      anyDelivered
+        ? `Remaining trips for booking #${booking.booking_id} have been cancelled.`
+        : `Booking #${booking.booking_id} has been cancelled.`,
+    )
     onChanged?.()
   }
 
