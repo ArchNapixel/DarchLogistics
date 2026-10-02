@@ -5,6 +5,8 @@ import { Routes, Route } from 'react-router-dom'
 import LandingPage from './pages/LandingPage'
 import QuoteRequestPage from './pages/QuoteRequestPage'
 import LoginPage from './pages/LoginPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardRouter from './pages/dashboard/DashboardRouter'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -14,6 +16,8 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/quote-request" element={<QuoteRequestPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/dashboard/*"
         element={

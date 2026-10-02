@@ -93,6 +93,22 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Only staff can set up accounts." }, 403);
     }
 
+    // Usernames are used to log in (the login page turns them into this
+    // account's email), so they must be unique ignoring case, and can't
+    // contain "@" (that's how the login page tells a username from an email).
+    const cleanUsername = String(username).trim();
+    if (cleanUsername.includes("@")) {
+      return jsonResponse({ error: "Username can't contain '@'." }, 400);
+    }
+    const { data: taken } = await adminClient
+      .from("users")
+      .select("user_id")
+      .ilike("username", cleanUsername.replace(/[\\%_]/g, "\\$&"))
+      .limit(1);
+    if (taken && taken.length > 0) {
+      return jsonResponse({ error: "That username is already taken." }, 400);
+    }
+
     const { data: newAuthUser, error: createAuthError } = await adminClient
       .auth.admin.createUser({
         email,
@@ -109,7 +125,7 @@ Deno.serve(async (req) => {
 
     const { error: insertError } = await adminClient.from("users").insert({
       email,
-      username,
+      username: cleanUsername,
       user_role,
       client_id: client_id ?? null,
       employee_id: employee_id ?? null,
