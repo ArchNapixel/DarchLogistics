@@ -29,6 +29,18 @@
   --color-brand-paper: #f1f0ed;
 }
 
+/* Number fields look like plain text fields: no up/down spinner arrows.
+   (The mouse-wheel change is stopped in main.tsx.) */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* Makes clicking anchor links (like #quote) scroll smoothly instead of jumping */
 html {
   scroll-behavior: smooth;
