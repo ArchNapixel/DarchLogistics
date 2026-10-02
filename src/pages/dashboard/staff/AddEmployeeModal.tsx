@@ -10,8 +10,10 @@
 // required) when editing an existing Driver, via the "Edit Information"
 // button in EmployeesSection.tsx -- adding a new employee skips them
 // entirely, so they're just null until someone fills them in later.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { useAuth } from '../../../context/AuthContext'
+import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -45,12 +47,19 @@ export type EditableEmployee = {
 
 function AddEmployeeModal({
   employee,
+  isDeactivated,
   onClose,
   onSaved,
+  onToggleStatus,
+  onDelete,
 }: {
   employee?: EditableEmployee
+  // Only used when editing: show Deactivate/Reactivate and Delete buttons.
+  isDeactivated?: boolean
   onClose: () => void
   onSaved: () => void
+  onToggleStatus?: () => void
+  onDelete?: () => void
 }) {
   const isEditing = !!employee
 
@@ -85,6 +94,32 @@ function AddEmployeeModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Login account (editing only). `account` is the existing users row, if
+  // any; blank password on an existing account means "keep the old one".
+  const { session } = useAuth()
+  const [account, setAccount] = useState<{ email: string; username: string } | null>(null)
+  const [accountLoaded, setAccountLoaded] = useState(!employee)
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountUsername, setAccountUsername] = useState('')
+  const [accountPassword, setAccountPassword] = useState('')
+
+  useEffect(() => {
+    if (!employee) return
+    supabase
+      .from('users')
+      .select('email, username')
+      .eq('employee_id', employee.employee_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setAccount({ email: data.email, username: data.username })
+          setAccountEmail(data.email)
+          setAccountUsername(data.username)
+        }
+        setAccountLoaded(true)
+      })
+  }, [employee])
+
   const selectedRateType = RATE_TYPES.find((r) => r.value === rateType)!
 
   async function handleSubmit() {
@@ -107,6 +142,40 @@ function AddEmployeeModal({
     if (rateType === 'Weekly Salary' && !(Number(rateAmount) > 0)) {
       setError('Enter the weekly salary.')
       return
+    }
+
+    // Work out the account change before touching anything, so a bad
+    // account field doesn't leave the employee half-saved.
+    let accountCall: { fn: string; body: Record<string, unknown> } | null = null
+    if (isEditing && accountLoaded) {
+      const email = accountEmail.trim()
+      const username = accountUsername.trim()
+      if (!account) {
+        if (email || username || accountPassword) {
+          if (!email || !username || accountPassword.length < 6) {
+            setError('To create an account, enter an email, username and a password of at least 6 characters.')
+            return
+          }
+          accountCall = {
+            fn: 'create-user-account',
+            body: { email, username, password: accountPassword, user_role: position, employee_id: employee.employee_id },
+          }
+        }
+      } else {
+        if (!email || !username) {
+          setError("Email and username can't be empty.")
+          return
+        }
+        if (accountPassword && accountPassword.length < 6) {
+          setError('Password must be at least 6 characters.')
+          return
+        }
+        const body: Record<string, unknown> = { employee_id: employee.employee_id }
+        if (email !== account.email) body.email = email
+        if (username !== account.username) body.username = username
+        if (accountPassword) body.password = accountPassword
+        if (Object.keys(body).length > 1) accountCall = { fn: 'update-user-account', body }
+      }
     }
 
     setSubmitting(true)
@@ -144,13 +213,28 @@ function AddEmployeeModal({
           .eq('employee_id', employee.employee_id)
       : await supabase.from('employees').insert(values)
 
-    setSubmitting(false)
-
     if (saveError) {
+      setSubmitting(false)
       setError(saveError.message)
       return
     }
 
+    if (accountCall) {
+      const { data, error: invokeError } = await supabase.functions.invoke(accountCall.fn, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: accountCall.body,
+      })
+      if (invokeError || data?.error) {
+        setSubmitting(false)
+        setError(
+          `Employee saved, but the account change failed: ` +
+            (data?.error ?? (await extractEdgeFunctionErrorMessage(invokeError, 'Could not update account.'))),
+        )
+        return
+      }
+    }
+
+    setSubmitting(false)
     onSaved()
   }
 
@@ -293,9 +377,55 @@ function AddEmployeeModal({
               </label>
             </>
           )}
+
+          {isEditing && accountLoaded && (
+            <div className="grid gap-4 border-t border-slate-200 pt-4 sm:col-span-2">
+              <p className="text-sm font-semibold text-slate-900">
+                {account ? 'Login account' : 'Login account (none yet -- fill in to create one)'}
+              </p>
+              <label className={labelClasses}>
+                Email
+                <input type="email" value={accountEmail} onChange={(e) => setAccountEmail(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Username
+                <input type="text" value={accountUsername} onChange={(e) => setAccountUsername(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                {account ? 'New password' : 'Password'}
+                <input
+                  type="text"
+                  value={accountPassword}
+                  onChange={(e) => setAccountPassword(e.target.value)}
+                  placeholder={account ? 'Leave blank to keep the current one' : 'At least 6 characters'}
+                  className={fieldClasses}
+                />
+              </label>
+            </div>
+          )}
         </div>
 
-        <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-4">
+          {isEditing && onToggleStatus && onDelete && (
+            <div className="mr-auto flex gap-3">
+              <button
+                onClick={onToggleStatus}
+                className={`text-sm font-medium ${
+                  isDeactivated
+                    ? 'text-green-600 hover:text-green-800'
+                    : 'text-orange-600 hover:text-orange-800'
+                }`}
+              >
+                {isDeactivated ? 'Reactivate' : 'Deactivate'}
+              </button>
+              <button
+                onClick={onDelete}
+                className="text-sm font-medium text-red-600 hover:text-red-800"
+              >
+                Delete
+              </button>
+            </div>
+          )}
           <button
             onClick={onClose}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"

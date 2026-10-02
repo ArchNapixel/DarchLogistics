@@ -74,7 +74,7 @@ const staffLinks = [
     ],
   },
   { label: 'Reports', to: '/dashboard/reports' },
-  { label: 'Financial Records', to: '/dashboard/financial-records' },
+  { label: 'Payment Tracking', to: '/dashboard/financial-records' },
 ]
 
 const dispatcherLinks = [

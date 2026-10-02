@@ -449,7 +449,7 @@ function FinancialSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Financial Records</h2>
+      <h2 className="text-xl font-bold text-slate-900">Payment Tracking</h2>
       <p className="mt-1 text-sm text-slate-500">Record payments and, if needed, override the amount due.</p>
       {actionError && (
         <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

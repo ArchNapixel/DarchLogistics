@@ -87,8 +87,6 @@ function EmployeesSection() {
   const [accountEmployee, setAccountEmployee] = useState<Employee | null>(
     null,
   )
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [savingStatusId, setSavingStatusId] = useState<number | null>(null)
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -122,7 +120,6 @@ function EmployeesSection() {
     )
       return
 
-    setSavingStatusId(employee.employee_id)
     setActionError(null)
 
     const { error: updateError } = await supabase
@@ -130,7 +127,6 @@ function EmployeesSection() {
       .update({ employment_status_id: statusId })
       .eq('employee_id', employee.employee_id)
 
-    setSavingStatusId(null)
 
     if (updateError) {
       setActionError(updateError.message)
@@ -152,7 +148,6 @@ function EmployeesSection() {
       return
     }
 
-    setDeletingId(employee.employee_id)
     setActionError(null)
 
     const { error: deleteError } = await supabase
@@ -160,7 +155,6 @@ function EmployeesSection() {
       .delete()
       .eq('employee_id', employee.employee_id)
 
-    setDeletingId(null)
 
     if (deleteError) {
       // '23503' is Postgres's error code for a foreign key violation --
@@ -444,37 +438,7 @@ function EmployeesSection() {
                           onClick={() => setEditingEmployee(employee)}
                           className="font-medium text-slate-600 hover:text-slate-900"
                         >
-                          Edit Information
-                        </button>
-                        {employee.status === 'Deactivated' ? (
-                          <button
-                            onClick={() => handleSetStatus(employee, 'Active')}
-                            disabled={savingStatusId === employee.employee_id}
-                            className="font-medium text-green-600 hover:text-green-800 disabled:opacity-50"
-                          >
-                            {savingStatusId === employee.employee_id
-                              ? 'Saving...'
-                              : 'Reactivate'}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleSetStatus(employee, 'Deactivated')}
-                            disabled={savingStatusId === employee.employee_id}
-                            className="font-medium text-orange-600 hover:text-orange-800 disabled:opacity-50"
-                          >
-                            {savingStatusId === employee.employee_id
-                              ? 'Saving...'
-                              : 'Deactivate'}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDelete(employee)}
-                          disabled={deletingId === employee.employee_id}
-                          className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                        >
-                          {deletingId === employee.employee_id
-                            ? 'Deleting...'
-                            : 'Delete'}
+                          Edit
                         </button>
                       </div>
                     </td>
@@ -486,17 +450,35 @@ function EmployeesSection() {
         </div>
       )}
 
-      {(showAddEmployee || editingEmployee) && (
+      {showAddEmployee && (
         <AddEmployeeModal
-          employee={editingEmployee?.editable}
-          onClose={() => {
-            setShowAddEmployee(false)
-            setEditingEmployee(null)
-          }}
+          onClose={() => setShowAddEmployee(false)}
           onSaved={() => {
             setShowAddEmployee(false)
+            loadEmployees()
+          }}
+        />
+      )}
+
+      {editingEmployee && (
+        <AddEmployeeModal
+          employee={editingEmployee.editable}
+          isDeactivated={editingEmployee.status === 'Deactivated'}
+          onClose={() => setEditingEmployee(null)}
+          onSaved={() => {
             setEditingEmployee(null)
             loadEmployees()
+          }}
+          // Close the edit modal first so the confirm dialog isn't hidden behind it.
+          onToggleStatus={() => {
+            const emp = editingEmployee
+            setEditingEmployee(null)
+            handleSetStatus(emp, emp.status === 'Deactivated' ? 'Active' : 'Deactivated')
+          }}
+          onDelete={() => {
+            const emp = editingEmployee
+            setEditingEmployee(null)
+            handleDelete(emp)
           }}
         />
       )}
