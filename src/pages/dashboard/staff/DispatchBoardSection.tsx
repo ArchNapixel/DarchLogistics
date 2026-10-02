@@ -444,7 +444,7 @@ function DispatchBoardSection() {
   const [relogRequestRow, setRelogRequestRow] = useState<DispatchRow | null>(null)
   const [deliveryRow, setDeliveryRow] = useState<DispatchRow | null>(null)
   // Completed starts collapsed so it doesn't push active work down.
-  const [showCompleted, setShowCompleted] = useState(false)
+  const [tab, setTab] = useState<'needs' | 'assigned' | 'completed'>('needs')
   const [logsItineraryId, setLogsItineraryId] = useState<number | null>(null)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
@@ -1038,6 +1038,13 @@ function DispatchBoardSection() {
     onViewLogs: setLogsItineraryId,
   }
 
+  const tabs = [
+    { id: 'needs', label: 'Needs Assignment', rows: needsAssignmentRows, empty: 'Nothing waiting on a driver, truck, or trailer.' },
+    { id: 'assigned', label: 'Assigned — In Progress', rows: assignedRows, empty: 'No fully-crewed trips in progress.' },
+    { id: 'completed', label: 'Completed', rows: completedRows, empty: 'No delivered trips yet.' },
+  ] as const
+  const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]
+
   return (
     <div className="bg-reports-bg -m-6 p-6">
       <h2 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
@@ -1092,77 +1099,37 @@ function DispatchBoardSection() {
           </button>
         </p>
       ) : (
-        <>
-          <div className="mt-8">
-            <div className="flex items-center gap-2">
-              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
-                Needs Assignment
-              </h3>
-              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
-                {needsAssignmentRows.length}
-              </span>
-            </div>
-            {needsAssignmentRows.length === 0 ? (
-              <p className="mt-2 font-ui text-sm text-neutral-500">
-                Nothing waiting on a driver, truck, or trailer.
-              </p>
+        // One table at a time; the tabs switch between them.
+        <div className="mt-8">
+          <div role="tablist" className="flex flex-wrap gap-1 border-b border-reports-hairline">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`-mb-px flex items-center gap-2 border border-b-0 px-4 py-2 font-ui text-[11px] font-semibold tracking-[0.16em] uppercase ${
+                  tab === t.id
+                    ? 'border-reports-hairline bg-white text-reports-ink'
+                    : 'border-transparent text-neutral-500 hover:text-reports-ink'
+                }`}
+              >
+                {t.label}
+                <span className="border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
+                  {t.rows.length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-3">
+            {activeTab.rows.length === 0 ? (
+              <p className="font-ui text-sm text-neutral-500">{activeTab.empty}</p>
             ) : (
-              <div className="mt-2">
-                <DispatchTable rows={needsAssignmentRows} {...tableProps} />
-              </div>
+              <DispatchTable rows={activeTab.rows} {...tableProps} readOnly={tab === 'completed'} />
             )}
           </div>
-
-          <div className="mt-8">
-            <div className="flex items-center gap-2">
-              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
-                Assigned — In Progress
-              </h3>
-              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
-                {assignedRows.length}
-              </span>
-            </div>
-            {assignedRows.length === 0 ? (
-              <p className="mt-2 font-ui text-sm text-neutral-500">
-                No fully-crewed trips in progress.
-              </p>
-            ) : (
-              <div className="mt-2">
-                <DispatchTable rows={assignedRows} {...tableProps} />
-              </div>
-            )}
-          </div>
-
-          <div className="mt-8">
-            <div className="flex items-center gap-2">
-              <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
-                Completed
-              </h3>
-              <span className="border border-reports-hairline px-2 py-0.5 font-ui text-[11px] font-semibold text-neutral-600">
-                {completedRows.length}
-              </span>
-              {completedRows.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowCompleted((shown) => !shown)}
-                  aria-expanded={showCompleted}
-                  className="font-ui text-xs font-medium text-accent-700 underline hover:text-accent-900"
-                >
-                  {showCompleted ? 'Hide' : 'Show'}
-                </button>
-              )}
-            </div>
-            {completedRows.length === 0 ? (
-              <p className="mt-2 font-ui text-sm text-neutral-500">No delivered trips yet.</p>
-            ) : (
-              showCompleted && (
-                <div className="mt-2">
-                  <DispatchTable rows={completedRows} {...tableProps} readOnly />
-                </div>
-              )
-            )}
-          </div>
-        </>
+        </div>
       )}
 
       {isDispatcher(role) && myRequests.length > 0 && (
