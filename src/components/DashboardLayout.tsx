@@ -4,10 +4,9 @@
 // The actual page content renders into <Outlet /> via React Router's
 // nested routes (see DashboardRouter.tsx).
 // Sidebar: on phones (< md) it is a slide-in drawer opened by a hamburger
-// in the header; category flyouts open on click/keyboard (and on hover on
-// desktop) and show inline inside the drawer on phones.
+// in the header. Categories are flat headers with their tabs listed under them.
 import { useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
@@ -24,12 +23,10 @@ type SidebarLink = {
 }
 
 function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
-  const { username, role } = useAuth()
+  const { role } = useAuth()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
-  // Phone drawer open/closed, and which category flyout was clicked open.
+  // Phone drawer open/closed.
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
 
   // The logo goes to the person's own landing page: the first sidebar
   // page (Admin -> KPI page, Dispatcher -> Dispatch Board).
@@ -37,7 +34,6 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
   function closeNav() {
     setDrawerOpen(false)
-    setOpenMenu(null)
   }
 
   async function handleLogout() {
@@ -62,7 +58,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
     // h-screen caps the shell at the window height: only <main> scrolls, so
     // the sidebar (and Settings at its bottom) always fits on screen.
     <div className="flex h-screen flex-col bg-slate-50">
-      <header className="flex items-center justify-between border-b border-brand-steel-dark bg-brand-steel px-4 py-4 sm:px-6">
+      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           {sidebarLinks.length > 0 && (
             <button
@@ -70,7 +66,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               aria-label="Toggle navigation"
               aria-expanded={drawerOpen}
               aria-controls="dashboard-sidebar"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/60 text-white md:hidden"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-900 md:hidden"
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path
@@ -82,17 +78,13 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               </svg>
             </button>
           )}
-          <Link to={homePath} className="text-lg font-bold text-white">
+          <Link to={homePath} className="text-lg font-bold text-slate-900">
             Darch Logistics
           </Link>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">
           <ComplianceExpiryAlerts />
-          {/* Name is hidden on the smallest screens to keep the bar on one line */}
-          <span className="hidden font-medium text-white sm:inline">
-            {username}
-          </span>
           <RoleBadge role={role} />
           <button
             onClick={handleLogout}
@@ -120,7 +112,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             current page stays visually distinct against the blue. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto bg-brand-steel md:overflow-visible p-4 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r border-slate-200 bg-white md:overflow-visible p-4 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
@@ -137,7 +129,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           `px-3 py-2 text-sm font-medium ${
                             isActive
                               ? 'bg-slate-900 text-white'
-                              : 'text-white/90 hover:bg-brand-steel-dark hover:text-white'
+                              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                           }`
                         }
                       >
@@ -146,82 +138,36 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                     )
                   }
 
-                  // A category counts as "current" when its own page or
-                  // any child page is showing.
-                  const isCurrent =
-                    pathname === link.to ||
-                    link.children.some((c) => pathname === c.to)
-                  const isOpen = openMenu === link.label
-                  const triggerClass = `flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium ${
-                    isCurrent
-                      ? 'bg-slate-900 text-white'
-                      : `text-white/90 hover:text-white ${
-                          isOpen ? 'bg-brand-steel-dark' : 'hover:bg-brand-steel-dark'
-                        }`
-                  }`
+                  // Category = a small "header" label, with its tabs listed
+                  // right under it (no flyout). A category with its own page
+                  // gets that page as its first tab.
+                  const tabs = [
+                    ...(link.to ? [{ label: link.label, to: link.to }] : []),
+                    ...link.children,
+                  ]
 
                   return (
-                    <div
-                      key={link.label}
-                      className="relative"
-                      // Mouse hover opens this menu (and closes any other, since
-                      // there's only one openMenu); touch uses the click below.
-                      onPointerEnter={(e) =>
-                        e.pointerType === 'mouse' && setOpenMenu(link.label)
-                      }
-                      onPointerLeave={(e) =>
-                        e.pointerType === 'mouse' && setOpenMenu(null)
-                      }
-                    >
-                      {/* Click/Enter toggles the flyout (works on touch and
-                      keyboard). */}
-                      <button
-                        type="button"
-                        aria-expanded={isOpen}
-                        onClick={() => setOpenMenu(isOpen ? null : link.label)}
-                        className={triggerClass}
-                      >
+                    <div key={link.label} className="mt-3 flex flex-col gap-1">
+                      <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
                         {link.label}
-                        <span className="text-2xl font-bold leading-none text-white/80">
-                          {isOpen ? '⌄' : '›'}
-                        </span>
-                      </button>
-
-                      {/* On desktop: absolute flyout with no gap after the
-                      trigger (left-full, no margin) -- a gap would be a dead
-                      zone where moving the mouse diagonally drops the hover
-                      and closes the menu. On phones: shown inline, indented,
-                      inside the drawer. Kept white/slate (not blue) on
-                      desktop since it's a floating menu over page content. */}
-                      <div
-                        className={`${
-                          isOpen ? 'block' : 'hidden'
-                        } ml-3 mt-1 md:absolute md:left-full md:top-0 md:z-10 md:ml-0 md:mt-0 md:min-w-40 md:border md:border-brand-steel-dark md:bg-white md:p-1 md:shadow-lg`}
-                      >
-                        {/* Category with its own page: first entry links to it */}
-                        {[
-                          ...(link.to
-                            ? [{ label: link.label, to: link.to }]
-                            : []),
-                          ...link.children,
-                        ].map((child) => (
-                          <NavLink
-                            key={child.to}
-                            to={child.to}
-                            end
-                            onClick={closeNav}
-                            className={({ isActive }) =>
-                              `block px-3 py-2 text-sm font-medium ${
-                                isActive
-                                  ? 'bg-slate-900 text-white'
-                                  : 'text-white/90 hover:bg-brand-steel-dark md:text-slate-600 md:hover:bg-slate-100 md:hover:text-slate-900'
-                              }`
-                            }
-                          >
-                            {child.label}
-                          </NavLink>
-                        ))}
                       </div>
+                      {tabs.map((child) => (
+                        <NavLink
+                          key={child.to}
+                          to={child.to}
+                          end
+                          onClick={closeNav}
+                          className={({ isActive }) =>
+                            `px-3 py-2 text-sm font-medium ${
+                              isActive
+                                ? 'bg-slate-900 text-white'
+                                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`
+                          }
+                        >
+                          {child.label}
+                        </NavLink>
+                      ))}
                     </div>
                   )
                 })}
@@ -232,8 +178,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   to="/dashboard/settings"
                   onClick={closeNav}
                   className={({ isActive }) =>
-                    `mt-4 border-t border-brand-steel-dark px-3 pt-4 text-sm font-medium ${
-                      isActive ? 'text-white' : 'text-white/80 hover:text-white'
+                    `mt-4 border-t border-slate-200 px-3 pt-4 text-sm font-medium ${
+                      isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
                     }`
                   }
                 >

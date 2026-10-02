@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import RoleBadge from '../../components/RoleBadge'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
 import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
@@ -54,7 +53,7 @@ type TodayDelivery = {
 }
 
 function StaffDashboard() {
-  const { username, role } = useAuth()
+  const { username } = useAuth()
   const [summary, setSummary] = useState({
     pendingQuotes: 0,
     activeBookings: 0,
@@ -330,12 +329,9 @@ function StaffDashboard() {
   return (
     <div className="bg-reports-bg -m-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
-            Welcome, {username}
-          </h1>
-          <RoleBadge role={role} />
-        </div>
+        <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
+          Welcome, {username}
+        </h1>
         <p className="font-ui text-sm text-neutral-500">
           {new Date().toLocaleDateString('en-US', {
             weekday: 'long',

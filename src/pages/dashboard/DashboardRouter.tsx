@@ -46,6 +46,8 @@ import MyAttendanceSection from './employee/MyAttendanceSection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
+  { label: 'Reports', to: '/dashboard/reports' },
+  { label: 'Payment Tracking', to: '/dashboard/financial-records' },
   {
     label: 'Operations',
     children: [
@@ -73,8 +75,6 @@ const staffLinks = [
       { label: 'Inventory', to: '/dashboard/inventory' },
     ],
   },
-  { label: 'Reports', to: '/dashboard/reports' },
-  { label: 'Payment Tracking', to: '/dashboard/financial-records' },
 ]
 
 const dispatcherLinks = [
