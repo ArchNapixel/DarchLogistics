@@ -19,6 +19,9 @@ function AddExpenseModal({
   const { employeeId } = useAuth()
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
+  // No default on purpose: the dashboard counts "Fuel" as real diesel cost,
+  // so the driver has to pick it deliberately.
+  const [category, setCategory] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -31,6 +34,10 @@ function AddExpenseModal({
     const amountValue = Number(amount)
     if (!amount || amountValue <= 0) {
       setError('Enter an amount greater than 0.')
+      return
+    }
+    if (!category) {
+      setError('Pick a category for this expense.')
       return
     }
     if (!description.trim()) {
@@ -47,6 +54,7 @@ function AddExpenseModal({
         itinerary_id: itineraryId,
         employee_id: employeeId,
         amount: amountValue,
+        category,
         description,
       })
 
@@ -102,12 +110,27 @@ function AddExpenseModal({
               </label>
 
               <label className={labelClasses}>
+                Category
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className={fieldClasses}
+                >
+                  <option value="">Select a category</option>
+                  <option value="Fuel">Fuel</option>
+                  <option value="Toll">Toll</option>
+                  <option value="Parking">Parking</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+
+              <label className={labelClasses}>
                 Description
                 <input
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Fuel, toll fee, parking..."
+                  placeholder="e.g. Diesel refill at Panabo, NLEX toll..."
                   className={fieldClasses}
                 />
               </label>

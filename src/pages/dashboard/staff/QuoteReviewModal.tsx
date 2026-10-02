@@ -47,6 +47,7 @@
 // "needs manual review" message instead of a generic one.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import { formatDate } from '../../../lib/quoteRequest'
@@ -643,16 +644,23 @@ function QuoteReviewModal({
     settingsLoaded && rateForCalc > 0 && distanceForCalc > 0
 
   const totalContractValue = rateForCalc * deliveryCount
-  const dieselCost = canCalculateProfitability
-    ? dieselPricePerLiter! * distanceForCalc * deliveryCount
-    : 0
-  const driverCommissionCost = canCalculateProfitability
-    ? (driverCommissionRate! / 100) * rateForCalc * deliveryCount
-    : 0
-  const perTripFeeCost = canCalculateProfitability
-    ? driverPerTripFee! * deliveryCount
-    : 0
-  const totalCost = dieselCost + driverCommissionCost + perTripFeeCost
+  // Formula lives in lib/tripCost.ts (shared with the Admin dashboard).
+  const estimated = canCalculateProfitability
+    ? estimateTripCosts(
+        {
+          dieselPricePerLiter: dieselPricePerLiter!,
+          driverCommissionRate: driverCommissionRate!,
+          driverPerTripFee: driverPerTripFee!,
+        },
+        rateForCalc,
+        distanceForCalc,
+        deliveryCount,
+      )
+    : { diesel: 0, commission: 0, perTripFee: 0, total: 0 }
+  const dieselCost = estimated.diesel
+  const driverCommissionCost = estimated.commission
+  const perTripFeeCost = estimated.perTripFee
+  const totalCost = estimated.total
   const costRatio = canCalculateProfitability
     ? totalCost / totalContractValue
     : 0

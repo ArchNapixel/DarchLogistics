@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import RoleBadge from '../../components/RoleBadge'
 import { supabase } from '../../lib/supabaseClient'
+import { rangeStartManila } from '../../lib/expenseTotals'
+import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
+import OperationalExpensesCard from './staff/OperationalExpensesCard'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
@@ -28,18 +31,16 @@ function ItineraryStatusBadge({ status }: { status: string }) {
   )
 }
 
+// The period dropdown. Each `period` is one fixed object so the expense
+// cards (which reload when it changes) don't reload on every render.
 const REVENUE_RANGES = [
-  { value: '1M', label: '1 Month', months: 1 },
-  { value: '3M', label: '3 Months', months: 3 },
-  { value: '6M', label: '6 Months', months: 6 },
-  { value: '1Y', label: '1 Year', months: 12 },
+  { value: '1W', label: '1 Week', period: { days: 7 } },
+  { value: '2W', label: '2 Weeks', period: { days: 14 } },
+  { value: '1M', label: '1 Month', period: { months: 1 } },
+  { value: '3M', label: '3 Months', period: { months: 3 } },
+  { value: '6M', label: '6 Months', period: { months: 6 } },
+  { value: '1Y', label: '1 Year', period: { months: 12 } },
 ] as const
-
-function getCutoffDate(months: number) {
-  const cutoff = new Date()
-  cutoff.setMonth(cutoff.getMonth() - months)
-  return cutoff.toISOString().slice(0, 10)
-}
 
 type TodayDelivery = {
   itinerary_id: number
@@ -67,6 +68,9 @@ function StaffDashboard() {
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [revenueRange, setRevenueRange] =
     useState<(typeof REVENUE_RANGES)[number]['value']>('1M')
+  // Bumped by the Refresh button; revenue and both cost cards reload on change.
+  const [refreshKey, setRefreshKey] = useState(0)
+  const rangePeriod = REVENUE_RANGES.find((r) => r.value === revenueRange)!.period
   const [revenue, setRevenue] = useState(0)
   const [revenueLoading, setRevenueLoading] = useState(true)
   const [revenueError, setRevenueError] = useState<string | null>(null)
@@ -174,8 +178,10 @@ function StaffDashboard() {
     async function loadRevenue() {
       setRevenueLoading(true)
 
-      const rangeInfo = REVENUE_RANGES.find((r) => r.value === revenueRange)!
-      const cutoffDate = getCutoffDate(rangeInfo.months)
+      // Same Manila-time start date the expense cards use, so all three agree.
+      const cutoffDate = rangeStartManila(
+        REVENUE_RANGES.find((r) => r.value === revenueRange)!.period,
+      )
 
       // Cash actually collected (amount_paid), not rate x deliveries --
       // Financial Records (FinancialSection.tsx) can record payment
@@ -204,7 +210,7 @@ function StaffDashboard() {
     }
 
     loadRevenue()
-  }, [revenueRange])
+  }, [revenueRange, refreshKey])
 
   useEffect(() => {
     async function loadTodayDeliveries() {
@@ -350,19 +356,30 @@ function StaffDashboard() {
           <p className="font-ui text-[11px] font-medium tracking-[0.16em] text-neutral-500 uppercase">
             Total Revenue <span className="normal-case">(collected)</span>
           </p>
-          <select
-            value={revenueRange}
-            onChange={(e) =>
-              setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
-            }
-            className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
-          >
-            {REVENUE_RANGES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <span className="hidden font-ui text-xs text-neutral-400 sm:inline">
+              Period for revenue and expenses
+            </span>
+            <select
+              value={revenueRange}
+              onChange={(e) =>
+                setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
+              }
+              className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
+            >
+              {REVENUE_RANGES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setRefreshKey((k) => k + 1)}
+              className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
         {revenueError ? (
           <p className="mt-2 font-ui text-sm text-red-700">{revenueError}</p>
@@ -371,6 +388,12 @@ function StaffDashboard() {
             {revenueLoading ? '--' : `₱${revenue.toLocaleString()}`}
           </p>
         )}
+      </div>
+
+      {/* Costs for the same period as the revenue dropdown above. */}
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <OperationalExpensesCard period={rangePeriod} refreshKey={refreshKey} />
+        <MaintenanceExpensesCard period={rangePeriod} refreshKey={refreshKey} />
       </div>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
