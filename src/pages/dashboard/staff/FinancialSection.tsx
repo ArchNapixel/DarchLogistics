@@ -19,6 +19,154 @@ function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
 }
 
+// PartialPaymentModal: opened by the "Partial Payment" button. Shows what's
+// owed, takes the amount received (with quick-fill buttons) and previews
+// the balance that will be left before anything is saved.
+function PartialPaymentModal({
+  booking,
+  target,
+  deliveryTarget,
+  onClose,
+  onSaved,
+}: {
+  booking: Booking
+  target: number // delivery + damage
+  deliveryTarget: number // delivery only -- what amount_to_pay gets locked to
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const remaining = target - booking.amount_paid
+  const [amountText, setAmountText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const amount = Number(amountText)
+  // Shown live as the user types (empty box = no message yet).
+  let inputError: string | null = null
+  if (amountText !== '') {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      inputError = 'Enter an amount greater than zero.'
+    } else if (amount > remaining) {
+      inputError = `Can't exceed the remaining balance (${formatMoney(remaining)}).`
+    }
+  }
+  const canSave = amountText !== '' && !inputError && !saving
+
+  // Round to cents so 25% of an odd number doesn't give 1234.5600000001.
+  function fill(value: number) {
+    setAmountText(String(Math.round(value * 100) / 100))
+  }
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+
+    const { error: updateError } = await supabase
+      .from('bookings')
+      .update({ amount_to_pay: deliveryTarget, amount_paid: booking.amount_paid + amount })
+      .eq('booking_id', booking.booking_id)
+
+    setSaving(false)
+
+    if (updateError) {
+      setSaveError(updateError.message)
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Partial payment
+            </p>
+            <h3 className="text-lg font-bold text-slate-900">
+              Booking #{booking.booking_id} · {booking.client_name}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <p className="text-xs text-slate-400">Total due</p>
+            <p className="font-semibold text-slate-900">{formatMoney(target)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Paid so far</p>
+            <p className="font-semibold text-slate-900">{formatMoney(booking.amount_paid)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Remaining</p>
+            <p className="font-semibold text-slate-900">{formatMoney(remaining)}</p>
+          </div>
+        </div>
+
+        <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="partial-amount">
+          Amount received (₱)
+        </label>
+        <input
+          id="partial-amount"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          autoFocus
+          value={amountText}
+          // Plain text box (no spinner / scroll-wheel changes); only digits and a dot are kept.
+          onChange={(e) => setAmountText(e.target.value.replace(/[^0-9.]/g, ''))}
+          onKeyDown={(e) => e.key === 'Enter' && canSave && save()}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
+        />
+        {inputError && <p className="mt-1 text-xs text-red-700">{inputError}</p>}
+
+        {/* Quick-fill buttons */}
+        <div className="mt-2 flex gap-2">
+          {[0.25, 0.5].map((share) => (
+            <button
+              key={share}
+              type="button"
+              onClick={() => fill(remaining * share)}
+              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {share * 100}%
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => fill(remaining)}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Full remaining
+          </button>
+        </div>
+
+        {/* Preview of what the balance becomes */}
+        {amountText !== '' && !inputError && (
+          <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            Balance after this payment:{' '}
+            <span className="font-semibold text-slate-900">{formatMoney(remaining - amount)}</span>
+            {remaining - amount === 0 && ' (fully paid)'}
+          </p>
+        )}
+
+        {saveError && (
+          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+          <button onClick={save} disabled={!canSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Record payment'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FinancialActionModal({
   booking,
   onClose,
@@ -238,6 +386,7 @@ function getPaymentTarget(booking: Booking): number {
 function FinancialSection() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const [partialBooking, setPartialBooking] = useState<Booking | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -406,47 +555,6 @@ function FinancialSection() {
     loadBookings()
   }
 
-  async function handlePartialPayment(booking: Booking) {
-    const target = getPaymentTarget(booking)
-    const remaining = target - booking.amount_paid
-
-    const input = window.prompt(
-      `How much did ${booking.client_name} pay? (Remaining balance: ${formatMoney(remaining)})`,
-    )
-    if (input === null) {
-      return
-    }
-
-    const amount = Number(input)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setActionError('Enter a valid payment amount greater than zero.')
-      return
-    }
-    if (amount > remaining) {
-      setActionError(
-        `Payment can't exceed the remaining balance (${formatMoney(remaining)}).`,
-      )
-      return
-    }
-
-    setPayingId(booking.booking_id)
-    setActionError(null)
-
-    const { error: updateError } = await supabase
-      .from('bookings')
-      .update({ amount_to_pay: getDeliveryTarget(booking), amount_paid: booking.amount_paid + amount })
-      .eq('booking_id', booking.booking_id)
-
-    setPayingId(null)
-
-    if (updateError) {
-      setActionError(updateError.message)
-      return
-    }
-
-    loadBookings()
-  }
-
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Payment Tracking</h2>
@@ -491,7 +599,7 @@ function FinancialSection() {
                         {remaining > 0 && (
                           <>
                             <button
-                              onClick={() => handlePartialPayment(booking)}
+                              onClick={() => setPartialBooking(booking)}
                               disabled={payingId === booking.booking_id}
                               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                             >
@@ -515,6 +623,18 @@ function FinancialSection() {
             </tbody>
           </table>
         </div>
+      )}
+      {partialBooking && (
+        <PartialPaymentModal
+          booking={partialBooking}
+          target={getPaymentTarget(partialBooking)}
+          deliveryTarget={getDeliveryTarget(partialBooking)}
+          onClose={() => setPartialBooking(null)}
+          onSaved={() => {
+            setPartialBooking(null)
+            loadBookings()
+          }}
+        />
       )}
       {selectedBooking && (
         <FinancialActionModal
