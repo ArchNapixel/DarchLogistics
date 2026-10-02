@@ -98,7 +98,7 @@ function OperationalExpensesCard({
                 {lines.map((line) => (
                   <li
                     key={line.label}
-                    className="border-b border-reports-hairline py-2 last:border-0"
+                    className="py-2"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-reports-ink">{line.label}</span>

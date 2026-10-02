@@ -23,7 +23,7 @@ function ItineraryStatusBadge({ status }: { status: string }) {
   const styles = ITINERARY_STATUS_STYLES[status] ?? 'border-neutral-300 text-neutral-500'
   return (
     <span
-      className={`border px-2.5 py-1 font-ui text-[11px] font-semibold tracking-[0.05em] uppercase ${styles}`}
+      className={`rounded-full border px-2.5 py-1 font-ui text-[11px] font-semibold tracking-[0.05em] uppercase ${styles}`}
     >
       {status}
     </span>
@@ -329,7 +329,7 @@ function StaffDashboard() {
   return (
     <div className="bg-reports-bg -m-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
+        <h1 className="font-condensed text-2xl font-semibold tracking-tight text-reports-ink">
           Welcome, {username}
         </h1>
         <p className="font-ui text-sm text-neutral-500">
@@ -343,7 +343,7 @@ function StaffDashboard() {
       </div>
 
       {summaryError && (
-        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+        <p className="rounded-lg mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {summaryError}
         </p>
       )}
@@ -359,7 +359,7 @@ function StaffDashboard() {
               onChange={(e) =>
                 setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
               }
-              className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
+              className="rounded-lg border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
             >
               {REVENUE_RANGES.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -369,7 +369,7 @@ function StaffDashboard() {
             </select>
             <button
               onClick={() => setRefreshKey((k) => k + 1)}
-              className="rounded-none border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
+              className="rounded-lg border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
             >
               Refresh
             </button>
@@ -421,7 +421,7 @@ function StaffDashboard() {
           )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
-          <div className="mt-3 max-h-96 overflow-y-auto overflow-x-auto border border-reports-hairline bg-reports-bg">
+          <div className="rounded-lg mt-3 max-h-96 overflow-y-auto overflow-x-auto border border-reports-hairline bg-reports-bg">
             <table className="w-full text-left font-ui text-sm">
               <thead className="sticky top-0 border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>

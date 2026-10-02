@@ -1,23 +1,7 @@
 @import "tailwindcss";
 
-/* Sharp-edges design update: zeroing every radius scale step centrally
-   here flattens every rounded-{xs,sm,md,lg,xl,2xl,3xl,4xl} utility (and
-   the bare "rounded") app-wide, without hunting down each usage
-   file-by-file. rounded-full is a separate static utility (not driven
-   by these tokens) and was flattened by removing it at each of its ~38
-   call sites instead -- none of them turned out to be a functional
-   circle (avatar photo, spinner), all were decorative pill badges/
-   buttons, so none needed to stay round. */
-@theme {
-  --radius-xs: 0px;
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-4xl: 0px;
-}
+/* Rounded corners: Tailwind's default radius scale is used as-is, so every
+   rounded-* utility app-wide gives soft corners. */
 
 /* Dashboard 60-30-10 color system:
    60% DOMINANT -- bg-slate-50 (page background) / bg-white (cards,
@@ -57,9 +41,9 @@ html {
    restyled. Accent ramp is a plain monochrome HSL(210, 30%, L) scale
    built off the one required hex (#5980a6 == 500 step exactly). */
 @theme {
-  --font-condensed: "Barlow Condensed", sans-serif;
-  --font-ui: "Barlow", sans-serif;
-  --color-reports-bg: #f2f2f3;
+  --font-condensed: "Inter", sans-serif;
+  --font-ui: "Inter", sans-serif;
+  --color-reports-bg: #f6f7f9;
   --color-reports-ink: #1d1f20;
   --color-reports-hairline: #dcdcdd;
   --color-accent-100: #dee6ed;
@@ -69,28 +53,19 @@ html {
   --color-accent-900: #243342;
 }
 
-/* Blueprint stat card: transparent fill, square corners, hairline
-   border, plus a small crosshair "registration mark" at each corner --
-   the signature motif, not a generic rounded card. Corners are drawn as
-   4 tiny SVG crosses positioned via multiple background-images so no
-   extra markup/pseudo-elements-per-corner is needed. */
+/* Stat card: white, rounded, soft shadow (class name kept so existing
+   usages keep working). */
 .reports-blueprint-card {
-  position: relative;
-  background-color: transparent;
-  border: 2px solid var(--color-accent-300);
-  border-radius: 0;
-  background-repeat: no-repeat;
-  background-size: 9px 9px;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M4.5 0V9M0 4.5H9' stroke='%23acbfd2' stroke-width='1'/%3E%3C/svg%3E");
-  background-position:
-    top -4px left -4px,
-    top -4px right -4px,
-    bottom -4px left -4px,
-    bottom -4px right -4px;
+  background-color: #fff;
+  border: 1px solid var(--color-reports-hairline);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 12px rgb(16 24 40 / 0.04);
+}
+
+/* Modern feel: smooth hover/focus changes on every button and link. */
+button,
+a {
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 /* Landing page motion. Entrance fade-up for the hero (staggered with

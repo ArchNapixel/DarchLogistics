@@ -22,6 +22,29 @@ type SidebarLink = {
   children?: { label: string; to: string }[]
 }
 
+// Symbol shown beside each sidebar tab, looked up by its label.
+const TAB_ICONS: Record<string, string> = {
+  Dashboard: '🏠',
+  Reports: '📊',
+  'Payment Tracking': '💳',
+  Quotations: '📝',
+  Bookings: '📅',
+  Clients: '👥',
+  'Dispatch Board': '🚚',
+  Employees: '🧑‍💼',
+  Attendance: '🕒',
+  'My Attendance': '🕒',
+  Payroll: '💰',
+  'Cash Advance': '💵',
+  'Truck Monitoring': '📍',
+  Fleet: '🚛',
+  Maintenance: '🔧',
+  Inventory: '📦',
+  'Damage Charges': '⚠️',
+  'My Payslips': '🧾',
+  'My History': '📜',
+}
+
 function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   const { role } = useAuth()
   const navigate = useNavigate()
@@ -78,8 +101,14 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               </svg>
             </button>
           )}
-          <Link to={homePath} className="text-lg font-bold text-slate-900">
-            Darch Logistics
+          {/* Logo: dark rounded badge with a truck + two-tone wordmark */}
+          <Link to={homePath} className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-lg shadow-sm">
+              🚚
+            </span>
+            <span className="font-display text-2xl font-semibold uppercase tracking-wide text-slate-900">
+              Darch <span className="font-medium text-brand-steel">Logistics</span>
+            </span>
           </Link>
         </div>
 
@@ -126,13 +155,16 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         end
                         onClick={closeNav}
                         className={({ isActive }) =>
-                          `px-3 py-2 text-sm font-medium ${
+                          `rounded-lg px-3 py-2 text-sm font-medium ${
                             isActive
                               ? 'bg-slate-900 text-white'
                               : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                           }`
                         }
                       >
+                        <span className="mr-2 inline-block w-5 text-center">
+                          {TAB_ICONS[link.label] ?? "•"}
+                        </span>
                         {link.label}
                       </NavLink>
                     )
@@ -158,13 +190,16 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           end
                           onClick={closeNav}
                           className={({ isActive }) =>
-                            `px-3 py-2 text-sm font-medium ${
+                            `rounded-lg px-3 py-2 text-sm font-medium ${
                               isActive
                                 ? 'bg-slate-900 text-white'
                                 : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                             }`
                           }
                         >
+                          <span className="mr-2 inline-block w-5 text-center">
+                            {TAB_ICONS[child.label] ?? '•'}
+                          </span>
                           {child.label}
                         </NavLink>
                       ))}

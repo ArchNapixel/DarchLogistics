@@ -316,7 +316,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {drivers.map((driver) => (
@@ -343,7 +343,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {helpers.map((helper) => (
@@ -363,7 +363,7 @@ function DispatchTable({
                     value={row.plate_number ?? ''}
                     disabled={savingId === row.itinerary_id}
                     onChange={(e) => onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {trucks.map((truck) => {
@@ -397,7 +397,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {/* Only trailers of the type the booking asked for (when it asked for one) */}
@@ -1061,7 +1061,7 @@ function DispatchBoardSection() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Booking #, place, driver, helper or plate"
           aria-label="Search trips"
-          className="min-w-0 flex-1 border border-reports-hairline bg-transparent px-3 py-1.5 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none sm:max-w-sm"
+          className="rounded-lg min-w-0 flex-1 border border-reports-hairline bg-transparent px-3 py-1.5 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none sm:max-w-sm"
         />
         {/* Drivers move trips from their phones -- reload to see it. */}
         <button
@@ -1071,14 +1071,14 @@ function DispatchBoardSection() {
             if (isDispatcher(role) && employeeId) loadMyRequests(employeeId)
           }}
           disabled={loading}
-          className="border border-reports-hairline px-3 py-1.5 font-ui text-sm font-medium text-reports-ink hover:border-accent-500 disabled:opacity-50"
+          className="rounded-lg border border-reports-hairline px-3 py-1.5 font-ui text-sm font-medium text-reports-ink hover:border-accent-500 disabled:opacity-50"
         >
           Refresh
         </button>
       </div>
 
       {error && (
-        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+        <p className="rounded-lg mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {error}
         </p>
       )}
@@ -1116,7 +1116,7 @@ function DispatchBoardSection() {
                 }`}
               >
                 {t.label}
-                <span className="border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
+                <span className="rounded-lg border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
                   {t.rows.length}
                 </span>
               </button>
