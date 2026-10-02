@@ -23,10 +23,12 @@ function AddTruckModal({
   truck,
   onClose,
   onSaved,
+  onDelete,
 }: {
   truck?: EditableTruck
   onClose: () => void
   onSaved: () => void
+  onDelete?: () => void
 }) {
   const isEditing = !!truck
 
@@ -124,6 +126,15 @@ function AddTruckModal({
         </div>
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
+          {/* Delete only shows when editing (parent passes onDelete) */}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="mr-auto rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          )}
           <button
             onClick={onClose}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"

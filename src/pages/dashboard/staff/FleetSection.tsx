@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
-import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 import AddTruckModal from './AddTruckModal'
 import AddTrailerModal, { type EditableTrailer } from './AddTrailerModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
@@ -101,16 +100,12 @@ function FleetSection() {
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [workOrderVehicle, setWorkOrderVehicle] = useState<PreselectedVehicle | null>(
-    null,
-  )
   const [showAddTruck, setShowAddTruck] = useState(false)
   const [showAddTrailer, setShowAddTrailer] = useState(false)
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null)
   const [editingTrailer, setEditingTrailer] = useState<Trailer | null>(null)
   const [viewingTruck, setViewingTruck] = useState<Truck | null>(null)
   const [viewingTrailer, setViewingTrailer] = useState<Trailer | null>(null)
-  const [deletingKey, setDeletingKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -129,15 +124,12 @@ function FleetSection() {
       return
     }
 
-    setDeletingKey(truck.plate_number)
     setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('truck_profiles')
       .delete()
       .eq('plate_number', truck.plate_number)
-
-    setDeletingKey(null)
 
     if (deleteError) {
       // '23503' is Postgres's error code for a foreign key violation --
@@ -171,15 +163,12 @@ function FleetSection() {
       return
     }
 
-    setDeletingKey(`trailer-${trailer.trailer_id}`)
     setActionError(null)
 
     const { error: deleteError } = await supabase
       .from('trailers')
       .delete()
       .eq('trailer_id', trailer.trailer_id)
-
-    setDeletingKey(null)
 
     if (deleteError) {
       // '23503' is Postgres's error code for a foreign key violation --
@@ -314,28 +303,10 @@ function FleetSection() {
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-3">
                       <button
-                        onClick={() =>
-                          setWorkOrderVehicle({
-                            type: 'truck',
-                            plateNumber: truck.plate_number,
-                          })
-                        }
-                        className="font-medium text-slate-600 hover:text-slate-900"
-                      >
-                        Create Work Order
-                      </button>
-                      <button
                         onClick={() => setEditingTruck(truck)}
                         className="font-medium text-slate-600 hover:text-slate-900"
                       >
                         Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTruck(truck)}
-                        disabled={deletingKey === truck.plate_number}
-                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        {deletingKey === truck.plate_number ? 'Deleting...' : 'Delete'}
                       </button>
                     </div>
                   </td>
@@ -372,30 +343,10 @@ function FleetSection() {
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-3">
                       <button
-                        onClick={() =>
-                          setWorkOrderVehicle({
-                            type: 'trailer',
-                            trailerId: trailer.trailer_id,
-                          })
-                        }
-                        className="font-medium text-slate-600 hover:text-slate-900"
-                      >
-                        Create Work Order
-                      </button>
-                      <button
                         onClick={() => setEditingTrailer(trailer)}
                         className="font-medium text-slate-600 hover:text-slate-900"
                       >
                         Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTrailer(trailer)}
-                        disabled={deletingKey === `trailer-${trailer.trailer_id}`}
-                        className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        {deletingKey === `trailer-${trailer.trailer_id}`
-                          ? 'Deleting...'
-                          : 'Delete'}
                       </button>
                     </div>
                   </td>
@@ -442,20 +393,18 @@ function FleetSection() {
         />
       )}
 
-      {workOrderVehicle && (
-        <CreateWorkOrderModal
-          vehicle={workOrderVehicle}
-          onClose={() => setWorkOrderVehicle(null)}
-          onCreated={() => {
-            setWorkOrderVehicle(null)
-            loadFleet()
-          }}
-        />
-      )}
-
       {(showAddTruck || editingTruck) && (
         <AddTruckModal
           truck={editingTruck ?? undefined}
+          onDelete={
+            editingTruck
+              ? () => {
+                  const t = editingTruck
+                  setEditingTruck(null)
+                  handleDeleteTruck(t)
+                }
+              : undefined
+          }
           onClose={() => {
             setShowAddTruck(false)
             setEditingTruck(null)
@@ -475,6 +424,15 @@ function FleetSection() {
               ? {
                   ...editingTrailer,
                   trailer_type: editingTrailer.trailer_type as EditableTrailer['trailer_type'],
+                }
+              : undefined
+          }
+          onDelete={
+            editingTrailer
+              ? () => {
+                  const t = editingTrailer
+                  setEditingTrailer(null)
+                  handleDeleteTrailer(t)
                 }
               : undefined
           }
