@@ -97,7 +97,7 @@ const driverLinks = employeeLinks.filter((link) => link.to !== '/dashboard/atten
 
 function CenteredMessage({ text }: { text: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
       <p className="text-slate-500">{text}</p>
     </div>
   )

@@ -294,7 +294,7 @@ function BookingsSection() {
                   type="button"
                   onClick={() => setStatusFilter(filter.value)}
                   aria-pressed={statusFilter === filter.value}
-                  className={`border px-3 py-1.5 text-sm font-medium [&:not(:first-child)]:-ml-px ${
+                  className={`border px-3 py-1.5 text-sm font-medium first:rounded-l-lg last:rounded-r-lg [&:not(:first-child)]:-ml-px ${
                     statusFilter === filter.value
                       ? 'relative border-slate-900 bg-slate-900 text-white'
                       : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
@@ -313,7 +313,7 @@ function BookingsSection() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search client, place, booking # or Q- reference"
               aria-label="Search bookings"
-              className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
             />
           </div>
 
@@ -341,7 +341,7 @@ function BookingsSection() {
               </button>
             </p>
           ) : (
-            <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 text-slate-500">
                   <tr>

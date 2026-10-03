@@ -14,7 +14,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   // still checking whether a session exists.
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-dvh items-center justify-center bg-slate-50">
         <p className="text-slate-500">Loading...</p>
       </div>
     )

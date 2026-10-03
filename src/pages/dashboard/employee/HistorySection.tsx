@@ -457,7 +457,7 @@ function HistorySection() {
                     })}
                     className={`border-b border-slate-100 last:border-0 ${
                       rowsClickable
-                        ? 'cursor-pointer hover:bg-slate-50 focus:bg-slate-50 focus:outline-none'
+                        ? 'cursor-pointer hover:bg-slate-100 focus:bg-slate-100 focus:outline-none'
                         : ''
                     }`}
                   >

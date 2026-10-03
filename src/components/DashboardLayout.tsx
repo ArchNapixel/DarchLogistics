@@ -110,11 +110,12 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   }
 
   return (
-    // h-screen caps the shell at the window height: only <main> scrolls, so
-    // the sidebar (and Settings at its bottom) always fits on screen.
-    <div className="flex h-screen flex-col bg-slate-50">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
-        <div className="flex items-center gap-3">
+    // h-dvh (dynamic viewport height) caps the shell at the *visible* window
+    // height -- unlike h-screen it shrinks with a phone's browser toolbar, so
+    // nothing gets hidden behind it. Only <main> scrolls.
+    <div className="flex h-dvh flex-col bg-slate-50">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {sidebarLinks.length > 0 && (
             <button
               onClick={() => setDrawerOpen((open) => !open)}
@@ -140,18 +141,23 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                 <path d={TAB_ICONS.Fleet} />
               </svg>
             </span>
-            <span className="font-display text-2xl font-semibold uppercase tracking-wide text-slate-900">
+            {/* Wordmark shrinks on phones; hidden on the tiniest screens so the
+            header buttons always fit (the logo badge still links home). */}
+            <span className="hidden truncate font-display text-lg font-semibold uppercase tracking-wide text-slate-900 min-[400px]:inline sm:text-2xl">
               Darch <span className="font-medium text-brand-steel">Logistics</span>
             </span>
           </Link>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-4">
           <ComplianceExpiryAlerts />
-          <RoleBadge role={role} />
+          {/* Role pill is nice-to-have; drop it on phones to save room */}
+          <span className="hidden sm:inline">
+            <RoleBadge role={role} />
+          </span>
           <button
             onClick={handleLogout}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 sm:px-4"
           >
             Log Out
           </button>
@@ -175,7 +181,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             current page stays visually distinct against the blue. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r border-slate-200 bg-white md:overflow-visible p-4 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r border-slate-200 bg-white p-4 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >

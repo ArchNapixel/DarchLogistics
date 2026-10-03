@@ -6,7 +6,7 @@
 //
 // Trips already on the road are listed first ("On the road"), then the
 // ones not started yet ("Upcoming"). Only a Driver can advance status;
-// a Helper sees the same list read-only, plus Add Expense.
+// a Helper sees the same list read-only (no status changes, no expenses).
 //
 // Report Issue / Inspection and Issue Maintenance Request live in the
 // EmployeeDashboard header, not here.
@@ -244,6 +244,8 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           />
         )}
 
+        {/* Expenses are Driver-only: a Helper doesn't see or add them */}
+        {crewRole === 'Driver' && (
         <div className="mt-3 border-t border-slate-100 pt-3">
           {trip.expenses.length > 0 && (
             <div className="mb-2 text-sm text-slate-600">
@@ -264,6 +266,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             Add Expense
           </button>
         </div>
+        )}
       </div>
     )
   }
