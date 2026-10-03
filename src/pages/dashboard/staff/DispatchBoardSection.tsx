@@ -140,6 +140,71 @@ const STATUS_SELECT_STYLES: Record<string, string> = {
   Delivered: 'border-accent-900 bg-accent-900 text-white',
 }
 
+// "⋮" button + small popup with the row's actions (View logs, and Request
+// correction for Dispatchers). The popup is position: fixed because the
+// table's overflow-x-auto wrapper would clip an absolutely-positioned one.
+function ActionsMenu({
+  onViewLogs,
+  correction,
+}: {
+  onViewLogs: () => void
+  correction: { pending: boolean; onRequest: () => void } | null
+}) {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const close = () => setPos(null)
+  const itemClass = 'block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent'
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Row actions"
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+        }}
+        className="rounded-full px-2 py-1 text-lg leading-none text-slate-600 hover:bg-slate-100"
+      >
+        ⋮
+      </button>
+      {pos && (
+        <>
+          {/* invisible full-screen layer: clicking anywhere else closes the menu */}
+          <div className="fixed inset-0 z-40" onClick={close} />
+          <div
+            className="fixed z-50 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+            style={{ top: pos.top, right: pos.right }}
+          >
+            <button
+              type="button"
+              className={itemClass}
+              onClick={() => {
+                close()
+                onViewLogs()
+              }}
+            >
+              View logs
+            </button>
+            {correction && (
+              <button
+                type="button"
+                className={itemClass}
+                disabled={correction.pending}
+                onClick={() => {
+                  close()
+                  correction.onRequest()
+                }}
+              >
+                {correction.pending ? 'Correction pending' : 'Request correction'}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 // Shared table renderer for all 3 groups below -- same columns/handlers
 // regardless of which bucket a row is in. readOnly (the Completed table)
 // shows crew/truck/trailer as plain text: changing the driver on a
@@ -220,7 +285,7 @@ function DispatchTable({
               Trailer
             </th>
             <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Logs
+              Actions
             </th>
           </tr>
         </thead>
@@ -294,24 +359,6 @@ function DispatchTable({
                       className="text-left text-xs font-semibold text-accent-700 underline hover:text-accent-900"
                     >
                       Mark delivered
-                    </button>
-                  )}
-                  {canEditStatus &&
-                    !canFreelyEditStatus &&
-                    row.status !== 'Awaiting' &&
-                    pendingCorrectionIds.has(row.itinerary_id) && (
-                      <span className="text-xs text-neutral-500">Correction pending</span>
-                    )}
-                  {canEditStatus &&
-                    !canFreelyEditStatus &&
-                    row.status !== 'Awaiting' &&
-                    !pendingCorrectionIds.has(row.itinerary_id) && (
-                    <button
-                      type="button"
-                      onClick={() => onRequestCorrection(row)}
-                      className="text-left text-xs font-medium text-neutral-500 underline hover:text-neutral-700"
-                    >
-                      Request correction
                     </button>
                   )}
                 </div>
@@ -436,13 +483,19 @@ function DispatchTable({
                 )}
               </td>
               <td className="px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => onViewLogs(row.itinerary_id)}
-                  className="text-xs font-medium text-accent-700 underline hover:text-accent-900"
-                >
-                  Logs
-                </button>
+                <ActionsMenu
+                  onViewLogs={() => onViewLogs(row.itinerary_id)}
+                  // Same conditions the old inline "Request correction"
+                  // button used; a pending request shows as a disabled item.
+                  correction={
+                    canEditStatus && !canFreelyEditStatus && row.status !== 'Awaiting'
+                      ? {
+                          pending: pendingCorrectionIds.has(row.itinerary_id),
+                          onRequest: () => onRequestCorrection(row),
+                        }
+                      : null
+                  }
+                />
               </td>
             </tr>
           ))}
