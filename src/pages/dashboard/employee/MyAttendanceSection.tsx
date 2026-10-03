@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, type AttendanceRecord } from '../../../lib/employeeAttendance'
 import { toManilaDate } from '../../../lib/payslip'
+import MyAttendanceCalendar from './MyAttendanceCalendar'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -93,9 +94,10 @@ function MyAttendanceSection() {
             <span className="font-semibold text-slate-900">{leaveDays}</span> · Absent:{' '}
             <span className="font-semibold text-slate-900">{absentDays}</span>
           </p>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 grid items-start gap-6 lg:grid-cols-2">
+          <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-slate-500">
+              <thead className="border-b border-slate-300 text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Day</th>
                   <th className="px-4 py-3 font-medium">Date</th>
@@ -106,9 +108,9 @@ function MyAttendanceSection() {
                 {days.map((date, i) => {
                   const status = statusOf(date)
                   return (
-                    <tr key={date} className="border-b border-slate-100 last:border-0">
+                    <tr key={date} className="border-b border-slate-300 last:border-0">
                       <td className="px-4 py-3 text-slate-900">{DAY_NAMES[i]}</td>
-                      <td className="px-4 py-3 text-slate-600">{formatShort(date)}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatShort(date)}, {date.slice(0, 4)}</td>
                       <td className="px-4 py-3">
                         {status ? (
                           <span className={`px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}>{status}</span>
@@ -121,6 +123,8 @@ function MyAttendanceSection() {
                 })}
               </tbody>
             </table>
+          </div>
+          <MyAttendanceCalendar employeeId={employeeId} today={today} />
           </div>
         </>
       )}

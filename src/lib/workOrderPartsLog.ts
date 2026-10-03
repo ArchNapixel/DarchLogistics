@@ -186,3 +186,34 @@ export async function logPartUsed({
 
   return { error: null }
 }
+
+// Undoes one logged part: deletes the log row, then puts its quantity
+// back on the shelf. Delete goes first and is checked with
+// .select().maybeSingle() -- a blocked DELETE (no RLS policy) reports
+// success with 0 rows, and we must not add stock back in that case.
+export async function returnPart(
+  part: LoggedPart,
+): Promise<{ error: string | null }> {
+  const { data: deleted, error: deleteError } = await supabase
+    .from('work_order_parts_log')
+    .delete()
+    .eq('log_id', part.log_id)
+    .select('log_id')
+    .maybeSingle()
+
+  if (deleteError) {
+    return { error: deleteError.message }
+  }
+  if (!deleted) {
+    return { error: 'Could not remove this part (not allowed or already removed).' }
+  }
+
+  const { error: restoreError } = await decrementStock(part.item_id, -part.quantity)
+  if (restoreError) {
+    return {
+      error: `Removed ${part.item_name_text} from the job, but could not put it back in stock (${restoreError}). This needs manual review.`,
+    }
+  }
+
+  return { error: null }
+}

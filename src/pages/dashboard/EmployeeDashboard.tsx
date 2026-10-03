@@ -13,7 +13,6 @@
 // between the two sibling components.
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import RoleBadge from '../../components/RoleBadge'
 import MyTasksSection from './employee/MyTasksSection'
 import TaskBoard from './employee/TaskBoard'
 import ScheduleMaintenanceModal from './employee/ScheduleMaintenanceModal'
@@ -33,12 +32,9 @@ function EmployeeDashboard() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900">
-              Welcome, {username}
-            </h1>
-            <RoleBadge role={role} />
-          </div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Welcome, {username}
+          </h1>
           <p className="text-sm text-slate-500">
             {new Date().toLocaleDateString('en-US', {
               weekday: 'long',
