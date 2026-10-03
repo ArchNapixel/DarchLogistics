@@ -263,11 +263,7 @@ function MechanicTasks() {
         </p>
       )}
 
-      {orders.length === 0 ? (
-        <p className="text-slate-500">
-          Nothing assigned right now -- accept one from the Task Board below.
-        </p>
-      ) : (
+      {orders.length === 0 ? null : (
         <div className="grid gap-4">
           {orders.map((order) => (
             <div
