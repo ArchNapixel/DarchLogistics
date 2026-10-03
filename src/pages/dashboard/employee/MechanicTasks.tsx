@@ -331,7 +331,7 @@ function MechanicTasks() {
                 ) : (
                   <button
                     onClick={() => setReopeningOrder(order)}
-                    className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                    className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
                   >
                     Request correction
                   </button>

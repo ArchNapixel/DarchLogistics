@@ -52,7 +52,7 @@ function EmployeeDashboard() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowIssueRequest(true)}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
           >
             Issue Maintenance Request
           </button>
@@ -60,7 +60,7 @@ function EmployeeDashboard() {
           {role === 'Mechanic' && (
             <button
               onClick={() => setShowScheduleMaintenance(true)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
             >
               Schedule Maintenance
             </button>
@@ -69,7 +69,7 @@ function EmployeeDashboard() {
               or general (InspectionReportModal covers both). */}
           <button
             onClick={() => setShowInspectionReport(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
           >
             {role === 'Mechanic' ? 'Submit Inspection Report' : 'Report Issue'}
           </button>
@@ -93,11 +93,7 @@ function EmployeeDashboard() {
       </div>
 
       {role === 'Mechanic' && (
-        <div className="mt-8">
-          <TaskBoard
-            onAccepted={() => setTasksRefreshKey((key) => key + 1)}
-          />
-        </div>
+        <TaskBoard onAccepted={() => setTasksRefreshKey((key) => key + 1)} />
       )}
 
       {showScheduleMaintenance && employeeId && (
