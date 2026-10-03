@@ -56,6 +56,7 @@ const TAB_ICONS: Record<string, string> = {
   Settings:
     'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   'My History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+  'My Trips History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
 }
 
 function TabIcon({ label }: { label: string }) {

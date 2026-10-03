@@ -235,20 +235,29 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           {trip.trailer_label ?? <span className="text-slate-400">none</span>}
         </p>
 
+        {/* Status button and Add Expense sit side by side (Driver-only) */}
         {crewRole === 'Driver' && (
-          <UpdateStatusControl
-            itineraryId={trip.itinerary_id}
-            currentStatus={trip.itinerary_status}
-            hasTruck={trip.plate_number !== null}
-            onStatusChanged={handleStatusChanged}
-          />
+          <div className="flex flex-wrap items-start gap-2">
+            <UpdateStatusControl
+              itineraryId={trip.itinerary_id}
+              currentStatus={trip.itinerary_status}
+              hasTruck={trip.plate_number !== null}
+              onStatusChanged={handleStatusChanged}
+            />
+            <button
+              onClick={() => setExpenseTripId(trip.itinerary_id)}
+              className="mt-3 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Add Expense
+            </button>
+          </div>
         )}
 
         {/* Expenses are Driver-only: a Helper doesn't see or add them */}
-        {crewRole === 'Driver' && (
+        {crewRole === 'Driver' && trip.expenses.length > 0 && (
         <div className="mt-3 border-t border-slate-100 pt-3">
           {trip.expenses.length > 0 && (
-            <div className="mb-2 text-sm text-slate-600">
+            <div className="text-sm text-slate-600">
               <p className="font-medium text-slate-700">
                 Your expenses: ₱{expenseTotal.toLocaleString()}
               </p>
@@ -259,12 +268,6 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
               ))}
             </div>
           )}
-          <button
-            onClick={() => setExpenseTripId(trip.itinerary_id)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-          >
-            Add Expense
-          </button>
         </div>
         )}
       </div>

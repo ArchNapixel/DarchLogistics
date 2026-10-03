@@ -420,7 +420,9 @@ function HistorySection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">My History</h2>
+      <h2 className="text-xl font-bold text-slate-900">
+        {role === 'Driver' ? 'My Trips History' : 'My History'}
+      </h2>
 
       {loading && <p className="mt-4 text-slate-500">Loading your history...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}

@@ -93,7 +93,11 @@ const employeeLinks = [
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 // Drivers are paid per trip, so they have no attendance page
-const driverLinks = employeeLinks.filter((link) => link.to !== '/dashboard/attendance')
+const driverLinks = employeeLinks
+  .filter((link) => link.to !== '/dashboard/attendance')
+  .map((link) =>
+    link.to === '/dashboard/history' ? { ...link, label: 'My Trips History' } : link,
+  )
 
 function CenteredMessage({ text }: { text: string }) {
   return (
