@@ -73,6 +73,12 @@ html {
   border-radius: 8px;
 }
 
+/* Thicker, darker outline for the admin dashboard cards (add next to
+   reports-blueprint-card; must come after it to win). */
+.dashboard-card-bold {
+  border: 2px solid #94a3b8;
+}
+
 /* Modern feel: smooth hover/focus changes on every button and link. */
 button,
 a {

@@ -315,15 +315,23 @@ function StaffDashboard() {
     loadTodayDeliveries()
   }, [])
 
-  const summaryCards = [
-    { label: 'Pending Quotes', value: summary.pendingQuotes },
-    { label: 'Active Bookings', value: summary.activeBookings },
-    { label: "Today's Deliveries", value: summary.todayDeliveries },
-    { label: 'Truck Count', value: summary.truckCount },
-    { label: 'Trailer Count', value: summary.trailerCount },
-    { label: 'Trucks Operational', value: summary.trucksOperational },
-    { label: 'Trailers Operational', value: summary.trailersOperational },
-    { label: 'Under Maintenance', value: summary.underMaintenance },
+  // Cards grouped by the same module names as the sidebar
+  const summaryGroups = [
+    {
+      title: 'Operations',
+      cards: [
+        { label: 'Pending Quotes', value: summary.pendingQuotes },
+        { label: 'Active Bookings', value: summary.activeBookings },
+        { label: "Today's Deliveries", value: summary.todayDeliveries },
+      ],
+    },
+    {
+      title: 'Maintenance',
+      cards: [
+        { label: 'Trucks Operational', value: `${summary.trucksOperational}/${summary.truckCount}` },
+        { label: 'Trailers Operational', value: `${summary.trailersOperational}/${summary.trailerCount}` },
+      ],
+    },
   ]
 
   return (
@@ -348,7 +356,7 @@ function StaffDashboard() {
         </p>
       )}
 
-      <div className="reports-blueprint-card mt-8 px-[22px] pt-[22px] pb-5">
+      <div className="reports-blueprint-card dashboard-card-bold mt-8 px-[22px] pt-[22px] pb-5">
         <div className="flex items-center justify-between">
           <p className="font-ui text-sm font-medium text-neutral-500">
             Total Revenue <span className="normal-case">(collected)</span>
@@ -385,21 +393,30 @@ function StaffDashboard() {
       </div>
 
       {/* Costs for the same period as the revenue dropdown above. */}
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-5 lg:grid-cols-2">
         <OperationalExpensesCard period={rangePeriod} refreshKey={refreshKey} />
         <MaintenanceExpensesCard period={rangePeriod} refreshKey={refreshKey} />
       </div>
 
-      <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {summaryCards.map((card) => (
-          <div key={card.label} className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
-            <p className="font-ui text-base text-reports-ink">{card.label}</p>
-            <p className="font-condensed mt-2.5 text-[34px] leading-none font-semibold text-reports-ink">
-              {loading ? '--' : card.value}
-            </p>
+      {summaryGroups.map((group) => (
+        <div key={group.title} className="mt-8">
+          <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
+          {/* One row per group: as many equal columns as there are cards */}
+          <div
+            className="mt-3 grid gap-2 sm:gap-5"
+            style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}
+          >
+            {group.cards.map((card) => (
+              <div key={card.label} className="reports-blueprint-card dashboard-card-bold px-3 pt-3 pb-3 sm:px-[22px] sm:pt-[22px] sm:pb-5">
+                <p className="font-ui text-xs leading-tight text-reports-ink sm:text-base">{card.label}</p>
+                <p className="font-condensed mt-1.5 text-2xl sm:mt-2.5 sm:text-[34px] leading-none font-semibold text-reports-ink">
+                  {loading ? '--' : card.value}
+                </p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
 
       <div className="mt-8">
         <h2 className="font-ui text-sm font-medium text-neutral-500">
@@ -421,7 +438,30 @@ function StaffDashboard() {
           )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
-          <div className="rounded-lg mt-3 max-h-96 overflow-y-auto overflow-x-auto border border-reports-hairline bg-reports-bg">
+          <>
+          {/* Phone: one stacked card per delivery (the table is too wide) */}
+          <div className="mt-3 flex flex-col gap-3 sm:hidden">
+            {todayDeliveryRows.map((row) => (
+              <div
+                key={row.itinerary_id}
+                className="rounded-lg border-2 border-slate-400 bg-reports-bg p-3 font-ui text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-reports-ink">
+                    {row.from} <span className="text-neutral-400">→</span> {row.to}
+                  </p>
+                  <ItineraryStatusBadge status={row.status} />
+                </div>
+                <p className="mt-2 text-xs text-neutral-600">
+                  {row.rate != null ? `₱${row.rate.toLocaleString()}` : 'N/A'} · Truck{' '}
+                  {row.truckPlateNumber ?? 'Unassigned'} · Trailer{' '}
+                  {row.trailerPlateNumber ?? 'Unassigned'}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg mt-3 hidden max-h-96 overflow-y-auto overflow-x-auto border-2 border-slate-400 bg-reports-bg sm:block">
             <table className="w-full text-left font-ui text-sm">
               <thead className="sticky top-0 border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>
@@ -470,6 +510,7 @@ function StaffDashboard() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

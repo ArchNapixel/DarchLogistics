@@ -97,21 +97,21 @@ function MaintenanceExpensesCard({
   }, [period, refreshKey])
 
   return (
-    <div className="reports-blueprint-card px-[22px] pt-[22px] pb-5">
-      <p className="font-ui text-sm font-medium text-neutral-500">
-        Maintenance Expenses <span className="normal-case">(parts)</span>
+    <div className="reports-blueprint-card dashboard-card-bold px-3 pt-3 pb-3 sm:px-[22px] sm:pt-[22px] sm:pb-5">
+      <p className="font-ui text-xs leading-tight font-medium text-neutral-500 sm:text-sm">
+        Maintenance Expenses <span className="normal-case max-sm:hidden">(parts)</span>
       </p>
 
       {error ? (
         <p className="mt-2 font-ui text-sm text-red-700">{error}</p>
       ) : (
         <>
-          <p className="font-condensed mt-2 text-[40px] leading-none font-bold text-reports-ink">
+          <p className="font-condensed mt-1.5 text-2xl sm:mt-2 sm:text-[40px] leading-none font-bold text-reports-ink">
             {loading || !data ? '--' : peso(data.total)}
           </p>
 
           {data && !loading && (
-            <>
+            <div className="max-sm:hidden">
               {data.inProgressCost > 0 && (
                 <p className="mt-1 font-ui text-xs text-neutral-500">
                   Includes {peso(data.inProgressCost)} from open work orders.
@@ -133,11 +133,11 @@ function MaintenanceExpensesCard({
                   <p className="mt-5 font-ui text-sm font-medium text-neutral-500">
                     By item type
                   </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-6">
+                  <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-6">
                     {data.total > 0 && <Pie slices={data.byType} />}
-                    <ul className="min-w-[10rem] flex-1 font-ui text-sm">
+                    <ul className="min-w-0 flex-1 sm:min-w-[10rem] font-ui text-sm">
                       {data.byType.map((t, i) => (
-                        <li key={t.type} className="flex items-center justify-between gap-3 py-1">
+                        <li key={t.type} className="flex flex-col gap-0.5 py-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                           <span className="flex items-center gap-2 text-reports-ink">
                             <span
                               className={`inline-block h-3 w-3 ${SWATCH_BG[i % SWATCH_BG.length]}`}
@@ -164,7 +164,7 @@ function MaintenanceExpensesCard({
                     {data.topItems.map((item) => (
                       <li
                         key={`${item.type}|${item.name}`}
-                        className="flex items-center justify-between gap-3 border-b border-reports-hairline py-1.5 last:border-0"
+                        className="flex flex-col gap-0.5 border-b border-reports-hairline py-1.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                       >
                         <span className="text-reports-ink">
                           {item.name}{' '}
@@ -176,7 +176,7 @@ function MaintenanceExpensesCard({
                   </ul>
                 </>
               )}
-            </>
+            </div>
           )}
         </>
       )}
