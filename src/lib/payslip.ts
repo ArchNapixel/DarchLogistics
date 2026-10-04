@@ -459,19 +459,12 @@ export async function getOutstandingCashAdvance(
 export const WEEKLY_CASH_ADVANCE_DEDUCTION = 500
 
 // What to deduct on a draft: the weekly amount, capped by what's still
-// owed and by the pay left after contributions/tax (net never goes
-// negative). alreadyOnThisDraft = what this draft already deducts, which
-// the outstanding balance already counts as paid.
-async function autoCashAdvanceDeduction(
-  employeeId: number,
-  netBeforeAdvance: number,
-  alreadyOnThisDraft = 0,
-) {
+// owed. Not capped by the week's pay -- it's deducted even on a ₱0-gross
+// draft, so net pay can go negative. alreadyOnThisDraft = what this draft
+// already deducts, which the outstanding balance already counts as paid.
+async function autoCashAdvanceDeduction(employeeId: number, alreadyOnThisDraft = 0) {
   const { outstanding } = await getOutstandingCashAdvance(employeeId)
-  return Math.max(
-    0,
-    Math.min(WEEKLY_CASH_ADVANCE_DEDUCTION, outstanding + alreadyOnThisDraft, netBeforeAdvance),
-  )
+  return Math.max(0, Math.min(WEEKLY_CASH_ADVANCE_DEDUCTION, outstanding + alreadyOnThisDraft))
 }
 
 const CONTRIBUTION_COLUMNS =
@@ -777,34 +770,20 @@ async function generateDraftPayslipsNow(
       continue
     }
 
-    // A nothing-earned draft (kept only for a cash advance) has no pay to
-    // take contributions from -- start at zero; later weeks catch up.
-    const auto =
-      grossAdded > 0
-        ? await computeAutoDeductions(
-            employee.employee_id,
-            grossAdded,
-            periodEnd,
-            employee.is_minimum_wage_earner,
-          )
-        : {
-            error: null,
-            deductions: {
-              sss_msc: 0, sss_ee: 0, sss_er: 0, sss_ec: 0,
-              philhealth_ee: 0, philhealth_er: 0,
-              pagibig_ee: 0, pagibig_er: 0,
-              withholding_tax: 0, deductions_note: null,
-            } as PayslipDeductions,
-          }
+    // Contributions are computed even on a nothing-earned draft (kept only
+    // for a cash advance), so net pay can go negative -- same as top-up.
+    const auto = await computeAutoDeductions(
+      employee.employee_id,
+      grossAdded,
+      periodEnd,
+      employee.is_minimum_wage_earner,
+    )
     if (auto.error || !auto.deductions) {
       warnings.push(`${employee.full_name}: ${auto.error}`)
       continue
     }
 
-    const cashAdvanceDeducted = await autoCashAdvanceDeduction(
-      employee.employee_id,
-      grossAdded - totalEmployeeDeductions(auto.deductions),
-    )
+    const cashAdvanceDeducted = await autoCashAdvanceDeduction(employee.employee_id)
 
     const { payrollId, error } = await issuePayslip({
       employeeId: employee.employee_id,
@@ -960,12 +939,11 @@ async function saveDraftTotals(
 
   // Keep an existing deduction (admin may have set it); if there is none
   // yet (e.g. a cash-advance-only draft that just earned pay), auto-fill.
-  // Either way it can't push net pay below zero.
   const netBeforeAdvance = grossPay - totalEmployeeDeductions(deductions)
   const cashAdvanceDeducted =
     draft.cash_advance_deducted > 0
-      ? Math.min(draft.cash_advance_deducted, Math.max(0, netBeforeAdvance))
-      : await autoCashAdvanceDeduction(employee.employee_id, netBeforeAdvance)
+      ? draft.cash_advance_deducted
+      : await autoCashAdvanceDeduction(employee.employee_id)
 
   const { data, error: updateError } = await supabase
     .from('payroll_payslips')

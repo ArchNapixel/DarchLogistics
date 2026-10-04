@@ -13,7 +13,7 @@
 // be released by accident) -- then Finalizes it, which releases it to
 // the employee's own payslip page. "Mark Paid" (finalized only) is the
 // separate step once money has actually changed hands.
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   markPayslipPaid,
@@ -92,6 +92,8 @@ function PayrollSection() {
   // payroll_id being finalized/discarded, or 'all' for Finalize All
   const [reviewingId, setReviewingId] = useState<number | 'all' | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  // Which employee's card is open (one at a time)
+  const [openEmployeeId, setOpenEmployeeId] = useState<number | null>(null)
   const [lineItemsByPayroll, setLineItemsByPayroll] = useState<
     Record<number, PayslipLineItem[]>
   >({})
@@ -181,6 +183,27 @@ function PayrollSection() {
     setError(null)
     setLoading(false)
   }
+
+  // Group payslips per employee (payroll is already newest-first, so each
+  // group's entries are too). Employees with drafts to review come first.
+  const employeeGroups = Object.values(
+    payroll.reduce<
+      Record<number, { employee_id: number; employee_name: string; position: string; entries: PayrollEntry[] }>
+    >((groups, entry) => {
+      groups[entry.employee_id] ??= {
+        employee_id: entry.employee_id,
+        employee_name: entry.employee_name,
+        position: entry.position,
+        entries: [],
+      }
+      groups[entry.employee_id].entries.push(entry)
+      return groups
+    }, {}),
+  ).sort((a, b) => {
+    const aDraft = a.entries.some((e) => e.status === 'Draft') ? 0 : 1
+    const bDraft = b.entries.some((e) => e.status === 'Draft') ? 0 : 1
+    return aDraft - bDraft || a.employee_name.localeCompare(b.employee_name)
+  })
 
   const drafts = payroll.filter((entry) => entry.status === 'Draft')
   // "Finalize all" skips held drafts and weeks still in progress
@@ -351,7 +374,7 @@ function PayrollSection() {
               {heldCount > 0 && ` (${heldCount} on hold)`}
               {inProgressCount > 0 && ` (${inProgressCount} still in progress)`}.
             </span>{' '}
-            Employees can&apos;t see drafts. Click a row to check it, then finalize to release it.
+            Employees can&apos;t see drafts. Open an employee's card to check their draft, then finalize to release it.
           </p>
           {draftIds.length > 0 && (
             <button
@@ -378,194 +401,205 @@ function PayrollSection() {
         </div>
       )}
 
+      {/* One card per employee: click it to list all their payslips, click a payslip for its breakdown */}
       {!loading && !error && payroll.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Period</th>
-                <th className="px-4 py-3 font-medium">Gross Pay</th>
-                <th className="px-4 py-3 font-medium">Cash Advance</th>
-                <th className="px-4 py-3 font-medium">Gov&apos;t + Tax</th>
-                <th className="px-4 py-3 font-medium">Net Pay</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payroll.map((entry) => (
-                <Fragment key={entry.payroll_id}>
-                  <tr
-                    onClick={() => toggleExpand(entry.payroll_id)}
-                    className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+        <div className="mt-4 flex flex-col gap-3">
+          {employeeGroups.map((group) => {
+            const isOpen = openEmployeeId === group.employee_id
+            const draftCount = group.entries.filter((e) => e.status === 'Draft').length
+            const pendingCount = group.entries.filter((e) => e.status === 'Pending').length
+            const latest = group.entries[0]
+            return (
+              <div key={group.employee_id} className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white">
+                <button
+                  onClick={() => {
+                    setOpenEmployeeId(isOpen ? null : group.employee_id)
+                    setExpandedId(null)
+                  }}
+                  className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">{group.employee_name}</p>
+                    <p className="text-xs text-slate-500">
+                      {group.position || '—'} · {group.entries.length} payslip{group.entries.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  {/* Chevron in the middle: points down when closed, flips up when open */}
+                  <span
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-700 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                   >
-                    <td className="px-4 py-3 text-slate-900">
-                      {entry.employee_name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{entry.period}</td>
-                    <td className="px-4 py-3 text-slate-600">
-                      ₱{entry.gross_pay.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {/* Total still owed before this payslip's deduction (drafts
-                          already count as deducted, so add it back). Paid rows: history. */}
-                      {entry.status === 'Paid'
-                        ? '—'
-                        : `₱${((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted).toLocaleString()}`}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      ₱{entry.gov_deductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      ₱{entry.net_pay.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        <PayrollStatusBadge status={entry.status} />
-                        {entry.status === 'Draft' && entry.on_hold && (
-                          <span className="bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">On Hold</span>
-                        )}
-                        {entry.status === 'Draft' && isWeekInProgress(entry.period_end) && (
-                          <span className="bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                            Week in progress
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {entry.status === 'Draft' && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleFinalize([entry.payroll_id], entry.payroll_id)
-                            }}
-                            disabled={reviewingId !== null || entry.on_hold || isWeekInProgress(entry.period_end)}
-                            title={
-                              entry.on_hold
-                                ? 'Remove the hold first'
-                                : isWeekInProgress(entry.period_end)
-                                  ? 'Can be finalized once the week is over'
-                                  : undefined
-                            }
-                            className="font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
-                          >
-                            {reviewingId === entry.payroll_id ? 'Saving...' : 'Finalize'}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingDraft({
-                                payrollId: entry.payroll_id,
-                                employeeId: entry.employee_id,
-                                employeeName: entry.employee_name,
-                                periodStart: entry.period_start,
-                                periodEnd: entry.period_end,
-                                periodLabel: entry.period,
-                              })
-                            }}
-                            disabled={reviewingId !== null}
-                            className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRegenerate(entry)
-                            }}
-                            disabled={reviewingId !== null}
-                            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                          >
-                            Regenerate
-                          </button>
-                          {entry.position === 'Driver' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleToggleHold(entry)
-                              }}
-                              disabled={reviewingId !== null}
-                              className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                            >
-                              {entry.on_hold ? 'Remove Hold' : 'Hold Payslip'}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {entry.status === 'Pending' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleMarkPaid(entry.payroll_id)
-                          }}
-                          disabled={markingPaidId === entry.payroll_id}
-                          className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
+                    {draftCount > 0 && (
+                      <span className="bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                        {draftCount} draft{draftCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                    {pendingCount > 0 && (
+                      <span className="bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                        {pendingCount} to pay
+                      </span>
+                    )}
+                    <span className="text-slate-500">Latest net:</span>
+                    <span className="font-medium text-slate-900">{formatPeso(latest.net_pay)}</span>
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="border-t-2 border-slate-400">
+                    {group.entries.map((entry) => (
+                      <div key={entry.payroll_id} className="border-b border-slate-300 last:border-0">
+                        <div
+                          onClick={() => toggleExpand(entry.payroll_id)}
+                          className="grid cursor-pointer grid-cols-2 items-center gap-x-6 gap-y-2 px-4 py-3 text-sm hover:bg-slate-50 md:grid-cols-[minmax(12rem,1.2fr)_1fr_1fr_minmax(16rem,1.5fr)]"
                         >
-                          {markingPaidId === entry.payroll_id
-                            ? 'Saving...'
-                            : 'Mark Paid'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {expandedId === entry.payroll_id && (
-                    <tr className="border-b border-slate-100 last:border-0">
-                      <td colSpan={8} className="bg-slate-50 px-4 py-3">
-                        {lineItemsLoading && !lineItemsByPayroll[entry.payroll_id] ? (
-                          <p className="text-sm text-slate-500">Loading breakdown...</p>
-                        ) : (
-                          <div className="flex flex-col gap-1.5 text-sm">
-                            {(lineItemsByPayroll[entry.payroll_id] ?? []).map(
-                              (item, index) => (
-                                <div key={index} className="flex items-center justify-between">
-                                  <span className="text-slate-600">{item.description}</span>
-                                  <span className="font-medium text-slate-900">
-                                    ₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              ),
+                          <div>
+                            <p className="text-slate-900">{entry.period}</p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <PayrollStatusBadge status={entry.status} />
+                              {entry.status === 'Draft' && entry.on_hold && (
+                                <span className="bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">On Hold</span>
+                              )}
+                              {entry.status === 'Draft' && isWeekInProgress(entry.period_end) && (
+                                <span className="bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                  Week in progress
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-slate-600">Gross {formatPeso(entry.gross_pay)}</div>
+                          <div className="font-medium text-slate-900">Net {formatPeso(entry.net_pay)}</div>
+                          <div className="col-span-2 md:col-span-1 md:justify-self-end" onClick={(e) => e.stopPropagation()}>
+                            {entry.status === 'Draft' && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                <button
+                                  onClick={() => handleFinalize([entry.payroll_id], entry.payroll_id)}
+                                  disabled={reviewingId !== null || entry.on_hold || isWeekInProgress(entry.period_end)}
+                                  title={
+                                    entry.on_hold
+                                      ? 'Remove the hold first'
+                                      : isWeekInProgress(entry.period_end)
+                                        ? 'Can be finalized once the week is over'
+                                        : undefined
+                                  }
+                                  className="font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
+                                >
+                                  {reviewingId === entry.payroll_id ? 'Saving...' : 'Finalize'}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setEditingDraft({
+                                      payrollId: entry.payroll_id,
+                                      employeeId: entry.employee_id,
+                                      employeeName: entry.employee_name,
+                                      periodStart: entry.period_start,
+                                      periodEnd: entry.period_end,
+                                      periodLabel: entry.period,
+                                    })
+                                  }
+                                  disabled={reviewingId !== null}
+                                  className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleRegenerate(entry)}
+                                  disabled={reviewingId !== null}
+                                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                                >
+                                  Regenerate
+                                </button>
+                                {entry.position === 'Driver' && (
+                                  <button
+                                    onClick={() => handleToggleHold(entry)}
+                                    disabled={reviewingId !== null}
+                                    className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                                  >
+                                    {entry.on_hold ? 'Remove Hold' : 'Hold Payslip'}
+                                  </button>
+                                )}
+                              </div>
                             )}
-                            <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
-                              <span className="text-slate-600">Gross pay</span>
-                              <span className="font-medium text-slate-900">{formatPeso(entry.gross_pay)}</span>
-                            </div>
-                            {(
-                              [
-                                ['Cash advance', entry.cash_advance_deducted],
-                                ['SSS', entry.sss_ee],
-                                ['PhilHealth', entry.philhealth_ee],
-                                ['Pag-IBIG', entry.pagibig_ee],
-                                ['Withholding tax', entry.withholding_tax],
-                              ] as const
-                            )
-                              .filter(([, amount]) => amount !== 0)
-                              .map(([label, amount]) => (
-                                <div key={label} className="flex items-center justify-between">
-                                  <span className="text-slate-600">{label}</span>
-                                  <span className="font-medium text-red-600">
-                                    {amount > 0 ? '-' : '+'}
-                                    {formatPeso(Math.abs(amount))}
-                                  </span>
+                            {entry.status === 'Pending' && (
+                              <button
+                                onClick={() => handleMarkPaid(entry.payroll_id)}
+                                disabled={markingPaidId === entry.payroll_id}
+                                className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
+                              >
+                                {markingPaidId === entry.payroll_id ? 'Saving...' : 'Mark Paid'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {expandedId === entry.payroll_id && (
+                          <div className="bg-slate-50 px-4 py-3">
+                            {lineItemsLoading && !lineItemsByPayroll[entry.payroll_id] ? (
+                              <p className="text-sm text-slate-500">Loading breakdown...</p>
+                            ) : (
+                              <div className="flex flex-col gap-1.5 text-sm">
+                                {(lineItemsByPayroll[entry.payroll_id] ?? []).map((item, index) => (
+                                  <div key={index} className="flex items-center justify-between">
+                                    <span className="text-slate-600">{item.description}</span>
+                                    <span className="font-medium text-slate-900">
+                                      ₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                ))}
+                                <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
+                                  <span className="text-slate-600">Gross pay</span>
+                                  <span className="font-medium text-slate-900">{formatPeso(entry.gross_pay)}</span>
                                 </div>
-                              ))}
-                            <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-900">
-                              <span>Net pay</span>
-                              <span>{formatPeso(entry.net_pay)}</span>
-                            </div>
-                            {entry.deductions_note && (
-                              <p className="text-xs text-amber-700">{entry.deductions_note}</p>
+                                {(
+                                  [
+                                    ['Cash advance', entry.cash_advance_deducted],
+                                    ['SSS', entry.sss_ee],
+                                    ['PhilHealth', entry.philhealth_ee],
+                                    ['Pag-IBIG', entry.pagibig_ee],
+                                    ['Withholding tax', entry.withholding_tax],
+                                  ] as const
+                                )
+                                  .filter(([, amount]) => amount !== 0)
+                                  .map(([label, amount]) => (
+                                    <div key={label} className="flex items-center justify-between">
+                                      <span className="text-slate-600">{label}</span>
+                                      <span className="font-medium text-red-600">
+                                        {amount > 0 ? '-' : '+'}
+                                        {formatPeso(Math.abs(amount))}
+                                      </span>
+                                    </div>
+                                  ))}
+                                <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-900">
+                                  <span>Net pay</span>
+                                  <span>{formatPeso(entry.net_pay)}</span>
+                                </div>
+                                {entry.status !== 'Paid' && (owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted > 0 && (
+                                  <p className="text-xs text-slate-500">
+                                    Cash advance owed before this payslip:{' '}
+                                    {formatPeso((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted)}
+                                  </p>
+                                )}
+                                {entry.deductions_note && (
+                                  <p className="text-xs text-amber-700">{entry.deductions_note}</p>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

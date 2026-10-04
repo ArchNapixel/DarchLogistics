@@ -241,10 +241,6 @@ function EditDraftPayslipModal({
         return
       }
     }
-    if (netPay < 0) {
-      setError('Deductions are more than the gross pay -- lower the cash advance or a deduction.')
-      return
-    }
 
     // Record which deductions the admin changed, with the auto value.
     const overrideNotes = DEDUCTION_ROWS.flatMap((row) =>
