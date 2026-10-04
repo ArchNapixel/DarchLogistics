@@ -19,16 +19,16 @@ function Hero() {
           className="absolute inset-0 bg-cover bg-center motion-safe:animate-slow-zoom"
           style={{ backgroundImage: "url('/images/heavy-cylinder.jpg')" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-brand-navy/95 via-brand-navy/80 to-brand-navy/40" />
+        <div className="absolute inset-0 bg-gradient-to-b from-brand-navy/95 via-brand-navy/85 to-brand-navy/70 sm:bg-gradient-to-r sm:from-brand-navy/95 sm:via-brand-navy/80 sm:to-brand-navy/40" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
-          <p className="text-xs font-semibold tracking-[0.2em] text-brand-steel uppercase motion-safe:animate-fade-up">
+        <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-28">
+          <p className="text-xs font-semibold tracking-[0.15em] text-slate-300 uppercase sm:tracking-[0.2em] sm:text-brand-steel motion-safe:animate-fade-up">
             Port Drayage / Heavy-Lift / Breakbulk
           </p>
 
           <h1
             style={{ animationDelay: '150ms' }}
-            className="mt-4 max-w-3xl font-display text-4xl font-semibold uppercase leading-[1.05] text-white sm:text-6xl motion-safe:animate-fade-up"
+            className="mt-4 max-w-3xl font-display text-[2rem] font-semibold uppercase leading-[1.1] text-white sm:text-6xl sm:leading-[1.05] motion-safe:animate-fade-up"
           >
             Cargo that doesn't fit a standard container
           </h1>
