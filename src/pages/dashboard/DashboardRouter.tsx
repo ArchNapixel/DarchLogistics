@@ -47,22 +47,22 @@ import MyAttendanceSection from './employee/MyAttendanceSection'
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Reports', to: '/dashboard/reports' },
-  { label: 'Payment Tracking', to: '/dashboard/financial-records' },
+  { label: 'Bills Receivable', to: '/dashboard/financial-records' },
   {
     label: 'Operations',
     children: [
-      { label: 'Quotations', to: '/dashboard/quotations' },
-      { label: 'Bookings', to: '/dashboard/bookings' },
-      { label: 'Clients', to: '/dashboard/clients' },
+      { label: 'Client Quotations', to: '/dashboard/quotations' },
+      { label: 'Client Bookings', to: '/dashboard/bookings' },
+      { label: 'Client Accounts', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
     ],
   },
   {
     label: 'Human Resource',
     children: [
-      { label: 'Employees', to: '/dashboard/employees' },
+      { label: 'Employee List', to: '/dashboard/employees' },
       { label: 'Attendance', to: '/dashboard/attendance' },
-      { label: 'Payroll', to: '/dashboard/payroll' },
+      { label: 'Payroll Master', to: '/dashboard/payroll' },
       { label: 'Cash Advance', to: '/dashboard/cash-advance' },
     ],
   },
@@ -70,7 +70,7 @@ const staffLinks = [
     label: 'Maintenance',
     children: [
       { label: 'Truck Monitoring', to: '/dashboard/maintenance-monitoring' },
-      { label: 'Fleet', to: '/dashboard/fleet' },
+      { label: 'Fleet Master', to: '/dashboard/fleet' },
       { label: 'Maintenance', to: '/dashboard/maintenance' },
       { label: 'Inventory', to: '/dashboard/inventory' },
     ],

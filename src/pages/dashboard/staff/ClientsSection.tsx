@@ -94,7 +94,7 @@ function ClientsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Clients</h2>
+      <h2 className="text-xl font-bold text-slate-900">Client Accounts</h2>
 
       {clients.length === 0 ? (
         <p className="mt-4 text-slate-500">

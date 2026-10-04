@@ -9,12 +9,16 @@ type LedgerRow = {
   note: string | null
   status: string
   created_at: string
+  // How much of this advance payroll has already taken back (oldest
+  // advances are repaid first -- payslips don't say which one they paid).
+  repaid: number
 }
 
 type LedgerTotals = {
+  pending: number
   issued: number
   deducted: number
-  outstanding: number
+  total: number
 }
 
 function money(value: number) {
@@ -23,7 +27,7 @@ function money(value: number) {
 
 function CashAdvanceLedgerSection() {
   const [rows, setRows] = useState<LedgerRow[]>([])
-  const [totals, setTotals] = useState<LedgerTotals>({ issued: 0, deducted: 0, outstanding: 0 })
+  const [totals, setTotals] = useState<LedgerTotals>({ pending: 0, issued: 0, deducted: 0, total: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,10 +60,34 @@ function CashAdvanceLedgerSection() {
     }
 
     const names = new Map((employeesResult.data ?? []).map((employee) => [employee.employee_id, employee.full_name]))
+    // Pool each employee's deductions, then hand them to their Approved
+    // advances oldest-first.
+    const leftToAllocate = new Map<number, number>()
+    for (const p of payslipsResult.data ?? []) {
+      leftToAllocate.set(
+        p.employee_id,
+        (leftToAllocate.get(p.employee_id) ?? 0) + Number(p.cash_advance_deducted ?? 0),
+      )
+    }
+    const repaidById = new Map<number, number>()
+    ;[...(advanceRows ?? [])]
+      .filter((row) => row.status === 'Approved')
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .forEach((row) => {
+        const left = leftToAllocate.get(row.employee_id) ?? 0
+        const part = Math.min(left, Number(row.amount))
+        repaidById.set(row.cash_advance_id, part)
+        leftToAllocate.set(row.employee_id, left - part)
+      })
+
     const ledgerRows = (advanceRows ?? []).map((row) => ({
       ...row,
       employee_name: names.get(row.employee_id) ?? `Employee #${row.employee_id}`,
+      repaid: repaidById.get(row.cash_advance_id) ?? 0,
     }))
+    const pending = ledgerRows
+      .filter((row) => row.status === 'Pending')
+      .reduce((sum, row) => sum + Number(row.amount), 0)
     const issued = ledgerRows
       .filter((row) => row.status === 'Approved')
       .reduce((sum, row) => sum + Number(row.amount), 0)
@@ -69,7 +97,8 @@ function CashAdvanceLedgerSection() {
     )
 
     setRows(ledgerRows)
-    setTotals({ issued, deducted, outstanding: Math.max(0, issued - deducted) })
+    // Current = disbursed minus what payroll has already taken back
+    setTotals({ pending, issued, deducted, total: Math.max(0, issued - deducted) })
     setError(null)
     setLoading(false)
   }, [])
@@ -81,18 +110,22 @@ function CashAdvanceLedgerSection() {
 
   return (
     <div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Approved advances</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Pending approval</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.pending)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Disbursed to employee</p>
           <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.issued)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Deducted through payroll</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Deducted from payroll</p>
           <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.deducted)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Outstanding</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.outstanding)}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total current cash advances</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.total)}</p>
         </div>
       </div>
 
@@ -107,6 +140,7 @@ function CashAdvanceLedgerSection() {
                 <th className="px-4 py-3 font-medium">Employee</th>
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
+                <th className="px-4 py-3 font-medium">Repaid</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Note</th>
               </tr>
@@ -117,7 +151,12 @@ function CashAdvanceLedgerSection() {
                   <td className="px-4 py-3 text-slate-900">{row.employee_name}</td>
                   <td className="px-4 py-3 text-slate-600">{new Date(row.created_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{money(Number(row.amount))}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.status}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.status === 'Approved' ? `${money(row.repaid)} / ${money(Number(row.amount))}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {row.status === 'Approved' && row.repaid >= Number(row.amount) ? 'Settled' : row.status}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{row.note ?? '—'}</td>
                 </tr>
               ))}

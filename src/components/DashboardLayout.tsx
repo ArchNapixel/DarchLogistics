@@ -32,19 +32,28 @@ const TAB_ICONS: Record<string, string> = {
   Dashboard: HOME,
   Reports: 'M18 20V10M12 20V4M6 20v-6',
   'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
+  'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
+  'Client Quotations': FILE,
+  'Client Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   Quotations: FILE,
   Bookings: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+  'Client Accounts':
+    'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   Clients:
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   'Dispatch Board':
     'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   Employees: 'M2 7h20v14H2zM16 7V3H8v4',
+  'Employee List': 'M2 7h20v14H2zM16 7V3H8v4',
   Attendance: CLOCK,
   'My Attendance': CLOCK,
   Payroll: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  'Payroll Master': 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   'Cash Advance': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   'Truck Monitoring':
     'M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  'Fleet Master':
+    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   Fleet:
     'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   Maintenance:

@@ -452,6 +452,28 @@ export async function getOutstandingCashAdvance(
   return { outstanding: totalIssued - totalDeducted, error: null }
 }
 
+// Cash advances are paid back automatically: this much comes off each
+// weekly payslip (after contributions and tax) until the balance is gone.
+// ponytail: one company-wide constant -- move to app_settings if it ever
+// needs to differ per employee or advance.
+export const WEEKLY_CASH_ADVANCE_DEDUCTION = 500
+
+// What to deduct on a draft: the weekly amount, capped by what's still
+// owed and by the pay left after contributions/tax (net never goes
+// negative). alreadyOnThisDraft = what this draft already deducts, which
+// the outstanding balance already counts as paid.
+async function autoCashAdvanceDeduction(
+  employeeId: number,
+  netBeforeAdvance: number,
+  alreadyOnThisDraft = 0,
+) {
+  const { outstanding } = await getOutstandingCashAdvance(employeeId)
+  return Math.max(
+    0,
+    Math.min(WEEKLY_CASH_ADVANCE_DEDUCTION, outstanding + alreadyOnThisDraft, netBeforeAdvance),
+  )
+}
+
 const CONTRIBUTION_COLUMNS =
   'sss_msc, sss_ee, sss_er, sss_ec, philhealth_ee, philhealth_er, pagibig_ee, pagibig_er, withholding_tax'
 
@@ -550,7 +572,8 @@ export async function issuePayslip({
     }
   }
 
-  const { error: lineItemsError } = await supabase.from('payslip_line_items').insert(
+  // An empty draft (cash-advance-only, no pay yet) has no lines to save.
+  const { error: lineItemsError } = lineItems.length === 0 ? { error: null } : await supabase.from('payslip_line_items').insert(
     lineItems.map((item) => ({
       payroll_id: payslip.payroll_id,
       itinerary_id: item.itinerary_id,
@@ -739,7 +762,13 @@ async function generateDraftPayslipsNow(
     // Nothing (new) earned -- salary types still return a ₱0 line when
     // no attendance was recorded, so check the total, not the count.
     const grossAdded = pay.lineItems.reduce((sum, item) => sum + item.amount, 0)
-    if (grossAdded <= 0) continue
+    if (grossAdded <= 0) {
+      // Nothing earned -- skip, unless the employee still owes a cash
+      // advance: then make an empty draft so admin can deduct it via Edit.
+      if (existingByEmployee.has(employee.employee_id)) continue
+      const owed = await getOutstandingCashAdvance(employee.employee_id)
+      if (owed.error || owed.outstanding <= 0) continue
+    }
 
     const draft = existingByEmployee.get(employee.employee_id)
     if (draft) {
@@ -748,16 +777,34 @@ async function generateDraftPayslipsNow(
       continue
     }
 
-    const auto = await computeAutoDeductions(
-      employee.employee_id,
-      grossAdded,
-      periodEnd,
-      employee.is_minimum_wage_earner,
-    )
+    // A nothing-earned draft (kept only for a cash advance) has no pay to
+    // take contributions from -- start at zero; later weeks catch up.
+    const auto =
+      grossAdded > 0
+        ? await computeAutoDeductions(
+            employee.employee_id,
+            grossAdded,
+            periodEnd,
+            employee.is_minimum_wage_earner,
+          )
+        : {
+            error: null,
+            deductions: {
+              sss_msc: 0, sss_ee: 0, sss_er: 0, sss_ec: 0,
+              philhealth_ee: 0, philhealth_er: 0,
+              pagibig_ee: 0, pagibig_er: 0,
+              withholding_tax: 0, deductions_note: null,
+            } as PayslipDeductions,
+          }
     if (auto.error || !auto.deductions) {
       warnings.push(`${employee.full_name}: ${auto.error}`)
       continue
     }
+
+    const cashAdvanceDeducted = await autoCashAdvanceDeduction(
+      employee.employee_id,
+      grossAdded - totalEmployeeDeductions(auto.deductions),
+    )
 
     const { payrollId, error } = await issuePayslip({
       employeeId: employee.employee_id,
@@ -765,7 +812,7 @@ async function generateDraftPayslipsNow(
       periodStart,
       periodEnd,
       lineItems: pay.lineItems,
-      cashAdvanceDeducted: 0,
+      cashAdvanceDeducted,
       deductions: auto.deductions,
     })
 
@@ -911,13 +958,23 @@ async function saveDraftTotals(
     deductions = auto.deductions
   }
 
+  // Keep an existing deduction (admin may have set it); if there is none
+  // yet (e.g. a cash-advance-only draft that just earned pay), auto-fill.
+  // Either way it can't push net pay below zero.
+  const netBeforeAdvance = grossPay - totalEmployeeDeductions(deductions)
+  const cashAdvanceDeducted =
+    draft.cash_advance_deducted > 0
+      ? Math.min(draft.cash_advance_deducted, Math.max(0, netBeforeAdvance))
+      : await autoCashAdvanceDeduction(employee.employee_id, netBeforeAdvance)
+
   const { data, error: updateError } = await supabase
     .from('payroll_payslips')
     .update({
       gross_pay: grossPay,
       base_pay: grossPay,
+      cash_advance_deducted: cashAdvanceDeducted,
       ...deductions,
-      net_pay: grossPay - draft.cash_advance_deducted - totalEmployeeDeductions(deductions),
+      net_pay: netBeforeAdvance - cashAdvanceDeducted,
     })
     .eq('payroll_id', draft.payroll_id)
     .is('finalized_at', null)

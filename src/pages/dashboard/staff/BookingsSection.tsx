@@ -282,7 +282,7 @@ function BookingsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Bookings</h2>
+      <h2 className="text-xl font-bold text-slate-900">Client Bookings</h2>
 
       <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">

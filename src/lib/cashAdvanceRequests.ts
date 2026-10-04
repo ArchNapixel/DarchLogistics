@@ -15,6 +15,7 @@
 // the employee yet, so it must not inflate what gets deducted from
 // their next payslip.
 import { supabase } from './supabaseClient'
+import { getOutstandingCashAdvance } from './payslip'
 
 export type CashAdvanceStatus = 'Pending' | 'Approved' | 'Rejected'
 
@@ -41,6 +42,15 @@ export async function requestCashAdvance({
   amount: number
   reason: string
 }): Promise<{ error: string | null }> {
+  // One advance at a time: no new request until the current one is repaid.
+  const owed = await getOutstandingCashAdvance(employeeId)
+  if (owed.error) return { error: owed.error }
+  if (owed.outstanding > 0) {
+    return {
+      error: `You still owe ₱${owed.outstanding.toLocaleString()} on your current cash advance. You can request again once it's fully paid.`,
+    }
+  }
+
   const { error } = await supabase.from('cash_advances').insert({
     employee_id: employeeId,
     amount,

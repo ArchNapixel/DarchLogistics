@@ -101,7 +101,7 @@ function QuoteRequestsSection() {
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">
-          Pending Quote Requests
+          Client Quotations
         </h2>
         <button
           onClick={() => setShowNewQuote(true)}

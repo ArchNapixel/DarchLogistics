@@ -226,7 +226,7 @@ function FleetSection() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Fleet</h2>
+        <h2 className="text-xl font-bold text-slate-900">Fleet Master</h2>
         {activeTab === 'Trucks' ? (
           <button
             onClick={() => setShowAddTruck(true)}

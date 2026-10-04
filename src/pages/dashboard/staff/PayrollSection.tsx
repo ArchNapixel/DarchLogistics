@@ -25,6 +25,7 @@ import {
   isWeekInProgress,
   setPayslipHold,
   loadPayslipLineItems,
+  getOutstandingCashAdvance,
   totalEmployeeDeductions,
   type PayslipLineItem,
 } from '../../../lib/payslip'
@@ -95,6 +96,9 @@ function PayrollSection() {
     Record<number, PayslipLineItem[]>
   >({})
   const [lineItemsLoading, setLineItemsLoading] = useState(false)
+
+  // What each employee still owes (cash advances), by employee id
+  const [owedByEmployee, setOwedByEmployee] = useState<Record<number, number>>({})
 
   useEffect(() => {
     generateThenLoad()
@@ -169,6 +173,11 @@ function PayrollSection() {
         }
       }),
     )
+    const employeeIds = [...new Set(data.map((entry) => entry.employee_id))]
+    const owed = await Promise.all(
+      employeeIds.map(async (id) => [id, (await getOutstandingCashAdvance(id)).outstanding] as const),
+    )
+    setOwedByEmployee(Object.fromEntries(owed))
     setError(null)
     setLoading(false)
   }
@@ -305,7 +314,7 @@ function PayrollSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Payroll</h2>
+      <h2 className="text-xl font-bold text-slate-900">Payroll Master</h2>
 
       {actionError && (
         <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -399,7 +408,11 @@ function PayrollSection() {
                       ₱{entry.gross_pay.toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      ₱{entry.cash_advance_deducted.toLocaleString()}
+                      {/* Total still owed before this payslip's deduction (drafts
+                          already count as deducted, so add it back). Paid rows: history. */}
+                      {entry.status === 'Paid'
+                        ? '—'
+                        : `₱${((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted).toLocaleString()}`}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       ₱{entry.gov_deductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
