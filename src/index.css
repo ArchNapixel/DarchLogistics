@@ -101,3 +101,15 @@ a {
   --animate-fade-up: fade-up 0.8s ease-out both;
   --animate-slow-zoom: slow-zoom 24s ease-in-out infinite alternate;
 }
+
+/* Stop text highlighting app-wide. Form fields stay selectable so people
+   can still edit/copy what they type. */
+body {
+  user-select: none;
+}
+input,
+textarea,
+select,
+[contenteditable] {
+  user-select: text;
+}

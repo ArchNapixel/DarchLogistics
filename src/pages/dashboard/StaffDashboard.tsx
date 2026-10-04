@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
 import { loadCashAdvanceTotals } from '../../lib/cashAdvanceRequests'
 import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
 import OperationalExpensesCard from './staff/OperationalExpensesCard'
+import PayrollExpensesCard from './staff/PayrollExpensesCard'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
@@ -229,6 +230,85 @@ function StaffDashboard() {
     })
   }, [refreshKey])
 
+  // Expense-card slider: touch swipes natively; the mouse drags via these
+  // handlers (scrollLeft follows the pointer).
+  const slider = useRef<HTMLDivElement>(null)
+  const drag = useRef({ x: 0, left: 0 })
+  const [dragging, setDragging] = useState(false)
+  function dragStart(e: React.PointerEvent) {
+    if (e.pointerType !== 'mouse' || !slider.current) return
+    drag.current = { x: e.clientX, left: slider.current.scrollLeft }
+    setDragging(true)
+  }
+  // Auto-rotate: every 3.5s glide to the next card, back to the first after
+  // the last. Paused while the pointer is over the row (or touching it),
+  // and skipped entirely for people who asked for reduced motion.
+  const hovered = useRef(false)
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const id = setInterval(() => {
+      const el = slider.current
+      const [first, second] = [el?.children[0], el?.children[1]] as HTMLElement[]
+      if (!el || !second || hovered.current) return
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4
+      if (atEnd) el.scrollTo({ left: 0 })
+      else el.scrollBy({ left: second.offsetLeft - first.offsetLeft })
+    }, 3500)
+    return () => clearInterval(id)
+  }, [])
+  function dragMove(e: React.PointerEvent) {
+    if (dragging && slider.current) {
+      slider.current.scrollLeft = drag.current.left - (e.clientX - drag.current.x)
+    }
+  }
+
+  // Human Resource card numbers. Employees = everyone not Deactivated/
+  // Terminated. A driver is "available" unless they're active crew on a
+  // trip that's on the road (Dispatched / PickedUp / InTransit).
+  const [hr, setHr] = useState<{ total: number; drivers: number; available: number } | null>(null)
+  useEffect(() => {
+    async function loadHr() {
+      const [statuses, employees, crews, trips] = await Promise.all([
+        supabase.from('employment_status').select('status_id, status_name'),
+        supabase.from('employees').select('employee_id, position, employment_status_id'),
+        supabase
+          .from('itinerary_crews')
+          .select('employee_id, itinerary_id')
+          .eq('crew_role', 'Driver')
+          .eq('is_active', true),
+        supabase
+          .from('itineraries')
+          .select('itinerary_id')
+          .in('itinerary_status', ['Dispatched', 'PickedUp', 'InTransit']),
+      ])
+      const err = statuses.error ?? employees.error ?? crews.error ?? trips.error
+      if (!statuses.data || !employees.data || !crews.data || !trips.data) return
+      if (err) {
+        console.error('Failed to load HR summary', err)
+        return
+      }
+      const inactiveIds = new Set(
+        statuses.data
+          .filter((s) => s.status_name === 'Deactivated' || s.status_name === 'Terminated')
+          .map((s) => s.status_id),
+      )
+      const current = employees.data.filter(
+        (e) => e.employment_status_id === null || !inactiveIds.has(e.employment_status_id),
+      )
+      const drivers = current.filter((e) => e.position === 'Driver')
+      const onRoad = new Set(trips.data.map((t) => t.itinerary_id))
+      const busy = new Set(
+        crews.data.filter((c) => onRoad.has(c.itinerary_id)).map((c) => c.employee_id),
+      )
+      setHr({
+        total: current.length,
+        drivers: drivers.length,
+        available: drivers.filter((d) => !busy.has(d.employee_id)).length,
+      })
+    }
+    loadHr()
+  }, [refreshKey])
+
   useEffect(() => {
     async function loadTodayDeliveries() {
       setTodayDeliveriesLoading(true)
@@ -350,6 +430,13 @@ function StaffDashboard() {
       ],
     },
     {
+      title: 'Human Resource',
+      cards: [
+        { label: 'Total Employees', value: hr?.total ?? '--' },
+        { label: 'Drivers Available', value: hr ? `${hr.available}/${hr.drivers}` : '--' },
+      ],
+    },
+    {
       title: 'Cash Advance',
       cards: [
         { label: 'Pending Approval', value: cashAdvance?.[0] ?? '--' },
@@ -382,7 +469,7 @@ function StaffDashboard() {
         </p>
       )}
 
-      <div className="reports-blueprint-card dashboard-card-bold mt-8 px-[22px] pt-[22px] pb-5">
+      <div className="reports-blueprint-card dashboard-card-bold mt-4 px-[22px] py-4">
         <div className="flex items-center justify-between">
           <p className="font-ui text-sm font-medium text-neutral-500">
             Total Revenue <span className="normal-case">(collected)</span>
@@ -419,32 +506,74 @@ function StaffDashboard() {
       </div>
 
       {/* Costs for the same period as the revenue dropdown above. */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-5 lg:grid-cols-2">
-        <OperationalExpensesCard period={rangePeriod} refreshKey={refreshKey} />
-        <MaintenanceExpensesCard period={rangePeriod} refreshKey={refreshKey} />
+      {/* Three cards don't fit in a row, so swipe sideways: touch swipes
+          natively, the mouse drags. Snap is off mid-drag, on at release. */}
+      <div
+        ref={slider}
+        onPointerDown={dragStart}
+        onPointerMove={dragMove}
+        onPointerEnter={() => (hovered.current = true)}
+        onPointerUp={() => setDragging(false)}
+        onPointerLeave={() => {
+          hovered.current = false
+          setDragging(false)
+        }}
+        className={`mt-5 flex gap-3 overflow-x-auto sm:gap-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          dragging ? 'cursor-grabbing' : 'cursor-grab snap-x snap-mandatory scroll-smooth'
+        }`}
+      >
+        {[
+          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} />,
+          <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} />,
+          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} />,
+        ].map((card) => (
+          <div
+            key={card.key}
+            className="shrink-0 basis-[calc(50%-6px)] snap-start sm:basis-full lg:basis-[calc(50%-10px)] [&>*]:h-full"
+          >
+            {card}
+          </div>
+        ))}
       </div>
 
-      {summaryGroups.map((group) => (
-        <div key={group.title} className="mt-8">
-          <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
-          {/* One row per group: as many equal columns as there are cards */}
+      {/* Groups sit side by side on wide screens (each takes space in
+          proportion to its card count) and stack on smaller ones. */}
+      {[
+        summaryGroups.filter((g) => g.title !== 'Human Resource'),
+        summaryGroups.filter((g) => g.title === 'Human Resource'),
+      ].map((row, i) => (
+      <div
+        key={i}
+        // Second row (Human Resource) is only 2 cards: keep them card-sized
+        className={`mt-5 flex flex-col gap-4 xl:flex-row xl:gap-5 ${i === 1 ? 'xl:w-2/9' : ''}`}
+      >
+        {row.map((group) => (
           <div
-            className="mt-3 grid gap-2 sm:gap-5"
-            style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}
+            key={group.title}
+            className="xl:min-w-0"
+            style={{ flex: `${group.cards.length} 1 0` }}
           >
-            {group.cards.map((card) => (
-              <div key={card.label} className="reports-blueprint-card dashboard-card-bold px-3 pt-3 pb-3 sm:px-[22px] sm:pt-[22px] sm:pb-5">
-                <p className="font-ui text-xs leading-tight text-reports-ink sm:text-base">{card.label}</p>
-                <p className="font-condensed mt-1.5 text-2xl sm:mt-2.5 sm:text-[34px] leading-none font-semibold text-reports-ink">
-                  {loading ? '--' : card.value}
-                </p>
-              </div>
-            ))}
+            <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
+            {/* One row per group: as many equal columns as there are cards */}
+            <div
+              className="mt-2 grid gap-2 sm:gap-3"
+              style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}
+            >
+              {group.cards.map((card) => (
+                <div key={card.label} className="reports-blueprint-card dashboard-card-bold px-3 py-2.5 sm:px-4 sm:py-3">
+                  <p className="font-ui text-xs leading-tight text-reports-ink sm:text-sm">{card.label}</p>
+                  <p className="font-condensed mt-1 text-xl leading-none font-semibold text-reports-ink sm:text-2xl">
+                    {loading ? '--' : card.value}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        ))}
+      </div>
       ))}
 
-      <div className="mt-8">
+      <div className="mt-5">
         <h2 className="font-ui text-sm font-medium text-neutral-500">
           Today's Deliveries
         </h2>

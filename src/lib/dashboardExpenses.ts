@@ -244,7 +244,58 @@ export async function loadOperationalExpenses(
   }
 }
 
-export type MaintenanceExpenses = ReturnType<typeof summarizeParts> & {
+// PAYROLL card: payroll cost for the period (same payslip rule as above,
+// drafts included) plus each employee's gross earnings, highest first.
+export type PayrollEarner = { id: number; name: string; position: string; gross: number }
+export type PayrollExpenses = {
+  draft: number // part of total still in draft payslips
+  payslips: number
+  total: number // gross + employer shares
+  earners: PayrollEarner[]
+}
+
+export async function loadPayrollExpenses(
+  period: Period,
+): Promise<{ data: PayrollExpenses | null; error: string | null }> {
+  const [slips, people] = await Promise.all([
+    fetchAll<PayslipRow & { employee_id: number }>((from, to) =>
+      supabase
+        .from('payroll_payslips')
+        .select('employee_id, finalized_at, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
+        .gte('payroll_period_start', rangeStartManila(period))
+        .lte('payroll_period_start', toManilaDate(new Date()))
+        .range(from, to),
+    ),
+    fetchAll<{ employee_id: number; full_name: string | null; position: string | null }>(
+      (from, to) =>
+        supabase.from('employees').select('employee_id, full_name, position').range(from, to),
+    ),
+  ])
+  const error = slips.error ?? people.error
+  if (error) return { data: null, error }
+
+  const grossById = new Map<number, number>()
+  let total = 0
+  let draft = 0
+  for (const row of slips.rows) {
+    const cost = payslipCost(row)
+    total += cost.total
+    if (!row.finalized_at) draft += cost.total
+    grossById.set(row.employee_id, (grossById.get(row.employee_id) ?? 0) + cost.gross)
+  }
+  const earners = people.rows
+    .filter((p) => grossById.has(p.employee_id))
+    .map((p) => ({
+      id: p.employee_id,
+      name: p.full_name ?? `Employee #${p.employee_id}`,
+      position: p.position ?? '',
+      gross: grossById.get(p.employee_id)!,
+    }))
+    .sort((x, y) => y.gross - x.gross)
+  return { data: { draft, payslips: slips.rows.length, total, earners }, error: null }
+}
+
+export type MaintenanceExpenses =ReturnType<typeof summarizeParts> & {
   inProgressCost: number // part of total from work orders not completed yet
 }
 
