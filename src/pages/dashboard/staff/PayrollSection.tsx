@@ -13,7 +13,7 @@
 // be released by accident) -- then Finalizes it, which releases it to
 // the employee's own payslip page. "Mark Paid" (finalized only) is the
 // separate step once money has actually changed hands.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   markPayslipPaid,
@@ -102,6 +102,10 @@ function PayrollSection() {
   // What each employee still owes (cash advances), by employee id
   const [owedByEmployee, setOwedByEmployee] = useState<Record<number, number>>({})
 
+  // React StrictMode runs the open-effect twice in dev -- only regenerate
+  // all drafts once per page open.
+  const askedRegenerateAll = useRef(false)
+
   useEffect(() => {
     generateThenLoad()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,18 +114,83 @@ function PayrollSection() {
   // Create any missing drafts for last completed week, then show the list.
   // Last week (catches attendance recorded late) and the current week
   // (its drafts fill up as trips are delivered / attendance recorded).
+  // Then regenerates every unfinalized draft from scratch.
   async function generateThenLoad() {
     setGenerating(true)
     const allWarnings: string[] = []
-    for (const period of [getDefaultPayPeriod(), getCurrentPayPeriod()]) {
+    const periods = [getDefaultPayPeriod(), getCurrentPayPeriod()]
+    for (const period of periods) {
       const { warnings, error: generateError } = await generateDraftPayslips(period.start, period.end)
       allWarnings.push(...warnings)
       if (generateError) setActionError(`Couldn't update the draft payslips: ${generateError}`)
+    }
+    if (!askedRegenerateAll.current) {
+      askedRegenerateAll.current = true
+      allWarnings.push(...(await regenerateAllDrafts(periods.map((p) => p.start))))
     }
     setGenerating(false)
     // Same employee can be flagged for both weeks -- show it once
     setGenerationWarnings([...new Set(allWarnings)])
     await loadPayroll()
+  }
+
+  // Throw away one draft and rebuild it from the current trips / attendance,
+  // keeping its hold. Returns a problem message, or null if it went fine.
+  async function regenerateDraft(draft: {
+    payroll_id: number
+    employee_id: number
+    employee_name: string
+    period: string
+    period_start: string
+    period_end: string
+    on_hold: boolean
+  }): Promise<string | null> {
+    const { error: discardError } = await discardDraftPayslip(draft.payroll_id)
+    if (discardError) return discardError
+
+    const { createdIds, warnings, error: generateError } = await generateDraftPayslips(
+      draft.period_start,
+      draft.period_end,
+      draft.employee_id,
+    )
+    if (draft.on_hold && createdIds.length > 0) {
+      const { error: holdError } = await setPayslipHold(createdIds[0], true)
+      if (holdError) return `Regenerated, but the hold couldn't be re-applied: ${holdError}`
+    }
+    return (
+      generateError ??
+      warnings[0] ??
+      (createdIds.length === 0 ? `${draft.employee_name} has nothing to pay for ${draft.period} anymore, so no draft was created.` : null)
+    )
+  }
+
+  // On page open: rebuild every unfinalized draft of last week and this
+  // week from scratch, no confirmation. Admin edits on them are lost.
+  // Returns warnings to show on the page.
+  async function regenerateAllDrafts(periodStarts: string[]): Promise<string[]> {
+    const { data, error: draftsError } = await supabase
+      .from('payroll_payslips')
+      .select('payroll_id, employee_id, payroll_period_start, payroll_period_end, on_hold, employees(full_name)')
+      .is('finalized_at', null)
+      .in('payroll_period_start', periodStarts)
+    if (draftsError) return [`Couldn't check drafts to regenerate: ${draftsError.message}`]
+
+    const drafts = data.map((d) => ({
+      payroll_id: d.payroll_id,
+      employee_id: d.employee_id,
+      employee_name: (d.employees as unknown as { full_name: string } | null)?.full_name ?? '—',
+      period: formatPeriod(d.payroll_period_start, d.payroll_period_end),
+      period_start: d.payroll_period_start,
+      period_end: d.payroll_period_end,
+      on_hold: d.on_hold,
+    }))
+
+    const problems: string[] = []
+    for (const draft of drafts) {
+      const problem = await regenerateDraft(draft)
+      if (problem) problems.push(`${draft.employee_name}: ${problem}`)
+    }
+    return problems
   }
 
   async function loadPayroll() {
@@ -249,28 +318,7 @@ function PayrollSection() {
     setReviewingId(entry.payroll_id)
     setActionError(null)
 
-    const { error: discardError } = await discardDraftPayslip(entry.payroll_id)
-    if (discardError) {
-      setReviewingId(null)
-      setActionError(discardError)
-      loadPayroll()
-      return
-    }
-
-    const { createdIds, warnings, error: generateError } = await generateDraftPayslips(
-      entry.period_start,
-      entry.period_end,
-      entry.employee_id,
-    )
-    const problem =
-      generateError ??
-      warnings[0] ??
-      (createdIds.length === 0 ? `${entry.employee_name} has nothing to pay for ${entry.period} anymore, so no draft was created.` : null)
-
-    if (entry.on_hold && createdIds.length > 0) {
-      const { error: holdError } = await setPayslipHold(createdIds[0], true)
-      if (holdError) setActionError(`Regenerated, but the hold couldn't be re-applied: ${holdError}`)
-    }
+    const problem = await regenerateDraft(entry)
 
     setReviewingId(null)
     if (problem) setActionError(problem)

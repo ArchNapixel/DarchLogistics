@@ -93,9 +93,9 @@ export async function loadCashAdvanceTotals(): Promise<{
   }
 
   const sumByStatus = (status: string) =>
-    advances.data.filter((a) => a.status === status).reduce((sum, a) => sum + Number(a.amount), 0)
+    (advances.data ?? []).filter((a) => a.status === status).reduce((sum, a) => sum + Number(a.amount), 0)
   const issued = sumByStatus('Approved')
-  const deducted = payslips.data.reduce((sum, p) => sum + Number(p.cash_advance_deducted ?? 0), 0)
+  const deducted = (payslips.data ?? []).reduce((sum, p) => sum + Number(p.cash_advance_deducted ?? 0), 0)
 
   return {
     totals: { pending: sumByStatus('Pending'), issued, deducted, current: Math.max(0, issued - deducted) },

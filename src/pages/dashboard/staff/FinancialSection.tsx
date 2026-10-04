@@ -227,6 +227,26 @@ function FinancialActionModal({
     )
   }
 
+  // Overpaid (e.g. cancelled before delivery): hand the extra back and bring
+  // amount_paid down to what's actually owed, so the balance settles to 0.
+  // ponytail: no refund history table -- the refunded amount isn't recorded
+  // separately; add one if you need a dated audit trail.
+  async function refundOverpayment() {
+    const refund = -booking.balance_due
+    if (
+      !(await confirmDialog({
+        message: `Record a refund of ${formatMoney(refund)} to ${booking.client_name}? This lowers "Amount paid" to ${formatMoney(booking.billable_amount)}.`,
+        confirmLabel: 'Mark refunded',
+      }))
+    ) {
+      return
+    }
+    save(
+      { amount_paid: booking.billable_amount },
+      { amount_paid: booking.billable_amount, balance_due: 0 },
+    )
+  }
+
   function saveOverride() {
     const total = Number(overrideAmount)
 
@@ -329,6 +349,18 @@ function FinancialActionModal({
           </div>
         </div>
 
+        {booking.balance_due < 0 && (
+          <div className="mt-6 rounded-lg bg-amber-50 p-4">
+            <h4 className="font-medium text-amber-900">
+              Refund due: {formatMoney(-booking.balance_due)}
+            </h4>
+            <p className="mt-1 text-xs text-amber-800">
+              The client has paid more than what's owed. Click once the money has been given back.
+            </p>
+            <button onClick={refundOverpayment} disabled={saving} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Mark Refunded'}</button>
+          </div>
+        )}
+
         <div className="mt-6 rounded-lg bg-slate-50 p-4">
           <h4 className="font-medium text-slate-900">Record payment received</h4>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
@@ -375,7 +407,28 @@ function FinancialActionModal({
 // amount_to_pay override (see paymentDue.ts).
 // Delivery part only -- this is what gets written to amount_to_pay.
 function getDeliveryTarget(booking: Booking): number {
+  // A cancelled booking is only ever billed for the trips actually
+  // delivered -- an earlier lock at the full contract value is capped.
+  if (booking.status === 'Cancelled') {
+    return Math.min(booking.amount_to_pay ?? Infinity, booking.computed_billable_amount)
+  }
   return booking.amount_to_pay ?? booking.total_contract_value
+}
+
+type Tab = 'ongoing' | 'completed' | 'cancelled'
+
+// Which tab a booking lives in: Cancelled; Completed = delivered and fully
+// paid; everything else is still waiting on trips and/or payment.
+function getTab(booking: Booking): Tab {
+  if (booking.status === 'Cancelled') return 'cancelled'
+  if (booking.status === 'Delivered' && booking.balance_due <= 0) return 'completed'
+  return 'ongoing'
+}
+
+const TAB_LABELS: Record<Tab, string> = {
+  ongoing: 'Ongoing (awaiting payment)',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
 }
 
 // Everything the client owes in total: delivery + damage charges.
@@ -391,6 +444,7 @@ function FinancialSection() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [payingId, setPayingId] = useState<number | null>(null)
+  const [tab, setTab] = useState<Tab>('ongoing')
 
   useEffect(() => {
     loadBookings()
@@ -491,7 +545,12 @@ function FinancialSection() {
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
+        // Cancelled: only delivered trips are billable (same cap as getDeliveryTarget).
+        const deliveryAmount =
+          b.booking_status === 'Cancelled'
+            ? Math.min(b.amount_to_pay ?? Infinity, computedBillableAmount)
+            : (b.amount_to_pay ?? computedBillableAmount)
+        const billableAmount = deliveryAmount + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -555,6 +614,8 @@ function FinancialSection() {
     loadBookings()
   }
 
+  const visibleBookings = bookings.filter((b) => getTab(b) === tab)
+
   return (
     <div>
       <h2 className="text-xl font-bold text-slate-900">Bills Receivable</h2>
@@ -567,6 +628,32 @@ function FinancialSection() {
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && bookings.length === 0 && <p className="mt-4 text-slate-500">No bookings yet.</p>}
       {!loading && !error && bookings.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(Object.keys(TAB_LABELS) as Tab[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                tab === key
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {TAB_LABELS[key]} ({bookings.filter((b) => getTab(b) === key).length})
+            </button>
+          ))}
+        </div>
+      )}
+      {!loading && !error && bookings.length > 0 && tab === 'cancelled' && (
+        <p className="mt-3 text-sm text-slate-500">
+          Cancelled bookings are only billed for the trips that were delivered before
+          cancellation. Bookings with no delivered trips owe nothing.
+        </p>
+      )}
+      {!loading && !error && bookings.length > 0 && visibleBookings.length === 0 && (
+        <p className="mt-4 text-slate-500">Nothing in this tab.</p>
+      )}
+      {!loading && !error && visibleBookings.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
@@ -582,7 +669,7 @@ function FinancialSection() {
               </tr>
             </thead>
             <tbody>
-              {bookings.map((booking) => {
+              {visibleBookings.map((booking) => {
                 const remaining = getPaymentTarget(booking) - booking.amount_paid
                 return (
                   <tr key={booking.booking_id} className="border-b border-slate-100 last:border-0">
@@ -592,7 +679,13 @@ function FinancialSection() {
                     <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{formatMoney(booking.balance_due)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {booking.balance_due < 0 ? (
+                        <span className="text-amber-700">Refund {formatMoney(-booking.balance_due)}</span>
+                      ) : (
+                        formatMoney(booking.balance_due)
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         {remaining > 0 && (
