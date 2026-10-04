@@ -77,7 +77,33 @@ export async function loadCashAdvanceRequestsForEmployee(
   return { requests: data, error: null }
 }
 
-export type PendingCashAdvanceRequest = CashAdvanceRequest & {
+// The four ledger totals (same math as the cards on the Cash Advance
+// page's ledger), used by the Admin dashboard.
+export async function loadCashAdvanceTotals(): Promise<{
+  totals: { pending: number; issued: number; deducted: number; current: number }
+  error: string | null
+}> {
+  const [advances, payslips] = await Promise.all([
+    supabase.from('cash_advances').select('amount, status'),
+    supabase.from('payroll_payslips').select('cash_advance_deducted'),
+  ])
+  const failed = advances.error ?? payslips.error
+  if (failed) {
+    return { totals: { pending: 0, issued: 0, deducted: 0, current: 0 }, error: failed.message }
+  }
+
+  const sumByStatus = (status: string) =>
+    advances.data.filter((a) => a.status === status).reduce((sum, a) => sum + Number(a.amount), 0)
+  const issued = sumByStatus('Approved')
+  const deducted = payslips.data.reduce((sum, p) => sum + Number(p.cash_advance_deducted ?? 0), 0)
+
+  return {
+    totals: { pending: sumByStatus('Pending'), issued, deducted, current: Math.max(0, issued - deducted) },
+    error: null,
+  }
+}
+
+export type PendingCashAdvanceRequest =CashAdvanceRequest & {
   employee_name: string
 }
 

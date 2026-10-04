@@ -106,7 +106,7 @@ function CashAdvanceRequestsSection() {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-slate-700">
-        Pending Cash Advance Requests
+        Cash Advance Requests
       </h3>
 
       {actionError && (

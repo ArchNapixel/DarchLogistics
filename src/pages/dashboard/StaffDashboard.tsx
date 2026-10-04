@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
+import { loadCashAdvanceTotals } from '../../lib/cashAdvanceRequests'
 import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
 import OperationalExpensesCard from './staff/OperationalExpensesCard'
 
@@ -212,6 +213,22 @@ function StaffDashboard() {
     loadRevenue()
   }, [revenueRange, refreshKey])
 
+  // Cash advance totals (same four numbers as the Cash Advance page ledger)
+  const [cashAdvance, setCashAdvance] = useState<string[] | null>(null)
+  useEffect(() => {
+    loadCashAdvanceTotals().then(({ totals, error }) => {
+      if (error) {
+        console.error('Failed to load cash advance totals', error)
+        return
+      }
+      setCashAdvance(
+        [totals.pending, totals.issued, totals.deducted, totals.current].map(
+          (n) => `₱${n.toLocaleString()}`,
+        ),
+      )
+    })
+  }, [refreshKey])
+
   useEffect(() => {
     async function loadTodayDeliveries() {
       setTodayDeliveriesLoading(true)
@@ -330,6 +347,15 @@ function StaffDashboard() {
       cards: [
         { label: 'Trucks Operational', value: `${summary.trucksOperational}/${summary.truckCount}` },
         { label: 'Trailers Operational', value: `${summary.trailersOperational}/${summary.trailerCount}` },
+      ],
+    },
+    {
+      title: 'Cash Advance',
+      cards: [
+        { label: 'Pending Approval', value: cashAdvance?.[0] ?? '--' },
+        { label: 'Disbursed', value: cashAdvance?.[1] ?? '--' },
+        { label: 'Deducted', value: cashAdvance?.[2] ?? '--' },
+        { label: 'Current Balance', value: cashAdvance?.[3] ?? '--' },
       ],
     },
   ]

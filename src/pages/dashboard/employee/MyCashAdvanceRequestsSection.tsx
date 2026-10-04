@@ -7,7 +7,11 @@ import {
   loadCashAdvanceRequestsForEmployee,
   type CashAdvanceRequest,
 } from '../../../lib/cashAdvanceRequests'
-import { getOutstandingCashAdvance, WEEKLY_CASH_ADVANCE_DEDUCTION } from '../../../lib/payslip'
+import {
+  getOutstandingCashAdvance,
+  loadCashAdvanceDeductionRate,
+  DEFAULT_CASH_ADVANCE_DEDUCTION_RATE,
+} from '../../../lib/payslip'
 import RequestCashAdvanceModal from './RequestCashAdvanceModal'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -43,6 +47,7 @@ function MyCashAdvanceRequestsSection() {
   // What the employee still owes (counts finalized payslips only -- they
   // can't see drafts).
   const [owed, setOwed] = useState(0)
+  const [rate, setRate] = useState(DEFAULT_CASH_ADVANCE_DEDUCTION_RATE)
 
   useEffect(() => {
     if (employeeId) {
@@ -65,6 +70,7 @@ function MyCashAdvanceRequestsSection() {
 
     setRequests(loaded)
     setOwed((await getOutstandingCashAdvance(id)).outstanding)
+    setRate(await loadCashAdvanceDeductionRate())
     setError(null)
     setLoading(false)
   }
@@ -82,7 +88,7 @@ function MyCashAdvanceRequestsSection() {
 
       {owed > 0 && (
         <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          You still owe ₱{owed.toLocaleString()}. ₱{WEEKLY_CASH_ADVANCE_DEDUCTION.toLocaleString()} is deducted from each weekly payslip until it's paid off.
+          You still owe ₱{owed.toLocaleString()}. {rate}% of your gross pay is deducted from each weekly payslip until it's paid off.
         </p>
       )}
 

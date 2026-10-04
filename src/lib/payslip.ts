@@ -452,19 +452,32 @@ export async function getOutstandingCashAdvance(
   return { outstanding: totalIssued - totalDeducted, error: null }
 }
 
-// Cash advances are paid back automatically: this much comes off each
-// weekly payslip (after contributions and tax) until the balance is gone.
-// ponytail: one company-wide constant -- move to app_settings if it ever
-// needs to differ per employee or advance.
-export const WEEKLY_CASH_ADVANCE_DEDUCTION = 500
+// Cash advances are paid back automatically: this share of each weekly
+// payslip's gross pay comes off until the balance is gone. The percent
+// is app_settings.cash_advance_deduction_rate (editable on the Settings
+// page); 10 if that row doesn't exist yet.
+export const DEFAULT_CASH_ADVANCE_DEDUCTION_RATE = 10
 
-// What to deduct on a draft: the weekly amount, capped by what's still
-// owed. Not capped by the week's pay -- it's deducted even on a ₱0-gross
-// draft, so net pay can go negative. alreadyOnThisDraft = what this draft
-// already deducts, which the outstanding balance already counts as paid.
-async function autoCashAdvanceDeduction(employeeId: number, alreadyOnThisDraft = 0) {
-  const { outstanding } = await getOutstandingCashAdvance(employeeId)
-  return Math.max(0, Math.min(WEEKLY_CASH_ADVANCE_DEDUCTION, outstanding + alreadyOnThisDraft))
+export async function loadCashAdvanceDeductionRate(): Promise<number> {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('setting_value')
+    .eq('setting_key', 'cash_advance_deduction_rate')
+    .maybeSingle()
+  return data?.setting_value ?? DEFAULT_CASH_ADVANCE_DEDUCTION_RATE
+}
+
+// What to deduct on a draft: the rate % of its gross pay, rounded to
+// centavos and capped by what's still owed. A ₱0-gross draft deducts ₱0.
+// alreadyOnThisDraft = what this draft already deducts, which the
+// outstanding balance already counts as paid.
+async function autoCashAdvanceDeduction(employeeId: number, grossPay: number, alreadyOnThisDraft = 0) {
+  const [{ outstanding }, rate] = await Promise.all([
+    getOutstandingCashAdvance(employeeId),
+    loadCashAdvanceDeductionRate(),
+  ])
+  const share = Math.round(grossPay * rate) / 100
+  return Math.max(0, Math.min(share, outstanding + alreadyOnThisDraft))
 }
 
 const CONTRIBUTION_COLUMNS =
@@ -783,7 +796,7 @@ async function generateDraftPayslipsNow(
       continue
     }
 
-    const cashAdvanceDeducted = await autoCashAdvanceDeduction(employee.employee_id)
+    const cashAdvanceDeducted = await autoCashAdvanceDeduction(employee.employee_id, grossAdded)
 
     const { payrollId, error } = await issuePayslip({
       employeeId: employee.employee_id,
@@ -943,7 +956,7 @@ async function saveDraftTotals(
   const cashAdvanceDeducted =
     draft.cash_advance_deducted > 0
       ? draft.cash_advance_deducted
-      : await autoCashAdvanceDeduction(employee.employee_id)
+      : await autoCashAdvanceDeduction(employee.employee_id, grossPay)
 
   const { data, error: updateError } = await supabase
     .from('payroll_payslips')
