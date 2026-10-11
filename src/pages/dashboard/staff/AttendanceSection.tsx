@@ -18,6 +18,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, saveAttendanceRecord, type AttendanceRecord, type AttendanceStatus } from '../../../lib/employeeAttendance'
 import { toManilaDate } from '../../../lib/payslip'
 import { supabase } from '../../../lib/supabaseClient'
+import LeaveRequestsSection from './LeaveRequestsSection'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
@@ -174,6 +175,11 @@ function AttendanceSection() {
       </div>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+      {/* Pending leave requests -- approving one marks its days as Leave below. */}
+      <div className="mt-4">
+        <LeaveRequestsSection onDecided={() => void load()} />
+      </div>
 
       {loading ? (
         <p className="mt-4 text-slate-500">Loading attendance...</p>

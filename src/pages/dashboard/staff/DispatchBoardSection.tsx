@@ -43,6 +43,8 @@ import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
+import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
+import { toManilaDate } from '../../../lib/payslip'
 
 type DispatchRow = {
   itinerary_id: number
@@ -99,6 +101,26 @@ function crewHint(row: DispatchRow, rows: DispatchRow[], isOnRow: (r: DispatchRo
   if (isOnRow(row)) return ''
   const otherTrip = rows.find((r) => r !== row && r.status !== 'Delivered' && isOnRow(r))
   return otherTrip ? ` (on booking #${otherTrip.booking_id})` : ''
+}
+
+// A driver/helper on approved leave during this trip's dates can't be
+// picked. Returns the " — on leave Oct 14 – Oct 16" label, or null if they
+// are free (or it's the row's current assignee, who stays selectable so
+// the dropdown still shows who is assigned).
+function leaveHint(
+  row: DispatchRow,
+  employeeId: number,
+  isCurrent: boolean,
+  leaveByEmployee: Map<number, LeaveRange[]>,
+): string | null {
+  if (isCurrent) return null
+  const clash = (leaveByEmployee.get(employeeId) ?? []).find((l) =>
+    rangesOverlap(row.trip_date_from, row.trip_date_to, l.start_date, l.end_date),
+  )
+  if (!clash) return null
+  return clash.start_date === clash.end_date
+    ? ` — on leave ${formatDate(clash.start_date)}`
+    : ` — on leave ${formatDate(clash.start_date)} – ${formatDate(clash.end_date)}`
 }
 
 // Dropdown hint for a truck/trailer option on this row. `blocked` = it
@@ -229,9 +251,11 @@ function DispatchTable({
   onViewLogs,
   readOnly = false,
   allRows,
+  leaveByEmployee,
 }: {
   rows: DispatchRow[]
   allRows: DispatchRow[]
+  leaveByEmployee: Map<number, LeaveRange[]>
   drivers: DriverOption[]
   helpers: DriverOption[]
   trucks: TruckOption[]
@@ -381,12 +405,15 @@ function DispatchTable({
                     className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.employee_id} value={driver.employee_id}>
-                        {driver.full_name}
-                        {crewHint(row, allRows, (r) => r.assigned_employee_id === driver.employee_id)}
-                      </option>
-                    ))}
+                    {drivers.map((driver) => {
+                      const onLeave = leaveHint(row, driver.employee_id, row.assigned_employee_id === driver.employee_id, leaveByEmployee)
+                      return (
+                        <option key={driver.employee_id} value={driver.employee_id} disabled={onLeave !== null}>
+                          {driver.full_name}
+                          {onLeave ?? crewHint(row, allRows, (r) => r.assigned_employee_id === driver.employee_id)}
+                        </option>
+                      )
+                    })}
                   </select>
                 )}
               </td>
@@ -408,12 +435,15 @@ function DispatchTable({
                     className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
-                    {helpers.map((helper) => (
-                      <option key={helper.employee_id} value={helper.employee_id}>
-                        {helper.full_name}
-                        {crewHint(row, allRows, (r) => r.assigned_helper_employee_id === helper.employee_id)}
-                      </option>
-                    ))}
+                    {helpers.map((helper) => {
+                      const onLeave = leaveHint(row, helper.employee_id, row.assigned_helper_employee_id === helper.employee_id, leaveByEmployee)
+                      return (
+                        <option key={helper.employee_id} value={helper.employee_id} disabled={onLeave !== null}>
+                          {helper.full_name}
+                          {onLeave ?? crewHint(row, allRows, (r) => r.assigned_helper_employee_id === helper.employee_id)}
+                        </option>
+                      )
+                    })}
                   </select>
                 )}
               </td>
@@ -517,6 +547,8 @@ function DispatchBoardSection() {
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [helpers, setHelpers] = useState<DriverOption[]>([])
+  // Approved leave that hasn't ended, per employee -- greys out their dropdown option.
+  const [leaveByEmployee, setLeaveByEmployee] = useState<Map<number, LeaveRange[]>>(new Map())
   const [trucks, setTrucks] = useState<TruckOption[]>([])
   const [trailers, setTrailers] = useState<TrailerOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -633,7 +665,7 @@ function DispatchBoardSection() {
     )
 
     // 2. Place names, current crew assignments, and assignable staff -- in parallel.
-    const [placesResult, crewResult, driverUsersResult, helperUsersResult] = await Promise.all([
+    const [placesResult, crewResult, driverUsersResult, helperUsersResult, leaveResult] = await Promise.all([
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
       supabase
         .from('itinerary_crews')
@@ -651,7 +683,15 @@ function DispatchBoardSection() {
         .select('employee_id')
         .eq('user_role', 'Helper')
         .not('employee_id', 'is', null),
+      loadApprovedLeave(toManilaDate(new Date())),
     ])
+
+    if (leaveResult.error) {
+      setError(leaveResult.error)
+      setLoading(false)
+      return
+    }
+    setLeaveByEmployee(leaveResult.byEmployee)
 
     if (placesResult.error) {
       setError(placesResult.error.message)
@@ -1095,6 +1135,7 @@ function DispatchBoardSection() {
 
   const tableProps = {
     allRows: rows,
+    leaveByEmployee,
     drivers,
     helpers,
     trucks,

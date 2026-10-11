@@ -43,6 +43,7 @@ import TruckMaintenanceMonitoringSection from './staff/TruckMaintenanceMonitorin
 import HistorySection from './employee/HistorySection'
 import MyPayslipPage from './employee/MyPayslipPage'
 import MyAttendanceSection from './employee/MyAttendanceSection'
+import MyLeaveSection from './employee/MyLeaveSection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -83,6 +84,7 @@ const dispatcherLinks = [
   { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
   { label: 'My Attendance', to: '/dashboard/attendance' },
+  { label: 'My Leave', to: '/dashboard/leave' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 
@@ -90,6 +92,7 @@ const employeeLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'My History', to: '/dashboard/history' },
   { label: 'My Attendance', to: '/dashboard/attendance' },
+  { label: 'My Leave', to: '/dashboard/leave' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
 ]
 // Drivers are paid per trip, so they have no attendance page
@@ -157,6 +160,7 @@ function DashboardRouter() {
           <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
           <Route path="attendance" element={<MyAttendanceSection />} />
+          <Route path="leave" element={<MyLeaveSection />} />
           <Route path="payslips" element={<DispatcherPayslipSection />} />
           <Route
             path="*"
@@ -174,6 +178,7 @@ function DashboardRouter() {
           <Route index element={<EmployeeDashboard />} />
           <Route path="history" element={<HistorySection />} />
           {role !== 'Driver' && <Route path="attendance" element={<MyAttendanceSection />} />}
+          <Route path="leave" element={<MyLeaveSection />} />
           <Route path="payslips" element={<MyPayslipPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

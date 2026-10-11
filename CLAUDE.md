@@ -421,6 +421,21 @@ before creating it.
     `employee/ReportPayslipIssueModal.tsx` + `MyPayslipIssueReportsSection.tsx`
     on the employee side, mounted in `MyPayslipPage.tsx`) — an employee
     disputing a payslip line item submits a report, staff review it.
+- Leave Requests (2026-10-11) — `leave_requests` table (SQL run by user;
+  RLS: insert/select own, `is_staff()` select all, `is_admin()` update).
+  Every employee role incl. Driver files from **My Leave**
+  (`/dashboard/leave`, `employee/MyLeaveSection.tsx` +
+  `RequestLeaveModal.tsx`); Admin approves/rejects in
+  `staff/LeaveRequestsSection.tsx` (mounted on the Attendance page).
+  All logic in `lib/leaveRequests.ts`. Balance = 5 paid days/yr
+  (`ANNUAL_PAID_LEAVE_DAYS`, Mon–Sat only, shown to non-drivers).
+  Approving a non-driver writes `Leave` rows to `employee_attendance`
+  (skips Sundays, Present days and already-paid days); drivers are paid
+  per trip so approval is record-only. Approve warns if the person is
+  already crewed on an overlapping active trip. **Dispatch Board:**
+  drivers/helpers with Approved leave overlapping a trip's dates stay
+  listed but disabled as "Name — on leave <range>" (current assignee
+  stays selectable; Pending leave doesn't block; UI-only, no DB rule).
 - Maintenance Requests & Scheduling — two distinct concepts, don't
   conflate them: `maintenance_requests` (urgent — Driver/Mechanic submit
   via `employee/IssueMaintenanceRequestModal.tsx`, Admin approve/reject
