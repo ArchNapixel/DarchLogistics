@@ -182,7 +182,7 @@ function EmployeesSection() {
     const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number',
       )
       .order('full_name', { ascending: true })
 
@@ -242,6 +242,20 @@ function EmployeesSection() {
           driver_license_expiry_date: row.driver_license_expiry_date,
           medical_exam_date: row.medical_exam_date,
           medical_exam_expiry_date: row.medical_exam_expiry_date,
+          middle_name: row.middle_name,
+          phone_number: row.phone_number,
+          date_of_birth: row.date_of_birth,
+          email: row.email,
+          address: row.address,
+          city: row.city,
+          province: row.province,
+          zip_code: row.zip_code,
+          emergency_contact_name: row.emergency_contact_name,
+          emergency_contact_number: row.emergency_contact_number,
+          tin_number: row.tin_number,
+          sss_number: row.sss_number,
+          philhealth_number: row.philhealth_number,
+          pagibig_number: row.pagibig_number,
         },
         licenseExpiryDate: row.driver_license_expiry_date,
         medicalExamExpiryDate: row.medical_exam_expiry_date,
@@ -500,6 +514,7 @@ function EmployeesSection() {
             employee_id: detailEmployee.employee_id,
             name: detailEmployee.name,
             position: detailEmployee.position,
+            info: detailEmployee.editable,
           }}
           onClose={() => setDetailEmployee(null)}
         />

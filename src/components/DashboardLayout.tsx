@@ -62,6 +62,8 @@ const TAB_ICONS: Record<string, string> = {
   'Damage Charges':
     'M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
   'My Payslips': 'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
+  'My Leave': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4M9 16l2 2 4-4',
+  'My Profile': 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   Settings:
     'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   'My History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',

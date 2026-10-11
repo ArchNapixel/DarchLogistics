@@ -44,6 +44,7 @@ import HistorySection from './employee/HistorySection'
 import MyPayslipPage from './employee/MyPayslipPage'
 import MyAttendanceSection from './employee/MyAttendanceSection'
 import MyLeaveSection from './employee/MyLeaveSection'
+import MyProfileSection from './employee/MyProfileSection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -86,6 +87,7 @@ const dispatcherLinks = [
   { label: 'My Attendance', to: '/dashboard/attendance' },
   { label: 'My Leave', to: '/dashboard/leave' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
+  { label: 'My Profile', to: '/dashboard/profile' },
 ]
 
 const employeeLinks = [
@@ -94,6 +96,7 @@ const employeeLinks = [
   { label: 'My Attendance', to: '/dashboard/attendance' },
   { label: 'My Leave', to: '/dashboard/leave' },
   { label: 'My Payslips', to: '/dashboard/payslips' },
+  { label: 'My Profile', to: '/dashboard/profile' },
 ]
 // Drivers are paid per trip, so they have no attendance page
 const driverLinks = employeeLinks
@@ -162,6 +165,7 @@ function DashboardRouter() {
           <Route path="attendance" element={<MyAttendanceSection />} />
           <Route path="leave" element={<MyLeaveSection />} />
           <Route path="payslips" element={<DispatcherPayslipSection />} />
+          <Route path="profile" element={<MyProfileSection />} />
           <Route
             path="*"
             element={<Navigate to="/dashboard/dispatch" replace />}
@@ -180,6 +184,7 @@ function DashboardRouter() {
           {role !== 'Driver' && <Route path="attendance" element={<MyAttendanceSection />} />}
           <Route path="leave" element={<MyLeaveSection />} />
           <Route path="payslips" element={<MyPayslipPage />} />
+          <Route path="profile" element={<MyProfileSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

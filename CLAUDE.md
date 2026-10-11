@@ -421,6 +421,39 @@ before creating it.
     `employee/ReportPayslipIssueModal.tsx` + `MyPayslipIssueReportsSection.tsx`
     on the employee side, mounted in `MyPayslipPage.tsx`) — an employee
     disputing a payslip line item submits a report, staff review it.
+- Employee personal info (2026-10-11) — `AddEmployeeModal` now collects
+  First / Middle (optional) / Last name (`full_name` = "First Middle
+  Last", blank middle skipped), **phone number (required, add and edit)**,
+  and an optional "More details" section: date_of_birth, personal email
+  (`employees.email`, separate from the login email), address/city/
+  province/zip_code, emergency_contact_name/number, tin_number,
+  sss_number, philhealth_number, pagibig_number (last 3 added by SQL
+  2026-10-11; the rest already existed in the live table). Shown
+  read-only at the top of `EmployeeDetailModal`. Admin-only because the
+  Employees page isn't in the Dispatcher's routes — no extra gating.
+  Stored only; `governmentContributions.ts` doesn't read the IDs.
+  `gender`/`civil_status` (DB enums) deliberately not collected.
+- My Profile (2026-10-11, `/dashboard/profile`, `employee/MyProfileSection.tsx`
+  + `lib/myProfile.ts`) — Driver/Mechanic/Helper/Dispatcher edit their OWN
+  phone (required), DOB, personal email, address, emergency contact and
+  TIN/SSS/PhilHealth/Pag-IBIG; name/position/hire date read-only. Goes
+  through SECURITY DEFINER functions `get_my_profile()` /
+  `update_my_profile(p_changes jsonb)` (RLS can't restrict columns, and a
+  plain own-row UPDATE policy would let them edit their own salary).
+  **Stress-tested 2026-10-11:** length caps, phone/email/gov-ID format and
+  DOB range live in `lib/myProfile.ts` AND are mirrored in the SQL
+  function — change both together. Save sends only changed fields (so it
+  can't overwrite an Admin edit to an untouched field); control
+  characters are stripped; the page is a real `<form>` (type="email"
+  only validates inside one). Admin's AddEmployeeModal does NOT have
+  these checks yet.
+  **Typing is filtered, not just validated on Save** (`filterInput()` in
+  `lib/myProfile.ts`: phone = digits/space/()-, leading + only; IDs/zip
+  = letters/digits/space/dash; names/city/province = letters + space .'-;
+  email = no spaces; address free). `type="tel"` does NOT block letters.
+  Name/city/province character rules are client-only (no SQL mirror) —
+  everything else is mirrored in `update_my_profile`. Same filters +
+  `validateProfileForm` now also run in the Admin `AddEmployeeModal`.
 - Leave Requests (2026-10-11) — `leave_requests` table (SQL run by user;
   RLS: insert/select own, `is_staff()` select all, `is_admin()` update).
   Every employee role incl. Driver files from **My Leave**

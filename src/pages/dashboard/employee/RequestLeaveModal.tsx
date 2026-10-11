@@ -105,7 +105,7 @@ function RequestLeaveModal({
 
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Reason (optional)
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={fieldClasses} />
+            <textarea value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} rows={3} className={fieldClasses} />
           </label>
         </div>
 

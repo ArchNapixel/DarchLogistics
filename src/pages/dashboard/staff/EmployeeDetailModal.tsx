@@ -11,6 +11,7 @@
 // identical wherever they appear.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import type { EditableEmployee } from './AddEmployeeModal'
 
 const TRIP_STATUS_LABELS: Record<string, string> = {
   Awaiting: 'Awaiting',
@@ -434,6 +435,31 @@ export type DetailableEmployee = {
   employee_id: number
   name: string
   position: string
+  // Personal / contact / government info shown at the top (read-only).
+  info: EditableEmployee
+}
+
+// Personal & government info block. Only Admin can open this modal (the
+// Employees page isn't in the Dispatcher's routes), so the IDs are shown as-is.
+function PersonalInfo({ info }: { info: EditableEmployee }) {
+  const show = (value: string | null) => value || '—'
+  const addressLine = [info.address, info.city, info.province, info.zip_code].filter(Boolean).join(', ')
+  return (
+    <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+      <InfoRow label="Phone" value={show(info.phone_number)} />
+      <InfoRow label="Personal email" value={show(info.email)} />
+      <InfoRow label="Date of birth" value={show(info.date_of_birth)} />
+      <InfoRow label="Address" value={show(addressLine)} />
+      <InfoRow
+        label="Emergency contact"
+        value={[info.emergency_contact_name, info.emergency_contact_number].filter(Boolean).join(' · ') || '—'}
+      />
+      <InfoRow label="TIN" value={show(info.tin_number)} />
+      <InfoRow label="SSS" value={show(info.sss_number)} />
+      <InfoRow label="PhilHealth" value={show(info.philhealth_number)} />
+      <InfoRow label="Pag-IBIG" value={show(info.pagibig_number)} />
+    </div>
+  )
 }
 
 function EmployeeDetailModal({
@@ -453,6 +479,7 @@ function EmployeeDetailModal({
           </button>
         </div>
         <InfoRow label="Position" value={employee.position} />
+        <PersonalInfo info={employee.info} />
 
         <div className="mt-5">
           {employee.position === 'Mechanic' ? (

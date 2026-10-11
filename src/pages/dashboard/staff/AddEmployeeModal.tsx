@@ -14,6 +14,15 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { useAuth } from '../../../context/AuthContext'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
+import {
+  MIN_BIRTH_DATE,
+  PROFILE_MAX_LENGTH,
+  cleanProfileForm,
+  filterInput,
+  validateProfileForm,
+  type EditableKey,
+} from '../../../lib/myProfile'
+import { toManilaDate } from '../../../lib/payslip'
 
 const fieldClasses =
   'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -43,6 +52,21 @@ export type EditableEmployee = {
   driver_license_expiry_date: string | null
   medical_exam_date: string | null
   medical_exam_expiry_date: string | null
+  // Personal / contact / government info (all optional except phone_number)
+  middle_name: string | null
+  phone_number: string | null
+  date_of_birth: string | null
+  email: string | null
+  address: string | null
+  city: string | null
+  province: string | null
+  zip_code: string | null
+  emergency_contact_name: string | null
+  emergency_contact_number: string | null
+  tin_number: string | null
+  sss_number: string | null
+  philhealth_number: string | null
+  pagibig_number: string | null
 }
 
 function AddEmployeeModal({
@@ -65,6 +89,20 @@ function AddEmployeeModal({
 
   const [firstName, setFirstName] = useState(employee?.first_name ?? '')
   const [lastName, setLastName] = useState(employee?.last_name ?? '')
+  const [middleName, setMiddleName] = useState(employee?.middle_name ?? '')
+  const [phoneNumber, setPhoneNumber] = useState(employee?.phone_number ?? '')
+  const [dateOfBirth, setDateOfBirth] = useState(employee?.date_of_birth ?? '')
+  const [personalEmail, setPersonalEmail] = useState(employee?.email ?? '')
+  const [address, setAddress] = useState(employee?.address ?? '')
+  const [city, setCity] = useState(employee?.city ?? '')
+  const [province, setProvince] = useState(employee?.province ?? '')
+  const [zipCode, setZipCode] = useState(employee?.zip_code ?? '')
+  const [emergencyName, setEmergencyName] = useState(employee?.emergency_contact_name ?? '')
+  const [emergencyNumber, setEmergencyNumber] = useState(employee?.emergency_contact_number ?? '')
+  const [tinNumber, setTinNumber] = useState(employee?.tin_number ?? '')
+  const [sssNumber, setSssNumber] = useState(employee?.sss_number ?? '')
+  const [philhealthNumber, setPhilhealthNumber] = useState(employee?.philhealth_number ?? '')
+  const [pagibigNumber, setPagibigNumber] = useState(employee?.pagibig_number ?? '')
   const [position, setPosition] = useState(employee?.position ?? 'Driver')
   // Rate type isn't a choice: Drivers are Commission Per Trip (paid from
   // the Settings commission % + per-trip fee), everyone else is Weekly
@@ -93,6 +131,16 @@ function AddEmployeeModal({
   const [medicalExamExpiryDate, setMedicalExamExpiryDate] = useState(employee?.medical_exam_expiry_date ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Props for one of the personal-info boxes: its length cap, and typed or
+  // pasted characters it can't hold are dropped (same rules as My Profile,
+  // see lib/myProfile.ts).
+  const bind = (key: EditableKey, value: string, set: (v: string) => void) => ({
+    value,
+    maxLength: PROFILE_MAX_LENGTH[key],
+    inputMode: key === 'phone_number' || key === 'emergency_contact_number' ? ('tel' as const) : undefined,
+    onChange: (e: { target: { value: string } }) => set(filterInput(key, e.target.value)),
+  })
 
   // Login account (editing only). `account` is the existing users row, if
   // any; blank password on an existing account means "keep the old one".
@@ -125,6 +173,28 @@ function AddEmployeeModal({
   async function handleSubmit() {
     if (!firstName.trim() || !lastName.trim()) {
       setError('Enter both a first and last name.')
+      return
+    }
+    // Phone required + format/length of every personal-info box (same
+    // checks as My Profile); the cleaned values are what gets saved.
+    const personal = cleanProfileForm({
+      phone_number: phoneNumber,
+      date_of_birth: dateOfBirth,
+      email: personalEmail,
+      address,
+      city,
+      province,
+      zip_code: zipCode,
+      emergency_contact_name: emergencyName,
+      emergency_contact_number: emergencyNumber,
+      tin_number: tinNumber,
+      sss_number: sssNumber,
+      philhealth_number: philhealthNumber,
+      pagibig_number: pagibigNumber,
+    })
+    const personalProblem = validateProfileForm(personal, toManilaDate(new Date()))
+    if (personalProblem) {
+      setError(personalProblem)
       return
     }
     if (!hireDate) {
@@ -183,8 +253,23 @@ function AddEmployeeModal({
 
     const values = {
       first_name: firstName.trim(),
+      middle_name: middleName.trim() || null,
       last_name: lastName.trim(),
-      full_name: `${firstName.trim()} ${lastName.trim()}`,
+      // "First Middle Last" -- the middle name is left out when blank.
+      full_name: [firstName, middleName, lastName].map((n) => n.trim()).filter(Boolean).join(' '),
+      phone_number: personal.phone_number,
+      date_of_birth: personal.date_of_birth || null,
+      email: personal.email || null,
+      address: personal.address || null,
+      city: personal.city || null,
+      province: personal.province || null,
+      zip_code: personal.zip_code || null,
+      emergency_contact_name: personal.emergency_contact_name || null,
+      emergency_contact_number: personal.emergency_contact_number || null,
+      tin_number: personal.tin_number || null,
+      sss_number: personal.sss_number || null,
+      philhealth_number: personal.philhealth_number || null,
+      pagibig_number: personal.pagibig_number || null,
       position,
       rate_type: rateType,
       // Legacy columns from the old Flat Fee / Percentage choice --
@@ -240,7 +325,7 @@ function AddEmployeeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-xl rounded-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             {isEditing ? 'Edit Employee' : 'Add Employee'}
@@ -260,22 +345,44 @@ function AddEmployeeModal({
         )}
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className={labelClasses}>
-            First name
-            <input
-              type="text"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
+          {/* First, middle (optional), last -- full_name is built from these. */}
+          <div className="grid items-end gap-4 sm:col-span-2 sm:grid-cols-3">
+            <label className={labelClasses}>
+              First name
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className={fieldClasses}
+              />
+            </label>
+
+            <label className={labelClasses}>
+              Middle name (optional)
+              <input
+                type="text"
+                value={middleName}
+                onChange={(e) => setMiddleName(e.target.value)}
+                className={fieldClasses}
+              />
+            </label>
+
+            <label className={labelClasses}>
+              Last name
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className={fieldClasses}
+              />
+            </label>
+          </div>
 
           <label className={labelClasses}>
-            Last name
+            Phone number
             <input
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              type="tel"
+              {...bind('phone_number', phoneNumber, setPhoneNumber)}
               className={fieldClasses}
             />
           </label>
@@ -323,12 +430,8 @@ function AddEmployeeModal({
             </p>
           </div>
 
-          {rateType === 'Commission Per Trip' ? (
-            <p className="flex flex-col justify-end text-sm text-slate-500">
-              Uses the company-wide commission % and per-trip fee set on the
-              Settings page -- no per-employee amount needed.
-            </p>
-          ) : (
+          {/* Commission Per Trip (Drivers) has no amount to enter -- pay comes from Settings. */}
+          {rateType !== 'Commission Per Trip' && (
             <label className={labelClasses}>
               {selectedRateType.label}
               <input
@@ -356,6 +459,65 @@ function AddEmployeeModal({
             />
             Minimum wage earner (exempt from withholding tax)
           </label>
+
+          {/* Everything below is optional. Government IDs are safe to show
+              here: only Admin can reach the Employees page. */}
+          <details className="rounded-lg border border-slate-200 p-3 sm:col-span-2" open={isEditing}>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+              More details (optional)
+            </summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <label className={labelClasses}>
+                Date of birth
+                <input type="date" min={MIN_BIRTH_DATE} max={toManilaDate(new Date())} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Personal email
+                <input type="email" {...bind('email', personalEmail, setPersonalEmail)} className={fieldClasses} />
+              </label>
+              <label className={`${labelClasses} sm:col-span-2`}>
+                Address
+                <input type="text" {...bind('address', address, setAddress)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                City
+                <input type="text" {...bind('city', city, setCity)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Province
+                <input type="text" {...bind('province', province, setProvince)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Zip code
+                <input type="text" {...bind('zip_code', zipCode, setZipCode)} className={fieldClasses} />
+              </label>
+              <span className="hidden sm:block" />
+              <label className={labelClasses}>
+                Emergency contact name
+                <input type="text" {...bind('emergency_contact_name', emergencyName, setEmergencyName)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Emergency contact number
+                <input type="tel" {...bind('emergency_contact_number', emergencyNumber, setEmergencyNumber)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                TIN
+                <input type="text" {...bind('tin_number', tinNumber, setTinNumber)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                SSS number
+                <input type="text" {...bind('sss_number', sssNumber, setSssNumber)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                PhilHealth number
+                <input type="text" {...bind('philhealth_number', philhealthNumber, setPhilhealthNumber)} className={fieldClasses} />
+              </label>
+              <label className={labelClasses}>
+                Pag-IBIG number
+                <input type="text" {...bind('pagibig_number', pagibigNumber, setPagibigNumber)} className={fieldClasses} />
+              </label>
+            </div>
+          </details>
 
           {isEditing && position === 'Driver' && (
             <>
