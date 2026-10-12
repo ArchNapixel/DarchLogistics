@@ -1,5 +1,6 @@
-// BookingsSection: lists real bookings in a table (searchable, filterable
-// by status), with a click-through detail view for each row.
+// BookingsSection: lists real bookings (searchable, filterable by status),
+// either as expanded full-detail cards (default) or a compact table with a
+// click-through detail view per row -- toggle button top right.
 //
 // Reads from `bookings`, then looks up client/place names and the source
 // quote's reference code separately (same pattern as DriverTasks.tsx)
@@ -82,6 +83,21 @@ const STATUS_FILTERS = [
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
 
+// Two ways to show the list: "full" = every booking as an expanded card
+// (BookingDetailModal rendered inline -- trips, documents, money all
+// visible), "compact" = the one-row-per-booking table. The choice is
+// remembered in this browser only.
+type ViewMode = 'full' | 'compact'
+const VIEW_KEY = 'bookings-view'
+
+function readViewMode(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'compact' ? 'compact' : 'full'
+  } catch {
+    return 'full'
+  }
+}
+
 function matchesStatus(status: string, filter: StatusFilter) {
   if (filter === 'All') return true
   if (filter === 'Active') return status !== 'Delivered' && status !== 'Cancelled'
@@ -95,7 +111,28 @@ function BookingsSection() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Active')
+  const [viewMode, setViewMode] = useState<ViewMode>(readViewMode)
+  // Full view: bookings the user expanded/minimized away from the default.
+  const [toggledIds, setToggledIds] = useState<Set<number>>(new Set())
+
+  function toggleExpanded(bookingId: number) {
+    setToggledIds((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(bookingId)) next.add(bookingId)
+      return next
+    })
+  }
   const [searchParams, setSearchParams] = useSearchParams()
+
+  function toggleViewMode() {
+    const next = viewMode === 'full' ? 'compact' : 'full'
+    setViewMode(next)
+    try {
+      localStorage.setItem(VIEW_KEY, next)
+    } catch {
+      // Storage blocked (private window) -- the toggle still works, just isn't remembered.
+    }
+  }
   const linkedBookingId = Number(searchParams.get('booking')) || null
 
   useEffect(() => {
@@ -286,7 +323,7 @@ function BookingsSection() {
 
       <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
-          <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="mb-6 flex flex-wrap items-center gap-3">
             <div role="group" aria-label="Filter by status" className="flex">
               {STATUS_FILTERS.map((filter) => (
                 <button
@@ -315,6 +352,27 @@ function BookingsSection() {
               aria-label="Search bookings"
               className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
             />
+            {/* View toggle -- shows the icon of the view you'd switch TO. */}
+            <button
+              type="button"
+              onClick={toggleViewMode}
+              title={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
+              aria-label={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
+              className="rounded-lg border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-slate-500"
+            >
+              {viewMode === 'full' ? (
+                // Compact: stacked rows
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              ) : (
+                // Full details: stacked cards
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="8" rx="1.5" />
+                  <rect x="3" y="13" width="18" height="8" rx="1.5" />
+                </svg>
+              )}
+            </button>
           </div>
 
           {loading ? (
@@ -340,6 +398,46 @@ function BookingsSection() {
                 Clear filters
               </button>
             </p>
+          ) : viewMode === 'full' ? (
+            // ponytail: each card loads its own details (~6 queries each) --
+            // fine for tens of bookings; add paging if "All" grows to hundreds.
+            // Finished bookings (Delivered/Cancelled) start minimized to one
+            // line; active ones start expanded. Clicking flips either way.
+            <div className="grid gap-4">
+              {visibleBookings.map((booking) => {
+                const finished = booking.status === 'Delivered' || booking.status === 'Cancelled'
+                // toggledIds = bookings clicked away from their default state.
+                const expanded = finished === toggledIds.has(booking.booking_id)
+                return expanded ? (
+                  <BookingDetailModal
+                    key={booking.booking_id}
+                    booking={booking}
+                    inline
+                    onChanged={loadBookings}
+                    onMinimize={() => toggleExpanded(booking.booking_id)}
+                  />
+                ) : (
+                  <button
+                    key={booking.booking_id}
+                    type="button"
+                    onClick={() => toggleExpanded(booking.booking_id)}
+                    aria-expanded={false}
+                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-5 py-3 text-left text-sm shadow-sm hover:bg-slate-50"
+                  >
+                    <span className="font-semibold text-slate-900">Booking #{booking.booking_id}</span>
+                    <span className="text-slate-700">{booking.client_name}</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-500" title={`${booking.pickup_location} → ${booking.delivery_location}`}>
+                      {booking.pickup_location} → {booking.delivery_location}
+                    </span>
+                    <span className="whitespace-nowrap text-slate-500">
+                      {booking.date ? formatDate(booking.date) : '—'}
+                    </span>
+                    <BookingStatusBadge status={booking.status} />
+                    <span className="text-xs font-medium text-slate-500">Show details ▾</span>
+                  </button>
+                )
+              })}
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">

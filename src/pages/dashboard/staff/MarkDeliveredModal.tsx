@@ -3,7 +3,8 @@
 // itinerary Delivered, logs it in dispatch_status_logs (that log's
 // timestamp is the trip's delivery date for payroll and Payments Due),
 // and -- if cargo arrived damaged, short or missing -- records a
-// delivery_damage_records row for the Damage Charges page.
+// delivery_damage_records row for the Damage Charges page. Staff can also
+// attach the signed DO here (TripDocuments, uploads independently).
 //
 // Steps aren't in a DB transaction: the status goes first, then the
 // damage row. If the damage row fails, the trip is already Delivered, so
@@ -18,6 +19,7 @@ import {
   type DamageInput,
 } from '../../../lib/damageCharges'
 import DamageFields from './DamageFields'
+import TripDocuments from './TripDocuments'
 
 function MarkDeliveredModal({
   itineraryId,
@@ -127,6 +129,15 @@ function MarkDeliveredModal({
 
         <div className="mt-4 grid gap-4">
           <DamageFields value={damage} onChange={setDamage} allowGood />
+        </div>
+
+        {/* Optional: the signed DO usually comes back at delivery. Files
+            upload right away, on their own -- separate from the Save below. */}
+        <div className="mt-5">
+          <p className="mb-2 text-sm font-medium text-slate-700">
+            Attach DO / documents <span className="font-normal text-slate-400">(optional)</span>
+          </p>
+          <TripDocuments itineraryId={itineraryId} canEdit />
         </div>
 
         <div className="mt-6 flex justify-end gap-3">

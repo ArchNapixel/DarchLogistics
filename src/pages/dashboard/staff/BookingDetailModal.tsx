@@ -2,7 +2,9 @@
 // summary passed in from the list (Booking), plus everything else loaded
 // here on open: cargo, schedule, terms, exact addresses (with links to
 // pinned spots), the source quote's reference, and the booking's trips
-// (each itinerary with its status, driver, truck, trailer).
+// (each itinerary with its status, driver, truck, trailer, documents).
+// With `inline` it renders as a card in the page instead of a pop-up
+// (the Bookings page's "full details" view).
 //
 // Also where a booking is cancelled (only when `onChanged` is passed --
 // the Bookings page does, the read-only ClientBookingHistoryModal
@@ -26,6 +28,7 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 import { PAYMENT_TERMS_LABELS, formatDate } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
+import TripDocuments from './TripDocuments'
 
 function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
@@ -63,6 +66,8 @@ type Trip = {
   // Expenses the crew logged on this trip (itinerary_expenses, via the
   // driver's "Add Expense" button).
   expenses: { amount: number; description: string }[]
+  // How many files are attached in itinerary_documents (DO photos/PDFs).
+  document_count: number
 }
 
 type Details = {
@@ -164,7 +169,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const tripIds = trips.map((t) => t.itinerary_id)
   const trailerIds = trips.map((t) => t.trailer_id).filter((id): id is number => id !== null)
 
-  const [crewsResult, trailersResult, expensesResult] = await Promise.all([
+  const [crewsResult, trailersResult, expensesResult, documentsResult] = await Promise.all([
     tripIds.length > 0
       ? supabase
           .from('itinerary_crews')
@@ -188,8 +193,12 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
           data: [] as { itinerary_id: number; amount: number; description: string }[],
           error: null,
         }),
+    tripIds.length > 0
+      ? supabase.from('itinerary_documents').select('itinerary_id').in('itinerary_id', tripIds)
+      : Promise.resolve({ data: [] as { itinerary_id: number }[], error: null }),
   ])
-  const extraError = crewsResult.error ?? trailersResult.error ?? expensesResult.error
+  const extraError =
+    crewsResult.error ?? trailersResult.error ?? expensesResult.error ?? documentsResult.error
   if (extraError) {
     return { error: extraError.message }
   }
@@ -247,6 +256,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         driver: crewName(t.itinerary_id, 'Driver'),
         helper: crewName(t.itinerary_id, 'Helper'),
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === t.itinerary_id),
+        document_count: (documentsResult.data ?? []).filter((d) => d.itinerary_id === t.itinerary_id).length,
       })),
     },
   }
@@ -254,11 +264,19 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
 
 function BookingDetailModal({
   booking,
-  onClose,
+  onClose = () => {},
   onChanged,
+  inline = false,
+  onMinimize,
 }: {
+  // Inline only: shows a "Minimize" button that collapses the card.
+  onMinimize?: () => void
   booking: Booking
-  onClose: () => void
+  // Not needed when inline (there's nothing to close).
+  onClose?: () => void
+  // Render as a card in the page (Bookings "full details" view) instead
+  // of a pop-up -- same content, no backdrop or Close buttons.
+  inline?: boolean
   // When given, staff can cancel the booking from here; called after a
   // cancellation so the list can reload.
   onChanged?: () => void
@@ -270,6 +288,18 @@ function BookingDetailModal({
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  // Which trip's documents panel is open under the trips table (null = none).
+  const [docsTripId, setDocsTripId] = useState<number | null>(null)
+
+  // Keeps the "N files" label in the table in step with uploads/deletes.
+  const updateDocumentCount = useCallback((itineraryId: number, count: number) => {
+    setDetails((d) =>
+      d && {
+        ...d,
+        trips: d.trips.map((t) => (t.itinerary_id === itineraryId ? { ...t, document_count: count } : t)),
+      },
+    )
+  }, [])
 
   const reload = useCallback(() => {
     loadDetails(booking.booking_id).then(({ details: loaded, error }) => {
@@ -411,8 +441,20 @@ function BookingDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
+    <div
+      className={
+        inline
+          ? ''
+          : 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center'
+      }
+    >
+      <div
+        className={
+          inline
+            ? 'rounded-xl border border-slate-200 bg-white p-5 shadow-sm'
+            : 'max-h-[92vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg'
+        }
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-bold text-slate-900">
@@ -427,14 +469,26 @@ function BookingDetailModal({
           </div>
           <div className="flex items-center gap-3">
             <BookingStatusBadge status={booking.status} />
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="p-1 text-slate-400 hover:text-slate-700"
-            >
-              ✕
-            </button>
+            {inline && onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                aria-expanded={true}
+                className="text-xs font-medium text-slate-500 hover:text-slate-900"
+              >
+                Minimize ▴
+              </button>
+            )}
+            {!inline && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
@@ -550,6 +604,7 @@ function BookingDetailModal({
                     <th className="px-3 py-2 font-medium">Driver</th>
                     <th className="px-3 py-2 font-medium">Truck / trailer</th>
                     <th className="px-3 py-2 font-medium">Expenses</th>
+                    <th className="px-3 py-2 font-medium">Documents</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -597,10 +652,56 @@ function BookingDetailModal({
                           </>
                         )}
                       </td>
+                      <td className="px-3 py-2">
+                        {/* Opens this trip's documents panel below the table. Upload
+                            only where staff can act (the Bookings page); the
+                            read-only client-history view can just look. */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDocsTripId(docsTripId === trip.itinerary_id ? null : trip.itinerary_id)
+                          }
+                          className={`whitespace-nowrap rounded-lg border px-3 py-1 text-xs font-medium ${
+                            docsTripId === trip.itinerary_id
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {onChanged ? 'Upload Document' : 'View Documents'}
+                        </button>
+                        {trip.document_count > 0 ? (
+                          <span className="mt-1 block text-xs text-slate-500">
+                            {trip.document_count} {trip.document_count === 1 ? 'file' : 'files'}
+                          </span>
+                        ) : trip.status === 'Delivered' ? (
+                          <span className="mt-1 block text-xs font-medium text-amber-700">No DO yet</span>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {docsTripId !== null && trips.some((t) => t.itinerary_id === docsTripId) && (
+            <div className="mt-3 border border-slate-200 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h5 className="text-sm font-semibold text-slate-900">Trip #{docsTripId} documents</h5>
+                <button
+                  type="button"
+                  onClick={() => setDocsTripId(null)}
+                  className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                >
+                  Close
+                </button>
+              </div>
+              <TripDocuments
+                key={docsTripId}
+                itineraryId={docsTripId}
+                canEdit={!!onChanged}
+                onCountChange={updateDocumentCount}
+              />
             </div>
           )}
         </div>
@@ -659,26 +760,31 @@ function BookingDetailModal({
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
-          {canCancel && !showCancel ? (
-            <button
-              type="button"
-              onClick={() => setShowCancel(true)}
-              className="border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-            >
-              {cancelLabel}…
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-          >
-            Close
-          </button>
-        </div>
+        {/* Inline cards only need this footer when there's a cancel button. */}
+        {(!inline || (canCancel && !showCancel)) && (
+          <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
+            {canCancel && !showCancel ? (
+              <button
+                type="button"
+                onClick={() => setShowCancel(true)}
+                className="border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+              >
+                {cancelLabel}…
+              </button>
+            ) : (
+              <span />
+            )}
+            {!inline && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              >
+                Close
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
