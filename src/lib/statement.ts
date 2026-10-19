@@ -14,14 +14,19 @@ import { fetchIn } from './dashboardExpenses'
 import { buildStatement, type StatementPayment, type StatementTrip } from './statementTotals'
 
 export type Statement = ReturnType<typeof buildStatement>
+type LedgerInput = Parameters<typeof buildStatement>[0]
 
-export async function loadStatement(
-  clientId: number,
-  from: string,
-  to: string,
-): Promise<{ statement: Statement | null; error: string | null }> {
+// Everything buildStatement() needs for one client, or for ALL clients
+// when clientId is left out (the Revenue Reconciliation page). `rows` are
+// the matching loadPaymentDueReport rows (balances, trip counts).
+export async function loadLedgerInputs(clientId?: number): Promise<{
+  input: LedgerInput
+  rows: Awaited<ReturnType<typeof loadPaymentDueReport>>['rows']
+  error: string | null
+}> {
+  const empty = { input: { bookings: [], trips: [], payments: [] }, rows: [] }
   const report = await loadPaymentDueReport(clientId, { includeSettled: true })
-  if (report.error) return { statement: null, error: report.error }
+  if (report.error) return { ...empty, error: report.error }
 
   const bookingIds = report.rows.map((r) => r.booking_id)
   const bookings = report.rows.map((r) => ({
@@ -51,8 +56,8 @@ export async function loadStatement(
         .range(a, b),
     ),
   ])
-  if (trips.error) return { statement: null, error: trips.error }
-  if (payments.error) return { statement: null, error: payments.error }
+  if (trips.error) return { ...empty, error: trips.error }
+  if (payments.error) return { ...empty, error: payments.error }
 
   const logs = await fetchIn<{ itinerary_id: number; status_changed_at: string }>(
     trips.rows.map((t) => t.itinerary_id),
@@ -64,7 +69,7 @@ export async function loadStatement(
         .eq('new_status', 'Delivered')
         .range(a, b),
   )
-  if (logs.error) return { statement: null, error: logs.error }
+  if (logs.error) return { ...empty, error: logs.error }
 
   const deliveredOn = new Map<number, string>()
   logs.rows.forEach((l) => {
@@ -76,19 +81,26 @@ export async function loadStatement(
     ...t,
     // A delivered trip with no Delivered log (shouldn't happen) is dated
     // its booking's date rather than dropped.
-    delivered_on: deliveredOn.get(t.itinerary_id) ?? bookingDateById.get(t.booking_id) ?? from,
+    delivered_on: deliveredOn.get(t.itinerary_id) ?? bookingDateById.get(t.booking_id) ?? '',
   }))
 
   return {
-    statement: buildStatement(
-      {
-        bookings,
-        trips: statementTrips,
-        payments: payments.rows.map((p) => ({ ...p, amount: Number(p.amount) })),
-      },
-      from,
-      to,
-    ),
+    input: {
+      bookings,
+      trips: statementTrips,
+      payments: payments.rows.map((p) => ({ ...p, amount: Number(p.amount) })),
+    },
+    rows: report.rows,
     error: null,
   }
+}
+
+export async function loadStatement(
+  clientId: number,
+  from: string,
+  to: string,
+): Promise<{ statement: Statement | null; error: string | null }> {
+  const ledger = await loadLedgerInputs(clientId)
+  if (ledger.error) return { statement: null, error: ledger.error }
+  return { statement: buildStatement(ledger.input, from, to), error: null }
 }

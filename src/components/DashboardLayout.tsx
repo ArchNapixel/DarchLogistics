@@ -36,6 +36,7 @@ const TAB_ICONS: Record<string, string> = {
   'Trip Profitability': 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
   'Payroll & Remittances':'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
+  'Revenue Reconciliation': 'M4 7h16M4 17h16M8 3l-4 4 4 4M16 13l4 4-4 4',
   Statements:
     'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
   'AR Aging':'M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4',

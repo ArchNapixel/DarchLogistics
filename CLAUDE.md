@@ -705,8 +705,7 @@ before creating it.
     (+ trigger keeping `bookings.amount_paid` = sum of non-voided
     payments, Collections page, Statements of Account; no backfill —
     past records get wiped first), **Phase 5 Revenue Reconciliation**
-    (added 2026-10-19, no schema; goes after Phase 4 because "collected"
-    needs real payment dates), Phase 6 Payables & Expenses
+    (BUILT 2026-10-19, see below), Phase 6 Payables & Expenses
     (`suppliers`, `bills`, `bill_payments`), Petty Cash, Profit & Loss.
     Chart of Accounts / journal entries deliberately skipped.
   - **Why Revenue Reconciliation exists:** the dashboard "Revenue" card and
@@ -716,17 +715,28 @@ before creating it.
     damage, reflects discounts). Trip Profitability = BILLED (rate × trips
     delivered, by delivery date, calendar month, Cancelled bookings'
     delivered trips included, ignores `amount_to_pay` overrides, no damage).
-    Phase 5 = one Accounting page that, for a month, shows billed vs
-    collected and lists the bookings explaining the gap (paid before
-    delivery, delivered but unpaid, discounts, cancelled). Not built yet;
-    the dashboard card and Trip Profitability are NOT relabelled yet
-    (user chose to add the reconciliation page to the plan instead).
+    The dashboard card and Trip Profitability are NOT relabelled (user
+    chose a reconciliation page instead).
+  - **Phase 5 — Revenue Reconciliation** (`/dashboard/revenue-reconciliation`,
+    `staff/RevenueReconciliationSection.tsx`, `lib/revenueReconciliation.ts`
+    loader, `lib/revenueReconTotals.ts` pure math, self-check
+    `node scripts/check-revenue-recon-totals.ts`) — month picker. Reuses
+    the Statement ledger for ALL clients (`loadLedgerInputs()` in
+    `lib/statement.ts`, now exported; `loadStatement` wraps it). Cards:
+    Trip revenue (= Trip Profitability), Adjustments, Billed, Collected
+    (= Collections net of refunds), Dashboard card (bookings created that
+    month, `amount_paid` to date, non-Cancelled). Receivables line: start +
+    billed − collected = end. Per-booking table with a "Why" tag (Not
+    fully paid yet / Paid in another month / Paid ahead of delivery /
+    Paying earlier months / Matches). Read-only, no schema. The "Opening
+    balance" rows (dated the backfill day) show as collected that day.
 
 ## Currently in progress
-Accounting module Phases 1–4 built (AR Aging, invoice number, Payroll &
+Accounting module Phases 1–5 built (AR Aging, invoice number, Payroll &
 Remittances, Trip Profitability, payment history + Collections +
-Statements), awaiting user testing; Phase 5 (Revenue Reconciliation) not
-started. (Last CLAUDE.md sync: 2026-10-19.)
+Statements, Revenue Reconciliation), awaiting user testing; Phase 6
+(Payables & Expenses, Petty Cash, Profit & Loss) not started. (Last
+CLAUDE.md sync: 2026-10-19.)
 
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —
