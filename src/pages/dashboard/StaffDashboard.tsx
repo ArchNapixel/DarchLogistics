@@ -6,6 +6,7 @@ import { loadCashAdvanceTotals } from '../../lib/cashAdvanceRequests'
 import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
 import OperationalExpensesCard from './staff/OperationalExpensesCard'
 import PayrollExpensesCard from './staff/PayrollExpensesCard'
+import TopCreditorsCard from './staff/TopCreditorsCard'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
@@ -418,6 +419,38 @@ function StaffDashboard() {
     },
   ]
 
+  // Title + one row of cards (as many equal columns as there are cards).
+  // Used both beside Top Creditors and in the lower rows.
+  const renderGroup = (group: (typeof summaryGroups)[number], columns = group.cards.length, large = false) => (
+    <>
+      <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
+      <div
+        className="mt-2 grid flex-1 gap-2 sm:gap-3"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      >
+        {group.cards.map((card) => (
+          <div
+            key={card.label}
+            className={`reports-blueprint-card dashboard-card-bold ${
+              large ? 'flex flex-col justify-center px-5 py-4' : 'px-3 py-2.5 sm:px-4 sm:py-3'
+            }`}
+          >
+            <p className={`font-ui leading-tight text-reports-ink ${large ? 'text-base' : 'text-xs sm:text-sm'}`}>
+              {card.label}
+            </p>
+            <p
+              className={`font-condensed leading-none font-semibold text-reports-ink ${
+                large ? 'mt-3 text-5xl font-bold' : 'mt-1 text-xl sm:text-2xl'
+              }`}
+            >
+              {loading ? '--' : card.value}
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
   return (
     <div className="bg-reports-bg -m-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -478,7 +511,8 @@ function StaffDashboard() {
 
       {/* Costs for the same period as the revenue dropdown above. */}
       {/* Stacked in a column on the left; hovering a card expands just that one. */}
-      <div className="mt-5 flex flex-col gap-3 sm:gap-5 lg:w-1/3">
+      <div className="mt-5 flex flex-col gap-3 sm:gap-5 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-3 sm:gap-5 lg:w-1/3">
         {[
           <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} />,
           <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'pay'} />,
@@ -493,43 +527,34 @@ function StaffDashboard() {
           </div>
         ))}
       </div>
-
-      {/* Groups sit side by side on wide screens (each takes space in
-          proportion to its card count) and stack on smaller ones. */}
-      {[
-        summaryGroups.filter((g) => g.title !== 'Human Resource'),
-        summaryGroups.filter((g) => g.title === 'Human Resource'),
-      ].map((row, i) => (
-      <div
-        key={i}
-        // Second row (Human Resource) is only 2 cards: keep them card-sized
-        className={`mt-5 flex flex-col gap-4 xl:flex-row xl:gap-5 ${i === 1 ? 'xl:w-2/9' : ''}`}
-      >
-        {row.map((group) => (
-          <div
-            key={group.title}
-            className="xl:min-w-0"
-            style={{ flex: `${group.cards.length} 1 0` }}
-          >
-            <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
-            {/* One row per group: as many equal columns as there are cards */}
-            <div
-              className="mt-2 grid gap-2 sm:gap-3"
-              style={{ gridTemplateColumns: `repeat(${group.cards.length}, minmax(0, 1fr))` }}
-            >
-              {group.cards.map((card) => (
-                <div key={card.label} className="reports-blueprint-card dashboard-card-bold px-3 py-2.5 sm:px-4 sm:py-3">
-                  <p className="font-ui text-xs leading-tight text-reports-ink sm:text-sm">{card.label}</p>
-                  <p className="font-condensed mt-1 text-xl leading-none font-semibold text-reports-ink sm:text-2xl">
-                    {loading ? '--' : card.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+      {/* Leaderboard to the right of the expense cards */}
+      {/* Middle column: Top Creditors stretches to the full height of the row */}
+      {/* ponytail: side columns are a fixed 376px (= 3 collapsed expense cards) so
+          they don't grow when an expense card expands; update if card sizes change */}
+      <div className="lg:h-[376px] lg:w-1/3">
+        <TopCreditorsCard refreshKey={refreshKey} />
       </div>
-      ))}
+      {/* Right column: the remaining summary groups, stacked */}
+      <div className="flex flex-col gap-4 lg:h-[376px] lg:w-1/3">
+        {summaryGroups
+          .filter((g) => ['Maintenance', 'Human Resource'].includes(g.title))
+          .map((group) => (
+            <div key={group.title} className="flex flex-1 flex-col">{renderGroup(group, group.cards.length, true)}</div>
+          ))}
+      </div>
+      </div>
+
+      {/* Cash Advance with Operations to its right (width shared by card count) */}
+      <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:gap-5">
+        {['Cash Advance', 'Operations'].map((title) => {
+          const group = summaryGroups.find((g) => g.title === title)!
+          return (
+            <div key={title} className="xl:min-w-0" style={{ flex: `${group.cards.length} 1 0` }}>
+              {renderGroup(group)}
+            </div>
+          )
+        })}
+      </div>
 
       <div className="mt-5">
         <h2 className="font-ui text-sm font-medium text-neutral-500">
