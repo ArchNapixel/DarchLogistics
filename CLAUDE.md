@@ -159,8 +159,10 @@ before creating it.
   `cancelled_at` columns): blocked while a trip is on the road; if no
   trip delivered → booking `Cancelled` + Awaiting trips `Cancelled`; if
   some delivered → only Awaiting trips cancelled and the booking ends
-  `Delivered` (so delivered trips still bill — Payments Due/revenue skip
-  Cancelled bookings). Freed trucks/trailers set back to `Available`,
+  `Delivered` (so delivered trips still bill). **Payments Due / AR Aging
+  include Cancelled bookings** (2026-10-19, `lib/paymentDue.ts`), billed
+  only for delivered trips — same cap as the Cancelled tab in Bills
+  Receivable; the dashboard revenue card was not changed. Freed trucks/trailers set back to `Available`,
   each trip change logged to `dispatch_status_logs`. The detail modal
   also shows cargo, schedule, terms, pin links, and a trips table
   (status/driver/helper/truck/trailer).
@@ -598,8 +600,10 @@ before creating it.
   `DashboardLayout` sidebar is a phone slide-in drawer with hover/click
   category flyouts (Admin sidebar: Dashboard; Operations = Quotations,
   Bookings, Clients, Dispatch Board; Human Resource = Employees,
-  Attendance, Payroll, Cash Advance; Maintenance = Truck Monitoring,
-  Fleet, Maintenance, Inventory; Reports; Financial Records; ⚙ Settings
+  Attendance, Payroll, Cash Advance; Accounting = Bills Receivable
+  (`/dashboard/financial-records`, FinancialSection), AR Aging;
+  Maintenance = Truck Monitoring,
+  Fleet, Maintenance, Inventory; Reports; ⚙ Settings
   link in the layout, not the sidebar list). `components/ConfirmDialog.tsx`
   (`confirmDialog()` / `promptDialog()`, `<ConfirmHost />` mounted in
   main.tsx) replaces `window.confirm`/`prompt` in ~14 files — it only
@@ -609,9 +613,45 @@ before creating it.
   `components/ComingSoonPage.tsx` is now unused (every sidebar link has
   a real page).
 
+- **Accounting module (2026-10-19, Admin only — no Accountant role).** A
+  sidebar group below Human Resource. Built so far:
+  - **Bills Receivable** moved here (was a top-level link).
+  - **AR Aging** (`/dashboard/ar-aging`, `staff/ArAgingSection.tsx` +
+    `lib/arAging.ts`, self-check `node scripts/check-ar-aging.ts`) —
+    read-only; takes `loadPaymentDueReport()` rows and buckets positive
+    balances by days past due (Current / 1–30 / 31–60 / 61–90 / 90+, plus
+    "No due date" only when non-empty). Per-client rows expand to
+    bookings. Nothing is billable until a trip is Delivered (unless a
+    payment locked `amount_to_pay` at the contract value).
+  - **Invoice number** — `bookings.invoice_number` (text, SQL run by user).
+    Just stores the number from the printed invoice booklet: edited in
+    Bills Receivable's financial modal, shown in the list, in
+    `BookingDetailModal`, and searchable on Client Bookings. The app does
+    NOT generate or print invoices; no uniqueness constraint. Deliberately
+    kept manual (BIR-registered booklet is the official invoice).
+  - **Payroll & Remittances** (`/dashboard/payroll-remittances`,
+    `staff/PayrollRemittanceSection.tsx`, `lib/remittanceReport.ts` loader +
+    CSV, `lib/remittanceTotals.ts` pure math, self-check
+    `node scripts/check-remittance-totals.ts`) — month picker; counts only
+    FINALIZED `payroll_payslips` whose `payroll_period_end` is in the month
+    (drafts are counted and shown as a warning, not included). Tab 1:
+    amount to remit per agency (SSS = EE+ER+EC, PhilHealth, Pag-IBIG =
+    EE+ER, BIR = withholding tax) + per-employee shares. Tab 2: gross,
+    cash advance deducted, net, employer shares, company cost (gross +
+    employer shares). One CSV with both. Reads the stored payslip columns
+    only — nothing recalculated. No new tables.
+  - **Planned, in order** (decided with the user; each needs go-ahead):
+    Phase 3 Trip
+    Profitability (no schema), Phase 4 `booking_payments` payment history
+    (+ trigger keeping `bookings.amount_paid` = sum of non-voided
+    payments, Collections page, Statements of Account; no backfill —
+    past records get wiped first), Phase 5 Payables & Expenses
+    (`suppliers`, `bills`, `bill_payments`), Petty Cash, Profit & Loss.
+    Chart of Accounts / journal entries deliberately skipped.
+
 ## Currently in progress
-Nothing is actively mid-build right now. (Last CLAUDE.md sync: 2026-09-30,
-against the code at commit d5982c8 plus the uncommitted Cash Advance tab.)
+Accounting module Phase 2 (Payroll & Remittances) built, awaiting user
+testing. (Last CLAUDE.md sync: 2026-10-19.)
 
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —

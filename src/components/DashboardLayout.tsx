@@ -33,6 +33,8 @@ const TAB_ICONS: Record<string, string> = {
   Reports: 'M18 20V10M12 20V4M6 20v-6',
   'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
   'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
+  'Payroll & Remittances': 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  'AR Aging':'M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4',
   'Client Quotations': FILE,
   'Client Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   Quotations: FILE,

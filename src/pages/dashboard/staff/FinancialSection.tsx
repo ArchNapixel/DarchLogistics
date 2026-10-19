@@ -181,11 +181,12 @@ function FinancialActionModal({
   const [overrideAmount, setOverrideAmount] = useState(
     String(booking.billable_amount - booking.damage_charges),
   )
+  const [invoiceText, setInvoiceText] = useState(booking.invoice_number ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function save(
-    databaseValues: Record<string, number | null>,
+    databaseValues: Record<string, number | string | null>,
     nextBooking: Partial<Booking>,
   ) {
     setSaving(true)
@@ -269,6 +270,12 @@ function FinancialActionModal({
         balance_due: total + booking.damage_charges - booking.amount_paid,
       },
     )
+  }
+
+  // Invoice number from the printed booklet; blank clears it.
+  function saveInvoice() {
+    const invoice = invoiceText.trim() || null
+    save({ invoice_number: invoice }, { invoice_number: invoice })
   }
 
   function resetOverride() {
@@ -388,6 +395,17 @@ function FinancialActionModal({
           </div>
         </div>
 
+        <div className="mt-4 rounded-lg bg-slate-50 p-4">
+          <h4 className="font-medium text-slate-900">Invoice number</h4>
+          <p className="mt-1 text-xs text-slate-500">
+            The number printed on this booking's invoice. Leave blank to clear it.
+          </p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+            <input type="text" maxLength={50} value={invoiceText} onChange={(e) => setInvoiceText(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" />
+            <button onClick={saveInvoice} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">{saving ? 'Saving...' : 'Save Invoice No.'}</button>
+          </div>
+        </div>
+
         <div className="mt-6 flex justify-end">
           <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Close</button>
         </div>
@@ -456,7 +474,7 @@ function FinancialSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid',
+        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
       )
       .order('created_at', { ascending: false })
 
@@ -570,6 +588,7 @@ function FinancialSection() {
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
+          invoice_number: b.invoice_number,
         }
       }),
     )
@@ -660,6 +679,7 @@ function FinancialSection() {
               <tr>
                 <th className="px-4 py-3 font-medium">Booking</th>
                 <th className="px-4 py-3 font-medium">Client</th>
+                <th className="px-4 py-3 font-medium">Invoice no.</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Trips</th>
                 <th className="px-4 py-3 font-medium">Amount to pay</th>
@@ -675,6 +695,7 @@ function FinancialSection() {
                   <tr key={booking.booking_id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 text-slate-900">#{booking.booking_id}</td>
                     <td className="px-4 py-3 text-slate-900">{booking.client_name}</td>
+                    <td className="px-4 py-3 text-slate-600">{booking.invoice_number || '—'}</td>
                     <td className="px-4 py-3"><BookingStatusBadge status={booking.status} /></td>
                     <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>

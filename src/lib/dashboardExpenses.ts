@@ -36,7 +36,7 @@ const PAGE = 1000
 const CHUNK = 200
 
 // Reads every page of a query (rows past 1000 would otherwise vanish).
-async function fetchAll<T>(
+export async function fetchAll<T>(
   page: (from: number, to: number) => PromiseLike<Page<T>>,
 ): Promise<{ rows: T[]; error: string | null }> {
   const rows: T[] = []
@@ -50,7 +50,7 @@ async function fetchAll<T>(
 
 // `.in('col', ids)` with a few hundred ids at a time (long id lists make
 // the request URL too big), each chunk paged.
-async function fetchIn<T>(
+export async function fetchIn<T>(
   ids: number[],
   query: (chunk: number[], from: number, to: number) => PromiseLike<Page<T>>,
 ): Promise<{ rows: T[]; error: string | null }> {

@@ -36,6 +36,8 @@ import PayrollSection from './staff/PayrollSection'
 import CashAdvanceSection from './staff/CashAdvanceSection'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
+import ArAgingSection from './staff/ArAgingSection'
+import PayrollRemittanceSection from './staff/PayrollRemittanceSection'
 import SettingsSection from './staff/SettingsSection'
 import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
 import DamageChargesSection from './staff/DamageChargesSection'
@@ -49,7 +51,6 @@ import MyProfileSection from './employee/MyProfileSection'
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Reports', to: '/dashboard/reports' },
-  { label: 'Bills Receivable', to: '/dashboard/financial-records' },
   {
     label: 'Operations',
     children: [
@@ -66,6 +67,14 @@ const staffLinks = [
       { label: 'Attendance', to: '/dashboard/attendance' },
       { label: 'Payroll Master', to: '/dashboard/payroll' },
       { label: 'Cash Advance', to: '/dashboard/cash-advance' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    children: [
+      { label: 'Bills Receivable', to: '/dashboard/financial-records' },
+      { label: 'AR Aging', to: '/dashboard/ar-aging' },
+      { label: 'Payroll & Remittances', to: '/dashboard/payroll-remittances' },
     ],
   },
   {
@@ -143,6 +152,8 @@ function DashboardRouter() {
           <Route path="cash-advance" element={<CashAdvanceSection />} />
           <Route path="reports" element={<ReportsSection />} />
           <Route path="financial-records" element={<FinancialSection />} />
+          <Route path="ar-aging" element={<ArAgingSection />} />
+          <Route path="payroll-remittances" element={<PayrollRemittanceSection />} />
           <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

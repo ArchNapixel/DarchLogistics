@@ -53,6 +53,9 @@ export type Booking = {
   // The source quote's customer-facing reference ("Q-7F3K9A"), when it
   // has one. Optional so other screens building a Booking can skip it.
   reference_code?: string | null
+  // Number from the printed invoice booklet, typed in on Bills Receivable.
+  // Optional for the same reason as reference_code.
+  invoice_number?: string | null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -157,7 +160,7 @@ function BookingsSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid',
+        'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
       )
       .order('created_at', { ascending: false })
 
@@ -293,6 +296,7 @@ function BookingsSection() {
           balance_due: billableAmount - amountPaid,
           reference_code:
             b.quote_request_id !== null ? (referenceByQuote.get(b.quote_request_id) ?? null) : null,
+          invoice_number: b.invoice_number,
         }
       }),
     )
@@ -312,6 +316,7 @@ function BookingsSection() {
           booking.pickup_location,
           booking.delivery_location,
           booking.reference_code ?? '',
+          booking.invoice_number ?? '',
         ].some((text) => text.toLowerCase().includes(query))),
   )
   const countFor = (filter: StatusFilter) =>

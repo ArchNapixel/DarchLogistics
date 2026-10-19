@@ -72,6 +72,7 @@ type Trip = {
 
 type Details = {
   reference_code: string | null
+  invoice_number: string | null
   cargo_type: string | null
   cargo_description: string | null
   weight: number | null
@@ -138,7 +139,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, cancellation_reason, cancelled_at',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, cancellation_reason, cancelled_at, invoice_number',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -231,6 +232,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   return {
     details: {
       reference_code: quoteResult.data?.reference_code ?? null,
+      invoice_number: b.invoice_number,
       cargo_type: b.cargo_type,
       cargo_description: b.cargo_description,
       weight: b.weight,
@@ -579,6 +581,7 @@ function BookingDetailModal({
           )}
           <InfoRow label="Amount paid" value={formatMoney(booking.amount_paid)} />
           <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
+          <InfoRow label="Invoice no." value={details?.invoice_number || '—'} />
         </div>
 
         <div className="mt-6">

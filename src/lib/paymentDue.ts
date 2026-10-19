@@ -40,6 +40,10 @@
 // Cash terms are due on the base date itself; 7/14/30-day terms are due
 // that many days after it.
 //
+// Cancelled bookings are included, billed only for their delivered trips
+// (a cancelled booking's other trips are Cancelled, so it drops off like
+// any other once those are paid; with nothing delivered it never shows).
+//
 // A booking drops off the report entirely once every itinerary is
 // Delivered AND the balance is fully paid -- otherwise it stays,
 // whether that's because nothing's billable yet, or because more will
@@ -103,7 +107,9 @@ export async function loadPaymentDueReport(
     .select(
       'booking_id, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
     )
-    .neq('booking_status', 'Cancelled')
+  // Cancelled bookings stay in: they still owe for trips delivered before
+  // the cancellation (billed below, same cap as FinancialSection). Ones with
+  // nothing delivered owe 0 and drop off at the filter at the bottom.
 
   if (clientId !== undefined) {
     bookingsQuery = bookingsQuery.eq('client_id', clientId)
@@ -254,7 +260,13 @@ export async function loadPaymentDueReport(
       const totalContractValue = rate * totalTrips
       const computedBillableAmount = rate * completedTrips
       const damageCharges = damageByBooking.get(booking.booking_id) ?? 0
-      const billableAmount = (booking.amount_to_pay ?? computedBillableAmount) + damageCharges
+      // Cancelled: only delivered trips are billable, so an override can
+      // lower the amount but never raise it past what was delivered.
+      const deliveryAmount =
+        booking.booking_status === 'Cancelled'
+          ? Math.min(booking.amount_to_pay ?? Infinity, computedBillableAmount)
+          : (booking.amount_to_pay ?? computedBillableAmount)
+      const billableAmount = deliveryAmount + damageCharges
       const amountPaid = booking.amount_paid ?? 0
       const balanceDue = billableAmount - amountPaid
 
