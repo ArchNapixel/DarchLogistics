@@ -1,4 +1,4 @@
-// payableTotals: the pure rules behind Accounting -> Bills Payable (no
+// payableTotals: the pure rules behind Accounting -> Accounts Payable (no
 // Supabase here, so it can be self-checked with
 // `node scripts/check-payable-totals.ts`). Loading/saving is in payables.ts.
 //

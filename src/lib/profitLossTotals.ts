@@ -11,13 +11,13 @@
 //            ends in the month; driver commission is inside gross), diesel
 //            the crew LOGGED on the month's delivered trips, other trip
 //            expenses, damage charged to the company, maintenance parts
-//            USED, and Bills Payable by category (bill date in the month).
+//            USED, and Accounts Payable by category (bill date in the month).
 // Not counted, to avoid counting the same money twice:
 //   - "Parts" bills: buying parts fills the inventory; they become a cost
 //     when used on a work order (the maintenance line). Shown as a memo.
 //   - "Fuel" bills (bulk depot diesel): diesel is already counted per trip
 //     above and bulk buying isn't tied to trips yet. Still recorded under
-//     Bills Payable; shown as a memo.
+//     Accounts Payable; shown as a memo.
 //   - Driver commission from the trip calculator: it's already in payroll.
 
 export type ProfitLossInput = {

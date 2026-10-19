@@ -1,4 +1,4 @@
-// payables: loading and saving for Accounting -> Bills Payable.
+// payables: loading and saving for Accounting -> Accounts Payable.
 // Bills and their payments are written ONLY through database functions
 // (create_bill, record_bill_payment, void_bill_payment, void_bill) -- each
 // runs in one transaction, checks the caller is an Admin, and the payment

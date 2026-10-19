@@ -1,4 +1,4 @@
-// BillsPayableSection (Admin, Accounting -> Bills Payable): what the company
+// BillsPayableSection (Admin, Accounting -> Accounts Payable): what the company
 // owes and spends. A bill is money owed to a creditor (whoever the company
 // buys from or pays: parts store, fuel depot, landlord...); a one-off expense is
 // a bill marked "already paid" when it's entered. Tabs: Open (unpaid /
@@ -137,7 +137,7 @@ function BillsPayableSection() {
   return (
     <div>
       <PageHeader
-        title="Bills Payable"
+        title="Accounts Payable"
         subtitle="Money the company owes: bills, expenses and creditors."
         actions={<>
         <div className="flex gap-2">

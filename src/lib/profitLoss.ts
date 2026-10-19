@@ -5,7 +5,7 @@
 //   diesel / trip costs  -> loadTripProfitReport      (Trip Profitability)
 //   maintenance parts    -> loadMaintenanceCostReport (Maintenance cost report)
 //   payroll              -> payroll_payslips by payroll_period_end (drafts too)
-//   bills                -> bills by bill_date, not voided (Bills Payable)
+//   bills                -> bills by bill_date, not voided (Accounts Payable)
 // What is and isn't counted (and why) is in profitLossTotals.ts.
 import { supabase } from './supabaseClient'
 import { fetchAll } from './dashboardExpenses'
