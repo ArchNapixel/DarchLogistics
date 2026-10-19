@@ -10,15 +10,13 @@ import {
   loadLeaveForEmployee,
   type LeaveRequest,
 } from '../../../lib/leaveRequests'
-import { formatDate } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import RequestLeaveModal from './RequestLeaveModal'
-
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-orange-100 text-orange-700',
-  Approved: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700',
-}
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { showToast } from '../../../components/Toast'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function MyLeaveSection() {
   const { employeeId, role } = useAuth()
@@ -27,7 +25,6 @@ function MyLeaveSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const year = Number(toManilaDate(new Date()).slice(0, 4))
   const isDriver = role === 'Driver'
@@ -55,44 +52,42 @@ function MyLeaveSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">My Leave</h2>
-        <button
-          onClick={() => setShowModal(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Request Leave
-        </button>
-      </div>
+      <PageHeader
+        title="My Leave"
+        subtitle="Request time off and see what's been approved."
+        actions={
+          <button
+            onClick={() => setShowModal(true)}
+            className="btn-primary px-4 py-2 text-sm font-medium"
+          >
+            Request Leave
+          </button>
+        }
+      />
 
       {!isDriver && (
-        <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           Paid leave {year}: <span className="font-semibold text-slate-900">{used}</span> of {ANNUAL_PAID_LEAVE_DAYS} days
           used ({Math.max(0, ANNUAL_PAID_LEAVE_DAYS - used)} left). Sundays don't count.
         </p>
       )}
 
-      {successMessage && (
-        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{successMessage}</p>
-      )}
-      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       {loading ? (
         <p className="mt-4 text-slate-500">Loading your requests...</p>
       ) : requests.length === 0 ? (
-        <p className="mt-4 text-slate-500">No leave requests yet.</p>
+        <EmptyState message="No leave requests yet." className="mt-4" />
       ) : (
         <div className="mt-4 grid gap-3">
           {requests.map((request) => (
-            <div key={request.leave_id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div key={request.leave_id} className="border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
                   {formatDate(request.start_date)}
                   {request.end_date !== request.start_date && ` – ${formatDate(request.end_date)}`}
                 </p>
-                <span className={`px-3 py-1 text-xs font-semibold ${STATUS_STYLES[request.status]}`}>
-                  {request.status}
-                </span>
+                <StatusBadge status={request.status} />
               </div>
               <p className="mt-1 text-sm text-slate-500">{request.leave_type}</p>
               {request.reason && <p className="mt-1 text-sm text-slate-600">{request.reason}</p>}
@@ -109,7 +104,7 @@ function MyLeaveSection() {
           onClose={() => setShowModal(false)}
           onRequested={() => {
             setShowModal(false)
-            setSuccessMessage('Your leave request was submitted.')
+            showToast('Your leave request was submitted.')
             void load(employeeId)
           }}
         />

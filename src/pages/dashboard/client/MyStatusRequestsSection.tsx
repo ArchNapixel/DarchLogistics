@@ -11,20 +11,9 @@ import {
   loadStatusRequestsForClient,
   type PendingStatusRequest,
 } from '../../../lib/clientStatusRequests'
-
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-orange-100 text-orange-700',
-  Responded: 'bg-green-100 text-green-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function MyStatusRequestsSection() {
   const { clientId } = useAuth()
@@ -65,13 +54,13 @@ function MyStatusRequestsSection() {
   }
 
   if (requests.length === 0) {
-    return <p className="text-slate-500">No status requests yet.</p>
+    return <EmptyState message="No status requests yet." />
   }
 
   return (
     <div className="grid gap-3">
       {requests.map((request) => (
-        <div key={request.request_id} className="rounded-xl border border-slate-200 p-4">
+        <div key={request.request_id} className="border border-slate-200 p-4">
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-sm font-medium text-slate-900">
@@ -81,18 +70,14 @@ function MyStatusRequestsSection() {
                 Booking #{request.booking_id}
                 {request.itinerary_id !== null && ` · Trip #${request.itinerary_id}`}
                 {' · '}
-                {new Date(request.created_at).toLocaleDateString('en-PH', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
+                {formatDate(request.created_at)}
               </p>
             </div>
             <StatusBadge status={request.status} />
           </div>
           <p className="mt-2 text-sm text-slate-900">{request.message}</p>
           {request.staff_response && (
-            <div className="mt-2 rounded-lg bg-slate-50 p-3">
+            <div className="mt-2 bg-slate-50 p-3">
               <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 Dispatch response
               </p>

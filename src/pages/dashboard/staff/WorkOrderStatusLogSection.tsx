@@ -7,6 +7,8 @@ import {
   loadWorkOrderStatusLog,
   type WorkOrderStatusLogEntry,
 } from '../../../lib/workOrderStatusLog'
+import { formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function WorkOrderStatusLogSection() {
   const [entries, setEntries] = useState<WorkOrderStatusLogEntry[]>([])
@@ -43,12 +45,12 @@ function WorkOrderStatusLogSection() {
   }
 
   if (entries.length === 0) {
-    return <p className="text-slate-500">No status changes logged yet.</p>
+    return <EmptyState message="No status changes logged yet." />
   }
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
@@ -67,7 +69,7 @@ function WorkOrderStatusLogSection() {
                 </td>
                 <td className="px-4 py-3 text-slate-600">{entry.changed_by_name}</td>
                 <td className="px-4 py-3 text-slate-600">
-                  {new Date(entry.changed_at).toLocaleString()}
+                  {formatDateTime(entry.changed_at)}
                 </td>
               </tr>
             ))}

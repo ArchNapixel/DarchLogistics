@@ -8,10 +8,10 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
-  formatDate,
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
+import { formatMoney, formatDate } from '../lib/format'
 
 const SLIDE_MS = 300
 
@@ -177,9 +177,9 @@ export default function QuoteSummaryDrawer({
           {/* The number people care about most */}
           <div className="bg-brand-navy p-4 text-white">
             <p className="text-xs font-semibold tracking-wide uppercase opacity-70">Proposed total</p>
-            <p className="mt-1 text-3xl font-semibold">₱{total.toLocaleString('en-PH')}</p>
+            <p className="mt-1 text-3xl font-semibold">{formatMoney(total)}</p>
             <p className="mt-1 text-sm opacity-80">
-              ₱{rate.toLocaleString('en-PH')} × {count} {count === 1 ? 'delivery' : 'deliveries'}
+              {formatMoney(rate)} × {count} {count === 1 ? 'delivery' : 'deliveries'}
             </p>
           </div>
         </div>
@@ -196,7 +196,7 @@ export default function QuoteSummaryDrawer({
             <button
               type="button"
               onClick={onReview}
-              className="flex-1 bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700"
+              className="btn-primary flex-1 px-4 py-2.5 text-sm font-medium"
             >
               Go to review
             </button>

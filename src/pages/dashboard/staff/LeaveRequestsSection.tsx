@@ -13,7 +13,8 @@ import {
   loadTripConflicts,
   type PendingLeaveRequest,
 } from '../../../lib/leaveRequests'
-import { formatDate } from '../../../lib/quoteRequest'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
   const { employeeId } = useAuth()
@@ -88,23 +89,23 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
   if (error) return <p className="text-red-700">{error}</p>
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-slate-700">Leave Requests</h3>
 
-      {actionError && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
-      {notice && <p className="mt-3 rounded-lg bg-orange-50 px-4 py-3 text-sm text-orange-700">{notice}</p>}
+      {actionError && <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
+      {notice && <p className="mt-3 bg-orange-50 px-4 py-3 text-sm text-orange-700">{notice}</p>}
 
       {requests.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">No pending leave requests.</p>
+        <EmptyState message="No pending leave requests." className="mt-3" />
       ) : (
         <div className="mt-3 grid gap-3">
           {requests.map((request) => (
-            <div key={request.leave_id} className="rounded-xl border border-slate-200 p-4">
+            <div key={request.leave_id} className="border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
                   {request.employee_name} — {request.leave_type}
                 </p>
-                <span className="text-xs text-slate-500">Requested {formatDate(request.created_at.slice(0, 10))}</span>
+                <span className="text-xs text-slate-500">Requested {formatDate(request.created_at)}</span>
               </div>
               <p className="mt-1 text-sm text-slate-700">
                 {formatDate(request.start_date)}
@@ -117,14 +118,14 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
                 <button
                   onClick={() => handleDecide(request, true)}
                   disabled={decidingId === request.leave_id}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="btn-primary px-3 py-1.5 text-sm font-medium"
                 >
                   {decidingId === request.leave_id ? 'Saving...' : 'Approve'}
                 </button>
                 <button
                   onClick={() => handleDecide(request, false)}
                   disabled={decidingId === request.leave_id}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Reject
                 </button>

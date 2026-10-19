@@ -80,7 +80,7 @@ export function buildRemittanceCsv(
   const lines: string[] = []
   const row = (cells: (string | number)[]) => lines.push(cells.map(csvField).join(','))
 
-  row([`Payroll & Remittances - ${month} (finalized payslips)`])
+  row([`Remittances - ${month} (finalized payslips)`])
   lines.push('')
 
   row(['To remit to'])

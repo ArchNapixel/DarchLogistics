@@ -21,7 +21,7 @@ function QuoteCta() {
         </p>
         <Link
           to="/quote-request"
-          className="mt-6 inline-block rounded-lg bg-brand-steel px-6 py-3 text-sm font-bold tracking-wide text-white uppercase transition hover:-translate-y-0.5 hover:bg-brand-steel-dark hover:shadow-lg"
+          className="mt-6 inline-block bg-brand-steel px-6 py-3 text-sm font-bold tracking-wide text-white uppercase transition hover:-translate-y-0.5 hover:bg-brand-steel-dark hover:shadow-lg"
         >
           Request a Quote
         </Link>

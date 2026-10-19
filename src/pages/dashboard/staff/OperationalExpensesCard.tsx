@@ -10,9 +10,7 @@ import {
   type OperationalExpenses,
 } from '../../../lib/dashboardExpenses'
 import type { Period } from '../../../lib/expenseTotals'
-
-const peso = (n: number) =>
-  `₱${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+import { formatMoney } from '../../../lib/format'
 
 function OperationalExpensesCard({
   period,
@@ -73,7 +71,7 @@ function OperationalExpensesCard({
       ) : (
         <>
           <p className="font-condensed mt-1.5 text-2xl sm:mt-2 sm:text-[40px] leading-none font-bold text-reports-ink">
-            {loading || !data ? '--' : peso(data.total)}
+            {loading || !data ? '--' : formatMoney(data.total)}
           </p>
 
           {data && !loading && (
@@ -85,7 +83,7 @@ function OperationalExpensesCard({
             <div className="max-sm:hidden">
               {data.draftPayroll > 0 && (
                 <p className="mt-1 font-ui text-xs text-neutral-500">
-                  Includes {peso(data.draftPayroll)} in draft payslips.
+                  Includes {formatMoney(data.draftPayroll)} in draft payslips.
                 </p>
               )}
               {data.dieselPriceMissing && (
@@ -110,7 +108,7 @@ function OperationalExpensesCard({
                     <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                       <span className="text-reports-ink">{line.label}</span>
                       <span className="text-neutral-600">
-                        {peso(line.value)}
+                        {formatMoney(line.value)}
                         {data.total > 0 && (
                           <span className="ml-2 text-neutral-400">
                             {Math.round((line.value / data.total) * 100)}%

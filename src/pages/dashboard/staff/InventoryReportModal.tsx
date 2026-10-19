@@ -13,9 +13,11 @@ import {
   type CurrentStockRow,
   type UsedStockRow,
 } from '../../../lib/inventoryReport'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 
 function InventoryReportModal({ onClose }: { onClose: () => void }) {
   const [weekOptions, setWeekOptions] = useState<ReportWeekOption[]>([])
@@ -95,7 +97,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Print Inventory Report</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -130,7 +132,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
         </label>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         {loadingWeeks || loading ? (
@@ -141,7 +143,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
               <h4 className="text-sm font-semibold text-slate-700">
                 Current Stock ({currentStock.length} items)
               </h4>
-              <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200">
+              <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                     <tr>
@@ -166,9 +168,9 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
             <div>
               <h4 className="text-sm font-semibold text-slate-700">Usage by Item</h4>
               {usageTotals.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500">No stock used this week.</p>
+                <EmptyState message="No stock used this week." className="mt-2" />
               ) : (
-                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200">
+                <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
                   <table className="w-full text-left text-sm">
                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                       <tr>
@@ -196,9 +198,9 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                 Stock Used This Week ({usedStock.length} entries)
               </h4>
               {usedStock.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500">No stock used this week.</p>
+                <EmptyState message="No stock used this week." className="mt-2" />
               ) : (
-                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200">
+                <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
                   <table className="w-full text-left text-sm">
                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                       <tr>
@@ -215,7 +217,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                           <td className="px-3 py-2 text-slate-600">{row.quantity}</td>
                           <td className="px-3 py-2 text-slate-600">{row.work_order_number}</td>
                           <td className="px-3 py-2 text-slate-600">
-                            {new Date(row.completed_at).toLocaleDateString()}
+                            {formatDate(row.completed_at)}
                           </td>
                         </tr>
                       ))}
@@ -230,14 +232,14 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Close
           </button>
           <button
             onClick={handleDownload}
             disabled={loading || loadingWeeks || !selectedWeek}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             Download CSV
           </button>

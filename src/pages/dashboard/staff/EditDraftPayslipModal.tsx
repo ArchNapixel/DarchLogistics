@@ -30,6 +30,8 @@ import {
   type ContributionKey,
   type EarlierPayslip,
 } from '../../../lib/governmentContributions'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 export type DraftToEdit = {
   payrollId: number
@@ -63,8 +65,11 @@ type EditableLine = {
 }
 
 const roundPeso = (value: number) => Math.round(value * 100) / 100
+// Only for text SAVED to the database (line descriptions / deductions_note)
+// -- keeps the old format so saved notes stay consistent. Screens use
+// formatMoney from lib/format.
 const formatPeso = (value: number) =>
-  `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  `${formatMoney(value)}`
 
 const ADDED_TAG = / \(added by admin\)$/
 const ADJUSTED_TAG = / \(adjusted by admin, auto: ₱([\d,.]+)\)$/
@@ -217,7 +222,7 @@ function EditDraftPayslipModal({
   async function handleSubmit() {
     if (deductValue < 0 || deductValue > outstandingAdvance) {
       setError(
-        `Cash advance deduction must be between 0 and the outstanding balance (₱${outstandingAdvance.toLocaleString()}).`,
+        `Cash advance deduction must be between 0 and the outstanding balance (${formatMoney(outstandingAdvance)}).`,
       )
       return
     }
@@ -292,7 +297,7 @@ function EditDraftPayslipModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-bold text-slate-900">Edit Draft Payslip</h3>
@@ -306,7 +311,7 @@ function EditDraftPayslipModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -325,9 +330,7 @@ function EditDraftPayslipModal({
               )}
 
               {!loading && lineItems.length === 0 && (
-                <p className="mt-3 text-sm text-slate-500">
-                  Nothing to pay for this period yet.
-                </p>
+                <EmptyState message="Nothing to pay for this period yet." className="mt-3" />
               )}
 
               {!loading && (
@@ -345,14 +348,14 @@ function EditDraftPayslipModal({
                             aria-label="Line description"
                             value={item.description}
                             onChange={(e) => updateLine(index, { description: e.target.value })}
-                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-slate-900 focus:border-slate-500 focus:outline-none"
+                            className="min-w-0 flex-1 border border-slate-300 px-2 py-1 text-slate-900 focus:border-slate-500 focus:outline-none"
                           />
                         ) : (
                           <span className="flex-1 text-slate-600">
                             {item.description}
                             {isAdjusted && (
                               <span className="mt-0.5 block text-xs text-amber-700">
-                                Adjusted — auto was {formatPeso(item.autoAmount!)}{' '}
+                                Adjusted — auto was {formatMoney(item.autoAmount!)}{' '}
                                 <button
                                   type="button"
                                   onClick={() => updateLine(index, { amount: String(item.autoAmount) })}
@@ -371,7 +374,7 @@ function EditDraftPayslipModal({
                           aria-label="Amount"
                           value={item.amount}
                           onChange={(e) => updateLine(index, { amount: e.target.value })}
-                          className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-right font-medium text-slate-900 focus:border-slate-500 focus:outline-none"
+                          className="w-28 border border-slate-300 px-2 py-1 text-right font-medium text-slate-900 focus:border-slate-500 focus:outline-none"
                         />
                         {item.autoAmount === null && (
                           <button
@@ -396,7 +399,7 @@ function EditDraftPayslipModal({
                   {lineItems.length > 0 && (
                     <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
                       <span>Gross pay</span>
-                      <span>{formatPeso(grossPay)}</span>
+                      <span>{formatMoney(grossPay)}</span>
                     </div>
                   )}
                 </div>
@@ -410,8 +413,8 @@ function EditDraftPayslipModal({
                 </h4>
                 <p className="mt-1 text-xs text-slate-500">
                   This week's share of the month, based on projected monthly pay of{' '}
-                  {formatPeso(contributions.projectedMonthlyPay)} (SSS MSC{' '}
-                  {formatPeso(contributions.sss_msc)}). The month's last payslip settles the
+                  {formatMoney(contributions.projectedMonthlyPay)} (SSS MSC{' '}
+                  {formatMoney(contributions.sss_msc)}). The month's last payslip settles the
                   exact amount.
                   {isMinimumWageEarner && ' Minimum wage earner — no withholding tax.'}
                 </p>
@@ -433,7 +436,7 @@ function EditDraftPayslipModal({
                             onChange={(e) =>
                               setDeductionOverrides((overrides) => ({ ...overrides, [key]: e.target.value }))
                             }
-                            className={`w-full rounded-lg border px-2 py-1 text-right text-slate-900 focus:border-slate-500 focus:outline-none ${
+                            className={`w-full border px-2 py-1 text-right text-slate-900 focus:border-slate-500 focus:outline-none ${
                               deductions[key] !== roundPeso(autoDeductions[key])
                                 ? 'border-amber-400 bg-amber-50'
                                 : 'border-slate-300'
@@ -457,15 +460,15 @@ function EditDraftPayslipModal({
                 )}
                 <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-2 text-sm font-medium text-slate-900">
                   <span>Total deducted from employee</span>
-                  <span>-{formatPeso(totalEmployeeDeductions(deductions))}</span>
+                  <span>-{formatMoney(totalEmployeeDeductions(deductions))}</span>
                 </div>
               </div>
             )}
 
-            <div className="mt-6 rounded-lg bg-slate-50 p-4">
+            <div className="mt-6 bg-slate-50 p-4">
               <h4 className="font-medium text-slate-900">Cash advance</h4>
               <p className="mt-1 text-sm text-slate-500">
-                Outstanding balance: ₱{outstandingAdvance.toLocaleString()}
+                Outstanding balance: {formatMoney(outstandingAdvance)}
               </p>
               <label className="mt-3 flex flex-col gap-1 text-sm font-medium text-slate-700">
                 Deduct this payslip (optional)
@@ -476,15 +479,15 @@ function EditDraftPayslipModal({
                   step="0.01"
                   value={deductAmount}
                   onChange={(e) => setDeductAmount(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                  className="border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
                 />
               </label>
             </div>
 
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+            <div className="mt-4 flex items-center justify-between border border-slate-200 px-4 py-3">
               <span className="font-medium text-slate-700">Net pay</span>
               <span className="text-lg font-bold text-slate-900">
-                {formatPeso(netPay)}
+                {formatMoney(netPay)}
               </span>
             </div>
           </>
@@ -494,14 +497,14 @@ function EditDraftPayslipModal({
           <button
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || loading || lineItems.length === 0}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting ? 'Saving...' : 'Save Draft'}
           </button>

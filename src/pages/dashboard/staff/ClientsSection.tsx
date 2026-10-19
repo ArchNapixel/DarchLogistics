@@ -10,6 +10,9 @@ import { supabase } from '../../../lib/supabaseClient'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import EmptyState from '../../../components/EmptyState'
 
 type Client = {
   client_id: number
@@ -94,15 +97,12 @@ function ClientsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Client Accounts</h2>
+      <PageHeader title="Clients" subtitle="Client accounts, logins and booking history." />
 
       {clients.length === 0 ? (
-        <p className="mt-4 text-slate-500">
-          No clients yet -- these are created automatically when a quote
-          request is approved.
-        </p>
+        <EmptyState message="No clients yet." hint="These are created automatically when a quote request is approved." className="mt-4" />
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -130,9 +130,7 @@ function ClientsSection() {
                         {client.client_name}
                       </button>
                       {isDelinquent && (
-                        <span className="ml-2 bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
-                          Delinquent
-                        </span>
+                        <span className="ml-2"><StatusBadge status="Delinquent" /></span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
@@ -142,21 +140,13 @@ function ClientsSection() {
                       {client.phone_number ?? '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`px-3 py-1 text-xs font-semibold ${
-                          isLinked
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {isLinked ? 'Set Up' : 'Not Set Up'}
-                      </span>
+                      <StatusBadge status={isLinked ? 'Set Up' : 'Not Set Up'} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       {!isLinked && (
                         <button
                           onClick={() => setSelectedClient(client)}
-                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                          className="btn-secondary px-3 py-1.5 text-xs font-medium"
                         >
                           Set Up Account
                         </button>

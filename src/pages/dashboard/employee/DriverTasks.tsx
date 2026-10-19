@@ -13,9 +13,11 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { formatDate } from '../../../lib/quoteRequest'
-import UpdateStatusControl, { TRIP_STATUS_LABELS } from './UpdateStatusControl'
+import UpdateStatusControl from './UpdateStatusControl'
 import AddExpenseModal from './AddExpenseModal'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type Trip = {
   itinerary_id: number
@@ -27,24 +29,6 @@ type Trip = {
   plate_number: string | null
   trailer_label: string | null
   expenses: { amount: number; description: string }[]
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-gray-100 text-gray-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-purple-100 text-purple-700',
-  InTransit: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-export function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {TRIP_STATUS_LABELS[status] ?? status}
-    </span>
-  )
 }
 
 function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
@@ -204,7 +188,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
   if (loading) return <p className="text-slate-500">Loading your trips...</p>
   if (error) return <p className="text-red-700">{error}</p>
   if (trips.length === 0) {
-    return <p className="text-slate-500">Nothing assigned yet.</p>
+    return <EmptyState message="Nothing assigned yet." />
   }
 
   function renderTrip(trip: Trip) {
@@ -214,7 +198,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
     return (
       <div
         key={trip.itinerary_id}
-        className={`rounded-xl border p-5 ${
+        className={`border p-5 ${
           onTheRoad ? 'border-slate-900' : 'border-slate-200'
         }`}
       >
@@ -246,7 +230,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             />
             <button
               onClick={() => setExpenseTripId(trip.itinerary_id)}
-              className="mt-3 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="mt-3 border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
               Add Expense
             </button>
@@ -259,11 +243,11 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           {trip.expenses.length > 0 && (
             <div className="text-sm text-slate-600">
               <p className="font-medium text-slate-700">
-                Your expenses: ₱{expenseTotal.toLocaleString()}
+                Your expenses: {formatMoney(expenseTotal)}
               </p>
               {trip.expenses.map((e, i) => (
                 <p key={i} className="text-xs text-slate-500">
-                  ₱{Number(e.amount).toLocaleString()} · {e.description}
+                  {formatMoney(Number(e.amount))} · {e.description}
                 </p>
               ))}
             </div>

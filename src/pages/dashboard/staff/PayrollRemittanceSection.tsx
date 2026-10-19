@@ -1,4 +1,4 @@
-// PayrollRemittanceSection (Admin, Accounting -> Payroll & Remittances):
+// PayrollRemittanceSection (Admin, Accounting -> Remittances):
 // pick a month, see what has to be paid over to SSS / PhilHealth / Pag-IBIG /
 // BIR (employee + employer shares) and what payroll cost the company.
 // Read-only, built from the month's FINALIZED payslips -- all the numbers
@@ -12,10 +12,9 @@ import {
   loadRemittanceReport,
 } from '../../../lib/remittanceReport'
 import { agencyAmounts, type EmployeeRemit, type RemitTotals } from '../../../lib/remittanceTotals'
-
-function formatMoney(value: number): string {
-  return `₱${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type Tab = 'remittances' | 'cost'
 
@@ -71,8 +70,10 @@ function PayrollRemittanceSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">Payroll &amp; Remittances</h2>
+      <PageHeader
+        title="Remittances"
+        subtitle="What to remit to SSS, PhilHealth, Pag-IBIG and BIR for a month."
+        actions={<>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="remit-month" className="text-sm font-medium text-slate-700">
             Month
@@ -83,23 +84,24 @@ function PayrollRemittanceSection() {
             value={month}
             max={currentRemittanceMonth()}
             onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+            className="border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
           />
           <button
             onClick={handleDownload}
             disabled={!hasData}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Download CSV
           </button>
         </div>
-      </div>
+        </>}
+      />
       <p className="mt-1 text-sm text-slate-500">
         Finalized payslips whose pay period ends in this month.
       </p>
 
       {draftCount > 0 && (
-        <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p className="mt-4 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {draftCount} draft payslip{draftCount === 1 ? '' : 's'} for this month{' '}
           {draftCount === 1 ? "isn't" : "aren't"} finalized yet, so{' '}
           {draftCount === 1 ? "it isn't" : "they aren't"} counted below. Finalize{' '}
@@ -111,7 +113,7 @@ function PayrollRemittanceSection() {
       {loading && <p className="mt-4 text-slate-500">Loading payslips...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && totals && totals.payslips === 0 && (
-        <p className="mt-4 text-slate-500">No finalized payslips for this month.</p>
+        <EmptyState message="No finalized payslips for this month." className="mt-4" />
       )}
 
       {hasData && totals && (
@@ -126,7 +128,7 @@ function PayrollRemittanceSection() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                className={`px-3 py-1.5 text-sm font-medium ${
                   tab === key
                     ? 'bg-slate-900 text-white'
                     : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -150,7 +152,7 @@ function PayrollRemittanceSection() {
 
 function Card({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
@@ -178,7 +180,7 @@ function RemittancesTab({ employees, totals }: { employees: EmployeeRemit[]; tot
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
@@ -238,7 +240,7 @@ function CostTab({ employees, totals }: { employees: EmployeeRemit[]; totals: Re
         <Card label="Net pay" value={formatMoney(totals.net_pay)} note="what employees take home" />
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>

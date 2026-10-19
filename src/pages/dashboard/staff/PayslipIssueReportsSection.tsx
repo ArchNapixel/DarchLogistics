@@ -9,6 +9,8 @@ import {
   type PendingPayslipIssue,
 } from '../../../lib/payslipIssueReports'
 import { promptDialog } from '../../../components/ConfirmDialog'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function PayslipIssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
@@ -83,24 +85,24 @@ function PayslipIssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {reports.length === 0 ? (
-        <p className="text-slate-500">No pending payslip issue reports.</p>
+        <EmptyState message="No pending payslip issue reports." />
       ) : (
         <div className="grid gap-3">
           {reports.map((report) => (
             <div
               key={report.report_id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{report.employee_name}</p>
                 <span className="text-xs text-slate-500">
-                  {new Date(report.created_at).toLocaleDateString()}
+                  {formatDate(report.created_at)}
                 </span>
               </div>
               <p className="mt-1 text-sm text-slate-500">
@@ -110,7 +112,7 @@ function PayslipIssueReportsSection({ onChanged }: { onChanged?: () => void }) {
               <button
                 onClick={() => handleResolve(report)}
                 disabled={resolvingId === report.report_id}
-                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                className="btn-primary mt-3 px-3 py-1.5 text-sm font-medium"
               >
                 {resolvingId === report.report_id ? 'Saving...' : 'Resolve'}
               </button>

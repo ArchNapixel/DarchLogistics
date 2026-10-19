@@ -6,7 +6,9 @@ import { supabase } from '../../../lib/supabaseClient'
 import QuoteReviewModal from './QuoteReviewModal'
 import NewQuoteRequestModal from './NewQuoteRequestModal'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { formatDate } from '../../../lib/quoteRequest'
+import PageHeader from '../../../components/PageHeader'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -99,22 +101,23 @@ function QuoteRequestsSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">
-          Client Quotations
-        </h2>
-        <button
-          onClick={() => setShowNewQuote(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          New Quote
-        </button>
-      </div>
+      <PageHeader
+        title="Quotations"
+        subtitle="Quote requests waiting for review."
+        actions={
+          <button
+            onClick={() => setShowNewQuote(true)}
+            className="btn-primary px-4 py-2 text-sm font-medium"
+          >
+            New Quote
+          </button>
+        }
+      />
 
       {quotes.length === 0 ? (
-        <p className="mt-4 text-slate-500">No pending quote requests.</p>
+        <EmptyState message="No pending quote requests." className="mt-4" />
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -165,7 +168,7 @@ function QuoteRequestsSection() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => setSelectedQuote(quote)}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                      className="btn-secondary px-3 py-1.5 text-xs font-medium"
                     >
                       Review
                     </button>

@@ -25,7 +25,7 @@ function DuotonePhoto({ src, caption }: { src: string; caption: string }) {
   return (
     <Reveal>
     <figure>
-      <div className="relative overflow-hidden rounded-lg">
+      <div className="relative overflow-hidden">
         <img
           src={src}
           alt={caption}

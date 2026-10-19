@@ -9,13 +9,8 @@ import { supabase } from '../../../lib/supabaseClient'
 import { loadStatement, type Statement } from '../../../lib/statement'
 import { toManilaDate } from '../../../lib/payslip'
 import { COMPANY } from '../../../lib/company'
-
-function formatMoney(value: number): string {
-  return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney, formatDate } from '../../../lib/format'
 
 function StatementsSection() {
   const today = toManilaDate(new Date())
@@ -65,13 +60,15 @@ function StatementsSection() {
   }, [clientId, from, to])
 
   const clientName = clients.find((c) => String(c.client_id) === clientId)?.client_name ?? ''
-  const fieldClass = 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
+  const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
   return (
     <div>
       {/* Controls: not printed */}
-      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <h2 className="text-xl font-bold text-slate-900">Statements of Account</h2>
+      <PageHeader
+        title="Statements"
+        subtitle="Statement of account for one client and period."
+        actions={<>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Client" value={clientId} onChange={(e) => setClientId(e.target.value)} className={fieldClass}>
             <option value="">Choose a client...</option>
@@ -86,19 +83,20 @@ function StatementsSection() {
           <button
             onClick={() => window.print()}
             disabled={!statement}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Print
           </button>
         </div>
-      </div>
+        </>}
+      />
 
       {error && <p className="mt-4 text-red-700 print:hidden">{error}</p>}
       {!clientId && <p className="mt-4 text-slate-500 print:hidden">Choose a client to see their statement.</p>}
       {loading && <p className="mt-4 text-slate-500 print:hidden">Building statement...</p>}
 
       {statement && !loading && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
+        <div className="mt-4 border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>
@@ -135,7 +133,7 @@ function StatementsSection() {
               )}
               {statement.lines.map((line, i) => (
                 <tr key={i} className="border-b border-slate-100 align-top">
-                  <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{line.date}</td>
+                  <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatDate(line.date)}</td>
                   <td className="py-2 pr-3 text-slate-600">#{line.booking_id}</td>
                   <td className="py-2 pr-3 text-slate-900">{line.description}</td>
                   <td className="py-2 pr-3 text-right text-slate-900">{line.amount > 0 ? formatMoney(line.amount) : ''}</td>

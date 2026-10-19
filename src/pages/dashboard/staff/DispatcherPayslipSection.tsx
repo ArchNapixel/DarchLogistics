@@ -4,14 +4,13 @@
 // the same MyPayslipSection used there, since the viewing logic is
 // identical.
 import MyPayslipSection from '../employee/MyPayslipSection'
+import PageHeader from '../../../components/PageHeader'
 
 function DispatcherPayslipSection() {
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">My Payslips</h2>
-      <div className="mt-4">
-        <MyPayslipSection />
-      </div>
+      <PageHeader title="My Payslips" subtitle="Your finalized payslips." />
+      <MyPayslipSection />
     </div>
   )
 }

@@ -3,6 +3,7 @@
 // cashAdvanceRequests.ts -- employee submits 'Pending', staff resolves
 // it and it becomes 'Resolved'.
 import { supabase } from './supabaseClient'
+import { formatDate } from './format'
 
 export type PayslipIssueStatus = 'Pending' | 'Resolved'
 
@@ -108,7 +109,7 @@ export async function loadPendingPayslipIssues(): Promise<{
         ...row,
         employee_name: nameById.get(row.employee_id) ?? `Employee #${row.employee_id}`,
         payroll_period: payslip
-          ? `${payslip.payroll_period_start} – ${payslip.payroll_period_end}`
+          ? `${formatDate(payslip.payroll_period_start)} – ${formatDate(payslip.payroll_period_end)}`
           : `#${row.payroll_id}`,
       }
     }),

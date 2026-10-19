@@ -10,13 +10,11 @@ import {
   currentReportMonth,
   type WorkOrderCost,
 } from '../../../lib/maintenanceCostReport'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
-
-function formatMoney(value: number | null): string {
-  return value !== null ? `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '—'
-}
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 
 function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
   const [month, setMonth] = useState(currentReportMonth())
@@ -63,7 +61,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Maintenance Cost Report</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -88,16 +86,16 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
         </label>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         {loading ? (
           <p className="mt-4 text-slate-500">Loading...</p>
         ) : workOrders.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No work orders were completed this month.</p>
+          <EmptyState message="No work orders were completed this month." className="mt-4" />
         ) : (
           <div className="mt-4 grid gap-6">
-            <div className="flex flex-wrap gap-6 rounded-lg border border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap gap-6 border border-slate-200 px-4 py-3">
               <div>
                 <p className="text-xs text-slate-500">Fleet total (parts)</p>
                 <p className="text-lg font-bold text-slate-900">{formatMoney(fleetTotal)}</p>
@@ -109,7 +107,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
             </div>
 
             {unpricedTotal > 0 && (
-              <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 {unpricedTotal} part {unpricedTotal === 1 ? 'entry has' : 'entries have'} no price
                 on record (used before prices were set), so {unpricedTotal === 1 ? "it isn't" : "they aren't"}{' '}
                 in the totals.
@@ -118,7 +116,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="text-sm font-semibold text-slate-700">Cost by Vehicle</h4>
-              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+              <div className="mt-2 overflow-x-auto border border-slate-200">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                     <tr>
@@ -151,13 +149,13 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
               <h4 className="text-sm font-semibold text-slate-700">By Work Order</h4>
               <div className="mt-2 grid gap-3">
                 {workOrders.map((wo) => (
-                  <div key={`${wo.work_order_id}-${wo.completed_at}`} className="rounded-lg border border-slate-200">
+                  <div key={`${wo.work_order_id}-${wo.completed_at}`} className="border border-slate-200">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-sm">
                       <span className="font-medium text-slate-900">
                         {wo.work_order_number} · {wo.vehicle_label}
                       </span>
                       <span className="text-slate-600">
-                        {wo.maintenance_type} · {new Date(wo.completed_at).toLocaleDateString()} ·{' '}
+                        {wo.maintenance_type} · {formatDate(wo.completed_at)} ·{' '}
                         <span className="font-medium text-slate-900">{formatMoney(wo.total)}</span>
                       </span>
                     </div>
@@ -190,14 +188,14 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Close
           </button>
           <button
             onClick={handleDownload}
             disabled={loading || !month || workOrders.length === 0}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             Download CSV
           </button>

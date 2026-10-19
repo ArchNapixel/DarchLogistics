@@ -7,6 +7,8 @@ import {
   loadWorkOrderCompletions,
   type WorkOrderCompletion,
 } from '../../../lib/workOrderCompletions'
+import { formatDateTime, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function WorkOrderCompletionsSection() {
   const [completions, setCompletions] = useState<WorkOrderCompletion[]>([])
@@ -43,7 +45,7 @@ function WorkOrderCompletionsSection() {
   }
 
   if (completions.length === 0) {
-    return <p className="text-slate-500">No completed work orders yet.</p>
+    return <EmptyState message="No completed work orders yet." />
   }
 
   return (
@@ -52,14 +54,14 @@ function WorkOrderCompletionsSection() {
         {completions.map((completion) => (
           <div
             key={completion.completion_id}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="border border-slate-200 bg-white p-4 shadow-sm"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-slate-900">
                 {completion.work_order_number} — {completion.vehicle_label}
               </p>
               <span className="text-xs text-slate-500">
-                {new Date(completion.completed_at).toLocaleString()}
+                {formatDateTime(completion.completed_at)}
               </span>
             </div>
             <p className="mt-1 text-sm text-slate-500">
@@ -72,7 +74,7 @@ function WorkOrderCompletionsSection() {
                 <p>Odometer: {completion.odometer_reading.toLocaleString()}</p>
               )}
               {completion.next_service_date && (
-                <p>Next service: {completion.next_service_date}</p>
+                <p>Next service: {formatDate(completion.next_service_date)}</p>
               )}
             </div>
 

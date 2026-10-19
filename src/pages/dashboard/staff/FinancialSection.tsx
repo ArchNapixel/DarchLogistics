@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
-import { BookingStatusBadge } from './BookingsSection'
+import StatusBadge from '../../../components/StatusBadge'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import { confirmDialog } from '../../../components/ConfirmDialog'
@@ -26,10 +26,9 @@ import {
   type PaymentDetails,
 } from '../../../lib/bookingPayments'
 import { toManilaDate } from '../../../lib/payslip'
-
-function formatMoney(value: number | null): string {
-  return value !== null ? `₱${value.toLocaleString()}` : '—'
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // PaymentDetailsFields: method / date received / reference / OR number / note,
 // shown under the amount in both payment forms. Controlled by the parent.
@@ -41,7 +40,7 @@ function PaymentDetailsFields({
   onChange: (details: PaymentDetails) => void
 }) {
   const set = (patch: Partial<PaymentDetails>) => onChange({ ...details, ...patch })
-  const input = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
+  const input = 'mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
   const label = 'block text-xs font-medium text-slate-600'
 
   return (
@@ -154,7 +153,7 @@ function PartialPaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -197,7 +196,7 @@ function PartialPaymentModal({
           // Plain text box (no spinner / scroll-wheel changes); only digits and a dot are kept.
           onChange={(e) => setAmountText(e.target.value.replace(/[^0-9.]/g, ''))}
           onKeyDown={(e) => e.key === 'Enter' && canSave && save()}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
+          className="mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-slate-900"
         />
         {inputError && <p className="mt-1 text-xs text-red-700">{inputError}</p>}
 
@@ -208,7 +207,7 @@ function PartialPaymentModal({
               key={share}
               type="button"
               onClick={() => fill(remaining * share)}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
               {share * 100}%
             </button>
@@ -216,7 +215,7 @@ function PartialPaymentModal({
           <button
             type="button"
             onClick={() => fill(remaining)}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             Full remaining
           </button>
@@ -227,7 +226,7 @@ function PartialPaymentModal({
 
         {/* Preview of what the balance becomes */}
         {amountText !== '' && !inputError && (
-          <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             Balance after this payment:{' '}
             <span className="font-semibold text-slate-900">{formatMoney(remaining - amount)}</span>
             {remaining - amount === 0 && ' (fully paid)'}
@@ -235,12 +234,12 @@ function PartialPaymentModal({
         )}
 
         {saveError && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>
         )}
 
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
-          <button onClick={save} disabled={!canSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Record payment'}</button>
+          <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+          <button onClick={save} disabled={!canSave} className="btn-primary px-4 py-2 text-sm font-medium">{saving ? 'Saving...' : 'Record payment'}</button>
         </div>
       </div>
     </div>
@@ -402,7 +401,7 @@ function FinancialActionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-2xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -418,7 +417,7 @@ function FinancialActionModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -467,27 +466,27 @@ function FinancialActionModal({
         </div>
 
         {booking.balance_due < 0 && (
-          <div className="mt-6 rounded-lg bg-amber-50 p-4">
+          <div className="mt-6 bg-amber-50 p-4">
             <h4 className="font-medium text-amber-900">
               Refund due: {formatMoney(-booking.balance_due)}
             </h4>
             <p className="mt-1 text-xs text-amber-800">
               The client has paid more than what's owed. Click once the money has been given back.
             </p>
-            <button onClick={refundOverpayment} disabled={saving} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Mark Refunded'}</button>
+            <button onClick={refundOverpayment} disabled={saving} className="btn-primary mt-3 px-4 py-2 text-sm font-medium">{saving ? 'Saving...' : 'Mark Refunded'}</button>
           </div>
         )}
 
-        <div className="mt-6 rounded-lg bg-slate-50 p-4">
+        <div className="mt-6 bg-slate-50 p-4">
           <h4 className="font-medium text-slate-900">Record payment received</h4>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" />
-            <button onClick={savePayment} disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save Payment'}</button>
+            <input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount" className="w-full border border-slate-300 bg-white px-3 py-2 text-slate-900" />
+            <button onClick={savePayment} disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">{saving ? 'Saving...' : 'Save Payment'}</button>
           </div>
           <PaymentDetailsFields details={paymentDetails} onChange={setPaymentDetails} />
         </div>
 
-        <div className="mt-4 rounded-lg bg-slate-50 p-4">
+        <div className="mt-4 bg-slate-50 p-4">
           <h4 className="font-medium text-slate-900">Override amount to pay</h4>
           <p className="mt-1 text-xs text-slate-500">
             Defaults to rate x trips completed ({formatMoney(booking.computed_billable_amount)}).
@@ -498,27 +497,27 @@ function FinancialActionModal({
             reset it.
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="number" min="0" step="0.01" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" />
-            <button onClick={saveOverride} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">{saving ? 'Saving...' : 'Save Override'}</button>
+            <input type="number" min="0" step="0.01" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} className="w-full border border-slate-300 bg-white px-3 py-2 text-slate-900" />
+            <button onClick={saveOverride} disabled={saving} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">{saving ? 'Saving...' : 'Save Override'}</button>
             {booking.amount_to_pay !== null && (
-              <button onClick={resetOverride} disabled={saving} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50">Reset to computed</button>
+              <button onClick={resetOverride} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50">Reset to computed</button>
             )}
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg bg-slate-50 p-4">
+        <div className="mt-4 bg-slate-50 p-4">
           <h4 className="font-medium text-slate-900">Invoice number</h4>
           <p className="mt-1 text-xs text-slate-500">
             The number printed on this booking's invoice. Leave blank to clear it.
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="text" maxLength={50} value={invoiceText} onChange={(e) => setInvoiceText(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" />
-            <button onClick={saveInvoice} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">{saving ? 'Saving...' : 'Save Invoice No.'}</button>
+            <input type="text" maxLength={50} value={invoiceText} onChange={(e) => setInvoiceText(e.target.value)} className="w-full border border-slate-300 bg-white px-3 py-2 text-slate-900" />
+            <button onClick={saveInvoice} disabled={saving} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">{saving ? 'Saving...' : 'Save Invoice No.'}</button>
           </div>
         </div>
 
         <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Close</button>
+          <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Close</button>
         </div>
       </div>
     </div>
@@ -719,22 +718,22 @@ function FinancialSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Bills Receivable</h2>
+      <PageHeader title="Bills Receivable" subtitle="What each client owes, payments received, and refunds." />
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
       {loading && <p className="mt-4 text-slate-500">Loading financial records...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
-      {!loading && !error && bookings.length === 0 && <p className="mt-4 text-slate-500">No bookings yet.</p>}
+      {!loading && !error && bookings.length === 0 && <EmptyState message="No bookings yet." className="mt-4" />}
       {!loading && !error && bookings.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">
           {(Object.keys(TAB_LABELS) as Tab[]).map((key) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              className={`px-3 py-1.5 text-sm font-medium ${
                 tab === key
                   ? 'bg-slate-900 text-white'
                   : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -752,10 +751,10 @@ function FinancialSection() {
         </p>
       )}
       {!loading && !error && bookings.length > 0 && visibleBookings.length === 0 && (
-        <p className="mt-4 text-slate-500">Nothing in this tab.</p>
+        <EmptyState message="Nothing in this tab." className="mt-4" />
       )}
       {!loading && !error && visibleBookings.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -778,7 +777,7 @@ function FinancialSection() {
                     <td className="px-4 py-3 text-slate-900">#{booking.booking_id}</td>
                     <td className="px-4 py-3 text-slate-900">{booking.client_name}</td>
                     <td className="px-4 py-3 text-slate-600">{booking.invoice_number || '—'}</td>
-                    <td className="px-4 py-3"><BookingStatusBadge status={booking.status} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={booking.status} /></td>
                     <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
@@ -786,7 +785,9 @@ function FinancialSection() {
                       {booking.balance_due < 0 ? (
                         <span className="text-amber-700">Refund {formatMoney(-booking.balance_due)}</span>
                       ) : (
-                        formatMoney(booking.balance_due)
+                        <span className={booking.balance_due > 0 ? 'font-semibold text-primary' : ''}>
+                          {formatMoney(booking.balance_due)}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -795,13 +796,13 @@ function FinancialSection() {
                           <>
                             <button
                               onClick={() => openPayment(booking, false)}
-                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              className="border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                             >
                               Partial Payment
                             </button>
                             <button
                               onClick={() => openPayment(booking, true)}
-                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                              className="btn-secondary px-3 py-1.5 text-xs font-medium"
                             >
                               Paid Full
                             </button>

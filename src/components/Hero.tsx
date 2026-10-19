@@ -48,13 +48,13 @@ function Hero() {
           >
             <Link
               to="/quote-request"
-              className="rounded-lg bg-brand-steel px-6 py-3 text-center text-sm font-bold tracking-wide text-white uppercase transition hover:-translate-y-0.5 hover:bg-brand-steel-dark hover:shadow-lg"
+              className="bg-brand-steel px-6 py-3 text-center text-sm font-bold tracking-wide text-white uppercase transition hover:-translate-y-0.5 hover:bg-brand-steel-dark hover:shadow-lg"
             >
               Request a Quote
             </Link>
             <a
               href="tel:09660475467"
-              className="rounded-lg border border-slate-400/60 px-6 py-3 text-center text-sm font-medium text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/10"
+              className="border border-slate-400/60 px-6 py-3 text-center text-sm font-medium text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/10"
             >
               Dispatch: 09660475467
             </a>

@@ -13,7 +13,9 @@ import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
 import MaintenanceRequestsSection from './MaintenanceRequestsSection'
 import MaintenanceCostReportModal from './MaintenanceCostReportModal'
 import WorkOrderDetailModal, { type WorkOrderDetail } from './WorkOrderDetailModal'
-import { formatDate } from '../../../lib/quoteRequest'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
 
 type WorkOrder = WorkOrderDetail & {
   mechanic_name: string
@@ -23,24 +25,6 @@ type Mechanic = {
   employee_id: number
   full_name: string
   active_work_orders: number
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Created: 'bg-gray-100 text-gray-700',
-  Scheduled: 'bg-blue-100 text-blue-700',
-  'In Progress': 'bg-orange-100 text-orange-700',
-  'On Hold': 'bg-yellow-100 text-yellow-700',
-  Completed: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
 }
 
 const TABS = ['Active', 'Completed', 'Requests', 'Schedules'] as const
@@ -155,23 +139,24 @@ function MaintenanceSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Maintenance</h2>
-        <div className="flex gap-3">
+      <PageHeader
+        title="Maintenance"
+        subtitle="Work orders for trucks and trailers."
+        actions={<>
           <button
             onClick={() => setShowCreate(true)}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             New Work Order
           </button>
           <button
             onClick={() => setShowCostReport(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
             Cost Report
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {loading && <p className="mt-4 text-slate-500">Loading maintenance data...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
@@ -210,7 +195,7 @@ function MaintenanceSection() {
                   No {activeTab.toLowerCase()} work orders.
                 </p>
               ) : (
-                <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
                   <table className="w-full text-left text-sm">
                     <thead className="border-b border-slate-200 text-slate-500">
                       <tr>
@@ -271,7 +256,7 @@ function MaintenanceSection() {
                   No mechanics found. Add one under Employees.
                 </p>
               ) : (
-                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="mt-3 overflow-hidden border border-slate-200 bg-white shadow-sm">
                   {mechanics.map((mechanic) => (
                     <div
                       key={mechanic.employee_id}

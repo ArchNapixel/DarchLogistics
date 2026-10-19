@@ -15,15 +15,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import BookingDetailModal from './BookingDetailModal'
-import { BookingStatusBadge, type Booking } from './BookingsSection'
+import { type Booking } from './BookingsSection'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type ClientBooking = Booking & { cargo_type: string | null }
 
 const ONGOING_STATUSES = new Set(['Draft', 'Confirmed', 'InProgress'])
-
-function formatMoney(value: number | null): string {
-  return value !== null ? `₱${value.toLocaleString()}` : '—'
-}
 
 function ClientBookingHistoryModal({
   client,
@@ -165,7 +164,7 @@ function ClientBookingHistoryModal({
 
   function BookingTable({ rows }: { rows: ClientBooking[] }) {
     return (
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
@@ -185,7 +184,7 @@ function ClientBookingHistoryModal({
                 onClick={() => setSelectedBooking(booking)}
                 className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
               >
-                <td className="px-4 py-3 text-slate-600">{booking.date}</td>
+                <td className="px-4 py-3 text-slate-600">{formatDate(booking.date)}</td>
                 <td className="px-4 py-3 text-slate-600">
                   {booking.pickup_location} → {booking.delivery_location}
                 </td>
@@ -193,7 +192,7 @@ function ClientBookingHistoryModal({
                   {booking.cargo_type ?? '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <BookingStatusBadge status={booking.status} />
+                  <StatusBadge status={booking.status} />
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   {formatMoney(booking.rate)}
@@ -215,7 +214,7 @@ function ClientBookingHistoryModal({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-        <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+        <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">{client.client_name}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -233,7 +232,7 @@ function ClientBookingHistoryModal({
           {!loading && error && <p className="text-red-700">{error}</p>}
 
           {!loading && !error && bookings.length === 0 && (
-            <p className="text-slate-500">No bookings yet.</p>
+            <EmptyState message="No bookings yet." />
           )}
 
           {!loading && !error && bookings.length > 0 && (
@@ -266,7 +265,7 @@ function ClientBookingHistoryModal({
           <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
             <button
               onClick={onClose}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              className="btn-secondary px-4 py-2 text-sm font-medium"
             >
               Close
             </button>

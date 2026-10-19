@@ -4,6 +4,10 @@ import { supabase } from '../../../lib/supabaseClient'
 import AddTruckModal from './AddTruckModal'
 import AddTrailerModal, { type EditableTrailer } from './AddTrailerModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import EmptyState from '../../../components/EmptyState'
+import { formatDate } from '../../../lib/format'
 
 type Truck = {
   plate_number: string
@@ -22,24 +26,6 @@ type Trailer = {
   registration_number: string | null
   current_status: string | null
   last_maintenance_date: string | null
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Available: 'bg-green-100 text-green-700',
-  'In Transit': 'bg-blue-100 text-blue-700',
-  'Under Maintenance': 'bg-orange-100 text-orange-700',
-  'Out of Service': 'bg-red-100 text-red-700',
-}
-
-function FleetStatusBadge({ status }: { status: string | null }) {
-  const safeStatus = status ?? 'Available'
-  const style = STATUS_STYLES[safeStatus] ?? 'bg-slate-100 text-slate-700'
-
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${style}`}>
-      {safeStatus}
-    </span>
-  )
 }
 
 // Read-only popup shown when a truck/trailer row is clicked.
@@ -61,12 +47,12 @@ function VehicleDetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg"
+        className="w-full max-w-md bg-white p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-          <FleetStatusBadge status={status} />
+          <StatusBadge status={status ?? 'Available'} />
         </div>
         <dl className="mt-4 space-y-2 text-sm">
           {rows.map(([label, value]) => (
@@ -78,7 +64,7 @@ function VehicleDetailModal({
         </dl>
         <button
           onClick={onClose}
-          className="mt-6 w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          className="btn-secondary mt-6 w-full px-4 py-2 text-sm font-medium"
         >
           Close
         </button>
@@ -225,27 +211,28 @@ function FleetSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Fleet Master</h2>
-        {activeTab === 'Trucks' ? (
+      <PageHeader
+        title="Fleet"
+        subtitle="Trucks and trailers, their status and documents."
+        actions={activeTab === 'Trucks' ? (
           <button
             onClick={() => setShowAddTruck(true)}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             Add Truck
           </button>
         ) : (
           <button
             onClick={() => setShowAddTrailer(true)}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             Add Trailer
           </button>
         )}
-      </div>
+      />
 
       {actionError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {actionError}
         </div>
       )}
@@ -269,11 +256,15 @@ function FleetSection() {
       {loading ? (
         <div className="mt-6 text-sm text-slate-500">Loading fleet...</div>
       ) : error ? (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-6 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
+      ) : activeTab === 'Trucks' && trucks.length === 0 ? (
+        <EmptyState message="No trucks yet." hint='Use "Add Truck" to add one.' className="mt-4" />
+      ) : activeTab === 'Trailers' && trailers.length === 0 ? (
+        <EmptyState message="No trailers yet." hint='Use "Add Trailer" to add one.' className="mt-4" />
       ) : activeTab === 'Trucks' ? (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -294,10 +285,10 @@ function FleetSection() {
                   <td className="px-4 py-3 text-slate-900">{truck.plate_number}</td>
                   <td className="px-4 py-3 text-slate-600">{truck.model || 'N/A'}</td>
                   <td className="px-4 py-3">
-                    <FleetStatusBadge status={truck.current_status} />
+                    <StatusBadge status={truck.current_status ?? 'Available'} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {truck.last_service_date || 'N/A'}
+                    {truck.last_service_date ? formatDate(truck.last_service_date) : 'N/A'}
                   </td>
                   {/* stopPropagation so action buttons don't also open the detail popup */}
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -316,7 +307,7 @@ function FleetSection() {
           </table>
         </div>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -338,7 +329,7 @@ function FleetSection() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{trailer.trailer_type}</td>
                   <td className="px-4 py-3">
-                    <FleetStatusBadge status={trailer.current_status} />
+                    <StatusBadge status={trailer.current_status ?? 'Available'} />
                   </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-3">
@@ -372,8 +363,8 @@ function FleetSection() {
                 ? `${viewingTruck.current_odometer.toLocaleString()} km`
                 : 'N/A',
             ],
-            ['Last Service Date', viewingTruck.last_service_date || 'N/A'],
-            ['Next Service Date', viewingTruck.next_service_date || 'N/A'],
+            ['Last Service Date', viewingTruck.last_service_date ? formatDate(viewingTruck.last_service_date) : 'N/A'],
+            ['Next Service Date', viewingTruck.next_service_date ? formatDate(viewingTruck.next_service_date) : 'N/A'],
           ]}
         />
       )}

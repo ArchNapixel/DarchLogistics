@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import ReportDamageModal from './ReportDamageModal'
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type DamageCharge = {
   damage_id: number
@@ -13,10 +16,6 @@ type DamageCharge = {
   charge_to: 'Client' | 'Company'
   damage_status: string
   created_at: string | null
-}
-
-function formatMoney(value: number | null) {
-  return value === null ? '—' : `₱${value.toLocaleString()}`
 }
 
 function DamageChargesSection() {
@@ -177,35 +176,29 @@ function DamageChargesSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Damage Charges</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Review reported delivery damage and decide whether the cost is charged to the client or the company.
-            Client charges are added to that booking's balance.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowReport(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Report Damage
-        </button>
-      </div>
+      <PageHeader
+        title="Damage Charges"
+        subtitle="Decide whether reported delivery damage is charged to the client (added to their balance) or the company."
+        actions={
+          <button
+            type="button"
+            onClick={() => setShowReport(true)}
+            className="btn-primary px-4 py-2 text-sm font-medium"
+          >
+            Report Damage
+          </button>
+        }
+      />
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
       {loading && <p className="mt-4 text-slate-500">Loading damage reports...</p>}
       {!loading && !error && damageCharges.length === 0 && (
-        <p className="mt-4 text-slate-500">
-          No delivery damage has been reported. Use Report Damage above, or record it when
-          marking a trip delivered on the Dispatch Board.
-        </p>
+        <EmptyState message="No delivery damage has been reported." hint="Use Report Damage above, or record it when marking a trip delivered on the Dispatch Board." className="mt-4" />
       )}
       {!loading && damageCharges.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -231,7 +224,7 @@ function DamageChargesSection() {
                         type="button"
                         onClick={() => approveCharge(damage, 'Client')}
                         disabled={savingId === damage.damage_id}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Client' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Client' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
                       >
                         Client
                       </button>
@@ -239,7 +232,7 @@ function DamageChargesSection() {
                         type="button"
                         onClick={() => approveCharge(damage, 'Company')}
                         disabled={savingId === damage.damage_id}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Company' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Company' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
                       >
                         Company
                       </button>

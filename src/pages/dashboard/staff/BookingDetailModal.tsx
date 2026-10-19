@@ -27,14 +27,11 @@ import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
 import { freeVehicleIfIdle } from '../../../lib/fleetStatus'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { PAYMENT_TERMS_LABELS, formatDate } from '../../../lib/quoteRequest'
+import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
-import { BookingStatusBadge } from './BookingsSection'
+import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
-
-function formatMoney(value: number | null): string {
-  return value !== null ? `₱${value.toLocaleString()}` : '—'
-}
+import { formatMoney, formatDate } from '../../../lib/format'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
 // here rather than imported, like EmployeeDetailModal does).
@@ -45,14 +42,6 @@ const TRIP_STATUS_LABELS: Record<string, string> = {
   InTransit: 'In transit',
   Delivered: 'Delivered',
   Cancelled: 'Cancelled',
-}
-const TRIP_STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-slate-100 text-slate-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-indigo-100 text-indigo-700',
-  InTransit: 'bg-amber-100 text-amber-800',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
 }
 const ON_THE_ROAD = new Set(['Dispatched', 'PickedUp', 'InTransit'])
 
@@ -455,7 +444,7 @@ function BookingDetailModal({
       <div
         className={
           inline
-            ? 'rounded-xl border border-slate-200 bg-white p-5 shadow-sm'
+            ? 'border border-slate-200 bg-white p-5 shadow-sm'
             : 'max-h-[92vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg'
         }
       >
@@ -472,7 +461,7 @@ function BookingDetailModal({
             <p className="mt-0.5 text-sm text-slate-600">{booking.client_name}</p>
           </div>
           <div className="flex items-center gap-3">
-            <BookingStatusBadge status={booking.status} />
+            <StatusBadge status={booking.status} />
             {inline && onMinimize && (
               <button
                 type="button"
@@ -500,7 +489,7 @@ function BookingDetailModal({
           <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-800">
             <span className="font-semibold">
               {booking.status === 'Cancelled' ? 'Cancelled' : 'Remaining trips cancelled'}
-              {details.cancelled_at && ` on ${formatDate(details.cancelled_at.slice(0, 10))}`}:
+              {details.cancelled_at && ` on ${formatDate(details.cancelled_at)}`}:
             </span>{' '}
             {details.cancellation_reason}
           </p>
@@ -626,13 +615,7 @@ function BookingDetailModal({
                     <tr key={trip.itinerary_id} className="border-b border-slate-100 last:border-0">
                       <td className="px-3 py-2 text-slate-900">#{trip.itinerary_id}</td>
                       <td className="px-3 py-2">
-                        <span
-                          className={`whitespace-nowrap px-2 py-0.5 text-xs font-semibold ${
-                            TRIP_STATUS_STYLES[trip.status] ?? 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {TRIP_STATUS_LABELS[trip.status] ?? trip.status}
-                        </span>
+                        <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                         {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
@@ -675,7 +658,7 @@ function BookingDetailModal({
                           onClick={() =>
                             setDocsTripId(docsTripId === trip.itinerary_id ? null : trip.itinerary_id)
                           }
-                          className={`whitespace-nowrap rounded-lg border px-3 py-1 text-xs font-medium ${
+                          className={`whitespace-nowrap border px-3 py-1 text-xs font-medium ${
                             docsTripId === trip.itinerary_id
                               ? 'border-slate-900 bg-slate-900 text-white'
                               : 'border-slate-300 text-slate-700 hover:bg-slate-100'
@@ -792,7 +775,7 @@ function BookingDetailModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                className="btn-secondary px-4 py-2 text-sm font-medium"
               >
                 Close
               </button>

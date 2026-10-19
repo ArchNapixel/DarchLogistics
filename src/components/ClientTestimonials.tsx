@@ -65,7 +65,7 @@ function ClientTestimonials() {
 
         <div className="mt-6 flex flex-wrap items-center gap-4">
           <span
-            className={`rounded px-3 py-1.5 text-sm font-bold tracking-wide text-white uppercase ${summaryTone(summary.label)}`}
+            className={`px-3 py-1.5 text-sm font-bold tracking-wide text-white uppercase ${summaryTone(summary.label)}`}
           >
             {summary.label}
           </span>

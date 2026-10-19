@@ -6,6 +6,8 @@ import {
   loadWorkOrderAcceptanceLog,
   type WorkOrderAcceptanceEntry,
 } from '../../../lib/workOrderAcceptanceLog'
+import { formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function WorkOrderAcceptanceLogSection() {
   const [entries, setEntries] = useState<WorkOrderAcceptanceEntry[]>([])
@@ -42,12 +44,12 @@ function WorkOrderAcceptanceLogSection() {
   }
 
   if (entries.length === 0) {
-    return <p className="text-slate-500">No work orders accepted yet.</p>
+    return <EmptyState message="No work orders accepted yet." />
   }
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
@@ -62,7 +64,7 @@ function WorkOrderAcceptanceLogSection() {
                 <td className="px-4 py-3 text-slate-900">{entry.work_order_number}</td>
                 <td className="px-4 py-3 text-slate-600">{entry.employee_name}</td>
                 <td className="px-4 py-3 text-slate-600">
-                  {new Date(entry.accepted_at).toLocaleString()}
+                  {formatDateTime(entry.accepted_at)}
                 </td>
               </tr>
             ))}

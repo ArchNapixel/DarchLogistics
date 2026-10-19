@@ -231,7 +231,7 @@ function QuoteWizard({
           <button
             type="submit"
             disabled={submitting}
-            className="bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-5 py-2.5 text-sm font-medium"
           >
             {isReview
               ? submitting

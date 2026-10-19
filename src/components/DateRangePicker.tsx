@@ -6,7 +6,7 @@
 // strings (same format <input type="date"> uses), built from local
 // year/month/day, never via Date -> ISO, so timezones can't shift a day.
 import { useEffect, useRef, useState } from 'react'
-import { formatDate } from '../lib/quoteRequest'
+import { formatDate } from '../lib/format'
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 

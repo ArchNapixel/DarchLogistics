@@ -17,6 +17,8 @@ import {
   type PendingMaintenanceRequest,
 } from '../../../lib/maintenanceRequests'
 import { promptDialog } from '../../../components/ConfirmDialog'
+import { formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const { role, employeeId } = useAuth()
@@ -121,19 +123,19 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {requests.length === 0 ? (
-        <p className="text-slate-500">No pending maintenance requests.</p>
+        <EmptyState message="No pending maintenance requests." />
       ) : (
         <div className="grid gap-3">
           {requests.map((request) => (
             <div
               key={request.request_id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{request.vehicle_label}</p>
@@ -143,7 +145,7 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
               </div>
               <p className="mt-1 text-sm text-slate-500">
                 Requested by {request.requested_by_name} ·{' '}
-                {new Date(request.created_at).toLocaleString()}
+                {formatDateTime(request.created_at)}
               </p>
               <p className="mt-2 text-sm text-slate-700">{request.maintenance_type}</p>
               <p className="mt-1 text-sm text-slate-500">{request.description}</p>
@@ -153,14 +155,14 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
                   <button
                     onClick={() => handleApprove(request)}
                     disabled={decidingId === request.request_id}
-                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                    className="btn-primary px-3 py-1.5 text-sm font-medium"
                   >
                     {decidingId === request.request_id ? 'Saving...' : 'Approve'}
                   </button>
                   <button
                     onClick={() => handleReject(request)}
                     disabled={decidingId === request.request_id}
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                    className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                   >
                     Reject
                   </button>

@@ -5,6 +5,7 @@
 // not follow the dashboard's period dropdown.
 import { useEffect, useState } from 'react'
 import { loadPaymentDueReport } from '../../../lib/paymentDue'
+import { formatMoney } from '../../../lib/format'
 
 const TOP_N = 10
 
@@ -66,7 +67,7 @@ function TopCreditorsCard({ refreshKey }: { refreshKey: number }) {
               <span className="truncate text-reports-ink">{c.client_name}</span>
             </span>
             <span className="font-condensed text-lg font-semibold text-reports-ink">
-              ₱{c.balance.toLocaleString()}
+              {formatMoney(c.balance)}
             </span>
           </li>
         ))}

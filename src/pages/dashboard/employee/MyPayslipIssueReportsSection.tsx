@@ -11,20 +11,9 @@ import {
   loadPayslipIssuesForEmployee,
   type PayslipIssueReport,
 } from '../../../lib/payslipIssueReports'
-
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-orange-100 text-orange-700',
-  Resolved: 'bg-green-100 text-green-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function MyPayslipIssueReportsSection() {
   const { employeeId } = useAuth()
@@ -65,22 +54,22 @@ function MyPayslipIssueReportsSection() {
   }
 
   if (reports.length === 0) {
-    return <p className="text-slate-500">No payslip issues reported yet.</p>
+    return <EmptyState message="No payslip issues reported yet." />
   }
 
   return (
     <div className="grid gap-3">
       {reports.map((report) => (
-        <div key={report.report_id} className="rounded-xl border border-slate-200 p-4">
+        <div key={report.report_id} className="border border-slate-200 p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-slate-500">
-              {new Date(report.created_at).toLocaleDateString()}
+              {formatDate(report.created_at)}
             </p>
             <StatusBadge status={report.status} />
           </div>
           <p className="mt-2 text-sm text-slate-900">{report.description}</p>
           {report.resolution_note && (
-            <div className="mt-2 rounded-lg bg-slate-50 p-3">
+            <div className="mt-2 bg-slate-50 p-3">
               <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 Resolution
               </p>

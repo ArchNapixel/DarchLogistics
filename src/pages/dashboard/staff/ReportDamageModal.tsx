@@ -5,9 +5,9 @@
 // from MarkDeliveredModal on the Dispatch Board.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import { formatDate } from '../../../lib/quoteRequest'
 import { damageInputError, insertDamageRecord, type DamageInput } from '../../../lib/damageCharges'
 import DamageFields from './DamageFields'
+import { formatDate } from '../../../lib/format'
 
 type DeliveredTrip = {
   itinerary_id: number
@@ -23,7 +23,7 @@ function shortPlace(name: string | undefined) {
 }
 
 const fieldClasses =
-  'w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'w-full min-w-0 border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex min-w-0 flex-col gap-1 text-sm font-medium text-slate-700'
 
 function ReportDamageModal({
@@ -119,7 +119,7 @@ function ReportDamageModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Report Damage</h3>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">
@@ -132,7 +132,7 @@ function ReportDamageModal({
         </p>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         <div className="mt-4 grid gap-4">
@@ -171,14 +171,14 @@ function ReportDamageModal({
           <button
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting ? 'Saving...' : 'Report Damage'}
           </button>

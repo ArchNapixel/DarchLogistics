@@ -31,6 +31,10 @@ import {
 } from '../../../lib/payslip'
 import EditDraftPayslipModal, { type DraftToEdit } from './EditDraftPayslipModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type PayrollEntry = {
   payroll_id: number
@@ -55,28 +59,8 @@ type PayrollEntry = {
   status: string
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  Draft: 'bg-blue-100 text-blue-700',
-  Paid: 'bg-green-100 text-green-700',
-  Pending: 'bg-orange-100 text-orange-700',
-}
-
-const formatPeso = (value: number) =>
-  `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-
-function PayrollStatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
-
 function formatPeriod(start: string, end: string) {
-  const format = (d: string) =>
-    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  return `${format(start)} – ${format(end)}`
+  return `${formatDate(start)} – ${formatDate(end)}`
 }
 
 function PayrollSection() {
@@ -385,16 +369,16 @@ function PayrollSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Payroll Master</h2>
+      <PageHeader title="Payroll" subtitle="Weekly payslip drafts: review, finalize, then mark paid." />
 
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {generationWarnings.length > 0 && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mt-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-semibold">Couldn&apos;t create a draft for:</p>
           <ul className="mt-1 list-disc pl-5">
             {generationWarnings.map((warning) => (
@@ -408,14 +392,11 @@ function PayrollSection() {
       {!generating && loading && <p className="mt-4 text-slate-500">Loading payroll...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && payroll.length === 0 && (
-        <p className="mt-4 text-slate-500">
-          No payroll entries yet. Draft payslips appear here automatically once employees have trips
-          or attendance in a completed week.
-        </p>
+        <EmptyState message="No payroll entries yet." hint="Draft payslips appear here automatically once employees have trips or attendance in a completed week." className="mt-4" />
       )}
 
       {!loading && !error && drafts.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
           <p className="text-blue-900">
             <span className="font-semibold">
               {drafts.length} draft payslip{drafts.length === 1 ? '' : 's'} awaiting review
@@ -441,7 +422,7 @@ function PayrollSection() {
                 }
               }}
               disabled={reviewingId !== null}
-              className="rounded-lg bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+              className="bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
             >
               {reviewingId === 'all' ? 'Finalizing...' : `Finalize all ${draftIds.length}`}
             </button>
@@ -458,7 +439,7 @@ function PayrollSection() {
             const pendingCount = group.entries.filter((e) => e.status === 'Pending').length
             const latest = group.entries[0]
             return (
-              <div key={group.employee_id} className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white">
+              <div key={group.employee_id} className="overflow-hidden border-2 border-slate-400 bg-white">
                 <button
                   onClick={() => {
                     setOpenEmployeeId(isOpen ? null : group.employee_id)
@@ -474,7 +455,7 @@ function PayrollSection() {
                   </div>
                   {/* Chevron in the middle: points down when closed, flips up when open */}
                   <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-700 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    className={`flex h-8 w-8 items-center justify-center border border-slate-300 bg-slate-100 text-slate-700 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                   >
                     <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                       <path
@@ -486,17 +467,13 @@ function PayrollSection() {
                   </span>
                   <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
                     {draftCount > 0 && (
-                      <span className="bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-                        {draftCount} draft{draftCount === 1 ? '' : 's'}
-                      </span>
+                      <StatusBadge status="Draft" label={`${draftCount} draft${draftCount === 1 ? '' : 's'}`} />
                     )}
                     {pendingCount > 0 && (
-                      <span className="bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                        {pendingCount} to pay
-                      </span>
+                      <StatusBadge status="Pending" label={`${pendingCount} to pay`} />
                     )}
                     <span className="text-slate-500">Latest net:</span>
-                    <span className="font-medium text-slate-900">{formatPeso(latest.net_pay)}</span>
+                    <span className="font-medium text-slate-900">{formatMoney(latest.net_pay)}</span>
                   </div>
                 </button>
 
@@ -511,9 +488,9 @@ function PayrollSection() {
                           <div>
                             <p className="text-slate-900">{entry.period}</p>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              <PayrollStatusBadge status={entry.status} />
+                              <StatusBadge status={entry.status} />
                               {entry.status === 'Draft' && entry.on_hold && (
-                                <span className="bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">On Hold</span>
+                                <StatusBadge status="On Hold" />
                               )}
                               {entry.status === 'Draft' && isWeekInProgress(entry.period_end) && (
                                 <span className="bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -522,8 +499,8 @@ function PayrollSection() {
                               )}
                             </div>
                           </div>
-                          <div className="text-slate-600">Gross {formatPeso(entry.gross_pay)}</div>
-                          <div className="font-medium text-slate-900">Net {formatPeso(entry.net_pay)}</div>
+                          <div className="text-slate-600">Gross {formatMoney(entry.gross_pay)}</div>
+                          <div className="font-medium text-slate-900">Net {formatMoney(entry.net_pay)}</div>
                           <div className="col-span-2 md:col-span-1 md:justify-self-end" onClick={(e) => e.stopPropagation()}>
                             {entry.status === 'Draft' && (
                               <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -597,13 +574,13 @@ function PayrollSection() {
                                   <div key={index} className="flex items-center justify-between">
                                     <span className="text-slate-600">{item.description}</span>
                                     <span className="font-medium text-slate-900">
-                                      ₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                      {formatMoney(item.amount)}
                                     </span>
                                   </div>
                                 ))}
                                 <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
                                   <span className="text-slate-600">Gross pay</span>
-                                  <span className="font-medium text-slate-900">{formatPeso(entry.gross_pay)}</span>
+                                  <span className="font-medium text-slate-900">{formatMoney(entry.gross_pay)}</span>
                                 </div>
                                 {(
                                   [
@@ -620,18 +597,18 @@ function PayrollSection() {
                                       <span className="text-slate-600">{label}</span>
                                       <span className="font-medium text-red-600">
                                         {amount > 0 ? '-' : '+'}
-                                        {formatPeso(Math.abs(amount))}
+                                        {formatMoney(Math.abs(amount))}
                                       </span>
                                     </div>
                                   ))}
                                 <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-900">
                                   <span>Net pay</span>
-                                  <span>{formatPeso(entry.net_pay)}</span>
+                                  <span>{formatMoney(entry.net_pay)}</span>
                                 </div>
                                 {entry.status !== 'Paid' && (owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted > 0 && (
                                   <p className="text-xs text-slate-500">
                                     Cash advance owed before this payslip:{' '}
-                                    {formatPeso((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted)}
+                                    {formatMoney((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted)}
                                   </p>
                                 )}
                                 {entry.deductions_note && (

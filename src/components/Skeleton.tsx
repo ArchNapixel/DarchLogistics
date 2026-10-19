@@ -11,7 +11,7 @@ export function SkeletonTable({ rows = 5, cols = 6 }: { rows?: number; cols?: nu
     <div
       role="status"
       aria-label="Loading"
-      className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+      className="overflow-hidden border border-slate-200 bg-white shadow-sm"
     >
       <div className="flex gap-6 border-b border-slate-200 px-4 py-3">
         {Array.from({ length: cols }, (_, i) => (
@@ -34,7 +34,7 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
   return (
     <div role="status" aria-label="Loading" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div key={i} className="border border-slate-200 bg-white p-4 shadow-sm">
           <SkeletonBar className="h-7 w-10" />
           <SkeletonBar className="mt-3 w-2/3" />
           <SkeletonBar className="mt-2 h-3 w-1/2" />

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
+import { formatDate } from '../lib/format'
 
 type ComplianceRow = {
   employee_id: number
@@ -134,7 +135,7 @@ function ComplianceExpiryAlerts() {
       <button
         onClick={handleToggle}
         aria-label="Notifications"
-        className="flex items-center justify-center rounded-lg p-2 text-white/90 hover:bg-brand-steel-dark hover:text-white"
+        className="flex items-center justify-center p-2 text-white/90 hover:bg-brand-steel-dark hover:text-white"
       >
         <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
           <path
@@ -158,7 +159,7 @@ function ComplianceExpiryAlerts() {
               panel, without a document-level listener. */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
 
-          <div className="fixed inset-x-4 top-16 z-40 rounded-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border border-slate-200 bg-white shadow-lg">
+          <div className="fixed inset-x-4 top-16 z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border border-slate-200 bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
               <p className="text-sm font-semibold text-slate-900">
                 Compliance expiry notifications
@@ -189,7 +190,7 @@ function ComplianceExpiryAlerts() {
                       <p className="text-orange-800">
                         {alert.kind}{' '}
                         {alert.daysRemaining < 0 ? 'expired' : 'expires'} on{' '}
-                        {alert.date}
+                        {formatDate(alert.date)}
                         {alert.daysRemaining >= 0 &&
                           ` (${alert.daysRemaining} day${alert.daysRemaining === 1 ? '' : 's'} remaining)`}
                       </p>

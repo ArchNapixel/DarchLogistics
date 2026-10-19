@@ -12,11 +12,15 @@ import {
   type PaymentDueRow,
 } from '../../../lib/paymentDue'
 import { AGING_BUCKETS, summarizeAging, type AgingBucket, type ClientAging } from '../../../lib/arAging'
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney as formatPeso, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type ClientRow = ClientAging<PaymentDueRow>
 
+// Empty aging buckets read as "—" rather than ₱0.00.
 function formatMoney(value: number): string {
-  return value === 0 ? '—' : `₱${value.toLocaleString()}`
+  return value === 0 ? '—' : formatPeso(value)
 }
 
 // Colors per bucket so the further overdue, the louder it reads.
@@ -65,16 +69,19 @@ function ArAgingSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">AR Aging</h2>
+      <PageHeader
+        title="AR Aging"
+        subtitle="Unpaid client balances by how long they're overdue."
+        actions={<>
         <button
           onClick={load}
           disabled={loading}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           Refresh
         </button>
-      </div>
+        </>}
+      />
       <p className="mt-1 text-sm text-slate-500">
         Unpaid balances grouped by days past their due date, as of today.
       </p>
@@ -82,31 +89,31 @@ function ArAgingSection() {
       {loading && <p className="mt-4 text-slate-500">Loading balances...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && clients.length === 0 && (
-        <p className="mt-4 text-slate-500">No client owes anything right now.</p>
+        <EmptyState message="No client owes anything right now." className="mt-4" />
       )}
 
       {!loading && !error && totals && clients.length > 0 && (
         <>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total owed</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">₱{grandTotal.toLocaleString()}</p>
+              <p className="mt-1 text-lg font-bold text-primary">{formatMoney(grandTotal)}</p>
             </div>
             {buckets.map((bucket) => (
-              <div key={bucket} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={bucket} className="border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   {bucket === 'Current' || bucket === 'No due date' ? bucket : `${bucket} days`}
                 </p>
                 <p
                   className={`mt-1 text-lg font-bold ${totals[bucket] > 0 ? BUCKET_TEXT[bucket] : 'text-slate-400'}`}
                 >
-                  ₱{totals[bucket].toLocaleString()}
+                  {formatMoney(totals[bucket])}
                 </p>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
@@ -170,7 +177,7 @@ function ClientRows({
           </td>
         ))}
         <td className="px-4 py-3 text-right font-semibold text-slate-900">
-          ₱{client.total.toLocaleString()}
+          {formatMoney(client.total)}
         </td>
       </tr>
       {open && (
@@ -191,12 +198,12 @@ function ClientRows({
                       Booking #{booking.booking_id}
                     </Link>
                     <div className="flex items-center gap-3">
-                      <span className="text-slate-600">{booking.due_date ?? 'No due date'}</span>
+                      <span className="text-slate-600">{booking.due_date ? formatDate(booking.due_date) : 'No due date'}</span>
                       <span className={`px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}>
                         {due.label}
                       </span>
-                      <span className="font-medium text-slate-900">
-                        ₱{booking.balance_due.toLocaleString()}
+                      <span className="font-semibold text-primary">
+                        {formatMoney(booking.balance_due)}
                       </span>
                     </div>
                   </div>

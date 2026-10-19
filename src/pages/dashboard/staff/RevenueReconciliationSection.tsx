@@ -8,13 +8,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
 import { toManilaDate } from '../../../lib/payslip'
-
-function formatMoney(value: number): string {
-  return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type Data = NonNullable<Awaited<ReturnType<typeof loadRevenueReconciliation>>['data']>
 
@@ -43,8 +39,10 @@ function RevenueReconciliationSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">Revenue Reconciliation</h2>
+      <PageHeader
+        title="Revenue Reconciliation"
+        subtitle="Why billed, collected and dashboard revenue differ for a month."
+        actions={<>
         <div className="flex items-center gap-2">
           <label htmlFor="recon-month" className="text-sm font-medium text-slate-700">
             Month
@@ -55,10 +53,11 @@ function RevenueReconciliationSection() {
             value={month}
             max={currentMonth}
             onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+            className="border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
           />
         </div>
-      </div>
+        </>}
+      />
 
       {loading && <p className="mt-4 text-slate-500">Reconciling...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
@@ -73,7 +72,7 @@ function RevenueReconciliationSection() {
             <Card label="Dashboard card" value={formatMoney(data.dashboardCard)} note="bookings made this month" />
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+          <div className="mt-4 border border-slate-200 bg-white p-4 text-sm shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Receivables</p>
             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-700">
               <span>Start of month <b className="text-slate-900">{formatMoney(data.opening)}</b></span>
@@ -84,9 +83,9 @@ function RevenueReconciliationSection() {
           </div>
 
           {data.rows.length === 0 ? (
-            <p className="mt-4 text-slate-500">Nothing was billed or collected in this month.</p>
+            <EmptyState message="Nothing was billed or collected in this month." className="mt-4" />
           ) : (
-            <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 text-slate-500">
                   <tr>
@@ -137,7 +136,7 @@ function RevenueReconciliationSection() {
 
 function Card({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}

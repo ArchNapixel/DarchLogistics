@@ -23,11 +23,13 @@ import {
   type MyProfile,
   type ProfileForm,
 } from '../../../lib/myProfile'
-import { formatDate } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
+import PageHeader from '../../../components/PageHeader'
+import { showToast } from '../../../components/Toast'
+import { formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function MyProfileSection() {
@@ -39,7 +41,6 @@ function MyProfileSection() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
   const today = toManilaDate(new Date())
 
   useEffect(() => {
@@ -93,7 +94,6 @@ function MyProfileSection() {
           onChange={(e) => {
             // Typed or pasted characters the field can't hold are dropped here.
             setForm({ ...form!, [key]: filterInput(key, e.target.value) })
-            setSaved(false)
             setError(null)
           }}
           className={fieldClasses}
@@ -127,14 +127,14 @@ function MyProfileSection() {
     // Show exactly what was stored (trimmed), and treat it as the new saved state.
     setForm(cleaned)
     setBaseline(cleaned)
-    setSaved(true)
+    showToast('Your profile was saved.')
   }
 
   return (
     <form onSubmit={handleSave} className="max-w-2xl">
-      <h2 className="text-xl font-bold text-slate-900">My Profile</h2>
+      <PageHeader title="My Profile" subtitle="Keep your contact details and government IDs up to date." />
 
-      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+      <div className="grid gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</p>
           <p className="text-slate-900">{profile.full_name}</p>
@@ -152,8 +152,7 @@ function MyProfileSection() {
         </p>
       </div>
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-      {saved && <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">Your profile was saved.</p>}
+      {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       <h3 className="mt-6 text-sm font-semibold text-slate-700">Contact</h3>
       <div className="mt-2 grid gap-4 sm:grid-cols-2">
@@ -185,7 +184,7 @@ function MyProfileSection() {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          className="btn-primary px-4 py-2 text-sm font-medium"
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>

@@ -109,7 +109,7 @@ export function ConfirmHost() {
         aria-modal="true"
         aria-labelledby="confirm-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-xl bg-white p-6 shadow-lg"
+        className="w-full max-w-sm bg-white p-6 shadow-lg"
       >
         <h3 id="confirm-title" className="text-lg font-bold text-slate-900">
           {pending.title ?? (pending.danger ? 'Are you sure?' : 'Please confirm')}
@@ -129,7 +129,7 @@ export function ConfirmHost() {
           <button
             type="button"
             onClick={() => close(false)}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Cancel
           </button>
@@ -138,8 +138,8 @@ export function ConfirmHost() {
             autoFocus={!pending.isPrompt}
             disabled={pending.isPrompt && !text.trim()}
             onClick={() => close(true)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-              pending.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-700'
+            className={`px-4 py-2 text-sm font-medium ${
+              pending.danger ? 'btn-danger' : 'btn-primary'
             }`}
           >
             {pending.confirmLabel ?? 'Confirm'}

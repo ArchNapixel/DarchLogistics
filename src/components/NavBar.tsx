@@ -67,7 +67,7 @@ function NavBar() {
           aria-label="Toggle menu"
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
-          className={`flex h-11 w-11 items-center justify-center rounded-lg border border-slate-600 text-white md:hidden ${focusRing}`}
+          className={`flex h-11 w-11 items-center justify-center border border-slate-600 text-white md:hidden ${focusRing}`}
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path
@@ -90,7 +90,7 @@ function NavBar() {
               key={l.href}
               href={l.href}
               onClick={closeMenu}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+              className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
             >
               {l.label}
             </a>
@@ -98,7 +98,7 @@ function NavBar() {
           <Link
             to="/login"
             onClick={closeMenu}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+            className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
           >
             Staff Login
           </Link>

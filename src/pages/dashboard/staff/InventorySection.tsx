@@ -10,6 +10,9 @@ import AddInventoryItemModal, {
 } from './AddInventoryItemModal'
 import InventoryReportModal from './InventoryReportModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type InventoryItem = {
   item_id: number
@@ -17,10 +20,6 @@ type InventoryItem = {
   item_type: string
   quantity: number
   unit_cost: number | null
-}
-
-function formatMoney(value: number | null): string {
-  return value !== null ? `₱${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '—'
 }
 
 const TYPE_STYLES: Record<string, string> = {
@@ -115,26 +114,27 @@ function InventorySection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Inventory</h2>
-        <div className="flex gap-3">
+      <PageHeader
+        title="Inventory"
+        subtitle="Parts, tools and supplies in stock."
+        actions={<>
           <button
             onClick={() => setShowAdd(true)}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             Add Item
           </button>
           <button
             onClick={() => setShowReport(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
             Print Inventory Report
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
@@ -142,11 +142,11 @@ function InventorySection() {
       {loading && <p className="mt-4 text-slate-500">Loading inventory...</p>}
       {!loading && error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && items.length === 0 && (
-        <p className="mt-4 text-slate-500">No inventory items yet.</p>
+        <EmptyState message="No inventory items yet." className="mt-4" />
       )}
 
       {!loading && !error && items.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>

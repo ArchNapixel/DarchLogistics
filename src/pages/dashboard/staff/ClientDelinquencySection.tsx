@@ -23,6 +23,8 @@ import {
 } from '../../../lib/clientDelinquency'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import { LoadMore, LOG_PAGE_SIZE } from '../../../components/LoadMore'
+import { formatDate, formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
@@ -159,7 +161,7 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
@@ -168,25 +170,25 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
         Currently Delinquent
       </h3>
       {delinquent.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No clients currently flagged.</p>
+        <EmptyState message="No clients currently flagged." className="mt-2" />
       ) : (
         <div className="mt-2 grid gap-3">
           {delinquent.map((client) => (
             <div
               key={client.client_id}
-              className="rounded-xl border border-red-200 bg-red-50 p-4"
+              className="border border-red-200 bg-red-50 p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{client.client_name}</p>
                 <span className="text-xs text-slate-500">
-                  Since {new Date(client.since).toLocaleDateString()}
+                  Since {formatDate(client.since)}
                 </span>
               </div>
               <p className="mt-1 text-sm text-slate-700">{client.reason}</p>
               <button
                 onClick={() => handleUnmark(client.client_id, client.client_name)}
                 disabled={busyClientId === client.client_id}
-                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                className="btn-primary mt-3 px-3 py-1.5 text-sm font-medium"
               >
                 {busyClientId === client.client_id ? 'Saving...' : 'Unmark'}
               </button>
@@ -199,13 +201,13 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
         Overdue Risk (not yet flagged)
       </h3>
       {overdueRisk.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No clients past the overdue threshold.</p>
+        <EmptyState message="No clients past the overdue threshold." className="mt-2" />
       ) : (
         <div className="mt-2 grid gap-3">
           {overdueRisk.map((client) => (
             <div
               key={client.client_id}
-              className="rounded-xl border border-amber-200 bg-amber-50 p-4"
+              className="border border-amber-200 bg-amber-50 p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{client.client_name}</p>
@@ -222,7 +224,7 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
                   )
                 }
                 disabled={busyClientId === client.client_id}
-                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                className="btn-primary mt-3 px-3 py-1.5 text-sm font-medium"
               >
                 {busyClientId === client.client_id ? 'Saving...' : 'Mark as Delinquent'}
               </button>
@@ -235,9 +237,9 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
         Full History
       </h3>
       {history.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No history yet.</p>
+        <EmptyState message="No history yet." className="mt-2" />
       ) : (
-        <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-2 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -266,7 +268,7 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
                   <td className="px-4 py-3 text-slate-600">{entry.reason}</td>
                   <td className="px-4 py-3 text-slate-600">{entry.changed_by_name}</td>
                   <td className="px-4 py-3 text-slate-600">
-                    {new Date(entry.created_at).toLocaleString()}
+                    {formatDateTime(entry.created_at)}
                   </td>
                 </tr>
               ))}

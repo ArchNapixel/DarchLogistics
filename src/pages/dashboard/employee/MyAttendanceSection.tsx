@@ -9,6 +9,8 @@ import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, type AttendanceRecord } from '../../../lib/employeeAttendance'
 import { toManilaDate } from '../../../lib/payslip'
 import MyAttendanceCalendar from './MyAttendanceCalendar'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -26,12 +28,6 @@ function weekStartOf(date: string): string {
 
 function formatShort(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Present: 'bg-green-100 text-green-700',
-  Leave: 'bg-blue-100 text-blue-700',
-  Absent: 'bg-red-100 text-red-700',
 }
 
 function MyAttendanceSection() {
@@ -74,16 +70,16 @@ function MyAttendanceSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">My Attendance</h2>
+      <PageHeader title="My Attendance" subtitle="Your attendance as recorded by the admin." />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">&larr; Previous week</button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">&larr; Previous week</button>
         <span className="text-sm font-medium text-slate-900">{formatShort(days[0])} – {formatShort(days[6])}, {days[6].slice(0, 4)}</span>
-        <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} disabled={weekStart >= thisWeekStart} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next week &rarr;</button>
+        <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} disabled={weekStart >= thisWeekStart} className="border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next week &rarr;</button>
         {weekStart !== thisWeekStart && <button onClick={() => setWeekStart(thisWeekStart)} className="text-sm font-medium text-slate-700 underline">This week</button>}
       </div>
 
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       {loading ? (
         <p className="mt-4 text-slate-500">Loading attendance...</p>
@@ -95,7 +91,7 @@ function MyAttendanceSection() {
             <span className="font-semibold text-slate-900">{absentDays}</span>
           </p>
           <div className="mt-4 grid items-start gap-6 lg:grid-cols-2">
-          <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
+          <div className="overflow-x-auto border border-slate-300 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-300 text-slate-500">
                 <tr>
@@ -113,7 +109,7 @@ function MyAttendanceSection() {
                       <td className="px-4 py-3 text-slate-600">{formatShort(date)}, {date.slice(0, 4)}</td>
                       <td className="px-4 py-3">
                         {status ? (
-                          <span className={`px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}>{status}</span>
+                          <StatusBadge status={status} />
                         ) : (
                           <span className="text-slate-400">{date === today ? 'Not marked yet' : '—'}</span>
                         )}

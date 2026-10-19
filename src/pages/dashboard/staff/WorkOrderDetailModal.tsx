@@ -16,9 +16,12 @@ import { supabase } from '../../../lib/supabaseClient'
 import { changeWorkOrderStatus } from '../../../lib/workOrderStatusLog'
 import { loadWorkOrderNotes, type WorkOrderNote } from '../../../lib/workOrderNotes'
 import { loadWorkOrderPartsLog, type LoggedPart } from '../../../lib/workOrderPartsLog'
-import { formatDate } from '../../../lib/quoteRequest'
-import { ALL_STATUSES, StatusBadge } from '../employee/MechanicTasks'
+import { ALL_STATUSES } from '../employee/MechanicTasks'
+import StatusBadge from '../../../components/StatusBadge'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import { showToast } from '../../../components/Toast'
+import { formatDateTime, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 export type WorkOrderDetail = {
   work_order_id: number
@@ -52,7 +55,6 @@ function WorkOrderDetailModal({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -84,7 +86,6 @@ function WorkOrderDetailModal({
 
     setSaving(true)
     setError(null)
-    setMessage(null)
 
     const { error: changeError, statusChanged } = await changeWorkOrderStatus({
       workOrderId: order.work_order_id,
@@ -99,7 +100,7 @@ function WorkOrderDetailModal({
     if (changeError) setError(changeError)
     if (statusChanged) {
       setStatus(newStatus)
-      if (!changeError) setMessage(`Status changed to ${newStatus}.`)
+      if (!changeError) showToast(`Status changed to ${newStatus}.`)
       onChanged()
     }
   }
@@ -109,7 +110,6 @@ function WorkOrderDetailModal({
 
     setSaving(true)
     setError(null)
-    setMessage(null)
 
     // .select() so an RLS silent no-op shows as an error, not success.
     const { data: updated, error: updateError } = await supabase
@@ -127,11 +127,9 @@ function WorkOrderDetailModal({
     }
 
     setMechanicId(newMechanicId)
-    setMessage(
-      newMechanicId
+    showToast(newMechanicId
         ? `Assigned to ${mechanics.find((m) => m.employee_id === newMechanicId)?.full_name}.`
-        : 'Unassigned -- it is back on the Task Board.',
-    )
+        : 'Unassigned -- it is back on the Task Board.',)
     onChanged()
   }
 
@@ -139,7 +137,7 @@ function WorkOrderDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-bold text-slate-900">
             {order.work_order_number} — {order.vehicle_label}
@@ -150,10 +148,7 @@ function WorkOrderDetailModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-        )}
-        {message && (
-          <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{message}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         <div className="mt-4 grid gap-2 text-sm">
@@ -182,7 +177,7 @@ function WorkOrderDetailModal({
               value={mechanicId ?? ''}
               disabled={saving || isClosed}
               onChange={(e) => handleReassign(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+              className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
             >
               <option value="">Unassigned -- open on the Task Board</option>
               {mechanics.map((m) => (
@@ -206,7 +201,7 @@ function WorkOrderDetailModal({
                 value={status}
                 disabled={saving}
                 onChange={(e) => handleStatusChange(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
               >
                 {ALL_STATUSES.filter((s) => s !== 'Completed').map((s) => (
                   <option key={s} value={s}>
@@ -223,16 +218,16 @@ function WorkOrderDetailModal({
           {loading ? (
             <p className="mt-2 text-sm text-slate-500">Loading...</p>
           ) : parts.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No parts logged yet.</p>
+            <EmptyState message="No parts logged yet." className="mt-2" />
           ) : (
             <div className="mt-2 grid gap-2">
               {parts.map((part) => (
-                <div key={part.log_id} className="rounded-lg border border-slate-200 p-3">
+                <div key={part.log_id} className="border border-slate-200 p-3">
                   <p className="text-sm text-slate-900">
                     {part.item_name_text} × {part.quantity}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {part.employee_name} · {new Date(part.used_at).toLocaleString()}
+                    {part.employee_name} · {formatDateTime(part.used_at)}
                   </p>
                 </div>
               ))}
@@ -245,14 +240,14 @@ function WorkOrderDetailModal({
           {loading ? (
             <p className="mt-2 text-sm text-slate-500">Loading...</p>
           ) : notes.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No progress notes yet.</p>
+            <EmptyState message="No progress notes yet." className="mt-2" />
           ) : (
             <div className="mt-2 grid gap-2">
               {notes.map((note) => (
-                <div key={note.note_id} className="rounded-lg border border-slate-200 p-3">
+                <div key={note.note_id} className="border border-slate-200 p-3">
                   <p className="text-sm text-slate-700">{note.note}</p>
                   <p className="mt-1 text-xs text-slate-400">
-                    {note.employee_name} · {new Date(note.created_at).toLocaleString()}
+                    {note.employee_name} · {formatDateTime(note.created_at)}
                   </p>
                 </div>
               ))}
@@ -263,7 +258,7 @@ function WorkOrderDetailModal({
         <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Close
           </button>

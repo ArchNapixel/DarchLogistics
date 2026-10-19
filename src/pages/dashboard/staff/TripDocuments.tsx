@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import EmptyState from '../../../components/EmptyState'
 
 const BUCKET = 'trip-documents'
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB per file (the bucket enforces it too)
@@ -206,16 +207,16 @@ export default function TripDocuments({
             const files = Array.from(e.dataTransfer.files)
             if (files.length > 0) uploadMany(files)
           }}
-          className={`rounded-lg border-2 border-dashed p-4 text-center ${
+          className={`border-2 border-dashed p-4 text-center ${
             dragOver ? 'border-slate-500 bg-slate-100' : 'border-slate-300 bg-slate-50'
           }`}
         >
           <div className="flex flex-wrap justify-center gap-2">
-            <label className="cursor-pointer rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700">
+            <label className="btn-primary cursor-pointer px-4 py-2 font-medium">
               Take photo
               <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />
             </label>
-            <label className="cursor-pointer rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 hover:bg-slate-100">
+            <label className="cursor-pointer border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 hover:bg-slate-100">
               Choose files
               <input
                 type="file"
@@ -262,7 +263,7 @@ export default function TripDocuments({
       {docs === null ? (
         <p className="mt-3 text-slate-500">Loading documents…</p>
       ) : docs.length === 0 ? (
-        <p className="mt-3 text-slate-400">No documents yet.</p>
+        <EmptyState message="No documents yet." className="mt-3" />
       ) : (
         <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4">
           {docs.map((doc) => (
@@ -271,7 +272,7 @@ export default function TripDocuments({
                 type="button"
                 onClick={() => handleOpen(doc)}
                 title={`Open ${doc.file_name}`}
-                className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-400"
+                className="flex aspect-square w-full items-center justify-center overflow-hidden border border-slate-200 bg-slate-50 hover:border-slate-400"
               >
                 {thumbs[doc.file_path] ? (
                   <img src={thumbs[doc.file_path]} alt={doc.file_name} className="h-full w-full object-cover" />

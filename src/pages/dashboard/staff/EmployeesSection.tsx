@@ -9,6 +9,10 @@ import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmploy
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
 import EmployeeDetailModal from './EmployeeDetailModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // Only these positions have trips/work orders to show a detail view
 // for -- Admin/Dispatcher don't.
@@ -32,33 +36,17 @@ function extractRateAmount(row: Record<string, unknown>, rateType: string) {
   return typeof value === 'number' ? value : null
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  Active: 'bg-green-100 text-green-700',
-  'On Leave': 'bg-orange-100 text-orange-700',
-  Terminated: 'bg-red-100 text-red-700',
-  Deactivated: 'bg-slate-200 text-slate-700',
-}
-
 const TABS = ['Active', 'Deactivated'] as const
 type Tab = (typeof TABS)[number]
-
-function EmploymentStatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
 
 function expiryLabel(date: string | null) {
   if (!date) return 'Not recorded'
   const days = Math.ceil(
     (new Date(`${date}T00:00:00`).getTime() - Date.now()) / 86400000,
   )
-  if (days < 0) return `Expired: ${date}`
-  if (days <= 30) return `Due soon: ${date}`
-  return date
+  if (days < 0) return `Expired: ${formatDate(date)}`
+  if (days <= 30) return `Due soon: ${formatDate(date)}`
+  return formatDate(date)
 }
 
 function expiryClass(date: string | null) {
@@ -286,17 +274,20 @@ function EmployeesSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Employee List</h2>
-        <button
-          onClick={() => setShowAddEmployee(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Add Employee
-        </button>
-      </div>
+      <PageHeader
+        title="Employees"
+        subtitle="Staff records, logins and employment status."
+        actions={
+          <button
+            onClick={() => setShowAddEmployee(true)}
+            className="btn-primary px-4 py-2 text-sm font-medium"
+          >
+            Add Employee
+          </button>
+        }
+      />
 
-      <div className="mt-4 flex gap-2 border-b border-slate-200">
+      <div className="flex gap-2 border-b border-slate-200">
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -316,7 +307,7 @@ function EmployeesSection() {
       </div>
 
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
@@ -330,7 +321,7 @@ function EmployeesSection() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search names..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
             />
           </label>
           <label>
@@ -338,7 +329,7 @@ function EmployeesSection() {
             <select
               value={positionFilter}
               onChange={(e) => setPositionFilter(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
             >
               <option value="">All positions</option>
               {positions.map((position) => (
@@ -353,7 +344,7 @@ function EmployeesSection() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
             >
               <option value="">All statuses</option>
               {statuses.map((status) => (
@@ -369,17 +360,15 @@ function EmployeesSection() {
       {loading && <p className="mt-4 text-slate-500">Loading employees...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && employees.length === 0 && (
-        <p className="mt-4 text-slate-500">No employees yet.</p>
+        <EmptyState message="No employees yet." className="mt-4" />
       )}
 
       {!loading && !error && employees.length > 0 && filteredEmployees.length === 0 && (
-        <p className="mt-4 text-slate-500">
-          No employees match the current search and filters.
-        </p>
+        <EmptyState message="No employees match the current search and filters." className="mt-4" />
       )}
 
       {!loading && !error && filteredEmployees.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -417,10 +406,10 @@ function EmployeesSection() {
                       {employee.position}
                     </td>
                     <td className="px-4 py-3">
-                      <EmploymentStatusBadge status={employee.status} />
+                      <StatusBadge status={employee.status} />
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {employee.hire_date}
+                      {formatDate(employee.hire_date)}
                     </td>
                     <td className={`px-4 py-3 ${expiryClass(employee.licenseExpiryDate)}`}>
                       {employee.position === 'Driver'
@@ -434,13 +423,11 @@ function EmployeesSection() {
                     </td>
                     <td className="px-4 py-3">
                       {isLinked ? (
-                        <span className="bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                          Set Up
-                        </span>
+                        <StatusBadge status="Set Up" />
                       ) : (
                         <button
                           onClick={() => setAccountEmployee(employee)}
-                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                          className="btn-secondary px-3 py-1.5 text-xs font-medium"
                         >
                           Set Up Account
                         </button>

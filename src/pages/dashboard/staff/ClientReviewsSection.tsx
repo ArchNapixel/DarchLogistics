@@ -11,6 +11,9 @@ import {
   averageRating,
   type AdminClientReview,
 } from '../../../lib/clientReviews'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -79,7 +82,7 @@ function ClientReviewsSection() {
   }
 
   if (reviews.length === 0) {
-    return <p className="text-slate-500">No client reviews yet.</p>
+    return <EmptyState message="No client reviews yet." />
   }
 
   const avg = averageRating(reviews)
@@ -94,7 +97,7 @@ function ClientReviewsSection() {
       )}
 
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
@@ -103,7 +106,7 @@ function ClientReviewsSection() {
         {reviews.map((review) => (
           <div
             key={review.review_id}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="border border-slate-200 bg-white p-4 shadow-sm"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-baseline gap-2">
@@ -112,9 +115,7 @@ function ClientReviewsSection() {
                   {review.total_bookings} booking{review.total_bookings === 1 ? '' : 's'}
                 </span>
                 {review.is_featured && (
-                  <span className="bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-                    Public
-                  </span>
+                  <StatusBadge status="Featured" label="Public" />
                 )}
               </div>
               <Stars rating={review.rating} />
@@ -124,15 +125,15 @@ function ClientReviewsSection() {
             )}
             <div className="mt-2 flex items-center justify-between">
               <p className="text-xs text-slate-400">
-                Updated {new Date(review.updated_at).toLocaleDateString()}
+                Updated {formatDate(review.updated_at)}
               </p>
               <button
                 onClick={() => handleToggleFeatured(review)}
                 disabled={savingId === review.review_id}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+                className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
                   review.is_featured
                     ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    : 'bg-slate-900 text-white hover:bg-slate-700'
+                    : 'btn-secondary'
                 }`}
               >
                 {savingId === review.review_id

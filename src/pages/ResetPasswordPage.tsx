@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
 const fieldClasses =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
+  'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 const MIN_LENGTH = 6 // Supabase's default minimum; raise it in the dashboard if you change it there
 
@@ -47,7 +47,7 @@ function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-center text-xl font-bold text-slate-900">
           Choose a new password
         </h1>
@@ -57,7 +57,7 @@ function ResetPasswordPage() {
         ) : !session ? (
           // No session = the link was already used, expired, or never opened.
           <div className="mt-6 flex flex-col gap-4">
-            <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="bg-red-50 px-4 py-3 text-sm text-red-700">
               This reset link is invalid or has expired.
             </p>
             <Link
@@ -70,7 +70,7 @@ function ResetPasswordPage() {
         ) : (
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
             {error && (
-              <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              <p className="bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </p>
             )}
@@ -103,7 +103,7 @@ function ResetPasswordPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              className="btn-primary px-4 py-3 text-sm font-semibold"
             >
               {submitting ? 'Saving...' : 'Save Password'}
             </button>

@@ -8,13 +8,8 @@ import { loadProfitLoss, type ProfitLoss } from '../../../lib/profitLoss'
 import { formatReportMonth } from '../../../lib/maintenanceCostReport'
 import { toManilaDate } from '../../../lib/payslip'
 import { COMPANY } from '../../../lib/company'
-
-function formatMoney(value: number): string {
-  return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
 
 function ProfitLossSection() {
   const currentMonth = toManilaDate(new Date()).slice(0, 7)
@@ -41,8 +36,10 @@ function ProfitLossSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <h2 className="text-xl font-bold text-slate-900">Profit &amp; Loss</h2>
+      <PageHeader
+        title="Profit & Loss"
+        subtitle="Monthly revenue against costs."
+        actions={<>
         <div className="flex items-center gap-2">
           <label htmlFor="pl-month" className="text-sm font-medium text-slate-700">Month</label>
           <input
@@ -51,17 +48,18 @@ function ProfitLossSection() {
             value={month}
             max={currentMonth}
             onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+            className="border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900"
           />
           <button
             onClick={() => window.print()}
             disabled={!pl}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Print
           </button>
         </div>
-      </div>
+        </>}
+      />
 
       {loading && <p className="mt-4 text-slate-500 print:hidden">Adding it all up...</p>}
       {error && <p className="mt-4 text-red-700 print:hidden">{error}</p>}
@@ -80,7 +78,7 @@ function ProfitLossSection() {
             <Card label="Cash collected" value={formatMoney(pl.memo.collected)} note="for comparison" />
           </div>
 
-          <div className="mt-4 max-w-3xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:max-w-none print:border-0 print:p-0 print:shadow-none">
+          <div className="mt-4 max-w-3xl border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:max-w-none print:border-0 print:p-0 print:shadow-none">
             <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>
             <p className="text-xs text-slate-500">{COMPANY.address} · {COMPANY.phone}</p>
             <h3 className="mt-3 text-lg font-bold text-slate-900">Profit &amp; Loss — {formatReportMonth(month)}</h3>
@@ -146,7 +144,7 @@ function Section({
 
 function Card({ label, value, note, danger }: { label: string; value: string; note?: string; danger?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-1 text-lg font-bold ${danger ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}

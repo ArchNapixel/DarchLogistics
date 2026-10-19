@@ -19,6 +19,8 @@ import { loadAttendanceRecords, saveAttendanceRecord, type AttendanceRecord, typ
 import { toManilaDate } from '../../../lib/payslip'
 import { supabase } from '../../../lib/supabaseClient'
 import LeaveRequestsSection from './LeaveRequestsSection'
+import PageHeader from '../../../components/PageHeader'
+import EmptyState from '../../../components/EmptyState'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
@@ -125,11 +127,11 @@ function AttendanceSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Attendance</h2>
+      <PageHeader title="Attendance" subtitle="Mark each employee Present, Leave or Absent for the week." />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {/* One joined control: [<] week label [>]. */}
-        <div className="inline-flex items-center overflow-hidden rounded-lg border border-slate-300 bg-white">
+        <div className="inline-flex items-center overflow-hidden border border-slate-300 bg-white">
           <button
             onClick={() => setWeekStart(shiftDate(weekStart, -7))}
             aria-label="Previous week"
@@ -160,21 +162,21 @@ function AttendanceSection() {
             max={today}
             value={weekStart}
             onChange={(e) => e.target.value && setWeekStart(weekStartOf(e.target.value))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            className="border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
           />
         </label>
 
         {weekStart !== thisWeekStart && (
           <button
             onClick={() => setWeekStart(thisWeekStart)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
             This week
           </button>
         )}
       </div>
 
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       {/* Pending leave requests -- approving one marks its days as Leave below. */}
       <div className="mt-4">
@@ -184,9 +186,9 @@ function AttendanceSection() {
       {loading ? (
         <p className="mt-4 text-slate-500">Loading attendance...</p>
       ) : employees.length === 0 ? (
-        <p className="mt-4 text-slate-500">No active employees.</p>
+        <EmptyState message="No active employees." className="mt-4" />
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -222,7 +224,7 @@ function AttendanceSection() {
                             value={shown}
                             disabled={busy || date > today}
                             onChange={(event) => void handleMark(e.employee_id, date, event.target.value as AttendanceStatus)}
-                            className={`rounded-lg border px-1 py-1 text-sm disabled:opacity-60 ${shown === 'Present' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700'}`}
+                            className={`border px-1 py-1 text-sm disabled:opacity-60 ${shown === 'Present' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700'}`}
                           >
                             {shown === '' && <option value="">—</option>}
                             <option>Present</option>

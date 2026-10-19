@@ -10,7 +10,9 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { formatDate } from '../../../lib/quoteRequest'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type QuoteRow = {
   quote_request_id: number
@@ -24,11 +26,6 @@ type QuoteRow = {
   cargo_type: string
   preferred_pickup_date: string
   created_at: string
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-orange-100 text-orange-700',
-  Rejected: 'bg-red-100 text-red-700',
 }
 
 function MyQuoteRequestsSection() {
@@ -78,9 +75,7 @@ function MyQuoteRequestsSection() {
 
   if (quotes.length === 0) {
     return (
-      <p className="text-slate-500">
-        No open quote requests. Approved quotes appear under My Bookings.
-      </p>
+      <EmptyState message="No open quote requests." hint="Approved quotes appear under My Bookings." />
     )
   }
 
@@ -89,7 +84,7 @@ function MyQuoteRequestsSection() {
       {quotes.map((quote) => (
         <div
           key={quote.quote_request_id}
-          className="rounded-xl border border-slate-200 p-4"
+          className="border border-slate-200 p-4"
         >
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -104,16 +99,13 @@ function MyQuoteRequestsSection() {
                 {formatDate(quote.preferred_pickup_date)}
               </p>
             </div>
-            <span
-              className={`shrink-0 px-3 py-1 text-xs font-semibold ${STATUS_STYLES[quote.request_status] ?? 'bg-gray-100 text-gray-700'}`}
-            >
-              {quote.request_status === 'Pending'
-                ? 'Under review'
-                : quote.request_status}
-            </span>
+            <StatusBadge
+              status={quote.request_status}
+              label={quote.request_status === 'Pending' ? 'Under review' : undefined}
+            />
           </div>
           {quote.request_status === 'Rejected' && quote.rejection_reason && (
-            <div className="mt-2 rounded-lg bg-slate-50 p-3">
+            <div className="mt-2 bg-slate-50 p-3">
               <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 Reason
               </p>

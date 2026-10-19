@@ -272,7 +272,20 @@ before creating it.
   fully wired to `employees`/`employment_status`/`users`. Search/position/
   status filters, Edit, Delete (FK-violation-aware error handling), and
   "Set Up Account" (SetUpStaffAccountModal, via the `create-user-account`
-  Edge Function).
+  Edge Function). Active/Deactivated tabs (Deactivate/Reactivate flips
+  `employment_status_id`). The Edit form also has a login section:
+  no login yet → creates one via `create-user-account`; existing login →
+  changing email/username/password calls the **`update-user-account`**
+  Edge Function (`supabase/functions/update-user-account/`, Admin-only —
+  it checks the caller's token and `users.user_role = 'Admin'` itself, so
+  it's deployed with JWT verification OFF, same as `create-user-account`).
+  **As of 2026-10-19 it was NOT deployed** (Supabase returned "Requested
+  function was not found") — the employee row saves but the account
+  change fails with "Employee saved, but the account change failed".
+  Deploy: `npx supabase login`, then
+  `npx supabase functions deploy update-user-account --project-ref dycefsqhtxwagbmwpgpo --no-verify-jwt`.
+  `supabase/config.toml` has a `[functions.create-user-account]` block
+  (`verify_jwt = false`) but none for `update-user-account` yet.
 - Payroll & Payslips — `lib/payslip.ts` is the shared pay-calculation
   engine, driven by each employee's `employees.rate_type`. Drivers
   (`Commission Per Trip`, Driver-only) earn per delivered trip
@@ -345,8 +358,15 @@ before creating it.
   one tab — two admins at once still need a Postgres function.
   Cash advances are issued directly by admin (`IssueCashAdvanceModal`,
   inserts into `cash_advances` with `status: 'Approved'` implicitly via
-  its DB default, never auto-deducted) — from the **Cash Advance** page
-  (see below), no longer from Payroll. PayrollSection
+  its DB default) — from the **Cash Advance** page (see below), no longer
+  from Payroll. **They ARE auto-deducted now** (since 2026-10-04): each
+  generated/topped-up draft deducts `cash_advance_deduction_rate`% of its
+  gross pay (`app_settings` key, editable on Settings if the row exists;
+  `DEFAULT_CASH_ADVANCE_DEDUCTION_RATE = 10` if not), capped at the
+  outstanding balance (`autoCashAdvanceDeduction()` in `payslip.ts`).
+  Admin can still change the amount in `EditDraftPayslipModal`.
+  `MyCashAdvanceRequestsSection` shows employees the rate. The comment at
+  the top of `payslip.ts` still says "never auto-deducted" — stale. PayrollSection
   (`/dashboard/payroll`) lists/finalizes/marks-paid drafts and payslips.
   Employees see their own payslip history
   (`MyPayslipSection`/`MyPayslipPage`), Dispatchers via their own
@@ -598,20 +618,73 @@ before creating it.
   used, so later price changes don't rewrite history.
 - Dashboard shell/UX helpers (2026-09-29 "nav bar upgrades"/"dynamic ui"):
   `DashboardLayout` sidebar is a phone slide-in drawer with hover/click
-  category flyouts (Admin sidebar: Dashboard; Operations = Quotations,
-  Bookings, Clients, Dispatch Board; Human Resource = Employees,
-  Attendance, Payroll, Cash Advance; Accounting = Bills Receivable
-  (`/dashboard/financial-records`, FinancialSection), AR Aging;
-  Maintenance = Truck Monitoring,
-  Fleet, Maintenance, Inventory; Reports; ⚙ Settings
-  link in the layout, not the sidebar list). `components/ConfirmDialog.tsx`
+  category flyouts. Admin sidebar as of 2026-10-19 (labels renamed in the
+  "nav bar adjustments" commit): Dashboard; Reports; Operations = Client
+  Quotations, Client Bookings, Client Accounts, Dispatch Board; Human
+  Resource = Employee List, Attendance, Payroll Master, Cash Advance;
+  Accounting = Bills Receivable (`/dashboard/financial-records`,
+  FinancialSection), Bills Payable, Collections, Billing, Statements,
+  Revenue Reconciliation, Profit & Loss, AR Aging, Payroll & Remittances,
+  Trip Profitability; Maintenance = Truck Monitoring, Fleet Master,
+  Maintenance, Inventory; ⚙ Settings link in the layout, not the sidebar
+  list. Dispatcher sidebar: Dispatch Board, Bookings, Damage Charges,
+  Quotations, My Attendance, My Leave, My Payslips, My Profile. Employee
+  sidebar: Dashboard, My History (Drivers: "My Trips History"), My
+  Attendance (not Drivers), My Leave, My Payslips, My Profile.
+  `components/ConfirmDialog.tsx`
   (`confirmDialog()` / `promptDialog()`, `<ConfirmHost />` mounted in
   main.tsx) replaces `window.confirm`/`prompt` in ~14 files — it only
   falls back to the browser's if the host isn't mounted; two spots still
   call `window.prompt` directly (`CashAdvanceRequestsSection`,
-  `FinancialSection`). `components/Skeleton.tsx` loading placeholders.
+  `FinancialSection`). `components/Skeleton.tsx` loading placeholders,
+  `components/Toast.tsx` toast messages (host mounted in main.tsx),
+  `components/Reveal.tsx` scroll-in animation (landing page only),
+  `components/DateRangePicker.tsx` (Admin dashboard period picker).
   `components/ComingSoonPage.tsx` is now unused (every sidebar link has
   a real page).
+- Admin dashboard expense cards (`StaffDashboard.tsx`):
+  `OperationalExpensesCard` (payroll, trip expenses, diesel, Company
+  damage), `MaintenanceExpensesCard`, `PayrollExpensesCard` — all from
+  `lib/dashboardExpenses.ts` (comments there explain what's counted and
+  why nothing is double-counted) — plus `TopCreditorsCard` ("Top Unpaid
+  Clients"). Reload when the date-range period changes.
+- Trip documents (2026-10-12, `staff/TripDocuments.tsx`) — delivery
+  orders, photos, PDFs attached to one trip. Files go in the **private
+  Storage bucket `trip-documents`** at `<itinerary_id>/<file>`, one row
+  each in `itinerary_documents` (`itinerary_id, file_path, file_name,
+  file_type`); images shown via 1-hour signed URLs; a failed row insert
+  removes the uploaded file. Shown in `MarkDeliveredModal` (editable)
+  and `BookingDetailModal`'s trips table (editable when the modal is
+  opened with `onChanged`, i.e. from staff Bookings). The file's header
+  comment says drivers and clients get it read-only, but no driver or
+  client screen renders it yet. Bucket + Storage policies were set up by
+  hand — not in the repo, not verified in the 2026-10-19 review.
+- Work Order detail (`staff/WorkOrderDetailModal.tsx`) — Admin clicks a
+  row on the Maintenance page: shows the mechanic's progress notes and
+  mid-job parts log, lets Admin reassign or unassign (back to the Task
+  Board).
+- Client "My Quote Requests" (`client/MyQuoteRequestsSection.tsx`, in
+  `ClientDashboard.tsx`) — the client's Pending and Rejected (with reason)
+  quotes; Approved ones show under My Bookings instead.
+- My Attendance month calendar (`employee/MyAttendanceCalendar.tsx`) —
+  shown next to the weekly table on My Attendance; Present days green,
+  read-only.
+- Login & password (public): `/forgot-password` (`ForgotPasswordPage`,
+  Supabase Auth emails a reset link) → `/reset-password`
+  (`ResetPasswordPage`, set new password). `LoginPage` accepts a username
+  OR an email — anything without "@" is turned into the account email by
+  the `get_login_email(p_username)` RPC first.
+- Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to
+  `index.html` so refreshing a `/dashboard/...` URL works on Vercel).
+- Design (as of 2026-10-19): the 2026-09-22 "sharp edges + blue
+  (brand-steel) sidebar" pass was **reverted** by the teammate —
+  Tailwind's normal rounded corners are back, the sidebar is white with a
+  slate-900 active item, the font is Inter everywhere (Barlow removed
+  from `index.html`/`index.css`), and `.reports-blueprint-card` is now a
+  plain white hairline card (class name kept). Number inputs have no
+  spinner arrows and ignore the mouse wheel (`index.css` + `main.tsx`).
+  The "60-30-10 color system" comment at the top of `index.css` is stale
+  (describes the old blue sidebar).
 
 - **Accounting module (2026-10-19, Admin only — no Accountant role).** A
   sidebar group below Human Resource. Built so far:
@@ -788,6 +861,17 @@ now), awaiting user testing (6a SQL has been run). Not built: payment history in
 portal / BookingDetailModal, company TIN. (Last CLAUDE.md sync:
 2026-10-19.)
 
+Open items from the 2026-10-19 review of the teammate's 67 commits
+(Sep 24 – Oct 19; `tsc` and `npm run build` both clean):
+- Deploy the `update-user-account` Edge Function (see the Employees
+  bullet for the command) — until then, editing an existing login's
+  email/username/password fails.
+- `payslip.ts`'s header comment says cash advances are "never
+  auto-deducted"; the code deducts 10% by default (see Payroll).
+- `trip-documents` Storage bucket/policies aren't in the repo.
+- None of the Sep 24 – Oct 19 schema work (6 tables, triggers, RPCs,
+  RLS) has a migration file — see "Schema reality check".
+
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —
   this refers to anything further)
@@ -836,6 +920,23 @@ above for which file queries each one): `client_delinquency_log`,
 `work_order_status_log`. Plus one RPC: `count_bookings_for_clients`
 (used by the public landing page's featured-reviews section to get a
 booking count per client without exposing raw `bookings` rows).
+
+Added Sep 24 – Oct 19 (confirmed live 2026-10-19 by REST probe — each
+answered with no "table not found" error): `booking_payments`, `bills`,
+`bill_payments`, `creditors`, `leave_requests`, `itinerary_documents`.
+**Removed:** `delivery_receipts` (dropped 2026-09-29, PostgREST now
+answers PGRST205 for it). RPCs called by the app now:
+`count_bookings_for_clients`, `get_login_email`, `get_my_profile`,
+`update_my_profile`, `get_trip_client_and_rate`, `record_booking_payment`,
+`void_booking_payment`, `create_bill`, `record_bill_payment`, `void_bill`,
+`void_bill_payment`. Storage bucket: `trip-documents` (private). Edge
+Functions: `create-user-account` (deployed), `update-user-account` (NOT
+deployed as of 2026-10-19). **No migration files after
+`20260918130000_add_employee_attendance.sql`** — every table, column,
+trigger (`sync_booking_status`, `free_vehicles_on_delivery`,
+`booking_payments_sync`, `bill_payments_sync`), RPC and RLS policy since
+then was run by hand in the SQL Editor, so the live DB is the only
+record; a fresh Supabase project could not be rebuilt from this repo.
 
 `work_orders`, `work_order_completions`, `work_order_parts_used`,
 `truck_profiles`, and `inventory_items` had their exact column names

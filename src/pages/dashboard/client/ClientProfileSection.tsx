@@ -15,7 +15,7 @@ export type ClientProfile = {
 }
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -129,7 +129,7 @@ function ClientProfileSection({
   return (
     <div>
       {saveError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {saveError}
         </p>
       )}
@@ -170,14 +170,14 @@ function ClientProfileSection({
         <button
           onClick={() => setEditing(false)}
           disabled={saving}
-          className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
           disabled={saving}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          className="btn-primary px-4 py-2 text-sm font-medium"
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>

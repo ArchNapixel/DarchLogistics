@@ -30,7 +30,6 @@
 // value already used everywhere else in the app (isEmployee(), RoleBadge).
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { formatDate } from '../../../lib/quoteRequest'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { isAdmin, isDispatcher } from '../../../lib/roles'
@@ -45,6 +44,9 @@ import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
+import PageHeader from '../../../components/PageHeader'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type DispatchRow = {
   itinerary_id: number
@@ -185,7 +187,7 @@ function ActionsMenu({
           const rect = e.currentTarget.getBoundingClientRect()
           setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
         }}
-        className="rounded-full px-2 py-1 text-lg leading-none text-slate-600 hover:bg-slate-100"
+        className="px-2 py-1 text-lg leading-none text-slate-600 hover:bg-slate-100"
       >
         ⋮
       </button>
@@ -194,7 +196,7 @@ function ActionsMenu({
           {/* invisible full-screen layer: clicking anywhere else closes the menu */}
           <div className="fixed inset-0 z-40" onClick={close} />
           <div
-            className="fixed z-50 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+            className="fixed z-50 min-w-40 border border-slate-200 bg-white py-1 shadow-lg"
             style={{ top: pos.top, right: pos.right }}
           >
             <button
@@ -402,7 +404,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {drivers.map((driver) => {
@@ -432,7 +434,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {helpers.map((helper) => {
@@ -455,7 +457,7 @@ function DispatchTable({
                     value={row.plate_number ?? ''}
                     disabled={savingId === row.itinerary_id}
                     onChange={(e) => onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
-                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {trucks.map((truck) => {
@@ -489,7 +491,7 @@ function DispatchTable({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="rounded-lg w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
+                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
                     {/* Only trailers of the type the booking asked for (when it asked for one) */}
@@ -1162,22 +1164,20 @@ function DispatchBoardSection() {
   const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]
 
   return (
-    <div className="bg-reports-bg -m-6 p-6">
-      <h2 className="font-condensed text-3xl font-bold tracking-[0.02em] text-reports-ink uppercase">
-        Dispatch Board
-      </h2>
-      <p className="mt-1 font-ui text-sm text-neutral-500">
-        Assign drivers, helpers, trucks and trailers, and track each booking through delivery.
-      </p>
+    <div>
+      <PageHeader
+        title="Dispatch Board"
+        subtitle="Assign drivers, helpers, trucks and trailers, and track each booking through delivery."
+      />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Booking #, place, driver, helper or plate"
           aria-label="Search trips"
-          className="rounded-lg min-w-0 flex-1 border border-reports-hairline bg-transparent px-3 py-1.5 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none sm:max-w-sm"
+          className="min-w-0 flex-1 border border-reports-hairline bg-transparent px-3 py-1.5 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none sm:max-w-sm"
         />
         {/* Drivers move trips from their phones -- reload to see it. */}
         <button
@@ -1187,14 +1187,14 @@ function DispatchBoardSection() {
             if (isDispatcher(role) && employeeId) loadMyRequests(employeeId)
           }}
           disabled={loading}
-          className="rounded-lg border border-reports-hairline px-3 py-1.5 font-ui text-sm font-medium text-reports-ink hover:border-accent-500 disabled:opacity-50"
+          className="border border-reports-hairline px-3 py-1.5 font-ui text-sm font-medium text-reports-ink hover:border-accent-500 disabled:opacity-50"
         >
           Refresh
         </button>
       </div>
 
       {error && (
-        <p className="rounded-lg mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {error}
         </p>
       )}
@@ -1202,7 +1202,7 @@ function DispatchBoardSection() {
       {loading ? (
         <p className="mt-4 font-ui text-neutral-500">Loading dispatch board...</p>
       ) : rows.length === 0 ? (
-        <p className="mt-4 font-ui text-neutral-500">No trips right now.</p>
+        <EmptyState message="No trips right now." className="mt-4" />
       ) : visibleRows.length === 0 ? (
         <p className="mt-4 font-ui text-neutral-500">
           No trips match "{search}".{' '}
@@ -1232,7 +1232,7 @@ function DispatchBoardSection() {
                 }`}
               >
                 {t.label}
-                <span className="rounded-lg border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
+                <span className="border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
                   {t.rows.length}
                 </span>
               </button>
@@ -1275,7 +1275,7 @@ function DispatchBoardSection() {
                     {request.status}
                   </span>
                   <span className="text-xs text-neutral-500">
-                    {new Date(request.created_at).toLocaleDateString()}
+                    {formatDate(request.created_at)}
                   </span>
                   <span className="w-full text-xs text-neutral-600">Reason: {request.reason}</span>
                   {request.resolution_note && (

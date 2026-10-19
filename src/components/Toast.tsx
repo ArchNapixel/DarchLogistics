@@ -7,12 +7,16 @@
 //
 // Same idea as ConfirmDialog: the mounted host registers itself in a
 // module variable, so call sites need no hook or provider.
+//
+// Use a toast for the RESULT of an action ("Saved", "Approved", "Saved, but
+// X needs manual review"). Field validation ("Enter an amount") stays inline
+// next to the form. Error toasts stay longer and can be clicked away.
 import { useEffect, useState } from 'react'
 
 type ToastKind = 'success' | 'error'
 type ToastItem = { id: number; message: string; kind: ToastKind }
 
-const SHOW_MS = 4000
+const SHOW_MS = { success: 4000, error: 10000 }
 
 let add: ((message: string, kind: ToastKind) => void) | null = null
 
@@ -30,7 +34,7 @@ export function ToastHost() {
       const id = nextId++
       setToasts((prev) => [...prev, { id, message, kind }])
       // Remove it again after a few seconds.
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), SHOW_MS)
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), SHOW_MS[kind])
     }
     return () => {
       add = null
@@ -46,7 +50,8 @@ export function ToastHost() {
         <div
           key={t.id}
           role="status"
-          className={`pointer-events-auto rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
+          onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+          className={`pointer-events-auto cursor-pointer px-4 py-3 text-sm font-medium text-white shadow-lg ${
             t.kind === 'error' ? 'bg-red-600' : 'bg-emerald-600'
           }`}
         >

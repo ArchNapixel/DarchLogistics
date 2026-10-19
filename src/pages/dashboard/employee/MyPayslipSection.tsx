@@ -15,25 +15,12 @@ import {
   type PayslipLineItem,
 } from '../../../lib/payslip'
 import ReportPayslipIssueModal from './ReportPayslipIssueModal'
-
-const STATUS_STYLES: Record<string, string> = {
-  Paid: 'bg-green-100 text-green-700',
-  Pending: 'bg-orange-100 text-orange-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function formatPeriod(start: string, end: string) {
-  const format = (d: string) =>
-    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  return `${format(start)} – ${format(end)}`
+  return `${formatDate(start)} – ${formatDate(end)}`
 }
 
 function MyPayslipSection({
@@ -111,7 +98,7 @@ function MyPayslipSection({
   }
 
   if (payslips.length === 0) {
-    return <p className="text-slate-500">No payslips issued yet.</p>
+    return <EmptyState message="No payslips issued yet." />
   }
 
   return (
@@ -123,7 +110,7 @@ function MyPayslipSection({
         return (
           <div
             key={payslip.payroll_id}
-            className="rounded-xl border border-slate-200 p-4"
+            className="border border-slate-200 p-4"
           >
             <button
               onClick={() => toggleExpand(payslip.payroll_id)}
@@ -134,7 +121,7 @@ function MyPayslipSection({
                   {formatPeriod(payslip.payroll_period_start, payslip.payroll_period_end)}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Net pay: ₱{payslip.net_pay.toLocaleString()}
+                  Net pay: {formatMoney(payslip.net_pay)}
                 </p>
               </div>
               <StatusBadge status={payslip.payslip_status} />
@@ -150,14 +137,14 @@ function MyPayslipSection({
                       <div key={index} className="flex items-center justify-between">
                         <span className="text-slate-600">{item.description}</span>
                         <span className="font-medium text-slate-900">
-                          ₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          {formatMoney(item.amount)}
                         </span>
                       </div>
                     ))}
                     <div className="flex items-center justify-between border-t border-slate-200 pt-2">
                       <span className="text-slate-600">Gross pay</span>
                       <span className="font-medium text-slate-900">
-                        ₱{payslip.gross_pay.toLocaleString()}
+                        {formatMoney(payslip.gross_pay)}
                       </span>
                     </div>
                     {(
@@ -175,13 +162,13 @@ function MyPayslipSection({
                           <span className="text-slate-600">{label}</span>
                           <span className="font-medium text-red-600">
                             {/* negative = refund of an earlier over-deduction this month */}
-                            {amount > 0 ? '-' : '+'}₱{Math.abs(amount).toLocaleString()}
+                            {amount > 0 ? '-' : '+'}{formatMoney(Math.abs(amount))}
                           </span>
                         </div>
                       ))}
                     <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
                       <span>Net pay</span>
-                      <span>₱{payslip.net_pay.toLocaleString()}</span>
+                      <span>{formatMoney(payslip.net_pay)}</span>
                     </div>
                   </div>
                 )}

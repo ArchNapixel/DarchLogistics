@@ -20,6 +20,7 @@ import {
 } from '../../../lib/damageCharges'
 import DamageFields from './DamageFields'
 import TripDocuments from './TripDocuments'
+import { showToast } from '../../../components/Toast'
 
 function MarkDeliveredModal({
   itineraryId,
@@ -90,10 +91,11 @@ function MarkDeliveredModal({
         })
 
       if (logError) {
-        window.alert(
+        showToast(
           `Trip marked Delivered, but recording it in the dispatch log ` +
             `failed (${logError.message}). Its delivery date will be missing ` +
             `from payroll and Payments Due -- tell an admin.`,
+          'error',
         )
       }
     }
@@ -117,14 +119,14 @@ function MarkDeliveredModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         <h3 className="text-lg font-bold text-slate-900">Mark Trip #{itineraryId} Delivered</h3>
         <p className="mt-1 text-sm text-slate-500">
           If any cargo arrived damaged, short or missing, record it here.
         </p>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         <div className="mt-4 grid gap-4">
@@ -146,14 +148,14 @@ function MarkDeliveredModal({
             // the Completed table on the board.
             onClick={statusDone ? onDelivered : onClose}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             {statusDone ? 'Close' : 'Cancel'}
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting ? 'Saving...' : statusDone ? 'Save damage report' : 'Mark Delivered'}
           </button>

@@ -7,6 +7,8 @@ import {
   loadDispatchStatusLogForItinerary,
   type DispatchStatusLogEntry,
 } from '../../../lib/dispatchStatusLog'
+import { formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function ItineraryLogModal({
   itineraryId,
@@ -41,7 +43,7 @@ function ItineraryLogModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-lg bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             Status Log — Itinerary #{itineraryId}
@@ -55,20 +57,20 @@ function ItineraryLogModal({
           {loading && <p className="text-slate-500">Loading log...</p>}
           {!loading && error && <p className="text-red-700">{error}</p>}
           {!loading && !error && entries.length === 0 && (
-            <p className="text-slate-500">No status changes logged for this itinerary yet.</p>
+            <EmptyState message="No status changes logged for this itinerary yet." />
           )}
           {!loading && !error && entries.length > 0 && (
             <div className="grid gap-3">
               {entries.map((entry) => (
                 <div
                   key={entry.log_id}
-                  className="rounded-lg border border-slate-200 p-3"
+                  className="border border-slate-200 p-3"
                 >
                   <p className="text-sm font-medium text-slate-900">
                     {entry.previous_status} → {entry.new_status}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {entry.changed_by_name} · {new Date(entry.changed_at).toLocaleString()}
+                    {entry.changed_by_name} · {formatDateTime(entry.changed_at)}
                   </p>
                 </div>
               ))}
@@ -79,7 +81,7 @@ function ItineraryLogModal({
         <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Close
           </button>

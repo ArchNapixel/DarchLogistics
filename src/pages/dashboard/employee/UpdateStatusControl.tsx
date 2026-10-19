@@ -145,7 +145,7 @@ function UpdateStatusControl({
       <button
         onClick={handleClick}
         disabled={updating || blockedNoTruck}
-        className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 sm:w-auto"
+        className="btn-primary w-full px-4 py-2.5 text-sm font-medium sm:w-auto"
       >
         {updating ? 'Saving...' : `Mark as ${nextLabel}`}
       </button>

@@ -35,6 +35,9 @@ import ClientDelinquencySection from './ClientDelinquencySection'
 import StatusRelogRequestsSection from './StatusRelogRequestsSection'
 import DispatchStatusLogSection from './DispatchStatusLogSection'
 import WorkOrderStatusLogSection from './WorkOrderStatusLogSection'
+import PageHeader, { SectionHeader } from '../../../components/PageHeader'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // ---------- Layout: groups and their chips ----------
 
@@ -52,18 +55,16 @@ function PaymentsDueTab() {
   if (!data) return <SkeletonTable cols={8} />
   const { rows, error } = data
   if (rows.length === 0 && !error) {
-    return <p className="text-slate-500">No outstanding balances right now.</p>
+    return <EmptyState message="No outstanding balances right now." />
   }
-
-  const money = (n: number) => `₱${n.toLocaleString()}`
 
   return (
     <div>
       {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
@@ -97,12 +98,12 @@ function PaymentsDueTab() {
                     <td className="px-4 py-3 text-slate-600">
                       {row.pickup_place_name} → {row.delivery_place_name}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{money(row.billable_amount)}</td>
-                    <td className="px-4 py-3 text-slate-600">{money(row.amount_paid)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatMoney(row.billable_amount)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatMoney(row.amount_paid)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">
-                      {money(row.balance_due)}
+                      {formatMoney(row.balance_due)}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{row.due_date ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDate(row.due_date)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 text-xs font-semibold ${DUE_TONE_STYLES[due.tone]}`}>
                         {due.label}
@@ -116,7 +117,7 @@ function PaymentsDueTab() {
                           <div>
                             <dt className="text-xs text-slate-500">Rate / trip</dt>
                             <dd className="text-slate-900">
-                              {row.rate_per_trip != null ? money(row.rate_per_trip) : '—'}
+                              {row.rate_per_trip != null ? formatMoney(row.rate_per_trip) : '—'}
                             </dd>
                           </div>
                           <div>
@@ -127,7 +128,7 @@ function PaymentsDueTab() {
                           </div>
                           <div>
                             <dt className="text-xs text-slate-500">Contract value</dt>
-                            <dd className="text-slate-900">{money(row.total_contract_value)}</dd>
+                            <dd className="text-slate-900">{formatMoney(row.total_contract_value)}</dd>
                           </div>
                           <div>
                             <dt className="text-xs text-slate-500">Terms</dt>
@@ -136,7 +137,7 @@ function PaymentsDueTab() {
                           <div>
                             <dt className="text-xs text-slate-500">Base date</dt>
                             <dd className="text-slate-900">
-                              {row.base_date ?? '—'} ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
+                              {formatDate(row.base_date)} ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
                             </dd>
                           </div>
                         </dl>
@@ -247,7 +248,7 @@ const OVERVIEW_SUBTITLES: Record<string, string> = {
 function Badge({ n }: { n: number }) {
   if (n <= 0) return null
   return (
-    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
+    <span className="flex h-5 min-w-5 items-center justify-center bg-primary px-1.5 text-[11px] font-semibold text-white">
       {n}
     </span>
   )
@@ -262,7 +263,7 @@ function Overview({
   error: string | null
   onOpen: (group: string, item: string) => void
 }) {
-  if (error) return <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+  if (error) return <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
   if (!counts) return <SkeletonCards />
 
   // Only things with something waiting.
@@ -272,7 +273,7 @@ function Overview({
       .map((item) => ({ group: group.name, label: item.label, value: counts[item.label] })),
   )
 
-  if (pending.length === 0) return <p className="text-slate-500">Nothing needs action right now.</p>
+  if (pending.length === 0) return <EmptyState message="Nothing needs action right now." />
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -280,9 +281,9 @@ function Overview({
         <button
           key={p.label}
           onClick={() => onOpen(p.group, p.label)}
-          className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400"
+          className="border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400"
         >
-          <p className="text-2xl font-bold text-slate-900">{p.value}</p>
+          <p className="text-2xl font-bold text-primary">{p.value}</p>
           <p className="mt-1 text-sm font-medium text-slate-700">{p.label}</p>
           <p className="text-xs text-slate-500">{OVERVIEW_SUBTITLES[p.label]}</p>
         </button>
@@ -314,9 +315,9 @@ function ReportsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Reports</h2>
+      <PageHeader title="Reports" subtitle="Queues that need action, client standing, and activity logs." />
 
-      <div className="mt-4 flex gap-2 border-b border-slate-200">
+      <div className="flex gap-2 border-b border-slate-200">
         {GROUPS.map((g) => (
           <button
             key={g.name}
@@ -339,7 +340,7 @@ function ReportsSection() {
             <button
               key={i.label}
               onClick={() => open(group.name, i.label)}
-              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${
+              className={`flex items-center gap-2 border px-3 py-1 text-sm ${
                 i.label === item.label
                   ? 'border-slate-900 bg-slate-900 text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-500'
@@ -347,7 +348,7 @@ function ReportsSection() {
             >
               {i.label}
               {count(i.label) > 0 && (
-                <span className={i.label === item.label ? 'text-slate-300' : 'text-slate-500'}>
+                <span className={i.label === item.label ? 'text-slate-300' : 'font-semibold text-primary'}>
                   {count(i.label)}
                 </span>
               )}
@@ -357,6 +358,7 @@ function ReportsSection() {
       )}
 
       <div className="mt-5">
+        {item && <SectionHeader title={item.label} />}
         {item ? <item.Component onChanged={refreshCounts} /> : <Overview counts={counts} error={error} onOpen={open} />}
       </div>
     </div>

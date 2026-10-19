@@ -18,13 +18,14 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderAcceptance } from '../../../lib/workOrderAcceptanceLog'
-import { formatDate } from '../../../lib/quoteRequest'
 import {
-  StatusBadge,
   WORK_ORDER_COLUMNS,
   withVehicleLabels,
   type WorkOrder,
 } from './MechanicTasks'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // Same shape as a mechanic's own work orders -- includes trailer_id, so
 // trailer jobs show "Trailer XYZ" instead of "Truck null".
@@ -125,7 +126,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
       {/* Always-visible tab on the drawer's left edge */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative my-auto flex h-40 w-10 shrink-0 items-center justify-center rounded-l-xl border border-r-0 border-slate-900 bg-slate-900 text-sm font-medium text-white hover:bg-slate-700"
+        className="relative my-auto flex h-40 w-10 shrink-0 items-center justify-center border border-r-0 border-slate-900 bg-slate-900 text-sm font-medium text-white hover:bg-slate-700"
         aria-label={open ? 'Close task board' : 'Open task board'}
       >
         <span className="whitespace-nowrap [writing-mode:vertical-rl]">
@@ -144,7 +145,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
       </h2>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
       )}
@@ -153,9 +154,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
         <p className="mt-4 text-slate-500">Loading available work orders...</p>
       )}
       {!loading && orders.length === 0 && (
-        <p className="mt-4 text-slate-500">
-          No work orders to do right now.
-        </p>
+        <EmptyState message="No work orders to do right now." className="mt-4" />
       )}
 
       {!loading && orders.length > 0 && (
@@ -163,7 +162,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
           {orders.map((order) => (
             <div
               key={order.work_order_id}
-              className="rounded-lg border border-slate-200 p-3"
+              className="border border-slate-200 p-3"
             >
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">
@@ -188,7 +187,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
               <button
                 onClick={() => handleAccept(order)}
                 disabled={acceptingId === order.work_order_id}
-                className="mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className="mt-2 border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               >
                 {acceptingId === order.work_order_id
                   ? 'Accepting...'

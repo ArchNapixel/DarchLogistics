@@ -6,10 +6,10 @@ import type { ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
-  formatDate,
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
+import { formatMoney, formatDate } from '../lib/format'
 
 function Muted({ children }: { children: ReactNode }) {
   return <span className="text-slate-400">{children}</span>
@@ -126,10 +126,10 @@ export function QuoteSummary({
         {hasRate && (
           <span className="mt-1 flex items-baseline justify-between border-t border-dashed border-slate-200 pt-2">
             <span className="text-slate-600">
-              ₱{rate.toLocaleString('en-PH')} × {hasCount ? count : 1}
+              {formatMoney(rate)} × {hasCount ? count : 1}
             </span>
             <span className="text-base font-semibold text-slate-900">
-              ₱{(rate * (hasCount ? count : 1)).toLocaleString('en-PH')}
+              {formatMoney((rate * (hasCount ? count : 1)))}
             </span>
           </span>
         )}
@@ -207,7 +207,7 @@ export function QuoteSubmitted({
         <button
           type="button"
           onClick={onAction}
-          className="bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-700"
+          className="btn-primary px-5 py-2.5 text-sm font-medium"
         >
           {actionLabel}
         </button>

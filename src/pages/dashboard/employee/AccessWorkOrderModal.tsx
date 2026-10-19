@@ -22,11 +22,12 @@ import {
   type LoggedPart,
   type InventoryItemOption,
 } from '../../../lib/workOrderPartsLog'
-import { ALL_STATUSES, StatusBadge, type WorkOrder } from './MechanicTasks'
-import { formatDate } from '../../../lib/quoteRequest'
+import { ALL_STATUSES, type WorkOrder } from './MechanicTasks'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDateTime, formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'rounded-lg border border-slate-400 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-400 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 
 function AccessWorkOrderModal({
   order,
@@ -167,7 +168,7 @@ function AccessWorkOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-bold text-slate-900">{order.vehicle_label}</h3>
@@ -196,7 +197,7 @@ function AccessWorkOrderModal({
               value={order.work_order_status}
               disabled={updating}
               onChange={(e) => onStatusChange(order, e.target.value)}
-              className="rounded-lg border border-slate-400 px-2 py-1.5 text-xs text-slate-900"
+              className="border border-slate-400 px-2 py-1.5 text-xs text-slate-900"
             >
               {ALL_STATUSES.filter((status) => status !== 'Completed').map((status) => (
                 <option key={status} value={status}>
@@ -208,7 +209,7 @@ function AccessWorkOrderModal({
           <button
             onClick={onMarkComplete}
             disabled={updating}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-xs font-medium"
           >
             Mark Complete
           </button>
@@ -216,7 +217,7 @@ function AccessWorkOrderModal({
 
         <div className="mt-4 border-t border-slate-300 pt-4">
           {partsError && (
-            <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="mb-3 bg-red-50 px-3 py-2 text-sm text-red-700">
               {partsError}
             </p>
           )}
@@ -231,7 +232,7 @@ function AccessWorkOrderModal({
                 onChange={(e) => setPartSearch(e.target.value)}
                 className={`mt-2 w-full ${fieldClasses}`}
               />
-              <div className="mt-2 h-52 overflow-y-auto rounded-lg border border-slate-400">
+              <div className="mt-2 h-52 overflow-y-auto border border-slate-400">
                 {partsLoading ? (
                   <p className="p-3 text-sm text-slate-500">Loading...</p>
                 ) : visibleStockItems.length === 0 ? (
@@ -257,7 +258,7 @@ function AccessWorkOrderModal({
 
             <div>
               <h4 className="text-sm font-semibold text-slate-700">Used</h4>
-              <div className="mt-2 h-[calc(2.5rem+0.5rem+13rem)] overflow-y-auto rounded-lg border border-slate-400">
+              <div className="mt-2 h-[calc(2.5rem+0.5rem+13rem)] overflow-y-auto border border-slate-400">
                 {partsLoading ? (
                   <p className="p-3 text-sm text-slate-500">Loading...</p>
                 ) : loggedParts.length === 0 ? (
@@ -275,10 +276,7 @@ function AccessWorkOrderModal({
                         {part.item_name_text} × {part.quantity}
                       </span>
                       <span className="text-xs text-slate-400">
-                        {new Date(part.used_at).toLocaleTimeString([], {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
+                        {formatDateTime(part.used_at)}
                       </span>
                     </button>
                   ))
@@ -292,7 +290,7 @@ function AccessWorkOrderModal({
           <h4 className="text-sm font-semibold text-slate-700">Notes</h4>
 
           {notesError && (
-            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="mt-2 bg-red-50 px-3 py-2 text-sm text-red-700">
               {notesError}
             </p>
           )}
@@ -307,7 +305,7 @@ function AccessWorkOrderModal({
             <button
               onClick={handleAddNote}
               disabled={submittingNote}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+              className="btn-primary px-3 py-2 text-xs font-medium"
             >
               {submittingNote ? 'Adding...' : 'Add'}
             </button>
@@ -319,10 +317,10 @@ function AccessWorkOrderModal({
             notes.length > 0 && (
               <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto">
                 {notes.map((note) => (
-                  <div key={note.note_id} className="rounded-lg border border-slate-400 px-3 py-2">
+                  <div key={note.note_id} className="border border-slate-400 px-3 py-2">
                     <p className="text-sm text-slate-700">{note.note}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {note.employee_name} · {new Date(note.created_at).toLocaleString()}
+                      {note.employee_name} · {formatDateTime(note.created_at)}
                     </p>
                   </div>
                 ))}

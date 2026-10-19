@@ -12,57 +12,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { EditableEmployee } from './AddEmployeeModal'
-
-const TRIP_STATUS_LABELS: Record<string, string> = {
-  Awaiting: 'Awaiting',
-  Dispatched: 'Dispatched',
-  PickedUp: 'Picked Up',
-  InTransit: 'In Transit',
-  Delivered: 'Delivered',
-  Cancelled: 'Cancelled',
-}
-
-const TRIP_STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-gray-100 text-gray-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-purple-100 text-purple-700',
-  InTransit: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-function TripStatusBadge({ status }: { status: string }) {
-  const style = TRIP_STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${style}`}>
-      {TRIP_STATUS_LABELS[status] ?? status}
-    </span>
-  )
-}
+import StatusBadge from '../../../components/StatusBadge'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // A trip counts as "currently underway" if it's past Awaiting but not
 // yet finished -- matches the Dispatch Board's own definition of
 // "active" (not Delivered/Cancelled), with Awaiting also excluded here
 // since that means assigned-but-not-yet-moving, not "currently on a trip."
 const ACTIVE_TRIP_STATUSES = new Set(['Dispatched', 'PickedUp', 'InTransit'])
-
-const WORK_ORDER_STATUS_STYLES: Record<string, string> = {
-  Created: 'bg-gray-100 text-gray-700',
-  Scheduled: 'bg-blue-100 text-blue-700',
-  'In Progress': 'bg-orange-100 text-orange-700',
-  'On Hold': 'bg-yellow-100 text-yellow-700',
-  Completed: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-function WorkOrderStatusBadge({ status }: { status: string }) {
-  const style = WORK_ORDER_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${style}`}>
-      {status}
-    </span>
-  )
-}
 
 type TripRow = {
   itinerary_id: number
@@ -195,10 +153,10 @@ function DriverHelperDetail({
 
   return (
     <div>
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="border border-slate-200 bg-slate-50 p-4">
         {current ? (
           <div className="flex items-center gap-3">
-            <TripStatusBadge status={current.status} />
+            <StatusBadge status={current.status} />
             <p className="text-sm text-slate-700">
               {current.pickup_location} → {current.delivery_location}
             </p>
@@ -213,9 +171,9 @@ function DriverHelperDetail({
       </h4>
 
       {trips.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No trips yet.</p>
+        <EmptyState message="No trips yet." className="mt-2" />
       ) : (
-        <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-2 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -227,12 +185,12 @@ function DriverHelperDetail({
             <tbody>
               {trips.map((trip) => (
                 <tr key={trip.itinerary_id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3 text-slate-600">{trip.trip_date_from}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatDate(trip.trip_date_from)}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {trip.pickup_location} → {trip.delivery_location}
                   </td>
                   <td className="px-4 py-3">
-                    <TripStatusBadge status={trip.status} />
+                    <StatusBadge status={trip.status} />
                   </td>
                 </tr>
               ))}
@@ -378,11 +336,11 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
 
   return (
     <div>
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="border border-slate-200 bg-slate-50 p-4">
         {currentWorkOrder ? (
           <div>
             <div className="flex items-center gap-3">
-              <WorkOrderStatusBadge status={currentWorkOrder.work_order_status} />
+              <StatusBadge status={currentWorkOrder.work_order_status} />
               <p className="text-sm font-medium text-slate-900">
                 {currentWorkOrder.work_order_number} — {currentWorkOrder.vehicle_label}
               </p>
@@ -402,9 +360,9 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
       </h4>
 
       {completions.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No completed work orders yet.</p>
+        <EmptyState message="No completed work orders yet." className="mt-2" />
       ) : (
-        <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-2 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -417,7 +375,7 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
               {completions.map((c) => (
                 <tr key={c.completion_id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3 text-slate-600">
-                    {new Date(c.completed_at).toLocaleDateString()}
+                    {formatDate(c.completed_at)}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.description}</td>
                   <td className="px-4 py-3 text-slate-600">{c.vehicle_label}</td>
@@ -445,7 +403,7 @@ function PersonalInfo({ info }: { info: EditableEmployee }) {
   const show = (value: string | null) => value || '—'
   const addressLine = [info.address, info.city, info.province, info.zip_code].filter(Boolean).join(', ')
   return (
-    <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+    <div className="mt-4 grid gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
       <InfoRow label="Phone" value={show(info.phone_number)} />
       <InfoRow label="Personal email" value={show(info.email)} />
       <InfoRow label="Date of birth" value={show(info.date_of_birth)} />
@@ -471,7 +429,7 @@ function EmployeeDetailModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">{employee.name}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -495,7 +453,7 @@ function EmployeeDetailModal({
         <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-secondary px-4 py-2 text-sm font-medium"
           >
             Close
           </button>

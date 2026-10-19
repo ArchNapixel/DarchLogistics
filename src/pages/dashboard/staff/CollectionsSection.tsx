@@ -17,13 +17,9 @@ import {
 import { summarizePayments } from '../../../lib/paymentTotals'
 import { toManilaDate } from '../../../lib/payslip'
 import { promptDialog } from '../../../components/ConfirmDialog'
-
-function formatMoney(value: number): string {
-  return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function CollectionsSection() {
   const today = toManilaDate(new Date())
@@ -121,12 +117,14 @@ function CollectionsSection() {
     URL.revokeObjectURL(url)
   }
 
-  const fieldClass = 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
+  const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">Collections</h2>
+      <PageHeader
+        title="Collections"
+        subtitle="Every payment and refund received, by date."
+        actions={<>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="coll-from" className="text-sm font-medium text-slate-700">From</label>
           <input id="coll-from" type="date" value={from} max={to || today} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
@@ -151,23 +149,24 @@ function CollectionsSection() {
           <button
             onClick={handleDownload}
             disabled={visible.length === 0}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Download CSV
           </button>
         </div>
-      </div>
+        </>}
+      />
 
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
       )}
       {loading && <p className="mt-4 text-slate-500">Loading payments...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && rows.length === 0 && (
-        <p className="mt-4 text-slate-500">No payments were received in this period.</p>
+        <EmptyState message="No payments were received in this period." className="mt-4" />
       )}
       {!loading && !error && rows.length > 0 && visible.length === 0 && (
-        <p className="mt-4 text-slate-500">No payments match these filters.</p>
+        <EmptyState message="No payments match these filters." className="mt-4" />
       )}
 
       {!loading && !error && visible.length > 0 && (
@@ -176,7 +175,7 @@ function CollectionsSection() {
             <Card label="Net collected" value={formatMoney(totals.net)} note={`${totals.count} payment${totals.count === 1 ? '' : 's'} counted`} />
             <Card label="Received" value={formatMoney(totals.received)} />
             <Card label="Refunded" value={formatMoney(totals.refunded)} />
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">By method</p>
               <div className="mt-1 flex flex-col gap-0.5 text-sm text-slate-700">
                 {totals.byMethod.map((m) => (
@@ -189,7 +188,7 @@ function CollectionsSection() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
@@ -208,7 +207,7 @@ function CollectionsSection() {
                   const voided = r.voided_at !== null
                   return (
                     <tr key={r.payment_id} className={`border-b border-slate-100 ${voided ? 'bg-slate-50 text-slate-400' : ''}`}>
-                      <td className="whitespace-nowrap px-4 py-3">{r.paid_on}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{formatDate(r.paid_on)}</td>
                       <td className="px-4 py-3">
                         <Link to={`/dashboard/bookings?booking=${r.booking_id}`} className="hover:underline">
                           #{r.booking_id}
@@ -256,7 +255,7 @@ function CollectionsSection() {
 
 function Card({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}

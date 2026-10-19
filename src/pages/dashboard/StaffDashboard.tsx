@@ -7,31 +7,16 @@ import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
 import OperationalExpensesCard from './staff/OperationalExpensesCard'
 import PayrollExpensesCard from './staff/PayrollExpensesCard'
 import TopCreditorsCard from './staff/TopCreditorsCard'
+import PageHeader from '../../components/PageHeader'
+import StatusBadge from '../../components/StatusBadge'
+import { formatMoney } from '../../lib/format'
+import EmptyState from '../../components/EmptyState'
 
 const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
-// Outlined, square-cornered badges (mono accent ramp only, no rainbow
-// fills) to match the blueprint card style -- text color is the only
-// thing that varies per status, darker as a trip gets closer to done.
-const ITINERARY_STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'border-neutral-300 text-neutral-500',
-  Dispatched: 'border-accent-300 text-accent-500',
-  PickedUp: 'border-accent-500 text-accent-700',
-  InTransit: 'border-accent-700 text-accent-700',
-  Delivered: 'border-accent-900 text-accent-900',
-  Cancelled: 'border-red-300 text-red-700',
-}
-
-function ItineraryStatusBadge({ status }: { status: string }) {
-  const styles = ITINERARY_STATUS_STYLES[status] ?? 'border-neutral-300 text-neutral-500'
-  return (
-    <span
-      className={`rounded-full border px-2.5 py-1 font-ui text-[11px] font-semibold tracking-[0.05em] uppercase ${styles}`}
-    >
-      {status}
-    </span>
-  )
-}
+// Cards whose number means "someone needs to act" -- shown in the accent
+// color (see the design system notes in index.css).
+const ATTENTION_CARDS = new Set(['Pending Quotes', 'Pending Approval', 'Current Balance'])
 
 // The period dropdown. Each `period` is one fixed object so the expense
 // cards (which reload when it changes) don't reload on every render.
@@ -228,7 +213,7 @@ function StaffDashboard() {
       }
       setCashAdvance(
         [totals.pending, totals.issued, totals.deducted, totals.current].map(
-          (n) => `₱${n.toLocaleString()}`,
+          (n) => `${formatMoney(n)}`,
         ),
       )
     })
@@ -439,9 +424,9 @@ function StaffDashboard() {
               {card.label}
             </p>
             <p
-              className={`font-condensed leading-none font-semibold text-reports-ink ${
-                large ? 'mt-3 text-5xl font-bold' : 'mt-1 text-xl sm:text-2xl'
-              }`}
+              className={`font-condensed leading-none font-semibold ${
+                ATTENTION_CARDS.has(card.label) ? 'text-primary' : 'text-reports-ink'
+              } ${large ? 'mt-3 text-5xl font-bold' : 'mt-1 text-xl sm:text-2xl'}`}
             >
               {loading ? '--' : card.value}
             </p>
@@ -452,23 +437,19 @@ function StaffDashboard() {
   )
 
   return (
-    <div className="bg-reports-bg -m-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-condensed text-2xl font-semibold tracking-tight text-reports-ink">
-          Welcome, {username}
-        </h1>
-        <p className="font-ui text-sm text-neutral-500">
-          {new Date().toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="Dashboard"
+        subtitle={`Welcome, ${username} · ${new Date().toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })}`}
+      />
 
       {summaryError && (
-        <p className="rounded-lg mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
           {summaryError}
         </p>
       )}
@@ -484,7 +465,7 @@ function StaffDashboard() {
               onChange={(e) =>
                 setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
               }
-              className="rounded-lg border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
+              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
             >
               {REVENUE_RANGES.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -494,7 +475,7 @@ function StaffDashboard() {
             </select>
             <button
               onClick={() => setRefreshKey((k) => k + 1)}
-              className="rounded-lg border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
+              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
             >
               Refresh
             </button>
@@ -504,7 +485,7 @@ function StaffDashboard() {
           <p className="mt-2 font-ui text-sm text-red-700">{revenueError}</p>
         ) : (
           <p className="font-condensed mt-2 text-[40px] leading-none font-bold text-reports-ink">
-            {revenueLoading ? '--' : `₱${revenue.toLocaleString()}`}
+            {revenueLoading ? '--' : `${formatMoney(revenue)}`}
           </p>
         )}
       </div>
@@ -570,9 +551,7 @@ function StaffDashboard() {
         {!todayDeliveriesLoading &&
           !todayDeliveriesError &&
           todayDeliveryRows.length === 0 && (
-            <p className="mt-3 font-ui text-neutral-500">
-              No deliveries scheduled for today.
-            </p>
+            <EmptyState message="No deliveries scheduled for today." className="mt-3" />
           )}
 
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
@@ -582,16 +561,16 @@ function StaffDashboard() {
             {todayDeliveryRows.map((row) => (
               <div
                 key={row.itinerary_id}
-                className="rounded-lg border-2 border-slate-400 bg-reports-bg p-3 font-ui text-sm"
+                className="border-2 border-slate-400 bg-reports-bg p-3 font-ui text-sm"
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-reports-ink">
                     {row.from} <span className="text-neutral-400">→</span> {row.to}
                   </p>
-                  <ItineraryStatusBadge status={row.status} />
+                  <StatusBadge status={row.status} />
                 </div>
                 <p className="mt-2 text-xs text-neutral-600">
-                  {row.rate != null ? `₱${row.rate.toLocaleString()}` : 'N/A'} · Truck{' '}
+                  {row.rate != null ? `${formatMoney(row.rate)}` : 'N/A'} · Truck{' '}
                   {row.truckPlateNumber ?? 'Unassigned'} · Trailer{' '}
                   {row.trailerPlateNumber ?? 'Unassigned'}
                 </p>
@@ -599,7 +578,7 @@ function StaffDashboard() {
             ))}
           </div>
 
-          <div className="rounded-lg mt-3 hidden max-h-96 overflow-y-auto overflow-x-auto border-2 border-slate-400 bg-reports-bg sm:block">
+          <div className="mt-3 hidden max-h-96 overflow-y-auto overflow-x-auto border-2 border-slate-400 bg-reports-bg sm:block">
             <table className="w-full text-left font-ui text-sm">
               <thead className="sticky top-0 border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>
@@ -620,7 +599,7 @@ function StaffDashboard() {
                     <td className="px-4 py-3 text-reports-ink">{row.from}</td>
                     <td className="px-4 py-3 text-neutral-600">{row.to}</td>
                     <td className="px-4 py-3 text-neutral-600">
-                      {row.rate != null ? `₱${row.rate.toLocaleString()}` : 'N/A'}
+                      {row.rate != null ? `${formatMoney(row.rate)}` : 'N/A'}
                     </td>
                     <td
                       className={
@@ -641,7 +620,7 @@ function StaffDashboard() {
                       {row.trailerPlateNumber ?? 'Unassigned'}
                     </td>
                     <td className="px-4 py-3">
-                      <ItineraryStatusBadge status={row.status} />
+                      <StatusBadge status={row.status} />
                     </td>
                   </tr>
                 ))}

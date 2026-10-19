@@ -23,9 +23,10 @@ import {
   type EditableKey,
 } from '../../../lib/myProfile'
 import { toManilaDate } from '../../../lib/payslip'
+import { formatMoney } from '../../../lib/format'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 // Commission Per Trip has no column of its own -- a Driver's per-trip
@@ -121,7 +122,7 @@ function AddEmployeeModal({
     employee.rate_type !== 'Weekly Salary' &&
     employee.rate_type !== 'Commission Per Trip' &&
     employee.rate_amount != null
-      ? `${employee.rate_type} ₱${employee.rate_amount.toLocaleString()}`
+      ? `${employee.rate_type} ${formatMoney(employee.rate_amount)}`
       : null
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
@@ -325,7 +326,7 @@ function AddEmployeeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-xl rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-xl bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             {isEditing ? 'Edit Employee' : 'Add Employee'}
@@ -339,7 +340,7 @@ function AddEmployeeModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -392,7 +393,7 @@ function AddEmployeeModal({
           {isEditing ? (
             <div className={labelClasses}>
               Position
-              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+              <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
                 {position}
               </p>
             </div>
@@ -425,7 +426,7 @@ function AddEmployeeModal({
 
           <div className={labelClasses}>
             Rate type
-            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+            <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
               {rateType}
             </p>
           </div>
@@ -455,14 +456,14 @@ function AddEmployeeModal({
               type="checkbox"
               checked={isMinimumWageEarner}
               onChange={(e) => setIsMinimumWageEarner(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
+              className="h-4 w-4 border-slate-300"
             />
             Minimum wage earner (exempt from withholding tax)
           </label>
 
           {/* Everything below is optional. Government IDs are safe to show
               here: only Admin can reach the Employees page. */}
-          <details className="rounded-lg border border-slate-200 p-3 sm:col-span-2" open={isEditing}>
+          <details className="border border-slate-200 p-3 sm:col-span-2" open={isEditing}>
             <summary className="cursor-pointer text-sm font-semibold text-slate-900">
               More details (optional)
             </summary>
@@ -590,14 +591,14 @@ function AddEmployeeModal({
           )}
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting
               ? isEditing

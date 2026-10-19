@@ -16,32 +16,29 @@ import { useState } from 'react'
 import MyPayslipSection from './MyPayslipSection'
 import MyCashAdvanceRequestsSection from './MyCashAdvanceRequestsSection'
 import MyPayslipIssueReportsSection from './MyPayslipIssueReportsSection'
+import PageHeader, { SectionHeader } from '../../../components/PageHeader'
 
 function MyPayslipPage() {
   const [issueReportsRefreshKey, setIssueReportsRefreshKey] = useState(0)
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">My Payslips</h2>
-      <div className="mt-4">
-        <MyPayslipSection
-          onIssueReported={() =>
-            setIssueReportsRefreshKey((key) => key + 1)
-          }
-        />
-      </div>
+      <PageHeader title="My Payslips" subtitle="Your finalized payslips, cash advances and payslip questions." />
+      <MyPayslipSection
+        onIssueReported={() =>
+          setIssueReportsRefreshKey((key) => key + 1)
+        }
+      />
 
-      <h2 className="mt-8 text-xl font-bold text-slate-900">Cash Advances</h2>
-      <div className="mt-4">
+      <section className="mt-8">
+        <SectionHeader title="Cash Advances" />
         <MyCashAdvanceRequestsSection />
-      </div>
+      </section>
 
-      <h2 className="mt-8 text-xl font-bold text-slate-900">
-        My Payslip Issue Reports
-      </h2>
-      <div className="mt-4">
+      <section className="mt-8">
+        <SectionHeader title="My Payslip Issue Reports" />
         <MyPayslipIssueReportsSection key={issueReportsRefreshKey} />
-      </div>
+      </section>
     </div>
   )
 }

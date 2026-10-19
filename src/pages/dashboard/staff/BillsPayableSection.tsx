@@ -28,23 +28,15 @@ import {
 } from '../../../lib/payableTotals'
 import { PAYMENT_METHODS } from '../../../lib/bookingPayments'
 import { toManilaDate } from '../../../lib/payslip'
-import { formatDate } from '../../../lib/quoteRequest'
 import { promptDialog } from '../../../components/ConfirmDialog'
-
-function formatMoney(value: number): string {
-  return `₱${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-const STATUS_STYLES: Record<BillStatus, string> = {
-  Unpaid: 'bg-amber-100 text-amber-800',
-  Partial: 'bg-blue-100 text-blue-700',
-  Paid: 'bg-green-100 text-green-700',
-  Voided: 'bg-slate-100 text-slate-500',
-}
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type Tab = 'open' | 'paid' | 'voided' | 'creditors'
 
-const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
+const inputClass = 'mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
 const labelClass = 'block text-xs font-medium text-slate-600'
 
 function BillsPayableSection() {
@@ -144,26 +136,29 @@ function BillsPayableSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">Bills Payable</h2>
+      <PageHeader
+        title="Bills Payable"
+        subtitle="Money the company owes: bills, expenses and creditors."
+        actions={<>
         <div className="flex gap-2">
           <button
             onClick={() => setEditingCreditor('new')}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             Add creditor
           </button>
           <button
             onClick={() => setAdding(true)}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Add bill / expense
           </button>
         </div>
-      </div>
+        </>}
+      />
 
       {actionError && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
       )}
       {loading && <p className="mt-4 text-slate-500">Loading bills...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
@@ -190,7 +185,7 @@ function BillsPayableSection() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                className={`px-3 py-1.5 text-sm font-medium ${
                   tab === key ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -202,9 +197,9 @@ function BillsPayableSection() {
           {tab === 'creditors' ? (
             <CreditorsTable creditors={creditors} onEdit={setEditingCreditor} />
           ) : visible.length === 0 ? (
-            <p className="mt-4 text-slate-500">Nothing in this tab.</p>
+            <EmptyState message="Nothing in this tab." className="mt-4" />
           ) : (
-            <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 text-slate-500">
                   <tr>
@@ -322,12 +317,12 @@ function BillRows({
           {open ? formatMoney(billRemaining(bill)) : '—'}
         </td>
         <td className="px-4 py-3">
-          <span className={`px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}>{status}</span>
+          <StatusBadge status={status} />
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-2 text-xs font-medium">
             {open && (
-              <button onClick={onPay} className="rounded-lg bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-700">
+              <button onClick={onPay} className="btn-primary px-3 py-1.5">
                 Pay
               </button>
             )}
@@ -390,10 +385,10 @@ function CreditorsTable({
   onEdit: (creditor: Creditor) => void
 }) {
   if (creditors.length === 0) {
-    return <p className="mt-4 text-slate-500">No creditors yet. Use "Add creditor" above.</p>
+    return <EmptyState message="No creditors yet." hint='Use "Add creditor" above.' className="mt-4" />
   }
   return (
-    <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-slate-200 text-slate-500">
           <tr>
@@ -429,7 +424,7 @@ function CreditorsTable({
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-lg bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">{title}</h3>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">
@@ -555,7 +550,7 @@ function AddBillModal({
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg bg-slate-50 p-3">
+      <div className="mt-4 bg-slate-50 p-3">
         <label className="flex items-center gap-2 text-sm font-medium text-slate-900">
           <input type="checkbox" checked={paidNow} onChange={(e) => setPaidNow(e.target.checked)} />
           Already paid in full (a one-off expense)
@@ -572,11 +567,11 @@ function AddBillModal({
         )}
       </div>
 
-      {saveError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+      {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
 
       <div className="mt-6 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
-        <button onClick={save} disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+        <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+        <button onClick={save} disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">
           {saving ? 'Saving...' : paidNow ? 'Save expense' : 'Save bill'}
         </button>
       </div>
@@ -659,10 +654,10 @@ function PayBillModal({ bill, onClose, onSaved }: { bill: Bill; onClose: () => v
         </div>
       </div>
       {inputError && amountText !== '' && <p className="mt-2 text-xs text-red-700">{inputError}</p>}
-      {saveError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+      {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
       <div className="mt-6 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
-        <button onClick={save} disabled={saving || !!inputError} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+        <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+        <button onClick={save} disabled={saving || !!inputError} className="btn-primary px-4 py-2 text-sm font-medium">
           {saving ? 'Saving...' : 'Record payment'}
         </button>
       </div>
@@ -734,10 +729,10 @@ function CreditorModal({
           <input id="cred-note" type="text" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
         </div>
       </div>
-      {saveError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+      {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
       <div className="mt-6 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
-        <button onClick={save} disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+        <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+        <button onClick={save} disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">
           {saving ? 'Saving...' : 'Save creditor'}
         </button>
       </div>
@@ -747,7 +742,7 @@ function CreditorModal({
 
 function Card({ label, value, note, danger }: { label: string; value: string; note?: string; danger?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-1 text-lg font-bold ${danger ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}

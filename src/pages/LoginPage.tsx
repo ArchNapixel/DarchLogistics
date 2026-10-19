@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
 const fieldClasses =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
+  'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function LoginPage() {
@@ -60,8 +60,8 @@ function LoginPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-xl font-bold text-white">
+      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center bg-navy text-xl font-bold text-white">
           D
         </div>
         <h1 className="mt-3 text-center text-xl font-bold text-slate-900">
@@ -73,7 +73,7 @@ function LoginPage() {
 
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           {error && (
-            <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </p>
           )}
@@ -121,7 +121,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary mt-2 px-4 py-3 text-sm font-semibold"
           >
             {submitting ? 'Logging in...' : 'Log In'}
           </button>

@@ -8,7 +8,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type Severity = 'Minor' | 'Major'
@@ -124,13 +124,13 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         {done ? (
           <>
             <h3 className="text-lg font-bold text-slate-900">Report submitted</h3>
             <p className="mt-3 text-sm text-slate-600">Staff can now review your report.</p>
             <div className="mt-6 flex justify-end">
-              <button onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Done</button>
+              <button onClick={onClose} className="btn-primary px-4 py-2 text-sm font-medium">Done</button>
             </div>
           </>
         ) : (
@@ -140,7 +140,7 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
               <button onClick={onClose} disabled={submitting} className="text-slate-400 hover:text-slate-700">✕</button>
             </div>
 
-            {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+            {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
             {loadingVehicles ? (
               <p className="mt-4 text-slate-500">Loading vehicles...</p>
@@ -173,8 +173,8 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
             )}
 
             <div className="mt-6 flex justify-end gap-3">
-              <button onClick={onClose} disabled={submitting} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button onClick={handleSubmit} disabled={submitting || loadingVehicles || vehicles.length === 0} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+              <button onClick={onClose} disabled={submitting} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button onClick={handleSubmit} disabled={submitting || loadingVehicles || vehicles.length === 0} className="btn-primary px-4 py-2 text-sm font-medium">
                 {submitting ? 'Submitting...' : 'Submit Report'}
               </button>
             </div>

@@ -10,14 +10,10 @@ import {
   decideCashAdvanceRequest,
   type PendingCashAdvanceRequest,
 } from '../../../lib/cashAdvanceRequests'
+import { promptDialog } from '../../../components/ConfirmDialog'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 function CashAdvanceRequestsSection() {
   const { employeeId } = useAuth()
@@ -56,14 +52,14 @@ function CashAdvanceRequestsSection() {
 
     let rejectionReason: string | undefined
     if (!approve) {
-      const input = window.prompt(
-        `Reason for rejecting ${request.employee_name}'s request?`,
-      )
+      // promptDialog keeps its Reject button disabled until a reason is typed.
+      const input = await promptDialog({
+        title: 'Reject cash advance request',
+        message: `Why is ${request.employee_name}'s request being rejected?`,
+        confirmLabel: 'Reject',
+        danger: true,
+      })
       if (input === null) return
-      if (!input.trim()) {
-        setActionError('Enter a reason for rejecting this request.')
-        return
-      }
       rejectionReason = input.trim()
     }
 
@@ -104,29 +100,29 @@ function CashAdvanceRequestsSection() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-slate-700">
         Cash Advance Requests
       </h3>
 
       {actionError && (
-        <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {requests.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">No pending requests.</p>
+        <EmptyState message="No pending requests." className="mt-3" />
       ) : (
         <div className="mt-3 grid gap-3">
           {requests.map((request) => (
             <div
               key={request.cash_advance_id}
-              className="rounded-xl border border-slate-200 p-4"
+              className="border border-slate-200 p-4"
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
-                  {request.employee_name} — ₱{request.amount.toLocaleString()}
+                  {request.employee_name} — {formatMoney(request.amount)}
                 </p>
                 <span className="text-xs text-slate-500">
                   Requested {formatDate(request.created_at)}
@@ -139,14 +135,14 @@ function CashAdvanceRequestsSection() {
                 <button
                   onClick={() => handleDecide(request, true)}
                   disabled={decidingId === request.cash_advance_id}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="btn-primary px-3 py-1.5 text-sm font-medium"
                 >
                   {decidingId === request.cash_advance_id ? 'Saving...' : 'Approve'}
                 </button>
                 <button
                   onClick={() => handleDecide(request, false)}
                   disabled={decidingId === request.cash_advance_id}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Reject
                 </button>

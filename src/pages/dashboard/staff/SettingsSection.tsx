@@ -8,6 +8,9 @@
 // rows exist.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import PageHeader from '../../../components/PageHeader'
+import { showToast } from '../../../components/Toast'
+import EmptyState from '../../../components/EmptyState'
 
 type Setting = {
   setting_key: string
@@ -23,7 +26,6 @@ function SettingsSection() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [savedMessage, setSavedMessage] = useState<string | null>(null)
 
   useEffect(() => {
     loadSettings()
@@ -56,7 +58,6 @@ function SettingsSection() {
   async function handleSave() {
     setSaving(true)
     setSaveError(null)
-    setSavedMessage(null)
 
     for (const setting of settings) {
       const rawValue = values[setting.setting_key]
@@ -81,27 +82,26 @@ function SettingsSection() {
     }
 
     setSaving(false)
-    setSavedMessage('Settings saved.')
+    showToast('Settings saved.')
     loadSettings()
   }
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Settings</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Business constants used across the app -- diesel price, commission
-        rates, and similar values that change from time to time.
-      </p>
+      <PageHeader
+        title="Settings"
+        subtitle="Business constants used across the app -- diesel price, commission rates, and similar values."
+      />
 
       {loading && <p className="mt-4 text-slate-500">Loading settings...</p>}
       {!loading && error && <p className="mt-4 text-red-700">{error}</p>}
 
       {!loading && !error && settings.length === 0 && (
-        <p className="mt-4 text-slate-500">No settings configured yet.</p>
+        <EmptyState message="No settings configured yet." className="mt-4" />
       )}
 
       {!loading && !error && settings.length > 0 && (
-        <div className="mt-6 max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mt-6 max-w-md border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4">
             {settings.map((setting) => (
               <label
@@ -120,7 +120,7 @@ function SettingsSection() {
                         [setting.setting_key]: e.target.value,
                       }))
                     }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                    className="w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
                   />
                   {setting.unit && (
                     <span className="text-sm text-slate-400">{setting.unit}</span>
@@ -131,20 +131,15 @@ function SettingsSection() {
           </div>
 
           {saveError && (
-            <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
               {saveError}
-            </p>
-          )}
-          {savedMessage && (
-            <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-              {savedMessage}
             </p>
           )}
 
           <button
             onClick={handleSave}
             disabled={saving}
-            className="mt-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary mt-6 px-4 py-2 text-sm font-medium"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>

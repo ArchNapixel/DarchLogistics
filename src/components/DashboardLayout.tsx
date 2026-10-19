@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabaseClient'
 import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
 import { isAdmin } from '../lib/roles'
 import RoleBadge from './RoleBadge'
+import { showToast } from './Toast'
 
 type SidebarLink = {
   label: string
@@ -34,7 +35,7 @@ const TAB_ICONS: Record<string, string> = {
   'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
   'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
   'Trip Profitability': 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
-  'Payroll & Remittances':'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  Remittances:'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
   'Revenue Reconciliation': 'M4 7h16M4 17h16M8 3l-4 4 4 4M16 13l4 4-4 4',
   'Profit & Loss': 'M3 3v18h18M7 14l4-4 3 3 5-6',
@@ -60,6 +61,7 @@ const TAB_ICONS: Record<string, string> = {
   Payroll: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   'Payroll Master': 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   'Cash Advance': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  'Cash Advances': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   'Truck Monitoring':
     'M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   'Fleet Master':
@@ -121,10 +123,11 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
       // on a shared computer. Tell the person plainly instead of quietly
       // sending them to the login screen as if it worked.
       console.error('Sign out failed', error)
-      window.alert(
+      showToast(
         "Logging out didn't fully complete. If you're on a shared " +
           'computer, please close the browser to be safe, then try ' +
           'logging out again.',
+        'error',
       )
     }
 
@@ -146,7 +149,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               aria-label="Toggle navigation"
               aria-expanded={drawerOpen}
               aria-controls="dashboard-sidebar"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-900 md:hidden"
+              className="flex h-11 w-11 items-center justify-center border border-slate-300 text-slate-900 md:hidden"
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path
@@ -158,9 +161,9 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               </svg>
             </button>
           )}
-          {/* Logo: dark rounded badge with a truck + two-tone wordmark */}
+          {/* Logo: square navy badge with a truck + two-tone wordmark */}
           <Link to={homePath} className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white">
+            <span className="flex h-9 w-9 items-center justify-center bg-navy text-white">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d={TAB_ICONS.Fleet} />
               </svg>
@@ -168,7 +171,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             {/* Wordmark shrinks on phones; hidden on the tiniest screens so the
             header buttons always fit (the logo badge still links home). */}
             <span className="hidden truncate font-display text-lg font-semibold uppercase tracking-wide text-slate-900 min-[400px]:inline sm:text-2xl">
-              Darch <span className="font-medium text-brand-steel">Logistics</span>
+              Darch <span className="font-medium text-primary">Logistics</span>
             </span>
           </Link>
         </div>
@@ -181,7 +184,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </span>
           <button
             onClick={handleLogout}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 sm:px-4"
+            className="btn-secondary px-3 py-2 text-sm font-medium sm:px-4"
           >
             Log Out
           </button>
@@ -199,13 +202,12 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               />
             )}
 
-            {/* Sidebar = the 30% secondary color (brand-steel). Active/
-            current-page links use slate-900 (the 10% accent, same
-            color as every primary action button in the app) so the
-            current page stays visually distinct against the blue. */}
+            {/* Sidebar = the 30% structure color (navy) with light text.
+            The current page uses the 10% accent (primary steel blue),
+            so it stands out from the navy. Colors: index.css. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r print:hidden border-slate-200 bg-white p-3 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto print:hidden bg-navy p-3 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
@@ -219,10 +221,10 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         end
                         onClick={closeNav}
                         className={({ isActive }) =>
-                          `flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${
+                          `flex items-center px-2.5 py-1 text-xs font-medium ${
                             isActive
-                              ? 'bg-slate-900 text-white'
-                              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                              ? 'bg-primary text-white'
+                              : 'text-slate-200 hover:bg-navy-hover hover:text-white'
                           }`
                         }
                       >
@@ -252,10 +254,10 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           end
                           onClick={closeNav}
                           className={({ isActive }) =>
-                            `flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${
+                            `flex items-center px-2.5 py-1 text-xs font-medium ${
                               isActive
-                                ? 'bg-slate-900 text-white'
-                                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                ? 'bg-primary text-white'
+                                : 'text-slate-200 hover:bg-navy-hover hover:text-white'
                             }`
                           }
                         >
@@ -273,8 +275,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   to="/dashboard/settings"
                   onClick={closeNav}
                   className={({ isActive }) =>
-                    `mt-2 flex items-center border-t border-slate-200 px-2.5 pt-2 text-xs font-medium ${
-                      isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+                    `mt-2 flex items-center border-t border-white/10 px-2.5 py-1 pt-2 text-xs font-medium ${
+                      isActive ? 'bg-primary text-white' : 'text-slate-300 hover:bg-navy-hover hover:text-white'
                     }`
                   }
                 >

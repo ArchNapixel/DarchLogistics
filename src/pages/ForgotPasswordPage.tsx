@@ -35,13 +35,13 @@ function ForgotPasswordPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-center text-xl font-bold text-slate-900">
           Reset your password
         </h1>
 
         {sent ? (
-          <p className="mt-6 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+          <p className="mt-6 bg-green-50 px-4 py-3 text-sm text-green-800">
             If an account exists for {email}, a reset link is on its way.
             Check your inbox (and spam folder).
           </p>
@@ -53,7 +53,7 @@ function ForgotPasswordPage() {
             </p>
 
             {error && (
-              <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              <p className="bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </p>
             )}
@@ -67,14 +67,14 @@ function ForgotPasswordPage() {
                 required
                 autoFocus
                 autoComplete="email"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
             </label>
 
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              className="btn-primary px-4 py-3 text-sm font-semibold"
             >
               {submitting ? 'Sending...' : 'Send Reset Link'}
             </button>

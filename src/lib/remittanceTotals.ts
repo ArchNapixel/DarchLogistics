@@ -1,4 +1,4 @@
-// remittanceTotals: the pure math behind Accounting -> Payroll & Remittances
+// remittanceTotals: the pure math behind Accounting -> Remittances
 // (no Supabase here, so it can be self-checked with
 // `node scripts/check-remittance-totals.ts`). Data loading is in
 // remittanceReport.ts.

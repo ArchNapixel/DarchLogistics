@@ -21,10 +21,13 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { formatDate } from '../../../lib/quoteRequest'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import BookingDetailModal from './BookingDetailModal'
 import PaymentDuePanel from './PaymentDuePanel'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 export type Booking = {
   booking_id: number
@@ -56,25 +59,6 @@ export type Booking = {
   // Number from the printed invoice booklet, typed in on Bills Receivable.
   // Optional for the same reason as reference_code.
   invoice_number?: string | null
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-700',
-  Confirmed: 'bg-blue-100 text-blue-700',
-  InProgress: 'bg-amber-100 text-amber-800',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-const STATUS_LABELS: Record<string, string> = { InProgress: 'In progress' }
-
-export function BookingStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700'
-  return (
-    <span className={`whitespace-nowrap px-3 py-1 text-xs font-semibold ${style}`}>
-      {STATUS_LABELS[status] ?? status}
-    </span>
-  )
 }
 
 const STATUS_FILTERS = [
@@ -324,9 +308,9 @@ function BookingsSection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">Client Bookings</h2>
+      <PageHeader title="Bookings" subtitle="Every client booking and its trips." />
 
-      <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <div role="group" aria-label="Filter by status" className="flex">
@@ -336,7 +320,7 @@ function BookingsSection() {
                   type="button"
                   onClick={() => setStatusFilter(filter.value)}
                   aria-pressed={statusFilter === filter.value}
-                  className={`border px-3 py-1.5 text-sm font-medium first:rounded-l-lg last:rounded-r-lg [&:not(:first-child)]:-ml-px ${
+                  className={`border px-3 py-1.5 text-sm font-medium [&:not(:first-child)]:-ml-px ${
                     statusFilter === filter.value
                       ? 'relative border-slate-900 bg-slate-900 text-white'
                       : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
@@ -355,7 +339,7 @@ function BookingsSection() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search client, place, booking # or Q- reference"
               aria-label="Search bookings"
-              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
+              className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
             />
             {/* View toggle -- shows the icon of the view you'd switch TO. */}
             <button
@@ -363,7 +347,7 @@ function BookingsSection() {
               onClick={toggleViewMode}
               title={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
               aria-label={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
-              className="rounded-lg border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-slate-500"
+              className="border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-slate-500"
             >
               {viewMode === 'full' ? (
                 // Compact: stacked rows
@@ -385,10 +369,7 @@ function BookingsSection() {
           ) : error ? (
             <p className="text-red-700">{error}</p>
           ) : bookings.length === 0 ? (
-            <p className="text-slate-500">
-              No bookings yet. Bookings are created when a quote is approved
-              on the Quotations page.
-            </p>
+            <EmptyState message="No bookings yet." hint="Bookings are created when a quote is approved on the Quotations page." />
           ) : visibleBookings.length === 0 ? (
             <p className="text-slate-500">
               No bookings match.{' '}
@@ -427,7 +408,7 @@ function BookingsSection() {
                     type="button"
                     onClick={() => toggleExpanded(booking.booking_id)}
                     aria-expanded={false}
-                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-5 py-3 text-left text-sm shadow-sm hover:bg-slate-50"
+                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 border border-slate-200 bg-white px-5 py-3 text-left text-sm shadow-sm hover:bg-slate-50"
                   >
                     <span className="font-semibold text-slate-900">Booking #{booking.booking_id}</span>
                     <span className="text-slate-700">{booking.client_name}</span>
@@ -437,14 +418,14 @@ function BookingsSection() {
                     <span className="whitespace-nowrap text-slate-500">
                       {booking.date ? formatDate(booking.date) : '—'}
                     </span>
-                    <BookingStatusBadge status={booking.status} />
+                    <StatusBadge status={booking.status} />
                     <span className="text-xs font-medium text-slate-500">Show details ▾</span>
                   </button>
                 )
               })}
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 text-slate-500">
                   <tr>
@@ -497,15 +478,15 @@ function BookingsSection() {
                         {booking.date ? formatDate(booking.date) : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <BookingStatusBadge status={booking.status} />
+                        <StatusBadge status={booking.status} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {booking.rate !== null
-                          ? `₱${booking.rate.toLocaleString()}`
+                          ? `${formatMoney(booking.rate)}`
                           : '—'}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        ₱{booking.total_contract_value.toLocaleString()}
+                        {formatMoney(booking.total_contract_value)}
                         <span className="ml-1 text-xs text-slate-400">
                           ({booking.completed_trips}/{booking.total_trips}{' '}
                           trips)

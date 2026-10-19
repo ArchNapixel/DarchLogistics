@@ -50,11 +50,11 @@ import { supabase } from '../../../lib/supabaseClient'
 import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
-import { formatDate } from '../../../lib/quoteRequest'
 import type { QuoteRequest } from './QuoteRequestsSection'
+import { formatMoney, formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 // Looks up an existing place by city+barangay (trimmed, case-insensitive)
@@ -671,7 +671,7 @@ function QuoteReviewModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center sm:py-8">
       <div className="flex w-full max-w-4xl flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-center">
-      <div className="max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-lg lg:max-w-lg">
+      <div className="max-h-[90vh] w-full overflow-y-auto bg-white p-6 shadow-lg lg:max-w-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             Quote #{quote.quote_request_id}
@@ -691,14 +691,14 @@ function QuoteReviewModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}
 
         {approvedBookingId !== null ? (
           <>
-            <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+            <p className="mt-4 bg-green-50 px-4 py-3 text-sm text-green-800">
               Quote approved. Booking #{approvedBookingId} was created with{' '}
               {itinerariesCreated}{' '}
               {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'}{' '}
@@ -708,7 +708,7 @@ function QuoteReviewModal({
             <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
               <button
                 onClick={() => onResolved(quote.quote_request_id)}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                className="btn-primary px-4 py-2 text-sm font-medium"
               >
                 Done
               </button>
@@ -854,14 +854,14 @@ function QuoteReviewModal({
                 <div className="mt-4 flex justify-end gap-3">
                   <button
                     onClick={() => setShowRejectForm(false)}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleReject}
                     disabled={submitting}
-                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                    className="bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
                   >
                     {submitting ? 'Rejecting...' : 'Confirm Reject'}
                   </button>
@@ -872,14 +872,14 @@ function QuoteReviewModal({
                 <button
                   onClick={() => setShowRejectForm(true)}
                   disabled={submitting}
-                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  className="border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                 >
                   Reject
                 </button>
                 <button
                   onClick={handleApprove}
                   disabled={submitting}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="btn-primary px-4 py-2 text-sm font-medium"
                 >
                   {submitting ? 'Approving...' : 'Approve'}
                 </button>
@@ -890,7 +890,7 @@ function QuoteReviewModal({
       </div>
 
       {showProfitabilityPanel && (
-        <div className="w-full overflow-y-auto rounded-xl bg-white p-6 shadow-lg lg:max-w-xs">
+        <div className="w-full overflow-y-auto bg-white p-6 shadow-lg lg:max-w-xs">
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
             Profitability Estimate
           </h3>
@@ -913,41 +913,35 @@ function QuoteReviewModal({
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">
                   Contract value ({deliveryCount}{' '}
-                  {deliveryCount === 1 ? 'trip' : 'trips'} × ₱
-                  {rateForCalc.toLocaleString()})
+                  {deliveryCount === 1 ? 'trip' : 'trips'} ×{' '}
+                  {formatMoney(rateForCalc)})
                 </span>
                 <span className="font-medium text-slate-900">
-                  ₱{totalContractValue.toLocaleString()}
+                  {formatMoney(totalContractValue)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Diesel cost</span>
                 <span className="font-medium text-slate-900">
-                  ₱{dieselCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {formatMoney(dieselCost)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Driver commission</span>
                 <span className="font-medium text-slate-900">
-                  ₱
-                  {driverCommissionCost.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
+                  {formatMoney(driverCommissionCost)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Driver per-trip fee</span>
                 <span className="font-medium text-slate-900">
-                  ₱
-                  {perTripFeeCost.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
+                  {formatMoney(perTripFeeCost)}
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-slate-200 pt-3">
                 <span className="text-slate-500">Total cost</span>
                 <span className="font-bold text-slate-900">
-                  ₱{totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {formatMoney(totalCost)}
                 </span>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -982,7 +976,7 @@ function QuoteReviewModal({
               </div>
 
               {isLowMargin && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                <p className="bg-red-50 px-3 py-2 text-xs text-red-700">
                   Costs are at or above 50% of the rate, so this trip may not
                   be worth approving as priced. This is informational only;
                   Approve/Reject is still your call.

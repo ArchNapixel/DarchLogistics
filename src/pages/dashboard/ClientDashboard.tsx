@@ -21,7 +21,6 @@ import MyBookingsSection, {
   type Booking,
 } from './client/MyBookingsSection'
 import MyQuoteRequestsSection from './client/MyQuoteRequestsSection'
-import { formatDate } from '../../lib/quoteRequest'
 import { formatDaysUntilDue, type PaymentDueRow } from '../../lib/paymentDue'
 import NewQuoteModal from './client/NewQuoteModal'
 import ClientProfileSection, {
@@ -30,6 +29,8 @@ import ClientProfileSection, {
 import ClientPaymentsSection from './client/ClientPaymentsSection'
 import MyStatusRequestsSection from './client/MyStatusRequestsSection'
 import ClientReviewSection from './client/ClientReviewSection'
+import PageHeader, { SectionHeader } from '../../components/PageHeader'
+import { formatMoney, formatDate } from '../../lib/format'
 
 function ClientDashboard() {
   const { username, role, clientId } = useAuth()
@@ -83,7 +84,7 @@ function ClientDashboard() {
     },
     {
       label: 'Balance due',
-      value: paymentRows ? `₱${totalBalanceDue.toLocaleString()}` : '—',
+      value: paymentRows ? `${formatMoney(totalBalanceDue)}` : '—',
     },
     {
       label: 'Next payment due',
@@ -97,22 +98,20 @@ function ClientDashboard() {
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        {/* Plain "Welcome" until the profile loads, so the login handle
-            doesn't flash before the real business name. */}
-        <h1 className="text-2xl font-bold text-slate-900">
-          {profileLoading
-            ? 'Welcome'
-            : `Welcome, ${profile?.client_name ?? username}`}
-        </h1>
-        <RoleBadge role={role} />
-      </div>
+      {/* Clients have no sidebar, so their page title is the greeting.
+          Plain "Welcome" until the profile loads, so the login handle
+          doesn't flash before the real business name. */}
+      <PageHeader
+        title={profileLoading ? 'Welcome' : `Welcome, ${profile?.client_name ?? username}`}
+        subtitle="Your bookings, payments and requests in one place."
+        actions={<RoleBadge role={role} />}
+      />
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         {summary.map((item) => (
           <div
             key={item.label}
-            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="border border-slate-200 bg-white p-5 shadow-sm"
           >
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
               {item.label}
@@ -125,20 +124,18 @@ function ClientDashboard() {
       </div>
 
       <div className="mt-8 flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">
-              My Bookings
-            </h2>
-            {clientId && (
+        <div className="min-w-0 flex-1 border border-slate-200 bg-white p-8 shadow-sm">
+          <SectionHeader
+            title="My Bookings"
+            actions={clientId && (
               <button
                 onClick={() => setShowNewQuote(true)}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                className="btn-primary px-4 py-2 text-sm font-medium"
               >
                 New Quote Request
               </button>
             )}
-          </div>
+          />
           <div className="mt-4">
             <MyBookingsSection
               onLoaded={setBookings}
@@ -149,10 +146,8 @@ function ClientDashboard() {
           </div>
         </div>
 
-        <div className="w-full rounded-xl border border-slate-200 bg-white p-8 shadow-sm lg:max-w-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Payments Due
-          </h2>
+        <div className="w-full border border-slate-200 bg-white p-8 shadow-sm lg:max-w-sm">
+          <SectionHeader title="Payments Due" />
           <div className="mt-4">
             {clientId && (
               <ClientPaymentsSection clientId={clientId} onLoaded={setPaymentRows} />
@@ -162,19 +157,15 @@ function ClientDashboard() {
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            My Quote Requests
-          </h2>
+        <div className="border border-slate-200 bg-white p-8 shadow-sm">
+          <SectionHeader title="My Quote Requests" />
           <div className="mt-4">
             <MyQuoteRequestsSection key={quotesRefreshKey} />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            My Status Requests
-          </h2>
+        <div className="border border-slate-200 bg-white p-8 shadow-sm">
+          <SectionHeader title="My Status Requests" />
           <div className="mt-4">
             <MyStatusRequestsSection key={statusRequestsRefreshKey} />
           </div>
@@ -182,17 +173,15 @@ function ClientDashboard() {
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Rate Our Service
-          </h2>
+        <div className="border border-slate-200 bg-white p-8 shadow-sm">
+          <SectionHeader title="Rate Our Service" />
           <div className="mt-4">
             <ClientReviewSection />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">My Profile</h2>
+        <div className="border border-slate-200 bg-white p-8 shadow-sm">
+          <SectionHeader title="My Profile" />
           <div className="mt-4">
             {clientId && (
               <ClientProfileSection

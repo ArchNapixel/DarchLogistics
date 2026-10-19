@@ -13,29 +13,11 @@ import {
   DEFAULT_CASH_ADVANCE_DEDUCTION_RATE,
 } from '../../../lib/payslip'
 import RequestCashAdvanceModal from './RequestCashAdvanceModal'
+import StatusBadge from '../../../components/StatusBadge'
+import { showToast } from '../../../components/Toast'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-orange-100 text-orange-700',
-  Approved: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 function MyCashAdvanceRequestsSection() {
   const { employeeId } = useAuth()
@@ -43,7 +25,6 @@ function MyCashAdvanceRequestsSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showRequestModal, setShowRequestModal] = useState(false)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   // What the employee still owes (counts finalized payslips only -- they
   // can't see drafts).
   const [owed, setOwed] = useState(0)
@@ -80,29 +61,24 @@ function MyCashAdvanceRequestsSection() {
       <div className="flex items-center justify-end">
         <button
           onClick={() => setShowRequestModal(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          className="btn-primary px-4 py-2 text-sm font-medium"
         >
           Request Cash Advance
         </button>
       </div>
 
       {owed > 0 && (
-        <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          You still owe ₱{owed.toLocaleString()}. {rate}% of your gross pay is deducted from each weekly payslip until it's paid off.
+        <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          You still owe <span className="font-semibold text-primary">{formatMoney(owed)}</span>. {rate}% of your gross pay is deducted from each weekly payslip until it's paid off.
         </p>
       )}
 
-      {successMessage && (
-        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          {successMessage}
-        </p>
-      )}
 
       {loading && <p className="mt-4 text-slate-500">Loading your requests...</p>}
       {!loading && error && <p className="mt-4 text-red-700">{error}</p>}
 
       {!loading && !error && requests.length === 0 && (
-        <p className="mt-4 text-slate-500">No cash advance requests yet.</p>
+        <EmptyState message="No cash advance requests yet." className="mt-4" />
       )}
 
       {!loading && !error && requests.length > 0 && (
@@ -110,11 +86,11 @@ function MyCashAdvanceRequestsSection() {
           {requests.map((request) => (
             <div
               key={request.cash_advance_id}
-              className="rounded-xl border border-slate-200 p-4"
+              className="border border-slate-200 p-4"
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
-                  ₱{request.amount.toLocaleString()}
+                  {formatMoney(request.amount)}
                 </p>
                 <StatusBadge status={request.status} />
               </div>
@@ -139,7 +115,7 @@ function MyCashAdvanceRequestsSection() {
           onClose={() => setShowRequestModal(false)}
           onRequested={() => {
             setShowRequestModal(false)
-            setSuccessMessage('Your cash advance request was submitted.')
+            showToast('Your cash advance request was submitted.')
             if (employeeId) load(employeeId)
           }}
         />

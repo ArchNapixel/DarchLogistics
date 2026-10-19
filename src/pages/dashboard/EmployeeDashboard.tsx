@@ -18,37 +18,30 @@ import TaskBoard from './employee/TaskBoard'
 import ScheduleMaintenanceModal from './employee/ScheduleMaintenanceModal'
 import IssueMaintenanceRequestModal from './employee/IssueMaintenanceRequestModal'
 import InspectionReportModal from './employee/InspectionReportModal'
+import PageHeader from '../../components/PageHeader'
+import { showToast } from '../../components/Toast'
 
 function EmployeeDashboard() {
   const { username, role, employeeId } = useAuth()
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [showScheduleMaintenance, setShowScheduleMaintenance] = useState(false)
-  const [scheduledMessage, setScheduledMessage] = useState<string | null>(null)
   const [showIssueRequest, setShowIssueRequest] = useState(false)
-  const [requestMessage, setRequestMessage] = useState<string | null>(null)
   const [showInspectionReport, setShowInspectionReport] = useState(false)
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-slate-900">
-            Welcome, {username}
-          </h1>
-          <p className="text-sm text-slate-500">
-            {new Date().toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
+      <PageHeader
+        title="Dashboard"
+        subtitle={`Welcome, ${username} · ${new Date().toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })}`}
+        actions={<>
           <button
             onClick={() => setShowIssueRequest(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
           >
             Issue Maintenance Request
           </button>
@@ -56,7 +49,7 @@ function EmployeeDashboard() {
           {role === 'Mechanic' && (
             <button
               onClick={() => setShowScheduleMaintenance(true)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+              className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
             >
               Schedule Maintenance
             </button>
@@ -65,24 +58,14 @@ function EmployeeDashboard() {
               or general (InspectionReportModal covers both). */}
           <button
             onClick={() => setShowInspectionReport(true)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
           >
             {role === 'Mechanic' ? 'Submit Inspection Report' : 'Report Issue'}
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
-      {scheduledMessage && (
-        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          {scheduledMessage}
-        </p>
-      )}
 
-      {requestMessage && (
-        <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          {requestMessage}
-        </p>
-      )}
 
       <div className="mt-8">
         <MyTasksSection key={tasksRefreshKey} />
@@ -98,7 +81,7 @@ function EmployeeDashboard() {
           onClose={() => setShowScheduleMaintenance(false)}
           onScheduled={() => {
             setShowScheduleMaintenance(false)
-            setScheduledMessage('Maintenance schedule sent to admin.')
+            showToast('Maintenance schedule sent to admin.')
           }}
         />
       )}
@@ -113,7 +96,7 @@ function EmployeeDashboard() {
           onClose={() => setShowIssueRequest(false)}
           onSubmitted={() => {
             setShowIssueRequest(false)
-            setRequestMessage('Maintenance request sent to admin for approval.')
+            showToast('Maintenance request sent to admin for approval.')
           }}
         />
       )}

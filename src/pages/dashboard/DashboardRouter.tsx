@@ -61,19 +61,19 @@ const staffLinks = [
   {
     label: 'Operations',
     children: [
-      { label: 'Client Quotations', to: '/dashboard/quotations' },
-      { label: 'Client Bookings', to: '/dashboard/bookings' },
-      { label: 'Client Accounts', to: '/dashboard/clients' },
+      { label: 'Quotations', to: '/dashboard/quotations' },
+      { label: 'Bookings', to: '/dashboard/bookings' },
+      { label: 'Clients', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
     ],
   },
   {
     label: 'Human Resource',
     children: [
-      { label: 'Employee List', to: '/dashboard/employees' },
+      { label: 'Employees', to: '/dashboard/employees' },
       { label: 'Attendance', to: '/dashboard/attendance' },
-      { label: 'Payroll Master', to: '/dashboard/payroll' },
-      { label: 'Cash Advance', to: '/dashboard/cash-advance' },
+      { label: 'Payroll', to: '/dashboard/payroll' },
+      { label: 'Cash Advances', to: '/dashboard/cash-advance' },
     ],
   },
   {
@@ -87,7 +87,7 @@ const staffLinks = [
       { label: 'Revenue Reconciliation', to: '/dashboard/revenue-reconciliation' },
       { label: 'Profit & Loss', to: '/dashboard/profit-loss' },
       { label: 'AR Aging', to: '/dashboard/ar-aging' },
-      { label: 'Payroll & Remittances', to: '/dashboard/payroll-remittances' },
+      { label: 'Remittances', to: '/dashboard/payroll-remittances' },
       { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
     ],
   },
@@ -95,7 +95,7 @@ const staffLinks = [
     label: 'Maintenance',
     children: [
       { label: 'Truck Monitoring', to: '/dashboard/maintenance-monitoring' },
-      { label: 'Fleet Master', to: '/dashboard/fleet' },
+      { label: 'Fleet', to: '/dashboard/fleet' },
       { label: 'Maintenance', to: '/dashboard/maintenance' },
       { label: 'Inventory', to: '/dashboard/inventory' },
     ],

@@ -7,9 +7,7 @@
 import { useEffect, useState } from 'react'
 import { loadPayrollExpenses, type PayrollExpenses } from '../../../lib/dashboardExpenses'
 import type { Period } from '../../../lib/expenseTotals'
-
-const peso = (n: number) =>
-  `₱${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+import { formatMoney } from '../../../lib/format'
 
 function PayrollExpensesCard({
   period,
@@ -58,7 +56,7 @@ function PayrollExpensesCard({
       ) : (
         <>
           <p className="font-condensed mt-1.5 text-2xl sm:mt-2 sm:text-[40px] leading-none font-bold text-reports-ink">
-            {loading || !data ? '--' : peso(data.total)}
+            {loading || !data ? '--' : formatMoney(data.total)}
           </p>
 
           {data && !loading && (
@@ -70,7 +68,7 @@ function PayrollExpensesCard({
             <div className="max-sm:hidden">
               <p className="mt-1 font-ui text-xs text-neutral-500">
                 {data.payslips} {data.payslips === 1 ? 'payslip' : 'payslips'}
-                {data.draft > 0 && <>, incl. {peso(data.draft)} in drafts</>}.
+                {data.draft > 0 && <>, incl. {formatMoney(data.draft)} in drafts</>}.
               </p>
 
               {/* Employees ranked by gross earnings; bars are relative to the top earner */}
@@ -83,7 +81,7 @@ function PayrollExpensesCard({
                         {e.name}
                         <span className="ml-2 text-xs text-neutral-400">{e.position}</span>
                       </span>
-                      <span className="text-neutral-600">{peso(e.gross)}</span>
+                      <span className="text-neutral-600">{formatMoney(e.gross)}</span>
                     </div>
                     <div className="mt-1 h-1 bg-neutral-100">
                       <div

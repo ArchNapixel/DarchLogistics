@@ -19,7 +19,9 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { formatDate } from '../../../lib/quoteRequest'
+import PageHeader from '../../../components/PageHeader'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
 
 type HistoryStatus = 'Completed' | 'Cancelled'
 
@@ -28,21 +30,6 @@ type HistoryEntry = {
   date: string
   description: string
   status: HistoryStatus
-}
-
-const STATUS_STYLES: Record<HistoryStatus, string> = {
-  Completed: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-function HistoryStatusBadge({ status }: { status: HistoryStatus }) {
-  return (
-    <span
-      className={`px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}
-    >
-      {status}
-    </span>
-  )
 }
 
 type TripDetail = {
@@ -151,7 +138,7 @@ function TripDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Trip #{itineraryId}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -160,7 +147,7 @@ function TripDetailModal({
         </div>
 
         {error ? (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         ) : !detail ? (
           <p className="mt-4 text-slate-500">Loading trip...</p>
         ) : (
@@ -169,7 +156,7 @@ function TripDetailModal({
               <DetailRow label="Client" value={detail.client_name ?? '—'} />
               <DetailRow
                 label="Trip rate"
-                value={detail.rate !== null ? `₱${detail.rate.toLocaleString()}` : '—'}
+                value={detail.rate !== null ? `${formatMoney(detail.rate)}` : '—'}
               />
               <DetailRow label="Route" value={detail.route} />
               <DetailRow label="Date" value={detail.dates} />
@@ -192,12 +179,12 @@ function TripDetailModal({
                   <DetailRow
                     key={i}
                     label={e.description}
-                    value={`₱${Number(e.amount).toLocaleString()}`}
+                    value={`${formatMoney(Number(e.amount))}`}
                   />
                 ))}
                 <DetailRow
                   label={<span className="font-medium text-slate-700">Total</span>}
-                  value={<span className="font-medium">₱{expenseTotal.toLocaleString()}</span>}
+                  value={<span className="font-medium">{formatMoney(expenseTotal)}</span>}
                 />
               </div>
             )}
@@ -207,7 +194,7 @@ function TripDetailModal({
         <div className="mt-6 flex justify-end">
           <button
             onClick={onClose}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-secondary px-4 py-2 text-sm font-medium"
           >
             Close
           </button>
@@ -311,7 +298,7 @@ function HistorySection() {
     setHistory(
       itineraries.map((trip) => ({
         history_id: trip.itinerary_id,
-        date: trip.trip_date_to ?? trip.trip_date_from,
+        date: formatDate(trip.trip_date_to ?? trip.trip_date_from),
         description: `${placeNameById.get(trip.place_of_pickup_id) ?? '—'} → ${placeNameById.get(trip.place_of_delivery_id) ?? '—'}`,
         status: trip.itinerary_status === 'Delivered' ? 'Completed' : 'Cancelled',
       })),
@@ -396,11 +383,7 @@ function HistorySection() {
         sortTime,
         history_id: order.work_order_id,
         date: completedAt
-          ? new Date(completedAt).toLocaleDateString('en-PH', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })
+          ? formatDate(completedAt)
           : order.scheduled_start_date
             ? formatDate(order.scheduled_start_date)
             : '—',
@@ -420,9 +403,10 @@ function HistorySection() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-900">
-        {role === 'Driver' ? 'My Trips History' : 'My History'}
-      </h2>
+      <PageHeader
+        title={role === 'Driver' ? 'My Trips History' : 'My History'}
+        subtitle={role === 'Mechanic' ? 'Work orders you have worked on.' : 'Trips you have been crewed on. Tap one for details.'}
+      />
 
       {loading && <p className="mt-4 text-slate-500">Loading your history...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
@@ -432,7 +416,7 @@ function HistorySection() {
       ) : (
         !loading &&
         !error && (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
@@ -468,7 +452,7 @@ function HistorySection() {
                       {entry.description}
                     </td>
                     <td className="px-4 py-3">
-                      <HistoryStatusBadge status={entry.status} />
+                      <StatusBadge status={entry.status} />
                     </td>
                   </tr>
                 ))}

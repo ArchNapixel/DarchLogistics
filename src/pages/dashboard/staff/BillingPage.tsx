@@ -13,16 +13,11 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadBilling, type Billing } from '../../../lib/billing'
 import { loadPaymentDueReport } from '../../../lib/paymentDue'
-import { PAYMENT_TERMS_LABELS, formatDate } from '../../../lib/quoteRequest'
+import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import { COMPANY } from '../../../lib/company'
-
-function formatMoney(value: number): string {
-  return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney, formatDate } from '../../../lib/format'
 
 type BookingOption = { booking_id: number; label: string }
 
@@ -105,13 +100,15 @@ function BillingPage() {
     }
   }, [bookingId])
 
-  const fieldClass = 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
+  const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
   return (
     <div>
       {/* Controls: not printed */}
-      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <h2 className="text-xl font-bold text-slate-900">Billing</h2>
+      <PageHeader
+        title="Billing"
+        subtitle="Printable bill for one booking."
+        actions={<>
         <div className="flex flex-wrap items-center gap-2">
           <select
             aria-label="Client"
@@ -146,19 +143,20 @@ function BillingPage() {
           <button
             onClick={() => window.print()}
             disabled={!billing}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Print
           </button>
         </div>
-      </div>
+        </>}
+      />
 
       {error && <p className="mt-4 text-red-700 print:hidden">{error}</p>}
       {!bookingId && <p className="mt-4 text-slate-500 print:hidden">Choose a client and a booking to see its billing.</p>}
       {loading && <p className="mt-4 text-slate-500 print:hidden">Preparing billing...</p>}
 
       {billing && !loading && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
+        <div className="mt-4 border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>

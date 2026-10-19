@@ -16,6 +16,7 @@ import {
   type ShipmentField,
   type ShipmentForm,
 } from '../lib/quoteRequest'
+import { formatMoney } from '../lib/format'
 
 export type SectionProps = {
   form: ShipmentForm
@@ -298,7 +299,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         />
         {showTotal && (
           <span className="text-xs font-normal text-slate-500">
-            ₱{(rate * deliveryCount).toLocaleString('en-PH')} total
+            {formatMoney((rate * deliveryCount))} total
           </span>
         )}
       </Field>

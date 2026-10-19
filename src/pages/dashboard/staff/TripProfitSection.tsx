@@ -11,10 +11,9 @@ import {
   type TripProfitRow,
 } from '../../../lib/tripProfit'
 import { summarizeTrips } from '../../../lib/tripProfitTotals'
-
-function formatMoney(value: number): string {
-  return `₱${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+import PageHeader from '../../../components/PageHeader'
+import { formatMoney } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 // Red when a trip lost money, plain otherwise.
 const profitClass = (value: number) => (value < 0 ? 'text-red-700' : 'text-slate-900')
@@ -94,12 +93,14 @@ function TripProfitSection() {
     URL.revokeObjectURL(url)
   }
 
-  const selectClass = 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
+  const selectClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-slate-900">Trip Profitability</h2>
+      <PageHeader
+        title="Trip Profitability"
+        subtitle="Revenue and cost of each delivered trip."
+        actions={<>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="trip-profit-month" className="text-sm font-medium text-slate-700">
             Month
@@ -141,14 +142,15 @@ function TripProfitSection() {
           <button
             onClick={handleDownload}
             disabled={visible.length === 0}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-sm font-medium"
           >
             Download CSV
           </button>
         </div>
-      </div>
+        </>}
+      />
       {settingsMissing.length > 0 && (
-        <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p className="mt-4 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Not set in Settings, counted as 0:{' '}
           {settingsMissing.map((key) => SETTING_LABELS[key] ?? key).join(', ')}. Profits are
           overstated until they're filled in.
@@ -158,10 +160,10 @@ function TripProfitSection() {
       {loading && <p className="mt-4 text-slate-500">Loading trips...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && rows.length === 0 && (
-        <p className="mt-4 text-slate-500">No trips were delivered in this month.</p>
+        <EmptyState message="No trips were delivered in this month." className="mt-4" />
       )}
       {!loading && !error && rows.length > 0 && visible.length === 0 && (
-        <p className="mt-4 text-slate-500">No trips match these filters.</p>
+        <EmptyState message="No trips match these filters." className="mt-4" />
       )}
 
       {!loading && !error && visible.length > 0 && (
@@ -178,7 +180,7 @@ function TripProfitSection() {
             />
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
@@ -262,7 +264,7 @@ function Card({
   danger?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-1 text-lg font-bold ${danger ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}

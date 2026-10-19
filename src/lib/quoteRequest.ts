@@ -77,17 +77,6 @@ export function todayDateString(): string {
   return new Date().toLocaleDateString('en-CA')
 }
 
-// "2026-10-05" -> "Oct 5, 2026". Parsed as a local date on purpose:
-// new Date("2026-10-05") would be UTC midnight and can show the day before.
-export function formatDate(value: string): string {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day).toLocaleDateString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
 function sameSpot(a: LocationValue, b: LocationValue): boolean {
   const norm = (s: string) => s.trim().toLowerCase()
   if (norm(a.city) !== norm(b.city) || norm(a.barangay) !== norm(b.barangay)) {

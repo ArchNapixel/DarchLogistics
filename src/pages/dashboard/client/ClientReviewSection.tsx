@@ -5,6 +5,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { loadMyReview, saveMyReview } from '../../../lib/clientReviews'
+import { showToast } from '../../../components/Toast'
+import { formatDate } from '../../../lib/format'
 
 function StarPicker({
   rating,
@@ -40,7 +42,6 @@ function ClientReviewSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [savedMessage, setSavedMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (clientId) load(clientId)
@@ -76,7 +77,6 @@ function ClientReviewSection() {
 
     setSaving(true)
     setError(null)
-    setSavedMessage(null)
 
     const { error: saveError } = await saveMyReview({
       clientId,
@@ -92,7 +92,7 @@ function ClientReviewSection() {
     }
 
     setLastSavedAt(new Date().toISOString())
-    setSavedMessage(lastSavedAt ? 'Review updated.' : 'Thanks for your review!')
+    showToast(lastSavedAt ? 'Review updated.' : 'Thanks for your review!')
   }
 
   if (loading) {
@@ -102,13 +102,8 @@ function ClientReviewSection() {
   return (
     <div>
       {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
-        </p>
-      )}
-      {savedMessage && (
-        <p className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {savedMessage}
         </p>
       )}
 
@@ -119,12 +114,12 @@ function ClientReviewSection() {
         onChange={(e) => setComment(e.target.value)}
         rows={3}
         placeholder="Tell us about your experience (optional)"
-        className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+        className="mt-4 w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
       />
 
       {lastSavedAt && (
         <p className="mt-2 text-xs text-slate-400">
-          Last updated {new Date(lastSavedAt).toLocaleDateString()} · Editing
+          Last updated {formatDate(lastSavedAt)} · Editing
           your review sends it back to our team before it can appear on our
           homepage.
         </p>
@@ -133,7 +128,7 @@ function ClientReviewSection() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        className="btn-primary mt-4 px-4 py-2 text-sm font-medium"
       >
         {saving ? 'Saving...' : lastSavedAt ? 'Update Review' : 'Submit Review'}
       </button>

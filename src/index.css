@@ -1,20 +1,54 @@
 @import "tailwindcss";
 
-/* Rounded corners: Tailwind's default radius scale is used as-is, so every
-   rounded-* utility app-wide gives soft corners. */
+/* ---------------------------------------------------------------------
+   DASHBOARD DESIGN SYSTEM (60-30-10). Change colors HERE, not per page.
+   60% NEUTRAL  -- bg-slate-50 page background, bg-white cards/header.
+   30% STRUCTURE -- `navy`: the sidebar (DashboardLayout.tsx), plus
+                   slate borders and headings.
+   10% ACCENT   -- `primary` (steel blue). ONLY for: the main action
+                   button of a screen area (.btn-primary), the active
+                   sidebar item, numbers that need attention (unpaid
+                   balances, pending counts, expiring items) and
+                   "Needs action" count badges.
+   Status colors (Paid/Approved green, Pending orange, Rejected red...)
+   are semantic, not part of this system -- they live in one place,
+   components/StatusBadge.tsx.
+   --------------------------------------------------------------------- */
+@theme {
+  /* Square corners everywhere: every rounded-* utility resolves to 0.
+     rounded-full is NOT affected (it's a separate utility) -- it's kept
+     only for real circles, e.g. the notification dot on the header bell. */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
 
-/* Dashboard 60-30-10 color system:
-   60% DOMINANT -- bg-slate-50 (page background) / bg-white (cards,
-   header, content) -- unchanged, just formalizing what was already
-   the de facto dominant color.
-   30% SECONDARY -- brand-steel (below) -- applied to the sidebar
-   (DashboardLayout.tsx), the app's one existing "brand" blue.
-   10% ACCENT -- slate-900 -- already the de facto primary-action-button
-   color everywhere (Approve, Issue Payslip, Confirm Delivery, etc.),
-   now also used for the sidebar's active/current-page indicator.
-   Existing status/semantic colors (green/amber/red/blue-100 badges for
-   Approved/Pending/Rejected/etc.) are untouched -- those are functional
-   indicators, not part of this aesthetic system. */
+  --color-navy: #16233b;
+  --color-navy-hover: #1d3153;
+  --color-primary: #3f6a8f;
+  --color-primary-hover: #345a7a;
+  --color-primary-soft: #dee6ed;
+}
+
+/* Shared button styles -- color only, so each button still picks its own
+   size with px-/py-/text- utilities. Use exactly ONE .btn-primary per
+   screen area; everything else (Cancel, Back, per-row actions) is
+   .btn-secondary; deleting/removing is .btn-danger. */
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-primary-hover disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 disabled:opacity-50;
+  }
+}
 
 /* Public site redesign tokens (landing page + quote request page) --
    Oswald for display/headline text, plus the navy/steel brand colors
@@ -70,7 +104,6 @@ html {
 .reports-blueprint-card {
   background-color: #fff;
   border: 1px solid var(--color-reports-hairline);
-  border-radius: 8px;
 }
 
 /* Thicker, darker outline for the admin dashboard cards (add next to

@@ -9,9 +9,12 @@ import {
   type MaintenanceInterval,
 } from '../../../lib/maintenanceSchedules'
 import MaintenanceSchedulesSection from './MaintenanceSchedulesSection'
+import PageHeader from '../../../components/PageHeader'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type Truck = {
@@ -140,13 +143,13 @@ function AssignTruckScheduleModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Assign Maintenance Schedule</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
-        {error && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
         <div className="mt-4 grid gap-4">
           <label className={labelClasses}>
@@ -178,8 +181,8 @@ function AssignTruckScheduleModal({
         </div>
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
-          <button onClick={onClose} disabled={saving} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving || trucks.length === 0} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button onClick={handleSubmit} disabled={saving || trucks.length === 0} className="btn-primary px-4 py-2 text-sm font-medium">
             {saving ? 'Saving...' : 'Assign Schedule'}
           </button>
         </div>
@@ -351,10 +354,10 @@ function OdometerUpdatesSection() {
 
   if (loading) return <p className="text-slate-500">Loading odometer suggestions...</p>
   if (error) return <p className="text-red-700">{error}</p>
-  if (suggestions.length === 0) return <p className="text-slate-500">No odometer updates are waiting for confirmation.</p>
+  if (suggestions.length === 0) return <EmptyState message="No odometer updates are waiting for confirmation." />
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-slate-200 text-slate-500">
           <tr>
@@ -372,7 +375,7 @@ function OdometerUpdatesSection() {
           {suggestions.map((suggestion) => (
             <tr key={suggestion.itinerary_id} className="border-b border-slate-100 last:border-0">
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.plate_number}</td>
-              <td className="px-4 py-3 text-slate-600">{suggestion.trip_date}</td>
+              <td className="px-4 py-3 text-slate-600">{formatDate(suggestion.trip_date)}</td>
               <td className="px-4 py-3 text-slate-600">
                 {suggestion.out_km.toLocaleString()} km
                 {suggestion.out_is_fallback && (
@@ -389,7 +392,7 @@ function OdometerUpdatesSection() {
               <td className="px-4 py-3 text-slate-600">{suggestion.current_odometer.toLocaleString()}</td>
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.suggested_odometer.toLocaleString()}</td>
               <td className="px-4 py-3">
-                <button onClick={() => confirmSuggestion(suggestion)} disabled={savingId === suggestion.itinerary_id} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+                <button onClick={() => confirmSuggestion(suggestion)} disabled={savingId === suggestion.itinerary_id} className="btn-primary px-3 py-1.5 text-xs font-medium">
                   {savingId === suggestion.itinerary_id ? 'Saving...' : 'Confirm update'}
                 </button>
               </td>
@@ -425,19 +428,17 @@ function TruckMaintenanceMonitoringSection() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Truck Maintenance Monitoring</h2>
-          <p className="mt-1 text-sm text-slate-500">Assign schedules, review upcoming maintenance, and confirm truck mileage updates.</p>
-        </div>
-        {activeTab === 'Schedules' && (
-          <button onClick={() => setShowAssign(true)} disabled={loadingTrucks || trucks.length === 0 || !employeeId} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+      <PageHeader
+        title="Truck Monitoring"
+        subtitle="Assign schedules, review upcoming maintenance, and confirm truck mileage updates."
+        actions={activeTab === 'Schedules' && (
+          <button onClick={() => setShowAssign(true)} disabled={loadingTrucks || trucks.length === 0 || !employeeId} className="btn-primary px-4 py-2 text-sm font-medium">
             Assign schedule
           </button>
         )}
-      </div>
+      />
 
-      {truckError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{truckError}</p>}
+      {truckError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{truckError}</p>}
       <div className="mt-6 flex gap-2 border-b border-slate-200">
         {(['Schedules', 'Odometer Updates'] as Tab[]).map((tab) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-medium ${activeTab === tab ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>

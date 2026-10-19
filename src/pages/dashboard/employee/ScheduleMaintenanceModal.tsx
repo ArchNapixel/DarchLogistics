@@ -13,7 +13,7 @@ import {
 } from '../../../lib/maintenanceSchedules'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type VehicleOption = {
@@ -123,7 +123,7 @@ function ScheduleMaintenanceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Schedule Maintenance</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -132,7 +132,7 @@ function ScheduleMaintenanceModal({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
         {loadingOptions ? (
@@ -203,14 +203,14 @@ function ScheduleMaintenanceModal({
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || vehicleOptions.length === 0}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting ? 'Saving...' : 'Schedule Maintenance'}
           </button>

@@ -12,6 +12,8 @@ import {
   type PendingRelogRequest,
 } from '../../../lib/statusRelogRequests'
 import { promptDialog } from '../../../components/ConfirmDialog'
+import { formatDateTime } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
@@ -114,24 +116,24 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {requests.length === 0 ? (
-        <p className="text-slate-500">No pending status relog requests.</p>
+        <EmptyState message="No pending status relog requests." />
       ) : (
         <div className="grid gap-3">
           {requests.map((request) => (
             <div
               key={request.request_id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{request.target_label}</p>
                 <span className="text-xs text-slate-500">
-                  {new Date(request.created_at).toLocaleString()}
+                  {formatDateTime(request.created_at)}
                 </span>
               </div>
               <p className="mt-1 text-sm text-slate-600">
@@ -145,14 +147,14 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
                 <button
                   onClick={() => handleApprove(request)}
                   disabled={busyId === request.request_id}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="btn-primary px-3 py-1.5 text-sm font-medium"
                 >
                   {busyId === request.request_id ? 'Saving...' : 'Approve'}
                 </button>
                 <button
                   onClick={() => handleReject(request)}
                   disabled={busyId === request.request_id}
-                  className="rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  className="bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
                 >
                   Reject
                 </button>

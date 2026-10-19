@@ -6,6 +6,7 @@ import { useState } from 'react'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
 import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
+import PageHeader, { SectionHeader } from '../../../components/PageHeader'
 
 function CashAdvanceSection() {
   const [showIssueAdvance, setShowIssueAdvance] = useState(false)
@@ -14,25 +15,24 @@ function CashAdvanceSection() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Cash Advance</h2>
-        <button
-          onClick={() => setShowIssueAdvance(true)}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Issue Cash Advance
-        </button>
-      </div>
+      <PageHeader
+        title="Cash Advances"
+        subtitle="Issue advances, review employee requests and track balances."
+        actions={
+          <button
+            onClick={() => setShowIssueAdvance(true)}
+            className="btn-primary px-4 py-2 text-sm font-medium"
+          >
+            Issue Cash Advance
+          </button>
+        }
+      />
 
-      <div className="mt-6">
-        <CashAdvanceRequestsSection />
-      </div>
+      <CashAdvanceRequestsSection />
 
       <section className="mt-6 border-t border-slate-200 pt-6">
-        <h3 className="text-lg font-semibold text-slate-900">Cash Advance Ledger</h3>
-        <div className="mt-4">
-          <CashAdvanceLedgerSection key={ledgerKey} />
-        </div>
+        <SectionHeader title="Cash Advance Ledger" />
+        <CashAdvanceLedgerSection key={ledgerKey} />
       </section>
 
       {showIssueAdvance && (

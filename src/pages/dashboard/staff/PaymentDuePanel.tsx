@@ -15,6 +15,8 @@ import {
   DUE_TONE_STYLES,
   type PaymentDueRow,
 } from '../../../lib/paymentDue'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 function PaymentDuePanel() {
   const [rows, setRows] = useState<PaymentDueRow[]>([])
@@ -42,7 +44,7 @@ function PaymentDuePanel() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
         Payment Due
       </h3>
@@ -51,9 +53,7 @@ function PaymentDuePanel() {
 
       {loading && <p className="mt-3 text-sm text-slate-500">Loading...</p>}
       {!loading && rows.length === 0 && (
-        <p className="mt-3 text-sm text-slate-500">
-          No outstanding balances right now.
-        </p>
+        <EmptyState message="No outstanding balances right now." className="mt-3" />
       )}
 
       {!loading && rows.length > 0 && (
@@ -63,7 +63,7 @@ function PaymentDuePanel() {
             return (
               <div
                 key={row.booking_id}
-                className="rounded-lg bg-slate-50 p-3 text-sm"
+                className="bg-slate-50 p-3 text-sm"
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-slate-900">
@@ -82,8 +82,8 @@ function PaymentDuePanel() {
                   {row.completed_trips}/{row.total_trips} trips completed
                 </p>
                 <div className="mt-1 flex items-center justify-between text-slate-600">
-                  <span>Balance: ₱{row.balance_due.toLocaleString()}</span>
-                  <span>{row.due_date ?? 'TBD'}</span>
+                  <span>Balance: <span className="font-semibold text-primary">{formatMoney(row.balance_due)}</span></span>
+                  <span>{row.due_date ? formatDate(row.due_date) : 'TBD'}</span>
                 </div>
               </div>
             )

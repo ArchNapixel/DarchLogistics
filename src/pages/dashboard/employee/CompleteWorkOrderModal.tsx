@@ -56,7 +56,7 @@ import {
 import { ITEM_TYPES } from '../staff/AddInventoryItemModal'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type InventoryItemOption = {
@@ -624,7 +624,7 @@ function CompleteWorkOrderModal({
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-        <div className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow-lg">
+        <div className="w-full max-w-md bg-white p-6 text-center shadow-lg">
           <p className="text-3xl">✅</p>
           <h3 className="mt-2 text-lg font-bold text-slate-900">
             Work Order Completed
@@ -634,7 +634,7 @@ function CompleteWorkOrderModal({
           </p>
           <button
             onClick={onCompleted}
-            className="mt-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            className="btn-primary mt-6 px-4 py-2 text-sm font-medium"
           >
             Done
           </button>
@@ -645,7 +645,7 @@ function CompleteWorkOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             Complete {workOrderNumber}
@@ -660,7 +660,7 @@ function CompleteWorkOrderModal({
         </div>
 
         {formError && (
-          <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
             {formError}
           </p>
         )}
@@ -680,7 +680,7 @@ function CompleteWorkOrderModal({
             <p className="text-sm font-medium text-slate-700">Parts / products used</p>
 
             {alreadyLoggedParts.length > 0 && (
-              <div className="mt-2 rounded-lg bg-slate-50 p-3">
+              <div className="mt-2 bg-slate-50 p-3">
                 <p className="text-xs font-medium text-slate-500">
                   Already logged during the job -- no need to re-enter these:
                 </p>
@@ -711,7 +711,7 @@ function CompleteWorkOrderModal({
                 return (
                   <div
                     key={row.key}
-                    className="rounded-lg border border-slate-200 p-3"
+                    className="border border-slate-200 p-3"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="relative flex-1">
@@ -738,7 +738,7 @@ function CompleteWorkOrderModal({
                         />
 
                         {row.dropdownOpen && !row.addingNew && row.search.trim() && (
-                          <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+                          <div className="absolute z-10 mt-1 w-full border border-slate-200 bg-white shadow-lg">
                             {matches.map((item) => (
                               <button
                                 key={item.item_id}
@@ -784,7 +784,7 @@ function CompleteWorkOrderModal({
                     </div>
 
                     {row.addingNew && !row.newItemConfirmed && (
-                      <div className="mt-3 grid gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
+                      <div className="mt-3 grid gap-3 bg-slate-50 p-3 sm:grid-cols-2">
                         <label className={labelClasses}>
                           Item type
                           <select
@@ -834,7 +834,7 @@ function CompleteWorkOrderModal({
                           <button
                             type="button"
                             onClick={() => confirmNewItem(row)}
-                            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                            className="btn-primary px-3 py-1.5 text-sm font-medium"
                           >
                             Add "{row.search}" as new item
                           </button>
@@ -847,7 +847,7 @@ function CompleteWorkOrderModal({
                                 error: null,
                               })
                             }
-                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                            className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
                           >
                             Cancel
                           </button>
@@ -953,14 +953,14 @@ function CompleteWorkOrderModal({
           <button
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="btn-primary px-4 py-2 text-sm font-medium"
           >
             {submitting ? 'Saving...' : 'Mark Complete'}
           </button>

@@ -9,9 +9,7 @@ import {
   type MaintenanceExpenses,
 } from '../../../lib/dashboardExpenses'
 import type { Period } from '../../../lib/expenseTotals'
-
-const peso = (n: number) =>
-  `₱${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+import { formatMoney } from '../../../lib/format'
 
 // One fill per slice, darkest = biggest. The legend beside the pie repeats
 // every value in text, so the chart never depends on color alone.
@@ -109,7 +107,7 @@ function MaintenanceExpensesCard({
       ) : (
         <>
           <p className="font-condensed mt-1.5 text-2xl sm:mt-2 sm:text-[40px] leading-none font-bold text-reports-ink">
-            {loading || !data ? '--' : peso(data.total)}
+            {loading || !data ? '--' : formatMoney(data.total)}
           </p>
 
           {data && !loading && (
@@ -121,7 +119,7 @@ function MaintenanceExpensesCard({
             <div className="max-sm:hidden">
               {data.inProgressCost > 0 && (
                 <p className="mt-1 font-ui text-xs text-neutral-500">
-                  Includes {peso(data.inProgressCost)} from open work orders.
+                  Includes {formatMoney(data.inProgressCost)} from open work orders.
                 </p>
               )}
               {data.unpricedLines > 0 && (
@@ -152,7 +150,7 @@ function MaintenanceExpensesCard({
                             {t.type}
                           </span>
                           <span className="text-neutral-600">
-                            {peso(t.cost)}
+                            {formatMoney(t.cost)}
                             {data.total > 0 && (
                               <span className="ml-2 text-neutral-400">
                                 {Math.round((t.cost / data.total) * 100)}%
@@ -177,7 +175,7 @@ function MaintenanceExpensesCard({
                           {item.name}{' '}
                           <span className="text-neutral-400">× {item.quantity}</span>
                         </span>
-                        <span className="text-neutral-600">{peso(item.cost)}</span>
+                        <span className="text-neutral-600">{formatMoney(item.cost)}</span>
                       </li>
                     ))}
                   </ul>

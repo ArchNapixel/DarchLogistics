@@ -20,8 +20,10 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { formatDate } from '../../../lib/quoteRequest'
 import ClientStatusRequestModal from './ClientStatusRequestModal'
+import StatusBadge from '../../../components/StatusBadge'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type Itinerary = {
   itinerary_id: number
@@ -41,52 +43,6 @@ export type Booking = {
   pickup_place_name: string
   delivery_place_name: string
   itineraries: Itinerary[]
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-700',
-  Confirmed: 'bg-blue-100 text-blue-700',
-  Dispatched: 'bg-purple-100 text-purple-700',
-  InProgress: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-  OnHold: 'bg-yellow-100 text-yellow-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status === 'InProgress' ? 'In progress' : status}
-    </span>
-  )
-}
-
-const ITINERARY_STATUS_LABELS: Record<string, string> = {
-  Awaiting: 'Awaiting',
-  Dispatched: 'Dispatched',
-  PickedUp: 'Picked Up',
-  InTransit: 'In Transit',
-  Delivered: 'Delivered',
-  Cancelled: 'Cancelled',
-}
-
-const ITINERARY_STATUS_STYLES: Record<string, string> = {
-  Awaiting: 'bg-gray-100 text-gray-700',
-  Dispatched: 'bg-blue-100 text-blue-700',
-  PickedUp: 'bg-purple-100 text-purple-700',
-  InTransit: 'bg-orange-100 text-orange-700',
-  Delivered: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
-function ItineraryStatusBadge({ status }: { status: string }) {
-  const styles = ITINERARY_STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {ITINERARY_STATUS_LABELS[status] ?? status}
-    </span>
-  )
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -259,7 +215,7 @@ function MyBookingsSection({
   }
 
   if (bookings.length === 0) {
-    return <p className="text-slate-500">No bookings yet.</p>
+    return <EmptyState message="No bookings yet." />
   }
 
   const activeCount = bookings.filter(isActiveBooking).length
@@ -277,7 +233,7 @@ function MyBookingsSection({
           <button
             key={tab.label}
             onClick={() => setShowPast(tab.past)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+            className={`px-3 py-1.5 text-sm font-medium ${
               showPast === tab.past
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -308,7 +264,7 @@ function MyBookingsSection({
         return (
           <div
             key={booking.booking_id}
-            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="border border-slate-200 bg-white p-5 shadow-sm"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -334,7 +290,7 @@ function MyBookingsSection({
                 label="Rate/Trip"
                 value={
                   booking.rate_of_delivery_service != null
-                    ? `₱${booking.rate_of_delivery_service.toLocaleString()}`
+                    ? `${formatMoney(booking.rate_of_delivery_service)}`
                     : '—'
                 }
               />
@@ -342,7 +298,7 @@ function MyBookingsSection({
                 label="Contract Value"
                 value={
                   booking.rate_of_delivery_service != null
-                    ? `₱${(booking.rate_of_delivery_service * billableTripCount).toLocaleString()}`
+                    ? `${formatMoney((booking.rate_of_delivery_service * billableTripCount))}`
                     : '—'
                 }
               />
@@ -390,21 +346,19 @@ function MyBookingsSection({
             {isExpanded && (
               <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
                 {booking.itineraries.length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    No trips scheduled yet for this booking.
-                  </p>
+                  <EmptyState message="No trips scheduled yet for this booking." />
                 )}
 
                 {booking.itineraries.map((itinerary) => (
                   <div
                     key={itinerary.itinerary_id}
-                    className="rounded-lg bg-slate-50 p-3"
+                    className="bg-slate-50 p-3"
                   >
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-slate-900">
                         Trip #{itinerary.itinerary_id}
                       </p>
-                      <ItineraryStatusBadge status={itinerary.itinerary_status} />
+                      <StatusBadge status={itinerary.itinerary_status} />
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <Field

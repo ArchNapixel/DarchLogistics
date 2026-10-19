@@ -12,6 +12,7 @@ import {
   SCHEDULE_TONE_STYLES,
   type PendingMaintenanceSchedule,
 } from '../../../lib/maintenanceSchedules'
+import EmptyState from '../../../components/EmptyState'
 
 function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) {
   const { employeeId } = useAuth()
@@ -78,13 +79,13 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
       {schedules.length === 0 ? (
-        <p className="text-slate-500">No upcoming maintenance schedules.</p>
+        <EmptyState message="No upcoming maintenance schedules." />
       ) : (
         <div className="grid gap-3">
           {schedules.map((schedule) => {
@@ -92,7 +93,7 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
             return (
               <div
                 key={schedule.schedule_id}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                className="border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-slate-900">{schedule.vehicle_label}</p>
@@ -112,7 +113,7 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
                 <button
                   onClick={() => handleMarkDone(schedule)}
                   disabled={completingId === schedule.schedule_id}
-                  className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="btn-primary mt-3 px-3 py-1.5 text-sm font-medium"
                 >
                   {completingId === schedule.schedule_id ? 'Saving...' : 'Mark Done'}
                 </button>

@@ -10,7 +10,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
 
 const fieldClasses =
-  'rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type Employee = {
@@ -99,7 +99,7 @@ function SetUpStaffAccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
         {done ? (
           <>
             <h3 className="text-lg font-bold text-slate-900">
@@ -115,7 +115,7 @@ function SetUpStaffAccountModal({
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => onCreated(employee.employee_id)}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                className="btn-primary px-4 py-2 text-sm font-medium"
               >
                 Done
               </button>
@@ -128,7 +128,7 @@ function SetUpStaffAccountModal({
             </h3>
 
             {error && (
-              <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </p>
             )}
@@ -185,14 +185,14 @@ function SetUpStaffAccountModal({
               <button
                 onClick={onClose}
                 disabled={submitting}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                className="btn-primary px-4 py-2 text-sm font-medium"
               >
                 {submitting ? 'Saving...' : 'Create Account Record'}
               </button>

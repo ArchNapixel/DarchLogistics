@@ -12,23 +12,13 @@ import ConvertIssueToWorkOrderModal, {
   type ConvertibleIssueReport,
 } from './ConvertIssueToWorkOrderModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import StatusBadge from '../../../components/StatusBadge'
+import { showToast } from '../../../components/Toast'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type IssueReport = ConvertibleIssueReport & {
   itinerary_id: number | null
-}
-
-const SEVERITY_STYLES: Record<string, string> = {
-  Minor: 'bg-yellow-100 text-yellow-700',
-  Major: 'bg-red-100 text-red-700',
-}
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const styles = SEVERITY_STYLES[severity] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {severity}
-    </span>
-  )
 }
 
 function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
@@ -36,7 +26,6 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [convertingReport, setConvertingReport] = useState<IssueReport | null>(null)
   const [markingId, setMarkingId] = useState<number | null>(null)
 
@@ -44,12 +33,6 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
     load()
   }, [])
 
-  // The green banner fades out on its own after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return
-    const timer = setTimeout(() => setSuccessMessage(null), 4000)
-    return () => clearTimeout(timer)
-  }, [successMessage])
 
   async function load() {
     setLoading(true)
@@ -141,7 +124,7 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
     }
 
     setReports((prev) => prev.filter((r) => r.issue_report_id !== report.issue_report_id))
-    setSuccessMessage('Report marked as worked on.')
+    showToast('Report marked as worked on.')
     onChanged?.()
   }
 
@@ -156,24 +139,19 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   return (
     <div>
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
-        </p>
-      )}
-      {successMessage && (
-        <p className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          {successMessage}
         </p>
       )}
 
       {reports.length === 0 ? (
-        <p className="text-slate-500">No open issue reports.</p>
+        <EmptyState message="No open issue reports." />
       ) : (
         <div className="grid gap-3">
           {reports.map((report) => (
             <div
               key={report.issue_report_id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
@@ -185,9 +163,9 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
                   )}
                 </p>
                 <div className="flex items-center gap-2">
-                  <SeverityBadge severity={report.severity} />
+                  <StatusBadge status={report.severity} />
                   <span className="text-xs text-slate-500">
-                    {new Date(report.reported_at).toLocaleDateString()}
+                    {formatDate(report.reported_at)}
                   </span>
                 </div>
               </div>
@@ -199,14 +177,14 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
               <div className="mt-3 flex gap-3 border-t border-slate-100 pt-3">
                 <button
                   onClick={() => setConvertingReport(report)}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                  className="btn-primary px-3 py-1.5 text-sm font-medium"
                 >
                   Convert to Work Order
                 </button>
                 <button
                   onClick={() => handleMarkWorkedOn(report)}
                   disabled={markingId === report.issue_report_id}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   {markingId === report.issue_report_id ? 'Saving...' : 'Mark as Worked On'}
                 </button>
@@ -224,7 +202,7 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
             setReports((prev) =>
               prev.filter((r) => r.issue_report_id !== convertingReport.issue_report_id),
             )
-            setSuccessMessage('Work order created and report marked as worked on.')
+            showToast('Work order created and report marked as worked on.')
             onChanged?.()
             setConvertingReport(null)
           }}

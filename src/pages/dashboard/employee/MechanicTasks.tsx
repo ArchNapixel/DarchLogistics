@@ -25,10 +25,13 @@ import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { changeWorkOrderStatus } from '../../../lib/workOrderStatusLog'
 import { loadMyPendingWorkOrderRelogIds } from '../../../lib/statusRelogRequests'
-import { formatDate } from '../../../lib/quoteRequest'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
 import RequestStatusRelogModal from '../../../components/RequestStatusRelogModal'
 import AccessWorkOrderModal from './AccessWorkOrderModal'
+import StatusBadge from '../../../components/StatusBadge'
+import { showToast } from '../../../components/Toast'
+import { formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
@@ -47,15 +50,6 @@ export type WorkOrder = {
 export const WORK_ORDER_COLUMNS =
   'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date'
 
-const STATUS_STYLES: Record<string, string> = {
-  Created: 'bg-gray-100 text-gray-700',
-  Scheduled: 'bg-blue-100 text-blue-700',
-  'In Progress': 'bg-orange-100 text-orange-700',
-  'On Hold': 'bg-yellow-100 text-yellow-700',
-  Completed: 'bg-green-100 text-green-700',
-  Cancelled: 'bg-red-100 text-red-700',
-}
-
 // A free-choice dropdown, not a fixed progression -- the mechanic picks
 // whatever status actually applies (including going back to "On Hold"
 // or jumping straight to "Cancelled"), rather than being forced through
@@ -70,15 +64,6 @@ export const ALL_STATUSES = [
   'Completed',
   'Cancelled',
 ]
-
-export function StatusBadge({ status }: { status: string }) {
-  const styles = STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span className={`px-3 py-1 text-xs font-semibold ${styles}`}>
-      {status}
-    </span>
-  )
-}
 
 // Adds the "Truck ABC-123" / "Trailer XYZ-789" label -- trailers need a
 // lookup, since work_orders only stores trailer_id for them. Also used by
@@ -120,7 +105,6 @@ function MechanicTasks() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null)
   const [reopeningOrder, setReopeningOrder] = useState<WorkOrder | null>(null)
@@ -188,7 +172,6 @@ function MechanicTasks() {
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
     setUpdatingId(order.work_order_id)
     setActionError(null)
-    setSuccessMessage(null)
 
     const { error: changeError, statusChanged } = await changeWorkOrderStatus({
       workOrderId: order.work_order_id,
@@ -209,7 +192,7 @@ function MechanicTasks() {
       // it off the list instead of showing a status it'll never leave.
       setOrders((prev) => prev.filter((o) => o.work_order_id !== order.work_order_id))
       setAccessingOrderId(null)
-      if (!changeError) setSuccessMessage(`${order.work_order_number} cancelled.`)
+      if (!changeError) showToast(`${order.work_order_number} cancelled.`)
     } else {
       setOrders((prev) =>
         prev.map((o) =>
@@ -228,7 +211,7 @@ function MechanicTasks() {
 
   function handleWorkOrderCompleted() {
     if (completingOrder) {
-      setSuccessMessage(`${completingOrder.work_order_number} marked complete.`)
+      showToast(`${completingOrder.work_order_number} marked complete.`)
       setOrders((prev) =>
         prev.filter((o) => o.work_order_id !== completingOrder.work_order_id),
       )
@@ -252,23 +235,22 @@ function MechanicTasks() {
       </p>
 
       {actionError && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
         </p>
       )}
 
-      {successMessage && (
-        <p className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-          {successMessage}
-        </p>
-      )}
-
-      {orders.length === 0 ? null : (
+      {orders.length === 0 ? (
+        <EmptyState
+          message="No work orders assigned to you."
+          hint="Accept one from the Task Board to get started."
+        />
+      ) : (
         <div className="grid gap-4">
           {orders.map((order) => (
             <div
               key={order.work_order_id}
-              className="rounded-xl border border-slate-200 p-5"
+              className="border border-slate-200 p-5"
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold text-slate-900">
@@ -291,13 +273,13 @@ function MechanicTasks() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => setAccessingOrderId(order.work_order_id)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  className="border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
                 >
                   Open Work Order
                 </button>
                 <button
                   onClick={() => startCompleting(order)}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                  className="btn-primary px-3 py-1.5 text-xs font-medium"
                 >
                   Mark Complete
                 </button>
@@ -314,7 +296,7 @@ function MechanicTasks() {
             {recentlyCompleted.map((order) => (
               <div
                 key={order.work_order_id}
-                className="flex items-center justify-between rounded-xl border border-slate-200 p-4"
+                className="flex items-center justify-between border border-slate-200 p-4"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900">
@@ -327,7 +309,7 @@ function MechanicTasks() {
                 ) : (
                   <button
                     onClick={() => setReopeningOrder(order)}
-                    className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    className="border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
                   >
                     Request correction
                   </button>
@@ -360,9 +342,7 @@ function MechanicTasks() {
           onClose={() => setReopeningOrder(null)}
           onRequested={() => {
             setPendingRelogIds((prev) => [...prev, reopeningOrder.work_order_id])
-            setSuccessMessage(
-              `Correction for ${reopeningOrder.work_order_number} sent to admin for approval.`,
-            )
+            showToast(`Correction for ${reopeningOrder.work_order_number} sent to admin for approval.`)
             setReopeningOrder(null)
           }}
         />

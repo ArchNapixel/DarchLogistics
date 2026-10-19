@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { formatMoney, formatDate } from '../../../lib/format'
+import EmptyState from '../../../components/EmptyState'
 
 type LedgerRow = {
   cash_advance_id: number
@@ -19,10 +21,6 @@ type LedgerTotals = {
   issued: number
   deducted: number
   total: number
-}
-
-function money(value: number) {
-  return `₱${value.toLocaleString()}`
 }
 
 function CashAdvanceLedgerSection() {
@@ -111,29 +109,29 @@ function CashAdvanceLedgerSection() {
   return (
     <div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Pending approval</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.pending)}</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.pending)}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Disbursed to employee</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.issued)}</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.issued)}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Deducted from payroll</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.deducted)}</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.deducted)}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total current cash advances</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{money(totals.total)}</p>
+          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.total)}</p>
         </div>
       </div>
 
       {loading && <p className="mt-4 text-slate-500">Loading cash advance ledger...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
-      {!loading && !error && rows.length === 0 && <p className="mt-4 text-slate-500">No cash advances recorded.</p>}
+      {!loading && !error && rows.length === 0 && <EmptyState message="No cash advances recorded." className="mt-4" />}
       {!loading && !error && rows.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -149,10 +147,10 @@ function CashAdvanceLedgerSection() {
               {rows.map((row) => (
                 <tr key={row.cash_advance_id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3 text-slate-900">{row.employee_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{new Date(row.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{money(Number(row.amount))}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatDate(row.created_at)}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{formatMoney(Number(row.amount))}</td>
                   <td className="px-4 py-3 text-slate-600">
-                    {row.status === 'Approved' ? `${money(row.repaid)} / ${money(Number(row.amount))}` : '—'}
+                    {row.status === 'Approved' ? `${formatMoney(row.repaid)} / ${formatMoney(Number(row.amount))}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.status === 'Approved' && row.repaid >= Number(row.amount) ? 'Settled' : row.status}
