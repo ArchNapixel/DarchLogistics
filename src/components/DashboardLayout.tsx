@@ -83,15 +83,15 @@ const TAB_ICONS: Record<string, string> = {
 function TabIcon({ label }: { label: string }) {
   return (
     <svg
-      width="18"
-      height="18"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="mr-2.5 inline-block shrink-0"
+      className="mr-2 inline-block shrink-0"
       aria-hidden="true"
     >
       <path d={TAB_ICONS[label] ?? 'M12 12h.01'} />
@@ -205,11 +205,11 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             current page stays visually distinct against the blue. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r print:hidden border-slate-200 bg-white p-4 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r print:hidden border-slate-200 bg-white p-3 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
-              <nav aria-label="Dashboard" className="flex flex-1 flex-col gap-1">
+              <nav aria-label="Dashboard" className="flex flex-1 flex-col gap-0.5">
                 {sidebarLinks.map((link) => {
                   if (!link.children) {
                     return (
@@ -219,7 +219,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         end
                         onClick={closeNav}
                         className={({ isActive }) =>
-                          `flex items-center rounded-lg px-3 py-2 text-sm font-medium ${
+                          `flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${
                             isActive
                               ? 'bg-slate-900 text-white'
                               : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -241,8 +241,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   ]
 
                   return (
-                    <div key={link.label} className="mt-3 flex flex-col gap-1">
-                      <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <div key={link.label} className="mt-2 flex flex-col gap-0.5">
+                      <div className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                         {link.label}
                       </div>
                       {tabs.map((child) => (
@@ -252,7 +252,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           end
                           onClick={closeNav}
                           className={({ isActive }) =>
-                            `flex items-center rounded-lg px-3 py-2 text-sm font-medium ${
+                            `flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${
                               isActive
                                 ? 'bg-slate-900 text-white'
                                 : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -273,7 +273,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   to="/dashboard/settings"
                   onClick={closeNav}
                   className={({ isActive }) =>
-                    `mt-4 flex items-center border-t border-slate-200 px-3 pt-4 text-sm font-medium ${
+                    `mt-2 flex items-center border-t border-slate-200 px-2.5 pt-2 text-xs font-medium ${
                       isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
                     }`
                   }
