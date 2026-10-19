@@ -37,6 +37,8 @@ import CashAdvanceSection from './staff/CashAdvanceSection'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import ArAgingSection from './staff/ArAgingSection'
+import CollectionsSection from './staff/CollectionsSection'
+import StatementsSection from './staff/StatementsSection'
 import PayrollRemittanceSection from './staff/PayrollRemittanceSection'
 import TripProfitSection from './staff/TripProfitSection'
 import SettingsSection from './staff/SettingsSection'
@@ -74,6 +76,8 @@ const staffLinks = [
     label: 'Accounting',
     children: [
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
+      { label: 'Collections', to: '/dashboard/collections' },
+      { label: 'Statements', to: '/dashboard/statements' },
       { label: 'AR Aging', to: '/dashboard/ar-aging' },
       { label: 'Payroll & Remittances', to: '/dashboard/payroll-remittances' },
       { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
@@ -154,6 +158,8 @@ function DashboardRouter() {
           <Route path="cash-advance" element={<CashAdvanceSection />} />
           <Route path="reports" element={<ReportsSection />} />
           <Route path="financial-records" element={<FinancialSection />} />
+          <Route path="collections" element={<CollectionsSection />} />
+          <Route path="statements" element={<StatementsSection />} />
           <Route path="ar-aging" element={<ArAgingSection />} />
           <Route path="payroll-remittances" element={<PayrollRemittanceSection />} />
           <Route path="trip-profitability" element={<TripProfitSection />} />

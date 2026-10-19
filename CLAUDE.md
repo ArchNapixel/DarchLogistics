@@ -670,11 +670,37 @@ before creating it.
     form (Paid Full pre-fills the remaining balance; both lock
     `amount_to_pay`), the Manage modal's "Record payment" and "Mark
     Refunded" also create rows; forms collect method, date received,
-    reference no., OR number, note. Not built yet: Collections page
-    (voiding UI), Statements of Account, payment history in the client
-    portal / BookingDetailModal.
+    reference no., OR number, note.
+  - **Phase 4b — Collections** (`/dashboard/collections`,
+    `staff/CollectionsSection.tsx`; `loadPayments`/`voidBookingPayment`/
+    `buildCollectionsCsv` in `lib/bookingPayments.ts`, totals in
+    `lib/paymentTotals.ts`, self-check `node scripts/check-payment-totals.ts`)
+    — every payment/refund by date received (default: this month), filter
+    by method/client, "Show voided" toggle (voided rows stay, dimmed and
+    struck through, excluded from totals), Void button (reason required →
+    `void_booking_payment`), CSV. Note: the one-time "Opening balance"
+    rows are dated the day they were created, so they show as collected
+    on that day.
+  - **Phase 4c — Statements of Account** (`/dashboard/statements`,
+    `staff/StatementsSection.tsx`, `lib/statement.ts` loader,
+    `lib/statementTotals.ts` pure ledger, self-check
+    `node scripts/check-statement-totals.ts`) — pick client + period,
+    printable (browser Print / Save as PDF; `print:` classes added to
+    `DashboardLayout` hide the header/sidebar and let the page flow).
+    Ledger: delivered trips bill the booking rate on the delivery date;
+    one "Adjustment" line per booking = billable − rate × delivered trips
+    (client damage, discounts/override, advance lock; dated the booking's
+    last delivery, else booking date); payments by `paid_on`, refunds add
+    back. Opening = everything before the period; closing with the period
+    ending today equals Bills Receivable's balance. Billable amounts come
+    from `loadPaymentDueReport(clientId, { includeSettled: true })`
+    (new option; `PaymentDueRow` also gained `booking_date`). Because old
+    payments were converted to dated-today "Opening balance" rows,
+    statements for periods before that date show old bookings as unpaid
+    and the payment inside the period of the backfill. Not built: payment
+    history in the client portal / BookingDetailModal, invoice numbering.
   - **Planned, in order** (decided with the user; each needs go-ahead):
-    Phase 4b/4c remainder of 4 (see above), then the original Phase 4 text:
+    Phase 4 (all of 4a–4c built, see above; original design:)
     `booking_payments` payment history
     (+ trigger keeping `bookings.amount_paid` = sum of non-voided
     payments, Collections page, Statements of Account; no backfill —
@@ -697,8 +723,9 @@ before creating it.
     (user chose to add the reconciliation page to the plan instead).
 
 ## Currently in progress
-Accounting module Phases 1–3 built (AR Aging, invoice number, Payroll &
-Remittances, Trip Profitability), awaiting user testing; Phase 4 not
+Accounting module Phases 1–4 built (AR Aging, invoice number, Payroll &
+Remittances, Trip Profitability, payment history + Collections +
+Statements), awaiting user testing; Phase 5 (Revenue Reconciliation) not
 started. (Last CLAUDE.md sync: 2026-10-19.)
 
 ## Not started yet

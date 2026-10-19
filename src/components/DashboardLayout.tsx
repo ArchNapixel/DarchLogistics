@@ -35,6 +35,9 @@ const TAB_ICONS: Record<string, string> = {
   'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
   'Trip Profitability': 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
   'Payroll & Remittances':'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
+  Statements:
+    'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
   'AR Aging':'M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4',
   'Client Quotations': FILE,
   'Client Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
@@ -128,8 +131,10 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
     // h-dvh (dynamic viewport height) caps the shell at the *visible* window
     // height -- unlike h-screen it shrinks with a phone's browser toolbar, so
     // nothing gets hidden behind it. Only <main> scrolls.
-    <div className="flex h-dvh flex-col bg-slate-50">
-      <header className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
+    // The print: classes only matter when printing a page (Statements of
+    // Account): hide the header/sidebar and let the page flow past one screen.
+    <div className="flex h-dvh flex-col bg-slate-50 print:block print:h-auto">
+      <header className="flex items-center justify-between gap-2 border-b print:hidden border-slate-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {sidebarLinks.length > 0 && (
             <button
@@ -179,7 +184,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 print:block">
         {sidebarLinks.length > 0 && (
           <>
             {/* Dark backdrop behind the phone drawer; tap it to close */}
@@ -196,7 +201,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             current page stays visually distinct against the blue. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r border-slate-200 bg-white p-4 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto border-r print:hidden border-slate-200 bg-white p-4 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
@@ -277,7 +282,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </>
         )}
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

@@ -53,6 +53,7 @@ import { loadClientDamageChargesByBooking } from './damageCharges'
 
 export type PaymentDueRow = {
   booking_id: number
+  booking_date: string
   client_id: number
   client_name: string
   pickup_place_name: string
@@ -99,13 +100,16 @@ function daysFromToday(dateStr: string): number {
 
 // Pass clientId to scope the report to one client's own bookings
 // (the client portal); omit it for the admin view across all clients.
+// includeSettled keeps the fully delivered + fully paid bookings too
+// (the Statement of Account needs every booking, not just open ones).
 export async function loadPaymentDueReport(
   clientId?: number,
+  options?: { includeSettled?: boolean },
 ): Promise<{ rows: PaymentDueRow[]; error: string | null }> {
   let bookingsQuery = supabase
     .from('bookings')
     .select(
-      'booking_id, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
+      'booking_id, booking_date, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
     )
   // Cancelled bookings stay in: they still owe for trips delivered before
   // the cancellation (billed below, same cap as FinancialSection). Ones with
@@ -297,6 +301,7 @@ export async function loadPaymentDueReport(
 
       return {
         booking_id: booking.booking_id,
+        booking_date: booking.booking_date,
         client_id: booking.client_id,
         client_name: clientNameById.get(booking.client_id) ?? '—',
         pickup_place_name: placeNameById.get(booking.place_of_pickup_id) ?? '—',
@@ -324,6 +329,7 @@ export async function loadPaymentDueReport(
     // nothing billable yet (shown as an estimate) and partially-paid ones.
     .filter(
       (row) =>
+        options?.includeSettled ||
         !(row.completed_trips === row.total_trips && row.balance_due <= 0),
     )
 
