@@ -420,7 +420,7 @@ function StaffDashboard() {
   ]
 
   // Title + one row of cards (as many equal columns as there are cards).
-  // Used both beside Top Creditors and in the lower rows.
+  // Used both beside Top Unpaid Clients and in the lower rows.
   const renderGroup = (group: (typeof summaryGroups)[number], columns = group.cards.length, large = false) => (
     <>
       <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
@@ -528,7 +528,7 @@ function StaffDashboard() {
         ))}
       </div>
       {/* Leaderboard to the right of the expense cards */}
-      {/* Middle column: Top Creditors stretches to the full height of the row */}
+      {/* Middle column: Top Unpaid Clients stretches to the full height of the row */}
       {/* ponytail: side columns are a fixed 376px (= 3 collapsed expense cards) so
           they don't grow when an expense card expands; update if card sizes change */}
       <div className="lg:h-[376px] lg:w-1/3">

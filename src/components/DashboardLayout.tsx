@@ -37,6 +37,9 @@ const TAB_ICONS: Record<string, string> = {
   'Payroll & Remittances':'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
   Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
   'Revenue Reconciliation': 'M4 7h16M4 17h16M8 3l-4 4 4 4M16 13l4 4-4 4',
+  'Profit & Loss': 'M3 3v18h18M7 14l4-4 3 3 5-6',
+  'Bills Payable':'M2 5h20v14H2zM2 10h20M6 15h4',
+  Billing:'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
   Statements:
     'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
   'AR Aging':'M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4',

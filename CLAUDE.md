@@ -717,6 +717,57 @@ before creating it.
     delivered trips included, ignores `amount_to_pay` overrides, no damage).
     The dashboard card and Trip Profitability are NOT relabelled (user
     chose a reconciliation page instead).
+  - **Billing (per booking, 2026-10-19)** — Accounting → Billing,
+    `/dashboard/billing` (client dropdown → booking dropdown → Print, like
+    Statements) and `/dashboard/billing/:bookingId` (deep link that
+    pre-fills both dropdowns) (`staff/BillingPage.tsx`, `lib/billing.ts`;
+    Admin route only). The
+    printable bill to hand a client for ONE booking (Print / Save as PDF,
+    same `print:` setup as Statements): client, route, cargo, terms, trips
+    delivered, the dated ledger lines (delivered trips, adjustment,
+    payments) with running balance, total billed / paid / amount due (or
+    PAID), due date, invoice no. if typed. It is `loadLedgerInputs(clientId)`
+    narrowed to the booking, so it matches Bills Receivable and the
+    Statement. Titled "Billing" — NOT a BIR invoice. "Billing" link in
+    Bills Receivable's Action column and in `BookingDetailModal` (Admin
+    only). No company address/TIN in the header yet. No self-check script
+    (no new math).
+  - **Company details** for client-facing documents live in
+    `lib/company.ts` (name, "Brgy. J.P. Laurel, Panabo City",
+    0966 047 5467; no TIN yet) — shown on Billing, Statements, P&L.
+  - **Phase 6a — Bills Payable (2026-10-19; SQL run by user the same
+    day)** (`/dashboard/bills-payable`, `staff/BillsPayableSection.tsx`,
+    `lib/payables.ts`, rules in `lib/payableTotals.ts`, self-check
+    `node scripts/check-payable-totals.ts`). Tables `creditors`
+    (`creditor_id, creditor_name, contact_person, phone, tin_number, note`;
+    unique lower(name); Admin insert/update policies, plain writes),
+    `bills` (`category` CHECK list = `BILL_CATEGORIES`, keep in sync;
+    `amount_paid` kept by trigger `bill_payments_sync`; voidable) and
+    `bill_payments` (voidable). Bill/payment writes ONLY via SECURITY
+    DEFINER functions `create_bill` (optional pay-in-full = one-off
+    expense), `record_bill_payment` (row-locked, refuses overpaying),
+    `void_bill_payment`, `void_bill` (only with no active payments); all
+    use `current_admin_employee_id()` (raises "Admins only"). Creditor
+    (`bills.creditor_id`) is optional on a bill. Named "creditor"
+    everywhere, DB included (user's choice 2026-10-19, was "supplier"
+    before the SQL was ever run). The dashboard card
+    `TopCreditorsCard.tsx` (clients who owe us) is titled **"Top Unpaid
+    Clients"** so "creditor" only means people WE owe. Tabs Open/Paid/Voided/Creditors; cards owed /
+    overdue / due in 7 days / paid this month. Petty Cash (6b) skipped
+    for now by the user.
+  - **Phase 6c — Profit & Loss** (`/dashboard/profit-loss`,
+    `staff/ProfitLossSection.tsx`, `lib/profitLoss.ts`, pure
+    `lib/profitLossTotals.ts`, self-check
+    `node scripts/check-profit-loss-totals.ts`) — one month, accrual,
+    printable. Revenue = Revenue Reconciliation's trip revenue +
+    adjustments. Costs = payroll gross + employer shares (payslips by
+    `payroll_period_end`, drafts included and noted), diesel LOGGED on the
+    month's delivered trips, other trip expenses, company damage (all from
+    `loadTripProfitReport`), maintenance parts used
+    (`loadMaintenanceCostReport`), non-voided bills by `bill_date` per
+    category. Deliberately excluded (memo lines): "Parts" bills (inventory
+    purchase, expensed when used), estimated diesel, and the trip
+    calculator's driver commission (already in payroll).
   - **Phase 5 — Revenue Reconciliation** (`/dashboard/revenue-reconciliation`,
     `staff/RevenueReconciliationSection.tsx`, `lib/revenueReconciliation.ts`
     loader, `lib/revenueReconTotals.ts` pure math, self-check
@@ -732,11 +783,10 @@ before creating it.
     balance" rows (dated the backfill day) show as collected that day.
 
 ## Currently in progress
-Accounting module Phases 1–5 built (AR Aging, invoice number, Payroll &
-Remittances, Trip Profitability, payment history + Collections +
-Statements, Revenue Reconciliation), awaiting user testing; Phase 6
-(Payables & Expenses, Petty Cash, Profit & Loss) not started. (Last
-CLAUDE.md sync: 2026-10-19.)
+Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
+now), awaiting user testing (6a SQL has been run). Not built: payment history in the client
+portal / BookingDetailModal, company TIN. (Last CLAUDE.md sync:
+2026-10-19.)
 
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —

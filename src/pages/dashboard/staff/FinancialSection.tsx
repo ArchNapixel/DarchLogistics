@@ -12,6 +12,7 @@
 // Payments Due panel/tab (Bookings page, Reports page) and the client portal
 // are read-only views of the same numbers.
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
 import { supabase } from '../../../lib/supabaseClient'
@@ -807,6 +808,7 @@ function FinancialSection() {
                           </>
                         )}
                         <button onClick={() => setSelectedBooking(booking)} className="font-medium text-slate-700 hover:text-slate-900">Manage</button>
+                        <Link to={`/dashboard/billing/${booking.booking_id}`} className="font-medium text-slate-700 hover:text-slate-900">Billing</Link>
                       </div>
                     </td>
                   </tr>

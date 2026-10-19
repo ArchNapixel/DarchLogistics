@@ -37,9 +37,12 @@ import CashAdvanceSection from './staff/CashAdvanceSection'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import ArAgingSection from './staff/ArAgingSection'
+import BillingPage from './staff/BillingPage'
+import BillsPayableSection from './staff/BillsPayableSection'
 import CollectionsSection from './staff/CollectionsSection'
 import StatementsSection from './staff/StatementsSection'
 import RevenueReconciliationSection from './staff/RevenueReconciliationSection'
+import ProfitLossSection from './staff/ProfitLossSection'
 import PayrollRemittanceSection from './staff/PayrollRemittanceSection'
 import TripProfitSection from './staff/TripProfitSection'
 import SettingsSection from './staff/SettingsSection'
@@ -77,9 +80,12 @@ const staffLinks = [
     label: 'Accounting',
     children: [
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
+      { label: 'Bills Payable', to: '/dashboard/bills-payable' },
       { label: 'Collections', to: '/dashboard/collections' },
+      { label: 'Billing', to: '/dashboard/billing' },
       { label: 'Statements', to: '/dashboard/statements' },
       { label: 'Revenue Reconciliation', to: '/dashboard/revenue-reconciliation' },
+      { label: 'Profit & Loss', to: '/dashboard/profit-loss' },
       { label: 'AR Aging', to: '/dashboard/ar-aging' },
       { label: 'Payroll & Remittances', to: '/dashboard/payroll-remittances' },
       { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
@@ -160,9 +166,13 @@ function DashboardRouter() {
           <Route path="cash-advance" element={<CashAdvanceSection />} />
           <Route path="reports" element={<ReportsSection />} />
           <Route path="financial-records" element={<FinancialSection />} />
+          <Route path="bills-payable" element={<BillsPayableSection />} />
+          <Route path="billing" element={<BillingPage />} />
+          <Route path="billing/:bookingId" element={<BillingPage />} />
           <Route path="collections" element={<CollectionsSection />} />
           <Route path="statements" element={<StatementsSection />} />
           <Route path="revenue-reconciliation" element={<RevenueReconciliationSection />} />
+          <Route path="profit-loss" element={<ProfitLossSection />} />
           <Route path="ar-aging" element={<ArAgingSection />} />
           <Route path="payroll-remittances" element={<PayrollRemittanceSection />} />
           <Route path="trip-profitability" element={<TripProfitSection />} />

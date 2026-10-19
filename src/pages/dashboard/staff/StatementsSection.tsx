@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadStatement, type Statement } from '../../../lib/statement'
 import { toManilaDate } from '../../../lib/payslip'
+import { COMPANY } from '../../../lib/company'
 
 function formatMoney(value: number): string {
   return `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString(undefined, {
@@ -100,8 +101,9 @@ function StatementsSection() {
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Darch Logistics</p>
-              <h3 className="text-lg font-bold text-slate-900">Statement of Account</h3>
+              <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>
+              <p className="text-xs text-slate-500">{COMPANY.address} · {COMPANY.phone}</p>
+              <h3 className="mt-3 text-lg font-bold text-slate-900">Statement of Account</h3>
             </div>
             <div className="text-right text-sm text-slate-600">
               <p className="font-semibold text-slate-900">{clientName}</p>

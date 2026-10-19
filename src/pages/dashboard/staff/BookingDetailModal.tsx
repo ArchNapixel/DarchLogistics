@@ -20,7 +20,9 @@
 // Steps aren't in one DB transaction (same known limitation as
 // QuoteReviewModal) -- a failure partway says exactly what was saved.
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
+import { isAdmin } from '../../../lib/roles'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
 import { freeVehicleIfIdle } from '../../../lib/fleetStatus'
@@ -283,7 +285,7 @@ function BookingDetailModal({
   // cancellation so the list can reload.
   onChanged?: () => void
 }) {
-  const { employeeId } = useAuth()
+  const { employeeId, role } = useAuth()
   const [details, setDetails] = useState<Details | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
@@ -583,6 +585,15 @@ function BookingDetailModal({
           <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
           <InfoRow label="Invoice no." value={details?.invoice_number || '—'} />
         </div>
+        {/* Admin only: the Billing page exists only in the Admin routes */}
+        {isAdmin(role) && (
+          <Link
+            to={`/dashboard/billing/${booking.booking_id}`}
+            className="mt-3 inline-block text-sm font-medium text-slate-700 underline hover:text-slate-900"
+          >
+            Billing
+          </Link>
+        )}
 
         <div className="mt-6">
           <h4 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
