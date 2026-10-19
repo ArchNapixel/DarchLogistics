@@ -22,6 +22,7 @@ import {
   validateProfileForm,
   type EditableKey,
 } from '../../../lib/myProfile'
+import { phoneInput } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import { formatMoney } from '../../../lib/format'
 
@@ -91,7 +92,7 @@ function AddEmployeeModal({
   const [firstName, setFirstName] = useState(employee?.first_name ?? '')
   const [lastName, setLastName] = useState(employee?.last_name ?? '')
   const [middleName, setMiddleName] = useState(employee?.middle_name ?? '')
-  const [phoneNumber, setPhoneNumber] = useState(employee?.phone_number ?? '')
+  const [phoneNumber, setPhoneNumber] = useState(phoneInput(employee?.phone_number ?? ''))
   const [dateOfBirth, setDateOfBirth] = useState(employee?.date_of_birth ?? '')
   const [personalEmail, setPersonalEmail] = useState(employee?.email ?? '')
   const [address, setAddress] = useState(employee?.address ?? '')
@@ -99,7 +100,7 @@ function AddEmployeeModal({
   const [province, setProvince] = useState(employee?.province ?? '')
   const [zipCode, setZipCode] = useState(employee?.zip_code ?? '')
   const [emergencyName, setEmergencyName] = useState(employee?.emergency_contact_name ?? '')
-  const [emergencyNumber, setEmergencyNumber] = useState(employee?.emergency_contact_number ?? '')
+  const [emergencyNumber, setEmergencyNumber] = useState(phoneInput(employee?.emergency_contact_number ?? ''))
   const [tinNumber, setTinNumber] = useState(employee?.tin_number ?? '')
   const [sssNumber, setSssNumber] = useState(employee?.sss_number ?? '')
   const [philhealthNumber, setPhilhealthNumber] = useState(employee?.philhealth_number ?? '')

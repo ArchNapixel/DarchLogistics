@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabaseClient'
 import QuoteWizard from './QuoteWizard'
 import { Field, TextInput } from './QuoteShipmentFields'
 import { QuoteSubmitted } from './QuoteSummary'
-import { buildQuoteRow, emailError, phoneError, useShipmentForm } from '../lib/quoteRequest'
+import { buildQuoteRow, emailError, phoneDigits, phoneError, phoneInput, useShipmentForm } from '../lib/quoteRequest'
 
 type Contact = { clientName: string; contactNumber: string; contactEmail: string }
 type ContactErrors = Partial<Record<keyof Contact, string>>
@@ -68,7 +68,7 @@ function QuoteForm({
     const { error: insertError } = await supabase.from('quote_requests').insert({
       ...result.row,
       client_name: contact.clientName.trim(),
-      contact_number: contact.contactNumber.trim(),
+      contact_number: phoneDigits(contact.contactNumber),
       contact_email: contact.contactEmail.trim() || null,
     })
     setSubmitting(false)
@@ -135,9 +135,11 @@ function QuoteForm({
           <Field label="Phone number" error={contactErrors.contactNumber}>
             <TextInput
               type="tel"
+              inputMode="numeric"
+              maxLength={13}
               autoComplete="tel"
               value={contact.contactNumber}
-              onChange={(e) => setContactField('contactNumber', e.target.value)}
+              onChange={(e) => setContactField('contactNumber', phoneInput(e.target.value))}
               placeholder="0917 123 4567"
               invalid={!!contactErrors.contactNumber}
             />

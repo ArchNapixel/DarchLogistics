@@ -26,7 +26,9 @@ import QuoteSummaryDrawer from '../../../components/QuoteSummaryDrawer'
 import {
   buildQuoteRow,
   emailError,
+  phoneDigits,
   phoneError,
+  phoneInput,
   useShipmentForm,
   useSummaryDrawer,
   type ShipmentForm,
@@ -183,7 +185,7 @@ function NewQuoteRequestModal({
       client_name: linkedClient ? linkedClient.client_name : clientFields.clientName.trim(),
       contact_number: linkedClient
         ? linkedClient.phone_number
-        : clientFields.contactNumber.trim() || null,
+        : phoneDigits(clientFields.contactNumber) || null,
       contact_email: linkedClient
         ? linkedClient.email
         : clientFields.contactEmail.trim() || null,
@@ -202,7 +204,7 @@ function NewQuoteRequestModal({
       contactLine:
         [
           linkedClient ? linkedClient.client_name : clientFields.clientName.trim(),
-          linkedClient ? linkedClient.phone_number : clientFields.contactNumber.trim(),
+          linkedClient ? linkedClient.phone_number : phoneDigits(clientFields.contactNumber),
         ]
           .filter(Boolean)
           .join(' · '),
@@ -358,8 +360,10 @@ function NewQuoteRequestModal({
                 <Field label="Phone number" error={clientErrors.contactNumber}>
                   <TextInput
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={13}
                     value={clientFields.contactNumber}
-                    onChange={(e) => setClientField('contactNumber', e.target.value)}
+                    onChange={(e) => setClientField('contactNumber', phoneInput(e.target.value))}
                     placeholder="0917 123 4567"
                     invalid={!!clientErrors.contactNumber}
                   />

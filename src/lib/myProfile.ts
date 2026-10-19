@@ -12,6 +12,7 @@
 // update_my_profile() -- keep the two in sync (the page checks for friendly
 // messages, the function checks so a direct API call can't skip them).
 import { supabase } from './supabaseClient'
+import { phoneDigits, phoneError, phoneInput } from './quoteRequest'
 
 export type MyProfile = {
   // Read-only here (Admin edits these)
@@ -61,7 +62,7 @@ const LABELS: Record<EditableKey, string> = {
 
 // Max characters per field (also used as the inputs' maxLength).
 export const PROFILE_MAX_LENGTH: Record<EditableKey, number> = {
-  phone_number: 20,
+  phone_number: 13, // 11 digits + 2 display spaces (0966 047 5467)
   date_of_birth: 10,
   email: 100,
   address: 200,
@@ -69,7 +70,7 @@ export const PROFILE_MAX_LENGTH: Record<EditableKey, number> = {
   province: 80,
   zip_code: 10,
   emergency_contact_name: 100,
-  emergency_contact_number: 20,
+  emergency_contact_number: 13,
   tin_number: 20,
   sss_number: 20,
   philhealth_number: 20,
@@ -78,10 +79,15 @@ export const PROFILE_MAX_LENGTH: Record<EditableKey, number> = {
 
 export const EDITABLE_KEYS = Object.keys(LABELS) as EditableKey[]
 
+// Phone boxes: shown spaced (0966 047 5467), saved as digits only.
+const PHONE_KEYS: EditableKey[] = ['phone_number', 'emergency_contact_number']
+
 export const MIN_BIRTH_DATE = '1900-01-01'
 
 export function profileToForm(p: MyProfile): ProfileForm {
-  return Object.fromEntries(EDITABLE_KEYS.map((key) => [key, p[key] ?? ''])) as ProfileForm
+  return Object.fromEntries(
+    EDITABLE_KEYS.map((key) => [key, PHONE_KEYS.includes(key) ? phoneInput(p[key] ?? '') : (p[key] ?? '')]),
+  ) as ProfileForm
 }
 
 // Trim spaces and drop control characters (a stray null/tab from a weird
@@ -90,11 +96,14 @@ export function profileToForm(p: MyProfile): ProfileForm {
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g
 export function cleanProfileForm(form: ProfileForm): ProfileForm {
   return Object.fromEntries(
-    EDITABLE_KEYS.map((key) => [key, form[key].replace(CONTROL_CHARS, '').trim()]),
+    EDITABLE_KEYS.map((key) => {
+      const value = form[key].replace(CONTROL_CHARS, '').trim()
+      // Phones are saved without the display spaces: 09660475467.
+      return [key, PHONE_KEYS.includes(key) ? phoneDigits(value) : value]
+    }),
   ) as ProfileForm
 }
 
-const PHONE_PATTERN = /^\+?[0-9 ()-]+$/
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const GOV_ID_PATTERN = /^[A-Za-z0-9 -]+$/
 // Names / places: letters (any language, accents ok), spaces, . ' -
@@ -107,11 +116,8 @@ const NAME_KEYS: EditableKey[] = ['emergency_contact_name', 'city', 'province']
 export function filterInput(key: EditableKey, value: string): string {
   switch (key) {
     case 'phone_number':
-    case 'emergency_contact_number': {
-      // digits, spaces, dashes, brackets; a + only as the very first character
-      const kept = value.replace(/[^0-9+() -]/g, '')
-      return kept.startsWith('+') ? `+${kept.slice(1).replace(/\+/g, '')}` : kept.replace(/\+/g, '')
-    }
+    case 'emergency_contact_number':
+      return phoneInput(value) // digits only, max 11, spaced 0966 047 5467
     case 'email':
       return value.replace(/\s/g, '')
     case 'tin_number':
@@ -129,10 +135,6 @@ export function filterInput(key: EditableKey, value: string): string {
   }
 }
 
-function validPhone(value: string): boolean {
-  return PHONE_PATTERN.test(value) && value.replace(/\D/g, '').length >= 7
-}
-
 // Returns the first problem as a plain sentence, or null if all is well.
 // Expects a cleaned form (see cleanProfileForm). `today` is YYYY-MM-DD.
 export function validateProfileForm(form: ProfileForm, today: string): string | null {
@@ -144,11 +146,10 @@ export function validateProfileForm(form: ProfileForm, today: string): string | 
     }
   }
 
-  if (!validPhone(form.phone_number)) {
-    return 'Phone number can only have digits, spaces, dashes, brackets and a leading +, with at least 7 digits.'
-  }
-  if (form.emergency_contact_number && !validPhone(form.emergency_contact_number)) {
-    return 'Emergency contact number can only have digits, spaces, dashes, brackets and a leading +, with at least 7 digits.'
+  const phoneProblem = phoneError(form.phone_number)
+  if (phoneProblem) return phoneProblem
+  if (form.emergency_contact_number && phoneError(form.emergency_contact_number)) {
+    return 'Emergency contact number must be 11 digits and start with 09.'
   }
   for (const key of NAME_KEYS) {
     if (form[key] && !NAME_PATTERN.test(form[key])) {

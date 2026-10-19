@@ -855,6 +855,21 @@ before creating it.
     Paying earlier months / Matches). Read-only, no schema. The "Opening
     balance" rows (dated the backfill day) show as collected that day.
 
+- **Phone number format (2026-10-19)** — every phone input is digits only,
+  exactly 11, starting `09`, shown spaced as `0966 047 5467` and SAVED
+  without spaces (`09660475467`). Shared helpers in `lib/quoteRequest.ts`:
+  `phoneInput` (onChange filter/formatter), `phoneDigits` (strip for
+  save), `phoneError` (validation). Used by the public `QuoteForm`, staff
+  `NewQuoteRequestModal`, `AddEmployeeModal`, My Profile (via
+  `lib/myProfile.ts`, phone + emergency number) and the client portal
+  profile. The client portal's New Quote reuses the account's saved
+  number. DB: `clients.phone_number`, `employees.phone_number` and
+  `quote_requests.contact_number` have a `CHECK (~ '^09[0-9]{9}$')`
+  added `NOT VALID` (run by user; `validate constraint` once old rows are
+  clean). Not done yet: `update_my_profile()` still has the old loose
+  phone rule, and `employees.emergency_contact_number` has no cleanup or
+  constraint.
+
 ## Currently in progress
 Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
 now), awaiting user testing (6a SQL has been run). Not built: payment history in the client

@@ -7,6 +7,7 @@
 // banner without a second fetch.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { phoneDigits, phoneError, phoneInput as formatPhone } from '../../../lib/quoteRequest'
 
 export type ClientProfile = {
   client_name: string
@@ -55,14 +56,19 @@ function ClientProfileSection({
     }
     setNameInput(profile.client_name)
     setEmailInput(profile.email ?? '')
-    setPhoneInput(profile.phone_number ?? '')
+    setPhoneInput(formatPhone(profile.phone_number ?? ''))
     setSaveError(null)
     setEditing(true)
   }
 
   async function handleSave() {
-    if (!nameInput.trim() || !phoneInput.trim()) {
-      setSaveError('Enter a name and phone number.')
+    if (!nameInput.trim()) {
+      setSaveError('Enter a name.')
+      return
+    }
+    const phoneProblem = phoneError(phoneInput)
+    if (phoneProblem) {
+      setSaveError(phoneProblem)
       return
     }
     // Loose check only -- catches typos like a missing "@" or ".com".
@@ -79,7 +85,7 @@ function ClientProfileSection({
       .update({
         client_name: nameInput.trim(),
         email: emailInput.trim() || null,
-        phone_number: phoneInput.trim(),
+        phone_number: phoneDigits(phoneInput),
       })
       .eq('client_id', clientId)
       .select('client_name, email, phone_number')
@@ -159,8 +165,10 @@ function ClientProfileSection({
           Phone number
           <input
             type="tel"
+            inputMode="numeric"
+            maxLength={13}
             value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
+            onChange={(e) => setPhoneInput(formatPhone(e.target.value))}
             className={fieldClasses}
           />
         </label>

@@ -93,14 +93,25 @@ function sameSpot(a: LocationValue, b: LocationValue): boolean {
 
 // Contact checks shared by the public form and staff's phone-in modal.
 // Return an error message, or null when fine.
-// Phone: PH mobile (09xx / +639xx) or landline with area code.
+// Phone: digits only, exactly 11, starting with 09 (e.g. 09171234567).
+// The input shows spaces (0966 047 5467); they're ignored here and removed on save.
 export function phoneError(phone: string): string | null {
-  const digits = phone.replace(/[\s()-]/g, '')
+  const digits = phoneDigits(phone)
   if (!digits) return 'Enter a phone number.'
-  if (!/^(?:\+?63|0)(?:9\d{9}|[2-8]\d{7,9})$/.test(digits)) {
-    return 'Invalid PH number.'
-  }
+  if (!/^09\d{9}$/.test(digits)) return 'Phone number must be 11 digits and start with 09.'
   return null
+}
+
+// Phone without spaces, for validating and saving.
+export function phoneDigits(phone: string): string {
+  return phone.replace(/\D/g, '')
+}
+
+// Use in the phone input's onChange: keeps digits only, caps at 11, and
+// adds spaces as you type: 0966 047 5467.
+export function phoneInput(value: string): string {
+  const d = phoneDigits(value).slice(0, 11)
+  return [d.slice(0, 4), d.slice(4, 7), d.slice(7)].filter(Boolean).join(' ')
 }
 
 // Email is optional: blank is fine.

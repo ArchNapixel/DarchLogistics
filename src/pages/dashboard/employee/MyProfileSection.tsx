@@ -58,7 +58,7 @@ function MyProfileSection() {
 
   // Which fields differ from what's saved (compared after cleaning).
   const changedKeys =
-    form && baseline ? EDITABLE_KEYS.filter((key) => cleanProfileForm(form)[key] !== baseline[key]) : []
+    form && baseline ? EDITABLE_KEYS.filter((key) => cleanProfileForm(form)[key] !== cleanProfileForm(baseline)[key]) : []
   const dirty = changedKeys.length > 0
 
   // Browser warning if they close/reload the tab with unsaved edits.
