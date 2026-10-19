@@ -38,6 +38,7 @@ import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import ArAgingSection from './staff/ArAgingSection'
 import PayrollRemittanceSection from './staff/PayrollRemittanceSection'
+import TripProfitSection from './staff/TripProfitSection'
 import SettingsSection from './staff/SettingsSection'
 import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
 import DamageChargesSection from './staff/DamageChargesSection'
@@ -75,6 +76,7 @@ const staffLinks = [
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
       { label: 'AR Aging', to: '/dashboard/ar-aging' },
       { label: 'Payroll & Remittances', to: '/dashboard/payroll-remittances' },
+      { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
     ],
   },
   {
@@ -154,6 +156,7 @@ function DashboardRouter() {
           <Route path="financial-records" element={<FinancialSection />} />
           <Route path="ar-aging" element={<ArAgingSection />} />
           <Route path="payroll-remittances" element={<PayrollRemittanceSection />} />
+          <Route path="trip-profitability" element={<TripProfitSection />} />
           <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

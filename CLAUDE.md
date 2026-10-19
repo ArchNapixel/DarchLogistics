@@ -640,18 +640,66 @@ before creating it.
     cash advance deducted, net, employer shares, company cost (gross +
     employer shares). One CSV with both. Reads the stored payslip columns
     only — nothing recalculated. No new tables.
+  - **Trip Profitability** (`/dashboard/trip-profitability`,
+    `staff/TripProfitSection.tsx`, `lib/tripProfit.ts` loader + CSV,
+    `lib/tripProfitTotals.ts` pure per-trip math, self-check
+    `node scripts/check-trip-profit-totals.ts`) — Delivered trips of a
+    month (latest Delivered log, Manila; still Delivered now), filter by
+    client/truck. Per trip: revenue = booking `rate_of_delivery_service`;
+    costs = driver pay (commission % × rate + per-trip fee at TODAY's
+    `app_settings` rates, not actual payslip lines), diesel (logged Fuel,
+    else distance × price — `dieselForTrip`), other logged expenses,
+    approved Company damage. Client damage charges are NOT in revenue;
+    helpers' salary and maintenance aren't split per trip. Warns on
+    missing settings / missing distance. Exports `fetchAll`/`fetchIn`
+    from `dashboardExpenses.ts` for reuse. No new tables.
+  - **Phase 4a — payment history (2026-10-19; SQL run by user, existing
+    totals turned into one "Opening balance (before payment history)"
+    row each).** `booking_payments` (`payment_id, booking_id, amount,
+    paid_on, method, reference_no, or_number, note, recorded_by,
+    created_at, voided_at, voided_by, void_reason`; negative amount =
+    refund with method `Refund`; admin SELECT policy only, NO insert/update
+    policy). Writes go only through SECURITY DEFINER functions
+    `record_booking_payment(...)` (also optionally locks `amount_to_pay`
+    in the same transaction) and `void_booking_payment(id, reason)`, both
+    Admin-only via an inline `users` check. Trigger
+    `booking_payments_sync` keeps `bookings.amount_paid` = sum of
+    non-voided payments — **never write `amount_paid` directly again**.
+    `lib/bookingPayments.ts` is the app side. Bills Receivable
+    (`FinancialSection.tsx`): Partial Payment and Paid Full open the same
+    form (Paid Full pre-fills the remaining balance; both lock
+    `amount_to_pay`), the Manage modal's "Record payment" and "Mark
+    Refunded" also create rows; forms collect method, date received,
+    reference no., OR number, note. Not built yet: Collections page
+    (voiding UI), Statements of Account, payment history in the client
+    portal / BookingDetailModal.
   - **Planned, in order** (decided with the user; each needs go-ahead):
-    Phase 3 Trip
-    Profitability (no schema), Phase 4 `booking_payments` payment history
+    Phase 4b/4c remainder of 4 (see above), then the original Phase 4 text:
+    `booking_payments` payment history
     (+ trigger keeping `bookings.amount_paid` = sum of non-voided
     payments, Collections page, Statements of Account; no backfill —
-    past records get wiped first), Phase 5 Payables & Expenses
+    past records get wiped first), **Phase 5 Revenue Reconciliation**
+    (added 2026-10-19, no schema; goes after Phase 4 because "collected"
+    needs real payment dates), Phase 6 Payables & Expenses
     (`suppliers`, `bills`, `bill_payments`), Petty Cash, Profit & Loss.
     Chart of Accounts / journal entries deliberately skipped.
+  - **Why Revenue Reconciliation exists:** the dashboard "Revenue" card and
+    Trip Profitability's revenue never match, by design. Dashboard =
+    CASH COLLECTED (`bookings.amount_paid`, by `booking_date`, rolling
+    window, Cancelled bookings excluded, includes advance payments and paid
+    damage, reflects discounts). Trip Profitability = BILLED (rate × trips
+    delivered, by delivery date, calendar month, Cancelled bookings'
+    delivered trips included, ignores `amount_to_pay` overrides, no damage).
+    Phase 5 = one Accounting page that, for a month, shows billed vs
+    collected and lists the bookings explaining the gap (paid before
+    delivery, delivered but unpaid, discounts, cancelled). Not built yet;
+    the dashboard card and Trip Profitability are NOT relabelled yet
+    (user chose to add the reconciliation page to the plan instead).
 
 ## Currently in progress
-Accounting module Phase 2 (Payroll & Remittances) built, awaiting user
-testing. (Last CLAUDE.md sync: 2026-10-19.)
+Accounting module Phases 1–3 built (AR Aging, invoice number, Payroll &
+Remittances, Trip Profitability), awaiting user testing; Phase 4 not
+started. (Last CLAUDE.md sync: 2026-10-19.)
 
 ## Not started yet
 - Quotation module beyond public form (approve/reject flow already exists —

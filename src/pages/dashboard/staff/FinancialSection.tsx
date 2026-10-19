@@ -5,18 +5,84 @@
 // far -- plus approved Client damage charges on top, see
 // BookingsSection.tsx / src/lib/paymentDue.ts / src/lib/damageCharges.ts
 // for the full rule). amount_to_pay is only ever the DELIVERY amount --
-// damage is never written into it. This page is the one place that WRITES amount_to_pay and
-// amount_paid; the Payments Due panel/tab (Bookings page, Reports page)
-// and the client portal are read-only views of the same numbers.
+// damage is never written into it. This page is the one place that WRITES amount_to_pay
+// and records payments: each payment/refund is a booking_payments row saved
+// through lib/bookingPayments.ts (a DB trigger then keeps bookings.amount_paid
+// = the sum of non-voided rows -- never write amount_paid directly). The
+// Payments Due panel/tab (Bookings page, Reports page) and the client portal
+// are read-only views of the same numbers.
 import { useEffect, useState } from 'react'
 import type { Booking } from './BookingsSection'
 import { BookingStatusBadge } from './BookingsSection'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import {
+  PAYMENT_METHODS,
+  emptyPaymentDetails,
+  paymentDateError,
+  recordBookingPayment,
+  type PaymentDetails,
+} from '../../../lib/bookingPayments'
+import { toManilaDate } from '../../../lib/payslip'
 
 function formatMoney(value: number | null): string {
   return value !== null ? `₱${value.toLocaleString()}` : '—'
+}
+
+// PaymentDetailsFields: method / date received / reference / OR number / note,
+// shown under the amount in both payment forms. Controlled by the parent.
+function PaymentDetailsFields({
+  details,
+  onChange,
+}: {
+  details: PaymentDetails
+  onChange: (details: PaymentDetails) => void
+}) {
+  const set = (patch: Partial<PaymentDetails>) => onChange({ ...details, ...patch })
+  const input = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
+  const label = 'block text-xs font-medium text-slate-600'
+
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div>
+        <label className={label} htmlFor="pay-method">Payment method</label>
+        <select
+          id="pay-method"
+          value={details.method}
+          onChange={(e) => set({ method: e.target.value as PaymentDetails['method'] })}
+          className={input}
+        >
+          {PAYMENT_METHODS.map((method) => (
+            <option key={method} value={method}>{method}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={label} htmlFor="pay-date">Date received</label>
+        <input
+          id="pay-date"
+          type="date"
+          value={details.paidOn}
+          max={toManilaDate(new Date())}
+          onChange={(e) => set({ paidOn: e.target.value })}
+          className={input}
+        />
+      </div>
+      <div>
+        <label className={label} htmlFor="pay-ref">Reference no. (optional)</label>
+        <input id="pay-ref" type="text" maxLength={50} value={details.referenceNo} onChange={(e) => set({ referenceNo: e.target.value })} className={input} />
+      </div>
+      <div>
+        <label className={label} htmlFor="pay-or">OR number (optional)</label>
+        <input id="pay-or" type="text" maxLength={50} value={details.orNumber} onChange={(e) => set({ orNumber: e.target.value })} className={input} />
+      </div>
+      <div className="sm:col-span-2">
+        <label className={label} htmlFor="pay-note">Note (optional)</label>
+        <input id="pay-note" type="text" maxLength={200} value={details.note} onChange={(e) => set({ note: e.target.value })} className={input} />
+      </div>
+    </div>
+  )
 }
 
 // PartialPaymentModal: opened by the "Partial Payment" button. Shows what's
@@ -26,17 +92,23 @@ function PartialPaymentModal({
   booking,
   target,
   deliveryTarget,
+  fullPayment,
   onClose,
   onSaved,
 }: {
   booking: Booking
   target: number // delivery + damage
   deliveryTarget: number // delivery only -- what amount_to_pay gets locked to
+  // Opened from "Paid Full": amount starts at the whole remaining balance.
+  fullPayment?: boolean
   onClose: () => void
   onSaved: () => void
 }) {
   const remaining = target - booking.amount_paid
-  const [amountText, setAmountText] = useState('')
+  const [amountText, setAmountText] = useState(
+    fullPayment ? String(Math.round(remaining * 100) / 100) : '',
+  )
+  const [details, setDetails] = useState(emptyPaymentDetails)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -50,7 +122,8 @@ function PartialPaymentModal({
       inputError = `Can't exceed the remaining balance (${formatMoney(remaining)}).`
     }
   }
-  const canSave = amountText !== '' && !inputError && !saving
+  const dateError = paymentDateError(details.paidOn)
+  const canSave = amountText !== '' && !inputError && !dateError && !saving
 
   // Round to cents so 25% of an odd number doesn't give 1234.5600000001.
   function fill(value: number) {
@@ -61,15 +134,18 @@ function PartialPaymentModal({
     setSaving(true)
     setSaveError(null)
 
-    const { error: updateError } = await supabase
-      .from('bookings')
-      .update({ amount_to_pay: deliveryTarget, amount_paid: booking.amount_paid + amount })
-      .eq('booking_id', booking.booking_id)
+    // Saves the payment row and locks amount_to_pay in one transaction.
+    const recordError = await recordBookingPayment({
+      bookingId: booking.booking_id,
+      amount,
+      details,
+      setAmountToPay: deliveryTarget,
+    })
 
     setSaving(false)
 
-    if (updateError) {
-      setSaveError(updateError.message)
+    if (recordError) {
+      setSaveError(recordError)
       return
     }
     onSaved()
@@ -81,7 +157,7 @@ function PartialPaymentModal({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-              Partial payment
+              {fullPayment ? 'Paid in full' : 'Partial payment'}
             </p>
             <h3 className="text-lg font-bold text-slate-900">
               Booking #{booking.booking_id} · {booking.client_name}
@@ -145,6 +221,9 @@ function PartialPaymentModal({
           </button>
         </div>
 
+        <PaymentDetailsFields details={details} onChange={setDetails} />
+        {dateError && <p className="mt-1 text-xs text-red-700">{dateError}</p>}
+
         {/* Preview of what the balance becomes */}
         {amountText !== '' && !inputError && (
           <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -181,6 +260,7 @@ function FinancialActionModal({
   const [overrideAmount, setOverrideAmount] = useState(
     String(booking.billable_amount - booking.damage_charges),
   )
+  const [paymentDetails, setPaymentDetails] = useState(emptyPaymentDetails)
   const [invoiceText, setInvoiceText] = useState(booking.invoice_number ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -207,7 +287,35 @@ function FinancialActionModal({
     onUpdated({ ...booking, ...nextBooking })
   }
 
-  function savePayment() {
+  // Saves one booking_payments row; the database trigger updates
+  // bookings.amount_paid, here we just mirror it on screen.
+  async function addPayment(amount: number, details: PaymentDetails) {
+    setSaving(true)
+    setError(null)
+
+    const recordError = await recordBookingPayment({
+      bookingId: booking.booking_id,
+      amount,
+      details,
+    })
+
+    setSaving(false)
+
+    if (recordError) {
+      setError(recordError)
+      return false
+    }
+
+    const nextPaid = booking.amount_paid + amount
+    onUpdated({
+      ...booking,
+      amount_paid: nextPaid,
+      balance_due: booking.billable_amount - nextPaid,
+    })
+    return true
+  }
+
+  async function savePayment() {
     const payment = Number(paymentAmount)
 
     if (!Number.isFinite(payment) || payment <= 0) {
@@ -220,18 +328,21 @@ function FinancialActionModal({
       )
       return
     }
+    const dateError = paymentDateError(paymentDetails.paidOn)
+    if (dateError) {
+      setError(dateError)
+      return
+    }
 
-    const nextPaid = booking.amount_paid + payment
-    save(
-      { amount_paid: nextPaid },
-      { amount_paid: nextPaid, balance_due: booking.billable_amount - nextPaid },
-    )
+    if (await addPayment(payment, paymentDetails)) {
+      setPaymentAmount('')
+      setPaymentDetails(emptyPaymentDetails())
+    }
   }
 
-  // Overpaid (e.g. cancelled before delivery): hand the extra back and bring
-  // amount_paid down to what's actually owed, so the balance settles to 0.
-  // ponytail: no refund history table -- the refunded amount isn't recorded
-  // separately; add one if you need a dated audit trail.
+  // Overpaid (e.g. cancelled before delivery): hand the extra back. Saved as
+  // a negative payment (method Refund) so it shows in the payment history
+  // and brings amount_paid down to what's actually owed.
   async function refundOverpayment() {
     const refund = -booking.balance_due
     if (
@@ -242,10 +353,8 @@ function FinancialActionModal({
     ) {
       return
     }
-    save(
-      { amount_paid: booking.billable_amount },
-      { amount_paid: booking.billable_amount, balance_due: 0 },
-    )
+    // booking.balance_due is already negative here -- that's the refund row.
+    await addPayment(booking.balance_due, { ...emptyPaymentDetails(), method: 'Refund' })
   }
 
   function saveOverride() {
@@ -374,6 +483,7 @@ function FinancialActionModal({
             <input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" />
             <button onClick={savePayment} disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save Payment'}</button>
           </div>
+          <PaymentDetailsFields details={paymentDetails} onChange={setPaymentDetails} />
         </div>
 
         <div className="mt-4 rounded-lg bg-slate-50 p-4">
@@ -461,7 +571,7 @@ function FinancialSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [payingId, setPayingId] = useState<number | null>(null)
+  const [paymentIsFull, setPaymentIsFull] = useState(false)
   const [tab, setTab] = useState<Tab>('ongoing')
 
   useEffect(() => {
@@ -596,41 +706,12 @@ function FinancialSection() {
     setLoading(false)
   }
 
-  async function handlePaidFull(booking: Booking) {
-    const target = getPaymentTarget(booking)
-    const remaining = target - booking.amount_paid
-
-    if (remaining <= 0) {
-      return
-    }
-    if (
-      !(await confirmDialog({
-        message:
-          `Mark booking #${booking.booking_id} as fully paid? This records ` +
-          `the remaining ${formatMoney(remaining)} as paid, for a total of ` +
-          `${formatMoney(target)}.`,
-        confirmLabel: 'Mark paid',
-      }))
-    ) {
-      return
-    }
-
-    setPayingId(booking.booking_id)
+  // Both buttons open the same payment form; Paid Full starts with the
+  // whole remaining balance filled in.
+  function openPayment(booking: Booking, full: boolean) {
     setActionError(null)
-
-    const { error: updateError } = await supabase
-      .from('bookings')
-      .update({ amount_to_pay: getDeliveryTarget(booking), amount_paid: target })
-      .eq('booking_id', booking.booking_id)
-
-    setPayingId(null)
-
-    if (updateError) {
-      setActionError(updateError.message)
-      return
-    }
-
-    loadBookings()
+    setPaymentIsFull(full)
+    setPartialBooking(booking)
   }
 
   const visibleBookings = bookings.filter((b) => getTab(b) === tab)
@@ -712,18 +793,16 @@ function FinancialSection() {
                         {remaining > 0 && (
                           <>
                             <button
-                              onClick={() => setPartialBooking(booking)}
-                              disabled={payingId === booking.booking_id}
-                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                              onClick={() => openPayment(booking, false)}
+                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                             >
                               Partial Payment
                             </button>
                             <button
-                              onClick={() => handlePaidFull(booking)}
-                              disabled={payingId === booking.booking_id}
-                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                              onClick={() => openPayment(booking, true)}
+                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
                             >
-                              {payingId === booking.booking_id ? 'Saving...' : 'Paid Full'}
+                              Paid Full
                             </button>
                           </>
                         )}
@@ -742,6 +821,7 @@ function FinancialSection() {
           booking={partialBooking}
           target={getPaymentTarget(partialBooking)}
           deliveryTarget={getDeliveryTarget(partialBooking)}
+          fullPayment={paymentIsFull}
           onClose={() => setPartialBooking(null)}
           onSaved={() => {
             setPartialBooking(null)
