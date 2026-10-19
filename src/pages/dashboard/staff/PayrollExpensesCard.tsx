@@ -15,10 +15,12 @@ function PayrollExpensesCard({
   period,
   refreshKey,
   className = '',
+  collapsed = false,
 }: {
   period: Period
   refreshKey: number
   className?: string
+  collapsed?: boolean // true = show only the big number
 }) {
   const [data, setData] = useState<PayrollExpenses | null>(null)
   const [loading, setLoading] = useState(true)
@@ -60,6 +62,11 @@ function PayrollExpensesCard({
           </p>
 
           {data && !loading && (
+            // Height slides between 0 and full via the grid-rows trick
+            <div
+              className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
+            >
+            <div className="overflow-hidden">
             <div className="max-sm:hidden">
               <p className="mt-1 font-ui text-xs text-neutral-500">
                 {data.payslips} {data.payslips === 1 ? 'payslip' : 'payslips'}
@@ -87,6 +94,8 @@ function PayrollExpensesCard({
                   </li>
                 ))}
               </ul>
+            </div>
+            </div>
             </div>
           )}
         </>

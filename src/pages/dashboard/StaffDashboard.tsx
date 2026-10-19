@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
@@ -72,6 +72,9 @@ function StaffDashboard() {
     useState<(typeof REVENUE_RANGES)[number]['value']>('1M')
   // Bumped by the Refresh button; revenue and both cost cards reload on change.
   const [refreshKey, setRefreshKey] = useState(0)
+  // Expense cards show only their big number until the pointer is over one
+  // (key of the hovered card, or null).
+  const [openCard, setOpenCard] = useState<string | null>(null)
   const rangePeriod = REVENUE_RANGES.find((r) => r.value === revenueRange)!.period
   const [revenue, setRevenue] = useState(0)
   const [revenueLoading, setRevenueLoading] = useState(true)
@@ -229,38 +232,6 @@ function StaffDashboard() {
       )
     })
   }, [refreshKey])
-
-  // Expense-card slider: touch swipes natively; the mouse drags via these
-  // handlers (scrollLeft follows the pointer).
-  const slider = useRef<HTMLDivElement>(null)
-  const drag = useRef({ x: 0, left: 0 })
-  const [dragging, setDragging] = useState(false)
-  function dragStart(e: React.PointerEvent) {
-    if (e.pointerType !== 'mouse' || !slider.current) return
-    drag.current = { x: e.clientX, left: slider.current.scrollLeft }
-    setDragging(true)
-  }
-  // Auto-rotate: every 3.5s glide to the next card, back to the first after
-  // the last. Paused while the pointer is over the row (or touching it),
-  // and skipped entirely for people who asked for reduced motion.
-  const hovered = useRef(false)
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const id = setInterval(() => {
-      const el = slider.current
-      const [first, second] = [el?.children[0], el?.children[1]] as HTMLElement[]
-      if (!el || !second || hovered.current) return
-      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4
-      if (atEnd) el.scrollTo({ left: 0 })
-      else el.scrollBy({ left: second.offsetLeft - first.offsetLeft })
-    }, 3500)
-    return () => clearInterval(id)
-  }, [])
-  function dragMove(e: React.PointerEvent) {
-    if (dragging && slider.current) {
-      slider.current.scrollLeft = drag.current.left - (e.clientX - drag.current.x)
-    }
-  }
 
   // Human Resource card numbers. Employees = everyone not Deactivated/
   // Terminated. A driver is "available" unless they're active crew on a
@@ -506,30 +477,17 @@ function StaffDashboard() {
       </div>
 
       {/* Costs for the same period as the revenue dropdown above. */}
-      {/* Three cards don't fit in a row, so swipe sideways: touch swipes
-          natively, the mouse drags. Snap is off mid-drag, on at release. */}
-      <div
-        ref={slider}
-        onPointerDown={dragStart}
-        onPointerMove={dragMove}
-        onPointerEnter={() => (hovered.current = true)}
-        onPointerUp={() => setDragging(false)}
-        onPointerLeave={() => {
-          hovered.current = false
-          setDragging(false)
-        }}
-        className={`mt-5 flex gap-3 overflow-x-auto sm:gap-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-          dragging ? 'cursor-grabbing' : 'cursor-grab snap-x snap-mandatory scroll-smooth'
-        }`}
-      >
+      {/* Stacked in a column on the left; hovering a card expands just that one. */}
+      <div className="mt-5 flex flex-col gap-3 sm:gap-5 lg:w-1/3">
         {[
-          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} />,
-          <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} />,
-          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} />,
+          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} />,
+          <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'pay'} />,
+          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'mt'} />,
         ].map((card) => (
           <div
             key={card.key}
-            className="shrink-0 basis-[calc(50%-6px)] snap-start sm:basis-full lg:basis-[calc(50%-10px)] [&>*]:h-full"
+            onPointerEnter={() => setOpenCard(card.key as string)}
+            onPointerLeave={() => setOpenCard(null)}
           >
             {card}
           </div>
