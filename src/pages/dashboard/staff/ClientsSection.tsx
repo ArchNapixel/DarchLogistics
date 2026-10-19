@@ -10,6 +10,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import EmptyState from '../../../components/EmptyState'
@@ -31,6 +32,7 @@ function ClientsSection() {
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [viewingClient, setViewingClient] = useState<Client | null>(null)
 
@@ -87,6 +89,45 @@ function ClientsSection() {
     setSelectedClient(null)
   }
 
+  // Delete a client. Same pattern as Employees: Postgres refuses (23503)
+  // if bookings, quotes, etc. still point at the client.
+  async function handleDelete(client: Client) {
+    if (
+      !(await confirmDialog({
+        title: `Delete ${client.client_name}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    ) {
+      return
+    }
+
+    setActionError(null)
+
+    // .select() so a silent RLS no-op (0 rows deleted) is caught below.
+    const { data, error: deleteError } = await supabase
+      .from('clients')
+      .delete()
+      .eq('client_id', client.client_id)
+      .select('client_id')
+
+    if (deleteError) {
+      setActionError(
+        deleteError.code === '23503'
+          ? `Can't delete ${client.client_name} -- they're still referenced elsewhere (e.g. bookings, quotes or a login account). Remove those first, then try again.`
+          : deleteError.message,
+      )
+      return
+    }
+    if (!data || data.length === 0) {
+      setActionError(`Could not delete ${client.client_name} (no permission, or already deleted).`)
+      return
+    }
+
+    loadClients()
+  }
+
   if (loading) {
     return <p className="text-slate-500">Loading clients...</p>
   }
@@ -98,6 +139,10 @@ function ClientsSection() {
   return (
     <div>
       <PageHeader title="Clients" subtitle="Client accounts, logins and booking history." />
+
+      {actionError && (
+        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
+      )}
 
       {clients.length === 0 ? (
         <EmptyState message="No clients yet." hint="These are created automatically when a quote request is approved." className="mt-4" />
@@ -151,6 +196,12 @@ function ClientsSection() {
                           Set Up Account
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(client)}
+                        className="ml-2 px-3 py-1.5 text-xs font-medium text-red-700 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 )
