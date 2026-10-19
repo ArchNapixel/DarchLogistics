@@ -135,7 +135,8 @@ function UpdateStatusControl({
     advanceTo(nextStatus!)
   }
 
-  // A trip can't leave Awaiting without a truck on it.
+  // A trip can't leave Awaiting without a truck AND trailer on it (the
+  // `hasTruck` prop means both; the driver is the one logged in).
   const blockedNoTruck = currentStatus === 'Awaiting' && !hasTruck
 
   return (
@@ -151,7 +152,7 @@ function UpdateStatusControl({
       </button>
       {blockedNoTruck && (
         <p className="mt-1 text-xs text-slate-500">
-          Waiting for dispatch to assign a truck.
+          Waiting for dispatch to assign a truck and trailer.
         </p>
       )}
     </div>

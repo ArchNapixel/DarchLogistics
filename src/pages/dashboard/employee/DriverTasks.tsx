@@ -225,7 +225,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             <UpdateStatusControl
               itineraryId={trip.itinerary_id}
               currentStatus={trip.itinerary_status}
-              hasTruck={trip.plate_number !== null}
+              hasTruck={trip.plate_number !== null && trip.trailer_label !== null}
               onStatusChanged={handleStatusChanged}
             />
             <button

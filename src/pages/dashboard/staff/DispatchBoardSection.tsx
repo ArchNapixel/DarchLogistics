@@ -9,7 +9,8 @@
 // any direction) and can go backward directly. Dispatcher's dropdown
 // only offers the current status plus the very next step in
 // STATUS_FLOW (no skipping, no going backward). For both roles, a trip
-// can't leave Awaiting without a truck, and picking "Delivered" opens
+// can't leave Awaiting without a driver, truck and trailer (helper is
+// optional), and picking "Delivered" opens
 // MarkDeliveredModal (confirm + optional damage report) -- only
 // Dispatcher/Admin mark trips Delivered; drivers stop at In Transit.
 // Instead of going backward,
@@ -70,6 +71,15 @@ type DispatchRow = {
 // truck and trailer -- this is what decides which board table it's in.
 function isFullyAssigned(r: DispatchRow) {
   return r.assigned_employee_id !== null && r.plate_number !== null && r.trailer_id !== null
+}
+
+// What a trip still needs before it can leave Awaiting. Helper is optional.
+function missingForDispatch(r: DispatchRow): string {
+  const missing = []
+  if (r.assigned_employee_id === null) missing.push('driver')
+  if (r.plate_number === null) missing.push('truck')
+  if (r.trailer_id === null) missing.push('trailer')
+  return missing.join(', ')
 }
 
 // Pop-up when a change moves a trip from Needs Assignment to Assigned,
@@ -356,12 +366,13 @@ function DispatchTable({
                           key={status}
                           value={status}
                           // Same rule as the driver's side: a trip can't
-                          // leave Awaiting without a truck on it.
-                          disabled={row.status === 'Awaiting' && status !== 'Awaiting' && !row.plate_number}
+                          // leave Awaiting without a driver, truck and
+                          // trailer (helper is optional).
+                          disabled={row.status === 'Awaiting' && status !== 'Awaiting' && !isFullyAssigned(row)}
                         >
                           {STATUS_LABELS[status]}
-                          {row.status === 'Awaiting' && status !== 'Awaiting' && !row.plate_number
-                            ? ' (assign truck first)'
+                          {row.status === 'Awaiting' && status !== 'Awaiting' && !isFullyAssigned(row)
+                            ? ` (assign ${missingForDispatch(row)} first)`
                             : ''}
                         </option>
                       ))}
