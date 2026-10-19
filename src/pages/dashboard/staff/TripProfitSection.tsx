@@ -18,6 +18,9 @@ import EmptyState from '../../../components/EmptyState'
 // Red when a trip lost money, plain otherwise.
 const profitClass = (value: number) => (value < 0 ? 'text-red-700' : 'text-slate-900')
 
+// Trips shown per page (cards, totals and CSV still cover every match).
+const PAGE_SIZE = 20
+
 const SETTING_LABELS: Record<string, string> = {
   diesel_price_per_liter: 'diesel price per liter',
   driver_commission_rate: 'driver commission rate',
@@ -30,6 +33,7 @@ function TripProfitSection() {
   const [settingsMissing, setSettingsMissing] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState('')
   const [truckFilter, setTruckFilter] = useState('')
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +60,7 @@ function TripProfitSection() {
     // A client/truck picked for another month might not exist in this one.
     setClientFilter('')
     setTruckFilter('')
+    setPage(0)
     setError(null)
     setLoading(false)
   }
@@ -79,6 +84,8 @@ function TripProfitSection() {
       (!truckFilter || r.plate_number === truckFilter),
   )
   const totals = summarizeTrips(visible)
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  const pageRows = visible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   function handleDownload() {
     const csv = buildTripProfitCsv(month, visible)
@@ -116,7 +123,10 @@ function TripProfitSection() {
           <select
             aria-label="Filter by client"
             value={clientFilter}
-            onChange={(e) => setClientFilter(e.target.value)}
+            onChange={(e) => {
+              setClientFilter(e.target.value)
+              setPage(0)
+            }}
             className={selectClass}
           >
             <option value="">All clients</option>
@@ -129,7 +139,10 @@ function TripProfitSection() {
           <select
             aria-label="Filter by truck"
             value={truckFilter}
-            onChange={(e) => setTruckFilter(e.target.value)}
+            onChange={(e) => {
+              setTruckFilter(e.target.value)
+              setPage(0)
+            }}
             className={selectClass}
           >
             <option value="">All trucks</option>
@@ -198,7 +211,7 @@ function TripProfitSection() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => (
+                {pageRows.map((r) => (
                   <tr key={r.itinerary_id} className="border-b border-slate-100">
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.delivered_on}</td>
                     <td className="px-4 py-3">
@@ -229,7 +242,7 @@ function TripProfitSection() {
                 ))}
                 <tr className="font-semibold text-slate-900">
                   <td className="px-4 py-3" colSpan={4}>
-                    Total
+                    Total ({visible.length} {visible.length === 1 ? 'trip' : 'trips'})
                   </td>
                   <td className="px-4 py-3 text-right">{formatMoney(totals.revenue)}</td>
                   <td className="px-4 py-3 text-right">{formatMoney(totals.driverPay)}</td>
@@ -246,6 +259,28 @@ function TripProfitSection() {
               </tbody>
             </table>
           </div>
+
+          {pageCount > 1 && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-sm text-slate-600">
+              <button
+                onClick={() => setPage(page - 1)}
+                disabled={page === 0}
+                className="border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span>
+                Page {page + 1} of {pageCount}
+              </span>
+              <button
+                onClick={() => setPage(page + 1)}
+                disabled={page >= pageCount - 1}
+                className="border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

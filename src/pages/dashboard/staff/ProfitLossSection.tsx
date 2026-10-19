@@ -97,8 +97,8 @@ function ProfitLossSection() {
                 {pl.memo.partsBought > 0 && (
                   <li>Parts bought {formatMoney(pl.memo.partsBought)} — added to inventory, counted when used.</li>
                 )}
-                {pl.memo.dieselEstimated > 0 && (
-                  <li>Estimated diesel {formatMoney(pl.memo.dieselEstimated)} for trips with no fuel logged.</li>
+                {pl.memo.fuelBought > 0 && (
+                  <li>Fuel bills {formatMoney(pl.memo.fuelBought)} — diesel is already counted per trip.</li>
                 )}
                 {pl.memo.draftPayroll > 0 && (
                   <li>Payroll above includes {formatMoney(pl.memo.draftPayroll)} still on draft payslips.</li>

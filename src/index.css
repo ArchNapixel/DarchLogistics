@@ -146,3 +146,16 @@ select,
 [contenteditable] {
   user-select: text;
 }
+
+/* Printing (Billing, Statements, P&L): give the paper a real margin so
+   the right-aligned columns aren't cut off at the page edge. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  html,
+  body {
+    width: auto;
+    overflow: visible;
+  }
+}

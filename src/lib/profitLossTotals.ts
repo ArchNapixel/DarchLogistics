@@ -15,8 +15,9 @@
 // Not counted, to avoid counting the same money twice:
 //   - "Parts" bills: buying parts fills the inventory; they become a cost
 //     when used on a work order (the maintenance line). Shown as a memo.
-//   - Estimated diesel for trips with no Fuel logged: it's a guess, and
-//     depot fuel bought in bulk is already a "Fuel" bill. Shown as a memo.
+//   - "Fuel" bills (bulk depot diesel): diesel is already counted per trip
+//     above and bulk buying isn't tied to trips yet. Still recorded under
+//     Bills Payable; shown as a memo.
 //   - Driver commission from the trip calculator: it's already in payroll.
 
 export type ProfitLossInput = {
@@ -26,7 +27,7 @@ export type ProfitLossInput = {
   employerShares: number
   draftPayroll: number // part of payroll still on draft payslips (memo)
   dieselLogged: number
-  dieselEstimated: number // memo only
+  dieselEstimated: number // already inside the diesel line; kept for the breakdown
   otherTripExpenses: number
   companyDamage: number
   maintenanceParts: number
@@ -46,14 +47,14 @@ export function buildProfitLoss(input: ProfitLossInput) {
   ]
 
   const bills = Array.from(input.billsByCategory)
-    .filter(([category, amount]) => category !== 'Parts' && amount !== 0)
+    .filter(([category, amount]) => category !== 'Parts' && category !== 'Fuel' && amount !== 0)
     .sort((a, b) => b[1] - a[1])
     .map(([category, amount]) => ({ label: `Bills: ${category}`, amount }))
 
   const costs: PlLine[] = [
     { label: 'Payroll (gross pay)', amount: input.payrollGross },
     { label: 'Employer contributions (SSS, PhilHealth, Pag-IBIG)', amount: input.employerShares },
-    { label: 'Diesel logged on trips', amount: input.dieselLogged },
+    { label: 'Diesel on delivered trips', amount: input.dieselLogged + input.dieselEstimated },
     { label: 'Other trip expenses (tolls, parking...)', amount: input.otherTripExpenses },
     { label: 'Damage charged to the company', amount: input.companyDamage },
     { label: 'Maintenance parts used', amount: input.maintenanceParts },
@@ -74,7 +75,7 @@ export function buildProfitLoss(input: ProfitLossInput) {
     marginPct: totalRevenue > 0 ? Math.round((net / totalRevenue) * 1000) / 10 : null,
     memo: {
       partsBought: cents(input.billsByCategory.get('Parts') ?? 0),
-      dieselEstimated: cents(input.dieselEstimated),
+      fuelBought: cents(input.billsByCategory.get('Fuel') ?? 0),
       draftPayroll: cents(input.draftPayroll),
       collected: cents(input.collected),
     },
