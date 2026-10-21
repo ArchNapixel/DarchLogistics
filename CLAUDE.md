@@ -674,6 +674,33 @@ before creating it.
   (`ResetPasswordPage`, set new password). `LoginPage` accepts a username
   OR an email — anything without "@" is turned into the account email by
   the `get_login_email(p_username)` RPC first.
+- Client login & sign-up (2026-10-21, public) — "Client Login" link
+  left of "Staff Login" in `NavBar.tsx` → `/client-login`
+  (`ClientLoginPage.tsx`): log in with username OR email (same
+  `get_login_email` lookup as staff). Sign-up form order: Username,
+  Password, Confirm password, Name or company (= `clients.client_name`,
+  shown in the portal), Email, Phone. Two sign-up paths:
+  - **Email:** `supabase.auth.signUp` with metadata
+    (`sign_up_as_client`, `username`, `client_name`, `phone_number`);
+    DB trigger `on_client_signup` on `auth.users` →
+    `handle_client_signup()` (SECURITY DEFINER) validates and creates
+    the `clients` + `users` (role `Client`) rows. Supabase hides the
+    trigger's error text ("Database error saving new user") — the page
+    maps it to "username may already be taken". Confirmation link
+    returns to `/client-login`.
+  - **Google:** "Continue with Google" → `/client-setup`
+    (`ClientSetupPage.tsx`): pick username + password (set via
+    `auth.updateUser`), name, phone → RPC `complete_client_signup`.
+    Later logins are username + password, not Google. A Google session
+    with no `users` row is sent to `/client-setup` from `/client-login`.
+    Google Cloud OAuth client lives in project `manifest-field-491605-q0`
+    (shared with RoomManager; app name set to Darch Logistics); app is
+    in Testing — only listed test users can sign in until published.
+  Supabase redirect URLs: `/client-setup` and `/client-login` for
+  localhost:5173 and darch-logistics.vercel.app. SQL run by user, no
+  migration file. **Known gap:** signing up with an email that already
+  has a `clients` row (from an approved quote) creates a second
+  `clients` row — old bookings don't show in the new account.
 - Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to
   `index.html` so refreshing a `/dashboard/...` URL works on Vercel).
 - Design (as of 2026-10-19): the 2026-09-22 "sharp edges + blue
@@ -944,7 +971,8 @@ answers PGRST205 for it). RPCs called by the app now:
 `count_bookings_for_clients`, `get_login_email`, `get_my_profile`,
 `update_my_profile`, `get_trip_client_and_rate`, `record_booking_payment`,
 `void_booking_payment`, `create_bill`, `record_bill_payment`, `void_bill`,
-`void_bill_payment`. Storage bucket: `trip-documents` (private). Edge
+`void_bill_payment`, `complete_client_signup` (2026-10-21). Trigger on
+`auth.users`: `on_client_signup` → `handle_client_signup()`. Storage bucket: `trip-documents` (private). Edge
 Functions: `create-user-account` (deployed), `update-user-account` (NOT
 deployed as of 2026-10-19). **No migration files after
 `20260918130000_add_employee_attendance.sql`** — every table, column,

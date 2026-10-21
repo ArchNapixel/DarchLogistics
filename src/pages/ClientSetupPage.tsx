@@ -5,7 +5,7 @@
 // complete_client_signup database function (SQL given in chat) then
 // creates the `clients` + `users` rows for the signed-in Google account.
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { phoneDigits, phoneError, phoneInput } from '../lib/quoteRequest'
@@ -22,8 +22,10 @@ function ClientSetupPage() {
   const [phone, setPhone] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const navigate = useNavigate()
 
   if (loading) return null
   // Not signed in with Google yet -> back to the client login page.
@@ -47,6 +49,8 @@ function ClientSetupPage() {
       return setError('Username: at least 3 characters, no spaces or "@".')
     if (password.length < 6)
       return setError('Password must be at least 6 characters.')
+    if (password !== confirmPassword)
+      return setError('Passwords do not match.')
 
     setSubmitting(true)
     // Password first: if the username turns out to be taken, the client
@@ -127,6 +131,17 @@ function ClientSetupPage() {
               className={fieldClasses}
             />
           </label>
+          <label className={labelClasses}>
+            Confirm password
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+              className={fieldClasses}
+            />
+          </label>
           <button
             type="submit"
             disabled={submitting}
@@ -136,14 +151,19 @@ function ClientSetupPage() {
           </button>
         </form>
 
-        {/* Escape hatch: abandon setup and sign the Google session out. */}
-        <Link
-          to="/client-login"
-          onClick={() => supabase.auth.signOut()}
-          className="mt-6 block text-center text-sm text-slate-500 hover:text-slate-900"
+        {/* Escape hatch: abandon setup and sign the Google session out.
+            Waits for sign-out first, or /client-login would still see the
+            session and bounce straight back here. */}
+        <button
+          type="button"
+          onClick={async () => {
+            await supabase.auth.signOut()
+            navigate('/client-login', { replace: true })
+          }}
+          className="mt-6 block w-full text-center text-sm text-slate-500 hover:text-slate-900"
         >
           Cancel
-        </Link>
+        </button>
       </div>
     </div>
   )

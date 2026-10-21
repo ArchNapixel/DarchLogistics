@@ -61,6 +61,8 @@ function ClientLoginPage() {
         email: cleanEmail,
         password,
         options: {
+          // Confirmation link lands here; this page forwards to the dashboard.
+          emailRedirectTo: `${window.location.origin}/client-login`,
           data: {
             sign_up_as_client: true,
             client_name: name.trim(),
@@ -70,7 +72,19 @@ function ClientLoginPage() {
         },
       })
       setSubmitting(false)
-      if (signUpError) return setError(signUpError.message)
+      if (signUpError) {
+        // Supabase hides the trigger's own message (e.g. "That username is
+        // already taken") behind this generic one.
+        return setError(
+          signUpError.message.includes('Database error saving new user')
+            ? 'Could not create the account. That username may already be taken — try another.'
+            : signUpError.message,
+        )
+      }
+      // Email already registered: with "Confirm email" on, Supabase returns
+      // a fake user with no identities instead of an error.
+      if (data.user?.identities?.length === 0)
+        return setError('An account with this email already exists. Log in instead.')
       // No session = Supabase is waiting for the email to be confirmed.
       if (!data.session) {
         setMode('login')
@@ -94,7 +108,16 @@ function ClientLoginPage() {
       ? await supabase.auth.signInWithPassword({ email: loginEmail, password })
       : { error: true }
     setSubmitting(false)
-    if (signInError) return setError('Invalid username or password.')
+    if (signInError) {
+      // Right password, but the sign-up email link hasn't been clicked yet.
+      const notConfirmed =
+        typeof signInError === 'object' && signInError.code === 'email_not_confirmed'
+      return setError(
+        notConfirmed
+          ? 'Please confirm your email first — check your inbox for the link.'
+          : 'Invalid username or password.',
+      )
+    }
     navigate('/dashboard')
   }
 
