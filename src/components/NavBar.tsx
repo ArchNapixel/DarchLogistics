@@ -44,6 +44,12 @@ function NavBar() {
             </a>
           ))}
           <Link
+            to="/client-login"
+            className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
+          >
+            Client Login
+          </Link>
+          <Link
             to="/login"
             className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
           >
@@ -95,6 +101,13 @@ function NavBar() {
               {l.label}
             </a>
           ))}
+          <Link
+            to="/client-login"
+            onClick={closeMenu}
+            className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+          >
+            Client Login
+          </Link>
           <Link
             to="/login"
             onClick={closeMenu}
