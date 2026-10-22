@@ -1,7 +1,8 @@
 // QuoteReviewModal: full detail view for one quote request, with an
-// editable proposed rate, payment terms, estimated trip distance
-// (bookings.estimated_distance_km is required), and trip start date,
-// plus Approve/Reject actions.
+// editable estimated trip distance (bookings.estimated_distance_km is
+// required), plus Approve/Reject actions. The proposed rate, payment
+// terms and trip start date (= preferred pickup date) are the client's
+// and read-only -- to change them, Reject with a preset reason.
 //
 // Distance, most precise source first (the field stays editable either
 // way):
@@ -52,6 +53,7 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
 import { formatMoney, formatDate } from '../../../lib/format'
+import { PAYMENT_TERMS_LABELS, REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
 
 const fieldClasses =
   'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -210,22 +212,25 @@ function QuoteReviewModal({
   onClose: () => void
   onResolved: (quoteRequestId: number) => void
 }) {
-  const [proposedRate, setProposedRate] = useState(
-    quote.proposed_rate?.toString() ?? '',
-  )
-  const [paymentTerms, setPaymentTerms] = useState(quote.payment_terms)
+  // Rate, payment terms and trip start date are the client's own -- staff
+  // can't change them here. If one is wrong, Reject with the matching
+  // preset (Trip rate too low / Payment terms / Schedule) and the client
+  // fixes it and resubmits. Trip start = the client's preferred pickup date.
+  const proposedRate = quote.proposed_rate?.toString() ?? ''
+  const paymentTerms = quote.payment_terms
+  const tripDateFrom = quote.preferred_pickup_date ?? ''
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   const [distanceIsCached, setDistanceIsCached] = useState(false)
   const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
   const [distanceIsFromPins, setDistanceIsFromPins] = useState(false)
   const [autoEstimatingDistance, setAutoEstimatingDistance] = useState(false)
-  const [tripDateFrom, setTripDateFrom] = useState(
-    quote.preferred_pickup_date ?? '',
-  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  // Preset picked in the Reject form -- tells the client which field to
+  // fix on resubmit (REJECTION_TAGS in lib/quoteRequest.ts).
+  const [rejectTag, setRejectTag] = useState<RejectionTag | null>(null)
   const [approvedBookingId, setApprovedBookingId] = useState<number | null>(
     null,
   )
@@ -375,7 +380,7 @@ function QuoteReviewModal({
   async function handleApprove() {
     const rateValue = Number(proposedRate)
     if (!proposedRate || rateValue <= 0) {
-      setError('Enter a proposed rate before approving.')
+      setError('This quote has no proposed rate. Reject it ("Trip rate too low") so the client can add one.')
       return
     }
 
@@ -386,7 +391,7 @@ function QuoteReviewModal({
     }
 
     if (!tripDateFrom) {
-      setError('Enter a trip start date before approving.')
+      setError('This quote has no pickup date. Reject it ("Schedule unavailable") so the client can add one.')
       return
     }
 
@@ -598,7 +603,22 @@ function QuoteReviewModal({
     setApprovedBookingId(newBooking.booking_id)
   }
 
+  // Picking a preset fills the reason with its label (staff can add
+  // details); a reason staff typed themselves is kept.
+  function pickRejectTag(tag: RejectionTag) {
+    const presetLabels: string[] = Object.values(REJECTION_TAGS).map((t) => t.label)
+    if (!rejectReason.trim() || presetLabels.includes(rejectReason.trim())) {
+      setRejectReason(tag === 'Other' ? '' : REJECTION_TAGS[tag].label)
+    }
+    setRejectTag(tag)
+    setError(null)
+  }
+
   async function handleReject() {
+    if (!rejectTag) {
+      setError('Pick why this quote is being rejected.')
+      return
+    }
     if (!rejectReason.trim()) {
       setError('Enter a reason for rejecting this quote.')
       return
@@ -611,7 +631,8 @@ function QuoteReviewModal({
       .from('quote_requests')
       .update({
         request_status: 'Rejected',
-        rejection_reason: rejectReason,
+        rejection_reason: rejectReason.trim(),
+        rejection_tag: rejectTag,
       })
       .eq('quote_request_id', quote.quote_request_id)
 
@@ -774,31 +795,15 @@ function QuoteReviewModal({
             </div>
 
             <div className="mt-6 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
-              <label className={labelClasses}>
-                Proposed rate
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={proposedRate}
-                  onChange={(e) => setProposedRate(e.target.value)}
-                  className={fieldClasses}
-                />
-              </label>
+              <InfoRow
+                label="Proposed rate"
+                value={quote.proposed_rate !== null ? `${formatMoney(quote.proposed_rate)} per trip` : '—'}
+              />
 
-              <label className={labelClasses}>
-                Payment terms
-                <select
-                  value={paymentTerms}
-                  onChange={(e) => setPaymentTerms(e.target.value)}
-                  className={fieldClasses}
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="7Days">7 days</option>
-                  <option value="14Days">14 days</option>
-                  <option value="30Days">30 days</option>
-                </select>
-              </label>
+              <InfoRow
+                label="Payment terms"
+                value={PAYMENT_TERMS_LABELS[paymentTerms as keyof typeof PAYMENT_TERMS_LABELS] ?? paymentTerms}
+              />
 
               <label className={labelClasses}>
                 Estimated distance (km)
@@ -840,21 +845,34 @@ function QuoteReviewModal({
                 )}
               </label>
 
-              <label className={labelClasses}>
-                Trip start date
-                <input
-                  type="date"
-                  value={tripDateFrom}
-                  onChange={(e) => setTripDateFrom(e.target.value)}
-                  className={fieldClasses}
-                />
-              </label>
+              <InfoRow
+                label="Trip start date"
+                value={tripDateFrom ? formatDate(tripDateFrom) : '—'}
+              />
             </div>
 
             {showRejectForm ? (
               <div className="mt-6 border-t border-slate-200 pt-4">
-                <label className={labelClasses}>
-                  Reason for rejection
+                <p className="text-sm font-medium text-slate-700">Why is it rejected?</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(Object.keys(REJECTION_TAGS) as RejectionTag[]).map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => pickRejectTag(tag)}
+                      aria-pressed={rejectTag === tag}
+                      className={`border px-3 py-1.5 text-sm font-medium ${
+                        rejectTag === tag
+                          ? 'border-red-600 bg-red-600 text-white'
+                          : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {REJECTION_TAGS[tag].label}
+                    </button>
+                  ))}
+                </div>
+                <label className={`${labelClasses} mt-4`}>
+                  {rejectTag === 'Other' ? 'Reason for rejection' : 'Message to the client'}
                   <textarea
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
@@ -869,9 +887,11 @@ function QuoteReviewModal({
                   >
                     Cancel
                   </button>
+                  {/* A preset must be picked first (handleReject checks too). */}
                   <button
                     onClick={handleReject}
-                    disabled={submitting}
+                    disabled={submitting || !rejectTag}
+                    title={rejectTag ? undefined : 'Pick a reason above first'}
                     className="bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
                   >
                     {submitting ? 'Rejecting...' : 'Confirm Reject'}

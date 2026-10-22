@@ -73,8 +73,15 @@ function QuoteWizard({
   // "what happens next" panel).
   aside?: ReactNode
 }) {
-  const [stepIndex, setStepIndex] = useState(0)
-  const [furthestStep, setFurthestStep] = useState(0)
+  // Opening with errors already set (a rejected quote sent back for
+  // fixing): start on the first step with a highlighted field, and let
+  // every step be clicked so the client can jump straight to Review.
+  const [stepIndex, setStepIndex] = useState(() =>
+    Math.max(0, STEPS.findIndex((s) => s.fields.some((f: ShipmentField) => errors[f]))),
+  )
+  const [furthestStep, setFurthestStep] = useState(() =>
+    Object.keys(errors).length > 0 ? STEPS.length - 1 : 0,
+  )
   const headingRef = useRef<HTMLHeadingElement>(null)
   const hasMoved = useRef(false)
   const step = STEPS[stepIndex]

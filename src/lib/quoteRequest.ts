@@ -283,10 +283,33 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
 // Form state + per-field errors, shared by all three quote channels.
 // Editing a field clears that field's error straight away, so a fixed
 // mistake doesn't keep showing red until the next submit.
-// `initial` pre-fills the form (editing a rejected quote, see quoteToForm).
-export function useShipmentForm(initial: ShipmentForm = emptyShipment) {
+// Preset reasons staff pick when rejecting a quote, saved in
+// quote_requests.rejection_tag (keep in sync with its CHECK list).
+// `fields` are the ones the client is sent back to fix on resubmit:
+// they open highlighted in red, on the step that holds them.
+export const REJECTION_TAGS = {
+  Rate: { label: 'Trip rate too low', fields: ['proposedRate'] },
+  Weight: { label: 'Too heavy', fields: ['weight'] },
+  Schedule: { label: 'Schedule unavailable', fields: ['preferredPickupDate', 'preferredDeliveryDate'] },
+  Terms: { label: 'Payment terms not accepted', fields: ['paymentTerms'] },
+  Other: { label: 'Other', fields: [] },
+} as const satisfies Record<string, { label: string; fields: readonly ShipmentField[] }>
+
+export type RejectionTag = keyof typeof REJECTION_TAGS
+
+// The red highlights for a resubmit: each tagged field shows staff's
+// reason as its error message. Untagged/Other quotes highlight nothing.
+export function rejectionErrors(tag: string | null, reason: string | null): FieldErrors {
+  const preset = tag && tag in REJECTION_TAGS ? REJECTION_TAGS[tag as RejectionTag] : null
+  const message = reason?.trim() || preset?.label || ''
+  return Object.fromEntries((preset?.fields ?? []).map((f) => [f, message]))
+}
+
+// `initial` pre-fills the form (editing a rejected quote, see quoteToForm);
+// `initialErrors` opens it with those fields already marked red.
+export function useShipmentForm(initial: ShipmentForm = emptyShipment, initialErrors: FieldErrors = {}) {
   const [form, setForm] = useState<ShipmentForm>(initial)
-  const [errors, setErrors] = useState<FieldErrors>({})
+  const [errors, setErrors] = useState<FieldErrors>(initialErrors)
 
   function setField<K extends ShipmentField>(name: K, value: ShipmentForm[K]) {
     setForm((prev) => ({ ...prev, [name]: value }))

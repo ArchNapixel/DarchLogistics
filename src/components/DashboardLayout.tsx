@@ -116,6 +116,9 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
   }
 
   async function handleLogout() {
+    // Leave the dashboard BEFORE signing out: once the session is gone,
+    // ProtectedRoute would bounce us to the staff /login page first.
+    navigate('/', { replace: true })
     const { error } = await supabase.auth.signOut()
 
     if (error) {
@@ -130,8 +133,6 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         'error',
       )
     }
-
-    navigate('/')
   }
 
   return (

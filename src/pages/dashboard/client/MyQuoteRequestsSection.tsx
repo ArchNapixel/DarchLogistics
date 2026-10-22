@@ -19,13 +19,14 @@ import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import NewQuoteModal from './NewQuoteModal'
 import type { ResubmitTarget } from './ClientQuoteForm'
-import { SHIPMENT_COLUMNS, quoteToForm } from '../../../lib/quoteRequest'
+import { REJECTION_TAGS, SHIPMENT_COLUMNS, quoteToForm, rejectionErrors, type RejectionTag } from '../../../lib/quoteRequest'
 
 type QuoteRow = {
   quote_request_id: number
   reference_code: string | null
   request_status: string
   rejection_reason: string | null
+  rejection_tag: string | null
   resubmit_count: number
   pickup_city: string
   pickup_barangay: string
@@ -58,7 +59,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_type, preferred_pickup_date, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_type, preferred_pickup_date, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -94,6 +95,7 @@ function MyQuoteRequestsSection() {
       quoteId: quote.quote_request_id,
       referenceCode: quote.reference_code,
       form: quoteToForm(data),
+      errors: rejectionErrors(quote.rejection_tag, quote.rejection_reason),
     })
   }
 
@@ -146,6 +148,11 @@ function MyQuoteRequestsSection() {
             <div className="mt-2 bg-slate-50 p-3">
               <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 Reason
+                {quote.rejection_tag && quote.rejection_tag in REJECTION_TAGS && quote.rejection_tag !== 'Other' && (
+                  <span className="ml-2 bg-red-100 px-1.5 py-0.5 normal-case tracking-normal text-red-700">
+                    {REJECTION_TAGS[quote.rejection_tag as RejectionTag].label}
+                  </span>
+                )}
               </p>
               <p className="mt-1 text-sm text-slate-700">
                 {quote.rejection_reason}

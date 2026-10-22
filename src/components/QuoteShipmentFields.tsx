@@ -304,12 +304,15 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         )}
       </Field>
 
-      <Field label="Payment terms">
+      {/* Never invalid on its own -- only red when staff rejected the
+          quote over its terms (REJECTION_TAGS). */}
+      <Field label="Payment terms" error={errors.paymentTerms}>
         <select
           name="paymentTerms"
           value={form.paymentTerms}
           onChange={handleChange}
-          className={inputClasses(false)}
+          aria-invalid={errors.paymentTerms ? true : undefined}
+          className={inputClasses(!!errors.paymentTerms)}
         >
           {Object.entries(PAYMENT_TERMS_LABELS).map(([value, label]) => (
             <option key={value} value={value}>

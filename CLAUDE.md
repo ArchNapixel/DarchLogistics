@@ -35,9 +35,11 @@ before creating it.
   `places` rows, marks the quote `Approved`, creates the `bookings` row
   (`booking_status: 'Draft'`, `rate_of_delivery_service` set from the
   approved rate), then creates a matching `itineraries` row
-  (`itinerary_status: 'Awaiting'`) linked to that booking. Staff sets the
-  itinerary's `trip_date_from` in the modal (pre-filled from the quote's
-  preferred pickup date when set); Approve is blocked until it's filled in.
+  (`itinerary_status: 'Awaiting'`) linked to that booking. The
+  itinerary's `trip_date_from` = the quote's preferred pickup date.
+  **Since 2026-10-22 staff can't edit the rate, payment terms or trip
+  start date in the modal** (read-only; only distance is editable) — a
+  wrong one is sent back with a Reject preset for the client to fix.
   If the itinerary insert fails after the booking was already created, the
   modal shows an explicit "needs manual review" error instead of failing
   silently — steps aren't wrapped in a DB transaction yet. Reject prompts
@@ -707,7 +709,15 @@ before creating it.
   `resubmit_quote_request(p_quote_id, p_changes)` (SECURITY DEFINER,
   own quote only, only while `Rejected`; same row + reference code back
   to `Pending`, moves the reason to `previous_rejection_reason`,
-  `resubmit_count + 1`). Staff see a "Resubmitted" badge in Quotations
+  `resubmit_count + 1`, clears `rejection_tag`). **Reject presets**
+  (QuoteReviewModal): staff must pick Trip rate too low / Too heavy /
+  Schedule unavailable / Payment terms not accepted / Other →
+  `quote_requests.rejection_tag`
+  (`Rate`/`Weight`/`Schedule`/`Terms`/`Other`, CHECK; `REJECTION_TAGS` in
+  `lib/quoteRequest.ts` keeps the field mapping). On resubmit,
+  `rejectionErrors()` marks those fields red (staff's reason as the
+  message) and QuoteWizard opens on the first step holding one, with
+  every step clickable. Staff see a "Resubmitted" badge in Quotations
   and "Previously rejected: …" in QuoteReviewModal. Staff's own
   NewQuoteRequestModal (phone/walk-in) is unchanged.
 - Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to

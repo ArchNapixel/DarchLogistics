@@ -14,7 +14,8 @@
 // one-click picks on the Route step.
 //
 // Resubmit mode (`resubmit` set): the form starts filled with the
-// rejected quote, and Send calls the resubmit_quote_request database
+// rejected quote -- opened on the step with the field staff flagged
+// (rejection_tag), outlined in red -- and Send calls the resubmit_quote_request database
 // function instead of inserting -- same row, same reference code, back
 // to Pending (SQL given in chat).
 import { useEffect, useState, type ReactNode } from 'react'
@@ -25,6 +26,7 @@ import {
   buildQuoteRow,
   loadRecentLocations,
   useShipmentForm,
+  type FieldErrors,
   type RecentLocation,
   type ShipmentForm,
 } from '../../../lib/quoteRequest'
@@ -39,6 +41,8 @@ export type ResubmitTarget = {
   quoteId: number
   referenceCode: string | null
   form: ShipmentForm
+  // Fields staff flagged when rejecting (rejectionErrors) -- shown red.
+  errors: FieldErrors
 }
 
 function ClientQuoteForm({
@@ -58,7 +62,7 @@ function ClientQuoteForm({
   actionLabel: string
   onDone: () => void
 }) {
-  const { form, setField, errors, setErrors } = useShipmentForm(resubmit?.form)
+  const { form, setField, errors, setErrors } = useShipmentForm(resubmit?.form, resubmit?.errors)
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null)
   const [contactInfoError, setContactInfoError] = useState<string | null>(null)
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([])
