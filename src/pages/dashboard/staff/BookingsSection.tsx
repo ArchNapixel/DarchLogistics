@@ -63,6 +63,9 @@ export type Booking = {
   // Number from the printed invoice booklet, typed in on Bills Receivable.
   // Optional for the same reason as reference_code.
   invoice_number?: string | null
+  // When the booking was created (Bills Receivable: earliest allowed
+  // "date received" for its payments). Optional for the same reason.
+  created_at?: string
 }
 
 const STATUS_FILTERS = [

@@ -11,6 +11,7 @@ import {
   PAYMENT_METHODS,
   buildCollectionsCsv,
   loadPayments,
+  openPaymentProof,
   voidBookingPayment,
   type PaymentRow,
 } from '../../../lib/bookingPayments'
@@ -220,7 +221,19 @@ function CollectionsSection() {
                         {r.reference_no && <p>Ref: {r.reference_no}</p>}
                         {r.or_number && <p>OR: {r.or_number}</p>}
                         {r.note && <p>{r.note}</p>}
-                        {!r.reference_no && !r.or_number && !r.note && '—'}
+                        {r.proof_path && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const openError = await openPaymentProof(r.proof_path!)
+                              if (openError) setError(openError)
+                            }}
+                            className="font-medium text-slate-700 underline hover:text-slate-900"
+                          >
+                            📎 Proof
+                          </button>
+                        )}
+                        {!r.reference_no && !r.or_number && !r.note && !r.proof_path && '—'}
                       </td>
                       <td className={`whitespace-nowrap px-4 py-3 text-right font-medium ${voided ? 'line-through' : r.amount < 0 ? 'text-amber-700' : 'text-slate-900'}`}>
                         {formatMoney(r.amount)}

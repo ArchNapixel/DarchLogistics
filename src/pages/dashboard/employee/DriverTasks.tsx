@@ -9,12 +9,14 @@
 // a Helper sees the same list read-only (no status changes, no expenses).
 //
 // Report Issue / Inspection and Issue Maintenance Request live in the
-// EmployeeDashboard header, not here.
+// EmployeeDashboard header, not here. Picked Up / In Transit trips show
+// whether the client's payment allows unloading (TripPaymentBanner).
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import UpdateStatusControl from './UpdateStatusControl'
 import AddExpenseModal from './AddExpenseModal'
+import TripPaymentBanner from './TripPaymentBanner'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
@@ -229,6 +231,10 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           {' · '}Trailer:{' '}
           {trip.trailer_label ?? <span className="text-slate-400">none</span>}
         </p>
+        {/* Once the cargo is on board: may it be unloaded? (#13) */}
+        {(trip.itinerary_status === 'PickedUp' || trip.itinerary_status === 'InTransit') && (
+          <TripPaymentBanner key={trip.itinerary_status} itineraryId={trip.itinerary_id} />
+        )}
 
         {/* Status button and Add Expense sit side by side (Driver-only) */}
         {crewRole === 'Driver' && (

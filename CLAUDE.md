@@ -708,6 +708,28 @@ before creating it.
   migration file. **Known gap:** signing up with an email that already
   has a `clients` row (from an approved quote) creates a second
   `clients` row — old bookings don't show in the new account.
+- **Payment tracking (#12) + driver paid status (#13), 2026-10-22; SQL
+  given in chat.** GCash / Bank Transfer / Check payments need a
+  reference no. (`referenceRequired` / `paymentDetailsError` in
+  `lib/bookingPayments.ts`; DB check `booking_payments_reference_required`,
+  NOT VALID). Optional proof (JPG/PNG/WEBP/PDF, 5 MB) uploaded to private
+  bucket `payment-proofs` at `<booking_id>/<ts>-<name>` BEFORE the payment
+  is saved, then linked via RPC `attach_payment_proof(payment_id, path)`
+  (Admin only) to `booking_payments.proof_path` -- the row is found as the
+  newest matching payment because `record_booking_payment` doesn't return
+  its id (ponytail comment). A failed attach is only a toast, never an
+  error (re-saving would record the payment twice). 📎 Proof link in
+  Collections. Stress-test fixes (same day): every payment amount box
+  uses `lib/amountInput.ts` (filter: digits + one dot, 2 decimals, 12
+  chars; `parseAmount`; compare in centavos with `cents()`; self-check
+  `node scripts/check-amount-input.ts`), incl. Manage -> Record payment;
+  a reused reference no. (non-voided, case-insensitive) asks "Record
+  anyway?" inside `recordBookingPayment`; OR no./note trimmed; date
+  received can't be before the booking's `created_at`; HEIC proofs get
+  their own message; proof picker has Remove; the downpayment amount is
+  capped at contract - paid. #13: RPC `get_trip_payment_status(itinerary_id)` (active
+  crew only) returns 'paid' / 'terms' / 'unpaid' -- no amounts; shown by
+  `employee/TripPaymentBanner.tsx` on Picked Up / In Transit trip cards.
 - **Downpayment (#9–#11, 2026-10-22; SQL given in chat).** Before ANY
   trip of a booking may leave Awaiting, the client must have paid
   `cost + 25% x (contract - cost)` (cost = `bookings.cost_per_trip` x
@@ -723,7 +745,10 @@ before creating it.
   board AND drivers. Admin override: RPC `waive_downpayment(booking_id,
   reason)` (uses `current_admin_employee_id()`) -> `bookings.
   downpayment_waived_at/_by/_waive_reason`, button in BookingDetailModal.
-  Bills Receivable: Downpayment column + `DownpaymentModal` that records
+  Bills Receivable (Action column tidied 2026-10-22: one primary button --
+  Record downpayment / Record payment (replaced Partial Payment + Paid Full;
+  "Full remaining" quick-fill inside) / Mark refunded -- plus Manage and
+  Billing as matching secondary buttons): Downpayment column + `DownpaymentModal` that records
   the payment WITHOUT locking amount_to_pay, so billing still follows
   delivered trips and the payment terms count from delivery with less
   left; a negative balance on a booking with trips still to come shows
