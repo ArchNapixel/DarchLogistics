@@ -9,18 +9,15 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { phoneDigits, phoneError, phoneInput } from '../lib/quoteRequest'
+import { ACCOUNT_MAX as MAX, filterUsername, passwordError, usernameError } from '../lib/clientAccount'
 
 const fieldClasses =
   'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-// Max characters per field (also the inputs' maxLength). Password is 72
-// because Supabase silently ignores anything past 72 bytes.
-const MAX = { username: 30, name: 100, email: 100, password: 72 }
-
 // Typing filters, so bad characters never get into the boxes at all.
-// Username: letters, digits, dot, underscore, dash.
-const filterUsername = (v: string) => v.replace(/[^A-Za-z0-9._-]/g, '')
+// Username rules (and the max lengths) live in lib/clientAccount.ts,
+// shared with the portal's "change username".
 // Name or company: letters (any language), digits, and . , ' & ( ) / -
 // plus single spaces (companies like "3M Trading Co., Inc." must fit).
 const filterName = (v: string) =>
@@ -66,19 +63,12 @@ function ClientLoginPage() {
       if (pErr) return setError(pErr)
       if (name.trim().length > MAX.name)
         return setError(`Name is too long (max ${MAX.name} characters).`)
-      const u = username.trim()
-      if (u.length < 3 || u.length > MAX.username || !/^[A-Za-z0-9._-]+$/.test(u))
-        return setError(
-          `Username: 3–${MAX.username} characters, letters, numbers, dot, underscore or dash only.`,
-        )
+      const uErr = usernameError(username)
+      if (uErr) return setError(uErr)
       if (email.trim().length > MAX.email)
         return setError(`Email is too long (max ${MAX.email} characters).`)
-      if (password.length < 6)
-        return setError('Password must be at least 6 characters.')
-      if (new TextEncoder().encode(password).length > MAX.password)
-        return setError(`Password is too long (max ${MAX.password} characters).`)
-      if (password !== confirmPassword)
-        return setError('Passwords do not match.')
+      const pwErr = passwordError(password, confirmPassword)
+      if (pwErr) return setError(pwErr)
     }
 
     setSubmitting(true)

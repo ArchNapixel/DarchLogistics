@@ -708,6 +708,14 @@ before creating it.
   migration file. **Known gap:** signing up with an email that already
   has a `clients` row (from an approved quote) creates a second
   `clients` row — old bookings don't show in the new account.
+- Client Login & Security (2026-10-22, #7) — "Login & Security" under
+  My Profile in the client portal (`client/ClientAccountSection.tsx`):
+  change username via RPC `change_my_username(p_username)` (SECURITY
+  DEFINER, Client role only, own `users` row, format + case-insensitive
+  uniqueness; SQL run by user), change password (re-checks the current
+  one with signInWithPassword, then `auth.updateUser`). Username/password
+  rules shared with sign-up in `lib/clientAccount.ts` — the SQL function
+  repeats the username rule, change both together.
 - Quotes need a client account (2026-10-22) — the public anonymous
   quote form (`components/QuoteForm.tsx`) was deleted. `/quote-request`
   shows a sign up / log in panel when logged out (links to

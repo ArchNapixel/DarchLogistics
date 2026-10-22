@@ -23,6 +23,7 @@ import MyBookingsSection, {
 import MyQuoteRequestsSection from './client/MyQuoteRequestsSection'
 import { formatDaysUntilDue, type PaymentDueRow } from '../../lib/paymentDue'
 import NewQuoteModal from './client/NewQuoteModal'
+import ClientAccountSection from './client/ClientAccountSection'
 import ClientProfileSection, {
   type ClientProfile,
 } from './client/ClientProfileSection'
@@ -192,6 +193,12 @@ function ClientDashboard() {
                 onSaved={(updated) => setProfile(updated)}
               />
             )}
+          </div>
+          <div className="mt-8 border-t border-slate-200 pt-6">
+            <SectionHeader title="Login & Security" />
+            <div className="mt-4">
+              <ClientAccountSection />
+            </div>
           </div>
         </div>
       </div>
