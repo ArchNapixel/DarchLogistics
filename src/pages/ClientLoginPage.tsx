@@ -5,7 +5,7 @@
 // in chat) then creates the `clients` + `users` rows, so no extra insert
 // from the browser is needed.
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { phoneDigits, phoneError, phoneInput } from '../lib/quoteRequest'
@@ -29,7 +29,15 @@ const filterName = (v: string) =>
 const filterNoSpaces = (v: string) => v.replace(/\s/g, '')
 
 function ClientLoginPage() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  // ?next=/quote-request sends them back there after logging in; only
+  // same-site paths are allowed ("//evil.com" would leave the site).
+  // ?mode=signup opens the sign-up form straight away.
+  const [params] = useSearchParams()
+  const nextParam = params.get('next') ?? ''
+  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
+  const [mode, setMode] = useState<'login' | 'signup'>(
+    params.get('mode') === 'signup' ? 'signup' : 'login',
+  )
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [username, setUsername] = useState('')
@@ -43,7 +51,7 @@ function ClientLoginPage() {
   const { session, loading } = useAuth()
 
   if (loading) return null
-  if (session) return <Navigate to="/dashboard" replace />
+  if (session) return <Navigate to={next} replace />
 
   const signingUp = mode === 'signup'
 
@@ -84,7 +92,7 @@ function ClientLoginPage() {
         password,
         options: {
           // Confirmation link lands here; this page forwards to the dashboard.
-          emailRedirectTo: `${window.location.origin}/client-login`,
+          emailRedirectTo: `${window.location.origin}/client-login?next=${encodeURIComponent(next)}`,
           data: {
             sign_up_as_client: true,
             client_name: name.trim().replace(/\s+/g, ' '),
@@ -113,7 +121,7 @@ function ClientLoginPage() {
         setNotice('Account created. Check your email to confirm it, then log in.')
         return
       }
-      navigate('/dashboard')
+      navigate(next)
       return
     }
 
@@ -140,7 +148,7 @@ function ClientLoginPage() {
           : 'Invalid username or password.',
       )
     }
-    navigate('/dashboard')
+    navigate(next)
   }
 
   return (

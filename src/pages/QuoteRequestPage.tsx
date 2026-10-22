@@ -1,11 +1,15 @@
-// QuoteRequestPage: the public "Get a Quote" page at /quote-request.
-// QuoteForm.tsx has the actual fields/validation/submit logic; this
-// page adds the header band and the "what happens next" content (shown
-// beside the form, and again on the confirmation screen), matching the
-// rest of the public site's look.
+// QuoteRequestPage: the "Get a Quote" page at /quote-request. Quotes need
+// a client account now (so a rejected quote can come back to the client
+// with the reason, and be edited and resubmitted from their portal):
+// logged out -> a sign up / log in panel that returns here afterwards;
+// logged in as a client -> ClientQuoteForm (the same form as the portal's
+// New Quote). This page adds the header band and the "what happens next"
+// content, matching the rest of the public site's look.
+import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import Footer from '../components/Footer'
-import QuoteForm from '../components/QuoteForm'
+import ClientQuoteForm from './dashboard/client/ClientQuoteForm'
+import { useAuth } from '../context/AuthContext'
 
 const steps = [
   'We check your load against our trailers.',
@@ -13,7 +17,14 @@ const steps = [
   'You get a rate and pickup slot the same day.',
 ]
 
+// Where the login page sends people back to after signing in.
+const loginLink = (mode: 'login' | 'signup') =>
+  `/client-login?next=/quote-request${mode === 'signup' ? '&mode=signup' : ''}`
+
 function QuoteRequestPage() {
+  const { session, role, clientId, loading } = useAuth()
+  const navigate = useNavigate()
+
   return (
     <div>
       <NavBar />
@@ -37,12 +48,40 @@ function QuoteRequestPage() {
       </div>
 
       <div className="bg-brand-paper py-14">
-        {/* QuoteForm lays out its own two columns (steps + live quote
+        {/* The form lays out its own two columns (steps + live quote
             summary); the "what happens next" panel and photo sit under
             that summary. */}
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <QuoteForm
+          {loading ? null : !session || role !== 'Client' || !clientId ? (
+            <div className="mx-auto max-w-lg border border-slate-300 bg-white p-8 text-center">
+              <h2 className="text-xl font-semibold text-slate-900">
+                {session ? 'Log in with a client account' : 'Sign up to request a quote'}
+              </h2>
+              <p className="mt-2 text-sm text-slate-600">
+                {session
+                  ? 'Quote requests are sent from a client account. Staff can log quotes from Quotations in the dashboard.'
+                  : "It's free and takes a minute. Your account lets you follow your quote, see our reply, and fix and resend it if we can't accept it as is."}
+              </p>
+              {!session && (
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <Link to={loginLink('signup')} className="btn-primary px-5 py-3 text-sm font-semibold">
+                    Create an account
+                  </Link>
+                  <Link
+                    to={loginLink('login')}
+                    className="border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Log in
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : (
+          <ClientQuoteForm
+            clientId={clientId}
             nextSteps={steps}
+            actionLabel="Go to my dashboard"
+            onDone={() => navigate('/dashboard')}
             aside={
               <>
                 <div className="border border-slate-300 bg-white p-5">
@@ -74,6 +113,7 @@ function QuoteRequestPage() {
               </>
             }
           />
+          )}
         </div>
       </div>
 

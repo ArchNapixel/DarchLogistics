@@ -47,6 +47,10 @@ export type QuoteRequest = {
   proposed_rate: number | null
   preferred_pickup_date: string | null
   delivery_order_count: number | null
+  // How many times the client edited and resent it after a Reject, and
+  // the reason staff gave the last time (resubmit_quote_request).
+  resubmit_count: number
+  previous_rejection_reason: string | null
   created_at: string
 }
 
@@ -137,6 +141,11 @@ function QuoteRequestsSection() {
                 >
                   <td className="px-4 py-3 text-slate-900">
                     {quote.client_name}
+                    {quote.resubmit_count > 0 && (
+                      <span className="ml-2 bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                        Resubmitted{quote.resubmit_count > 1 ? ` ×${quote.resubmit_count}` : ''}
+                      </span>
+                    )}
                     {quote.reference_code && (
                       <span className="block font-mono text-xs text-slate-500">
                         {quote.reference_code}

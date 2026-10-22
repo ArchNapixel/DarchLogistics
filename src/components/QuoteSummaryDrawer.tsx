@@ -1,7 +1,7 @@
 // QuoteSummaryDrawer: a panel that slides in from the right over the page
 // once every shipment field is filled in -- a full, highlighted recap of
-// the quote (route, cargo, schedule, price) with "Keep editing" and
-// "Go to review" buttons. QuoteWizard decides when `open` is true; this
+// the quote (route, cargo, schedule, price) with a "Keep editing" button.
+// Used by staff's NewQuoteRequestModal, which decides when `open` is true; this
 // only handles the slide animation and the layout. Closing slides it back
 // out before unmounting, so it never just vanishes.
 import { useEffect, useState, type ReactNode } from 'react'
@@ -56,14 +56,10 @@ export default function QuoteSummaryDrawer({
   open,
   form,
   onClose,
-  onReview,
 }: {
   open: boolean
   form: ShipmentForm
   onClose: () => void
-  // "Go to review" -- the wizard jumps to its Review step. Without it
-  // (single-page forms) the only button is "Keep editing".
-  onReview?: () => void
 }) {
   // `mounted` keeps the panel in the DOM during the slide-out; `shown`
   // flips on a frame after mounting so the slide-in actually animates.
@@ -192,15 +188,6 @@ export default function QuoteSummaryDrawer({
           >
             Keep editing
           </button>
-          {onReview && (
-            <button
-              type="button"
-              onClick={onReview}
-              className="btn-primary flex-1 px-4 py-2.5 text-sm font-medium"
-            >
-              Go to review
-            </button>
-          )}
         </footer>
       </aside>
     </div>

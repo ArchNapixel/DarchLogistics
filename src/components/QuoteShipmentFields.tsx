@@ -1,7 +1,7 @@
 // QuoteShipmentFields: the quote inputs, split into the three sections
 // the customer wizard steps through (RouteFields, CargoFields,
 // ScheduleFields). Staff's NewQuoteRequestModal shows all three on one
-// page; QuoteWizard (public form + client portal) shows one per step.
+// page; QuoteWizard (client quote form) shows one per step.
 // One set of markup, so no channel can drift from the others. Each
 // field shows its own error message right under it (errors come from
 // validateShipment in lib/quoteRequest.ts).

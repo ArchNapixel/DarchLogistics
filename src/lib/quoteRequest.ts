@@ -1,9 +1,10 @@
 // quoteRequest: the one shared definition of a quote's shipment fields
 // (route, cargo, schedule, commercial terms) -- their blank state, their
-// validation, and how they map onto quote_requests columns. Used by all
-// three ways a quote gets in: the public QuoteForm, the client portal's
-// NewQuoteModal, and staff's NewQuoteRequestModal. Each channel only
-// adds its own client-identity columns on top of buildQuoteRow().
+// validation, and how they map onto quote_requests columns. Used by both
+// ways a quote gets in: a logged-in client (ClientQuoteForm, on the
+// /quote-request page and in the portal) and staff's NewQuoteRequestModal.
+// Each channel only adds its own client-identity columns on top of
+// buildQuoteRow().
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
@@ -91,7 +92,7 @@ function sameSpot(a: LocationValue, b: LocationValue): boolean {
   return norm(a.detail) === norm(b.detail)
 }
 
-// Contact checks shared by the public form and staff's phone-in modal.
+// Contact checks used by sign-up, profiles and staff's phone-in modal.
 // Return an error message, or null when fine.
 // Phone: digits only, exactly 11, starting with 09 (e.g. 09171234567).
 // The input shows spaces (0966 047 5467); they're ignored here and removed on save.
@@ -190,8 +191,8 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
 }
 
 // Short code the customer can quote back to us ("Q-7F3K9A") -- generated
-// here rather than read back from the insert, because the public form
-// (anon) isn't allowed to read quote_requests. No 0/O/1/I, so it reads
+// here rather than read back from the insert (a plain insert, no
+// .select(), so no extra SELECT policy is involved). No 0/O/1/I, so it reads
 // cleanly over the phone. quote_requests.reference_code is UNIQUE, so a
 // (roughly 1-in-a-billion) repeat just fails the insert instead of
 // creating a duplicate.
@@ -239,11 +240,52 @@ export function buildQuoteRow(form: ShipmentForm) {
   }
 }
 
+// The quote_requests columns buildQuoteRow writes -- what quoteToForm
+// needs to read a saved quote back into the form.
+export const SHIPMENT_COLUMNS =
+  'pickup_location_text, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_type, cargo_description, weight, container_type, trailer_type, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
+
+// The reverse of buildQuoteRow: a saved quote (SHIPMENT_COLUMNS) back
+// into form state, so a rejected quote can be edited and resubmitted.
+// Unknown/old values fall back to the blank form's defaults.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function quoteToForm(q: Record<string, any>): ShipmentForm {
+  const text = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+  return {
+    pickup: {
+      city: text(q.pickup_city),
+      barangay: text(q.pickup_barangay),
+      detail: text(q.pickup_location_text),
+      lat: q.pickup_lat ?? null,
+      lng: q.pickup_lng ?? null,
+    },
+    delivery: {
+      city: text(q.delivery_city),
+      barangay: text(q.delivery_barangay),
+      detail: text(q.delivery_location_text),
+      lat: q.delivery_lat ?? null,
+      lng: q.delivery_lng ?? null,
+    },
+    cargoType: q.cargo_type === 'Loose' ? 'Loose' : 'Container',
+    cargoDescription: text(q.cargo_description),
+    weight: text(q.weight),
+    containerType: q.container_type === '40ft' ? '40ft' : '20ft',
+    trailerType: q.trailer_type === 'Flatbed' || q.trailer_type === 'Skeletal' ? q.trailer_type : '',
+    preferredPickupDate: text(q.preferred_pickup_date),
+    paymentTerms: q.payment_terms in PAYMENT_TERMS_LABELS ? q.payment_terms : 'Cash',
+    proposedRate: text(q.proposed_rate),
+    isLastDayOfPortStorage: q.is_last_day_of_port_storage ? 'Yes' : 'No',
+    preferredDeliveryDate: text(q.preferred_delivery_date),
+    deliveryOrderCount: text(q.delivery_order_count),
+  }
+}
+
 // Form state + per-field errors, shared by all three quote channels.
 // Editing a field clears that field's error straight away, so a fixed
 // mistake doesn't keep showing red until the next submit.
-export function useShipmentForm() {
-  const [form, setForm] = useState<ShipmentForm>(emptyShipment)
+// `initial` pre-fills the form (editing a rejected quote, see quoteToForm).
+export function useShipmentForm(initial: ShipmentForm = emptyShipment) {
+  const [form, setForm] = useState<ShipmentForm>(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
 
   function setField<K extends ShipmentField>(name: K, value: ShipmentForm[K]) {
@@ -264,7 +306,7 @@ export function useShipmentForm() {
   return { form, setField, errors, setErrors, reset }
 }
 
-// When to slide the QuoteSummaryDrawer in: once every shipment field is
+// When to slide the QuoteSummaryDrawer in (staff's NewQuoteRequestModal): once every shipment field is
 // valid, held for a second so it doesn't pop up mid-typing (e.g. after
 // the first digit of the rate). Closing keeps it closed until the form
 // goes incomplete again.

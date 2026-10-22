@@ -1,5 +1,5 @@
-// QuoteWizard: the step-by-step quote form customers see -- the public
-// QuoteForm and the client portal's NewQuoteModal. Route -> Cargo ->
+// QuoteWizard: the step-by-step quote form customers see --
+// ClientQuoteForm (the /quote-request page and the portal). Route -> Cargo ->
 // Schedule & terms -> Review, with a live summary beside the steps on
 // wide screens. Each "Continue" only checks the current step's fields
 // (errors show under each field); Submit re-checks everything and jumps
@@ -14,9 +14,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { CargoFields, RouteFields, ScheduleFields, type SectionProps } from './QuoteShipmentFields'
 import { QuoteSummary } from './QuoteSummary'
-import QuoteSummaryDrawer from './QuoteSummaryDrawer'
 import {
-  useSummaryDrawer,
   validateShipment,
   type FieldErrors,
   type RecentLocation,
@@ -62,8 +60,8 @@ function QuoteWizard({
 }: SectionProps & {
   setErrors: (errors: FieldErrors) => void
   recentLocations?: RecentLocation[]
-  // Shown at the top of the Review step: editable contact fields on the
-  // public form, a read-only "Submitting as" line in the client portal.
+  // Shown at the top of the Review step: a read-only "Sending as" line
+  // with the client's account details.
   contactSection: ReactNode
   // Parent checks its own contact fields; false blocks the submit.
   validateContact: () => boolean
@@ -79,7 +77,6 @@ function QuoteWizard({
   const [furthestStep, setFurthestStep] = useState(0)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const hasMoved = useRef(false)
-  const summaryDrawer = useSummaryDrawer(form)
   const step = STEPS[stepIndex]
   const isReview = step.id === 'review'
 
@@ -251,15 +248,6 @@ function QuoteWizard({
         )}
         {aside}
       </aside>
-      <QuoteSummaryDrawer
-        open={summaryDrawer.open && !isReview}
-        form={form}
-        onClose={summaryDrawer.dismiss}
-        onReview={() => {
-          summaryDrawer.dismiss()
-          editStep('review')
-        }}
-      />
     </div>
   )
 }

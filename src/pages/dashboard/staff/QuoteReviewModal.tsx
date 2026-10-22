@@ -716,6 +716,17 @@ function QuoteReviewModal({
           </>
         ) : (
           <>
+            {quote.resubmit_count > 0 && (
+              <div className="mt-4 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-semibold">
+                  Resubmitted by the client
+                  {quote.resubmit_count > 1 ? ` (${quote.resubmit_count} times)` : ''}
+                </p>
+                {quote.previous_rejection_reason && (
+                  <p className="mt-1">Previously rejected: {quote.previous_rejection_reason}</p>
+                )}
+              </div>
+            )}
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <InfoRow label="Client name" value={quote.client_name} />
               <InfoRow

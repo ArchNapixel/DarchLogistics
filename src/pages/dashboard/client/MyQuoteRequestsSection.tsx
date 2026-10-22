@@ -7,18 +7,26 @@
 // Only quotes with client_id set are found -- portal-submitted ones
 // always have it. Needs the quote_requests_select_own_client RLS policy
 // (client_id -> users.auth_user_id); without it this just shows empty.
+//
+// A Rejected quote has "Edit & resubmit": it loads the quote's shipment
+// fields, opens the same quote form pre-filled (NewQuoteModal), and
+// sending puts the same quote back to Pending for staff.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import NewQuoteModal from './NewQuoteModal'
+import type { ResubmitTarget } from './ClientQuoteForm'
+import { SHIPMENT_COLUMNS, quoteToForm } from '../../../lib/quoteRequest'
 
 type QuoteRow = {
   quote_request_id: number
   reference_code: string | null
   request_status: string
   rejection_reason: string | null
+  resubmit_count: number
   pickup_city: string
   pickup_barangay: string
   delivery_city: string
@@ -33,6 +41,8 @@ function MyQuoteRequestsSection() {
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [resubmit, setResubmit] = useState<ResubmitTarget | null>(null)
+  const [openingId, setOpeningId] = useState<number | null>(null)
 
   useEffect(() => {
     if (clientId) {
@@ -48,7 +58,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_type, preferred_pickup_date, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_type, preferred_pickup_date, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -63,6 +73,28 @@ function MyQuoteRequestsSection() {
     setQuotes(data)
     setError(null)
     setLoading(false)
+  }
+
+  // Fetch the full shipment details of a rejected quote, then open the
+  // form with them.
+  async function openResubmit(quote: QuoteRow) {
+    setOpeningId(quote.quote_request_id)
+    const { data, error: loadError } = await supabase
+      .from('quote_requests')
+      .select(SHIPMENT_COLUMNS)
+      .eq('quote_request_id', quote.quote_request_id)
+      .maybeSingle()
+    setOpeningId(null)
+
+    if (loadError || !data) {
+      setError(loadError?.message ?? 'Could not open that quote. Refresh and try again.')
+      return
+    }
+    setResubmit({
+      quoteId: quote.quote_request_id,
+      referenceCode: quote.reference_code,
+      form: quoteToForm(data),
+    })
   }
 
   if (loading) {
@@ -101,7 +133,13 @@ function MyQuoteRequestsSection() {
             </div>
             <StatusBadge
               status={quote.request_status}
-              label={quote.request_status === 'Pending' ? 'Under review' : undefined}
+              label={
+                quote.request_status === 'Pending'
+                  ? quote.resubmit_count > 0
+                    ? 'Resubmitted'
+                    : 'Under review'
+                  : undefined
+              }
             />
           </div>
           {quote.request_status === 'Rejected' && quote.rejection_reason && (
@@ -114,8 +152,31 @@ function MyQuoteRequestsSection() {
               </p>
             </div>
           )}
+          {quote.request_status === 'Rejected' && (
+            <button
+              type="button"
+              onClick={() => openResubmit(quote)}
+              disabled={openingId !== null}
+              className="btn-primary mt-3 px-3 py-1.5 text-xs font-medium"
+            >
+              {openingId === quote.quote_request_id ? 'Opening...' : 'Edit & resubmit'}
+            </button>
+          )}
         </div>
       ))}
+
+      {resubmit && clientId && (
+        <NewQuoteModal
+          // key: a fresh form for each quote opened
+          key={resubmit.quoteId}
+          clientId={clientId}
+          resubmit={resubmit}
+          onCreated={() => {
+            setResubmit(null)
+            load(clientId)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -695,6 +695,21 @@ before creating it.
   migration file. **Known gap:** signing up with an email that already
   has a `clients` row (from an approved quote) creates a second
   `clients` row — old bookings don't show in the new account.
+- Quotes need a client account (2026-10-22) — the public anonymous
+  quote form (`components/QuoteForm.tsx`) was deleted. `/quote-request`
+  shows a sign up / log in panel when logged out (links to
+  `/client-login?next=/quote-request[&mode=signup]`; ClientLoginPage
+  honours `next`, same-site paths only) and `client/ClientQuoteForm.tsx`
+  when logged in as a Client — the same form the portal's
+  `NewQuoteModal` now wraps. Rejected quotes get **Edit & resubmit** in
+  `MyQuoteRequestsSection` (pre-filled via `quoteToForm()` /
+  `SHIPMENT_COLUMNS` in `lib/quoteRequest.ts`) → RPC
+  `resubmit_quote_request(p_quote_id, p_changes)` (SECURITY DEFINER,
+  own quote only, only while `Rejected`; same row + reference code back
+  to `Pending`, moves the reason to `previous_rejection_reason`,
+  `resubmit_count + 1`). Staff see a "Resubmitted" badge in Quotations
+  and "Previously rejected: …" in QuoteReviewModal. Staff's own
+  NewQuoteRequestModal (phone/walk-in) is unchanged.
 - Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to
   `index.html` so refreshing a `/dashboard/...` URL works on Vercel).
 - Design (as of 2026-10-19): the 2026-09-22 "sharp edges + blue

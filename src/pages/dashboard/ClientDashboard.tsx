@@ -199,7 +199,6 @@ function ClientDashboard() {
       {showNewQuote && clientId && (
         <NewQuoteModal
           clientId={clientId}
-          onClose={() => setShowNewQuote(false)}
           // NewQuoteModal shows its own confirmation (reference number,
           // summary, next steps) before calling this -- close it and
           // reload My Quote Requests so the new one shows up.
