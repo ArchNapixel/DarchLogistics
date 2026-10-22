@@ -1,9 +1,11 @@
-// DispatchBoardSection: board of itineraries (everything but Cancelled)
-// for staff to advance status and assign a driver, split into 3 tables --
-// Needs Assignment (missing driver, truck, or trailer), Assigned (fully
-// crewed, just not delivered yet), and Completed (status Delivered --
-// previously excluded from this page entirely, now shown read-into
-// instead of vanishing). Each table is newest trip date first.
+// DispatchBoardSection: board of itineraries -- every active trip, plus
+// trips delivered in the last COMPLETED_DAYS days -- for staff to advance
+// status and assign a driver, split into 3 tables -- Needs Assignment
+// (missing driver, truck, or trailer), Assigned (fully crewed, just not
+// delivered yet), and Completed (status Delivered). Each table is newest
+// trip date first. Crew/truck/trailer changes re-check that the trip is
+// still active first (the board can be minutes old), and an Admin moving
+// a trip back out of Delivered is asked to confirm.
 //
 // Status editing: Admin gets the full free-choice dropdown (any status,
 // any direction) and can go backward directly. Dispatcher's dropdown
@@ -60,6 +62,8 @@ import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
@@ -74,6 +78,41 @@ import {
   rankCandidates,
   type ScheduledTrip,
 } from '../../../lib/tripSchedule'
+
+// The Completed tab shows trips delivered (by trip date) in the last this-many days.
+const COMPLETED_DAYS = 30
+
+// Not Delivered and not Cancelled (null status counts as Awaiting). Used to
+// load the board and to refuse changes to a trip that finished meanwhile.
+const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
+
+const ITINERARY_COLUMNS =
+  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id'
+
+// One row of ITINERARY_COLUMNS.
+type BoardItineraryRow = {
+  itinerary_id: number
+  booking_id: number
+  trip_date_from: string
+  trip_date_to: string | null
+  trip_start_at: string | null
+  trip_end_at: string | null
+  place_of_pickup_id: number
+  place_of_delivery_id: number
+  itinerary_status: string | null
+  plate_number: string | null
+  trailer_id: number | null
+}
+
+type BoardBookingRow = {
+  booking_id: number
+  trailer_type: string | null
+  hours_per_trip: number | null
+  rate_of_delivery_service: number | null
+  cost_per_trip: number | null
+  amount_paid: number | null
+  downpayment_waived_at: string | null
+}
 
 type DispatchRow = {
   itinerary_id: number
@@ -786,19 +825,45 @@ function DispatchBoardSection() {
     // date first (most recently added trips tend to be scheduled
     // furthest out, so this is what actually surfaces new work instead
     // of burying it at the bottom of a long list).
-    const { data: itineraryRows, error: itineraryError } = await supabase
-      .from('itineraries')
-      .select(
-        'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
-      )
-      .neq('itinerary_status', 'Cancelled')
-      .order('trip_date_from', { ascending: false })
+    // Every ACTIVE trip, plus Delivered ones from the last
+    // COMPLETED_DAYS days for the Completed tab (older deliveries are in
+    // Bookings & Trips and the Reports logs). Loading every delivery ever
+    // made the board slower each month and, past Supabase's 1000-row cap,
+    // silently dropped the oldest rows -- which could be an old trip that
+    // is still Awaiting. fetchAll pages past that cap.
+    const completedSince = toManilaDate(new Date(Date.now() - COMPLETED_DAYS * 86_400_000))
+    const [activeResult, deliveredResult] = await Promise.all([
+      fetchAll<BoardItineraryRow>((from, to) =>
+        supabase
+          .from('itineraries')
+          .select(ITINERARY_COLUMNS)
+          .or(ACTIVE_TRIP_FILTER)
+          .order('itinerary_id', { ascending: false })
+          .range(from, to),
+      ),
+      fetchAll<BoardItineraryRow>((from, to) =>
+        supabase
+          .from('itineraries')
+          .select(ITINERARY_COLUMNS)
+          .eq('itinerary_status', 'Delivered')
+          .gte('trip_date_from', completedSince)
+          .order('itinerary_id', { ascending: false })
+          .range(from, to),
+      ),
+    ])
 
+    const itineraryError = activeResult.error ?? deliveredResult.error
     if (itineraryError) {
-      setError(itineraryError.message)
+      setError(itineraryError)
       setLoading(false)
       return
     }
+    // Newest trip date first (ties: newest trip first).
+    const itineraryRows = [...activeResult.rows, ...deliveredResult.rows].sort(
+      (a, b) =>
+        (b.trip_date_from ?? '').localeCompare(a.trip_date_from ?? '') ||
+        b.itinerary_id - a.itinerary_id,
+    )
 
     // Trucks/trailers to populate the assignment dropdowns -- needed
     // even when there are no active itineraries yet, so load them
@@ -828,27 +893,45 @@ function DispatchBoardSection() {
 
     // Which trailer type each booking asked for (bookings.trailer_type).
     const bookingIds = [...new Set(itineraryRows.map((it) => it.booking_id))]
-    const { data: bookingTypeRows, error: bookingTypeError } = await supabase
-      .from('bookings')
-      .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at')
-      .in('booking_id', bookingIds)
+    // fetchIn: ids a few hundred at a time (one long list breaks the URL).
+    // The downpayment needs each booking's whole trip count, and the board
+    // no longer loads every delivered trip -- so count them here.
+    const [bookingTypeResult, bookingTripsResult] = await Promise.all([
+      fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
+        supabase
+          .from('bookings')
+          .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at')
+          .in('booking_id', chunk)
+          .range(from, to),
+      ),
+      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+        supabase
+          .from('itineraries')
+          .select('booking_id, itinerary_status')
+          .in('booking_id', chunk)
+          .range(from, to),
+      ),
+    ])
+    const bookingTypeError = bookingTypeResult.error ?? bookingTripsResult.error
     if (bookingTypeError) {
-      setError(bookingTypeError.message)
+      setError(bookingTypeError)
       setLoading(false)
       return
     }
+    const bookingTypeRows = bookingTypeResult.rows
     const trailerTypeByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.trailer_type as string | null]),
     )
     const hoursPerTripByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.hours_per_trip as number | null]),
     )
-    // Downpayment per booking: trips = its non-cancelled itineraries (the
-    // board already loads exactly those).
+    // Downpayment per booking: trips = ALL its non-cancelled itineraries.
     const tripCountByBooking = new Map<number, number>()
-    itineraryRows.forEach((it) =>
-      tripCountByBooking.set(it.booking_id, (tripCountByBooking.get(it.booking_id) ?? 0) + 1),
-    )
+    bookingTripsResult.rows
+      .filter((it) => it.itinerary_status !== 'Cancelled')
+      .forEach((it) =>
+        tripCountByBooking.set(it.booking_id, (tripCountByBooking.get(it.booking_id) ?? 0) + 1),
+      )
     const downpaymentByBooking = new Map(
       bookingTypeRows.map((b) => [
         b.booking_id as number,
@@ -886,13 +969,20 @@ function DispatchBoardSection() {
 
     // 2. Place names, current crew assignments, and assignable staff -- in parallel.
     const [placesResult, crewResult, driverUsersResult, helperUsersResult, leaveResult] = await Promise.all([
-      supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
-      supabase
-        .from('itinerary_crews')
-        .select('itinerary_id, employee_id, crew_role')
-        .in('crew_role', ['Driver', 'Helper'])
-        .eq('is_active', true)
-        .in('itinerary_id', itineraryIds),
+      fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
+        supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
+      ),
+      fetchIn<{ itinerary_id: number; employee_id: number; crew_role: string }>(
+        itineraryIds,
+        (chunk, from, to) =>
+          supabase
+            .from('itinerary_crews')
+            .select('itinerary_id, employee_id, crew_role')
+            .in('crew_role', ['Driver', 'Helper'])
+            .eq('is_active', true)
+            .in('itinerary_id', chunk)
+            .range(from, to),
+      ),
       supabase
         .from('users')
         .select('employee_id')
@@ -914,12 +1004,12 @@ function DispatchBoardSection() {
     setLeaveByEmployee(leaveResult.byEmployee)
 
     if (placesResult.error) {
-      setError(placesResult.error.message)
+      setError(placesResult.error)
       setLoading(false)
       return
     }
     if (crewResult.error) {
-      setError(crewResult.error.message)
+      setError(crewResult.error)
       setLoading(false)
       return
     }
@@ -935,15 +1025,15 @@ function DispatchBoardSection() {
     }
 
     const placeNameById = new Map(
-      placesResult.data.map((p) => [p.place_id, p.place_name]),
+      placesResult.rows.map((p) => [p.place_id, p.place_name]),
     )
     const assignedDriverIdByItinerary = new Map(
-      crewResult.data
+      crewResult.rows
         .filter((c) => c.crew_role === 'Driver')
         .map((c) => [c.itinerary_id, c.employee_id as number]),
     )
     const assignedHelperIdByItinerary = new Map(
-      crewResult.data
+      crewResult.rows
         .filter((c) => c.crew_role === 'Helper')
         .map((c) => [c.itinerary_id, c.employee_id as number]),
     )
@@ -954,28 +1044,28 @@ function DispatchBoardSection() {
       driverUsersResult.data.map((u) => u.employee_id as number),
     )
     helperUsersResult.data.forEach((u) => employeeIds.add(u.employee_id as number))
-    crewResult.data.forEach((c) => employeeIds.add(c.employee_id as number))
+    crewResult.rows.forEach((c) => employeeIds.add(c.employee_id as number))
 
     const [employeesResult, statusesResult] = await Promise.all([
-      employeeIds.size > 0
-        ? supabase
+      fetchIn<{ employee_id: number; full_name: string; employment_status_id: number | null }>(
+        Array.from(employeeIds),
+        (chunk, from, to) =>
+          supabase
             .from('employees')
             .select('employee_id, full_name, employment_status_id')
-            .in('employee_id', Array.from(employeeIds))
-        : Promise.resolve({
-            data: [] as { employee_id: number; full_name: string; employment_status_id: number | null }[],
-            error: null,
-          }),
+            .in('employee_id', chunk)
+            .range(from, to),
+      ),
       supabase.from('employment_status').select('status_id, status_name'),
     ])
 
-    const employeeError = employeesResult.error ?? statusesResult.error
+    const employeeError = employeesResult.error ?? statusesResult.error?.message
     if (employeeError) {
-      setError(employeeError.message)
+      setError(employeeError)
       setLoading(false)
       return
     }
-    const employeeRows = employeesResult.data ?? []
+    const employeeRows = employeesResult.rows
 
     // Deactivated/Terminated employees can't be picked any more (same
     // rule payroll uses). They still show by name on trips they're
@@ -1063,6 +1153,21 @@ function DispatchBoardSection() {
       return
     }
 
+    // Admin moving a trip back out of Delivered (Completed tab): one
+    // mis-click would un-deliver it, so ask first.
+    if (previousStatus === 'Delivered') {
+      const ok = await confirmDialog({
+        title: `Un-deliver trip #${itineraryId}?`,
+        message:
+          `This moves the trip back to "${STATUS_LABELS[newStatus] ?? newStatus}". The booking's ` +
+          'status and what the client is billed change with it, and the trip may already be on ' +
+          "a driver's payslip -- check Payroll afterwards.",
+        confirmLabel: 'Move it back',
+        danger: true,
+      })
+      if (!ok) return
+    }
+
     setSavingId(itineraryId)
     setError(null)
 
@@ -1129,6 +1234,61 @@ function DispatchBoardSection() {
     }
   }
 
+  // The board shows trips as they were when it loaded. Before changing a
+  // trip's crew, check it's still active right now -- changing the driver
+  // of a trip delivered meanwhile would move its pay to someone else.
+  // Says so and reloads the board when it isn't.
+  async function tripStillActive(itineraryId: number): Promise<boolean> {
+    const { data, error: checkError } = await supabase
+      .from('itineraries')
+      .select('itinerary_status')
+      .eq('itinerary_id', itineraryId)
+      .maybeSingle()
+    if (checkError) {
+      setError(checkError.message)
+      return false
+    }
+    const status = data?.itinerary_status
+    if (!data || status === 'Delivered' || status === 'Cancelled') {
+      setError(
+        `Trip #${itineraryId} is ${data ? (status === 'Delivered' ? 'already delivered' : 'cancelled') : 'gone'} -- ` +
+          'nothing was changed. The board has been reloaded.',
+      )
+      loadDispatchBoard()
+      return false
+    }
+    return true
+  }
+
+  // Truck/trailer write: only while the trip is still active, and check a
+  // row really changed (a blocked update reports no error). False = not
+  // saved (the message is already shown).
+  async function updateActiveTrip(
+    itineraryId: number,
+    change: { plate_number: string | null } | { trailer_id: number | null },
+  ): Promise<boolean> {
+    const { data, error: updateError } = await supabase
+      .from('itineraries')
+      .update(change)
+      .eq('itinerary_id', itineraryId)
+      .or(ACTIVE_TRIP_FILTER)
+      .select('itinerary_id')
+      .maybeSingle()
+    if (updateError) {
+      setError(updateError.message)
+      return false
+    }
+    if (!data) {
+      setError(
+        `Trip #${itineraryId} was not changed -- it was delivered or cancelled in the meantime. ` +
+          'The board has been reloaded.',
+      )
+      loadDispatchBoard()
+      return false
+    }
+    return true
+  }
+
   async function handleCrewChange(
     itineraryId: number,
     crewRole: 'Driver' | 'Helper',
@@ -1137,6 +1297,11 @@ function DispatchBoardSection() {
   ) {
     setSavingId(itineraryId)
     setError(null)
+
+    if (!(await tripStillActive(itineraryId))) {
+      setSavingId(null)
+      return
+    }
 
     // 1. Deactivate the current assignment, if there is one -- kept as a
     // history row instead of deleted. Deactivates EVERY active row for
@@ -1269,13 +1434,7 @@ function DispatchBoardSection() {
     setSavingId(itineraryId)
     setError(null)
 
-    const { error: updateError } = await supabase
-      .from('itineraries')
-      .update({ plate_number: plateNumber })
-      .eq('itinerary_id', itineraryId)
-
-    if (updateError) {
-      setError(updateError.message)
+    if (!(await updateActiveTrip(itineraryId, { plate_number: plateNumber }))) {
       setSavingId(null)
       return
     }
@@ -1312,13 +1471,7 @@ function DispatchBoardSection() {
     setSavingId(itineraryId)
     setError(null)
 
-    const { error: updateError } = await supabase
-      .from('itineraries')
-      .update({ trailer_id: trailerId })
-      .eq('itinerary_id', itineraryId)
-
-    if (updateError) {
-      setError(updateError.message)
+    if (!(await updateActiveTrip(itineraryId, { trailer_id: trailerId }))) {
       setSavingId(null)
       return
     }
@@ -1387,7 +1540,12 @@ function DispatchBoardSection() {
   const tabs = [
     { id: 'needs', label: 'Needs Assignment', rows: needsAssignmentRows, empty: 'Nothing waiting on a driver, truck, or trailer.' },
     { id: 'assigned', label: 'Assigned — In Progress', rows: assignedRows, empty: 'No fully-crewed trips in progress.' },
-    { id: 'completed', label: 'Completed', rows: completedRows, empty: 'No delivered trips yet.' },
+    {
+      id: 'completed',
+      label: `Completed (last ${COMPLETED_DAYS} days)`,
+      rows: completedRows,
+      empty: `No trips delivered in the last ${COMPLETED_DAYS} days. Older ones are in Bookings & Trips.`,
+    },
   ] as const
   const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]
   // One page of the active tab at a time (back to page 1 on a tab/search change).

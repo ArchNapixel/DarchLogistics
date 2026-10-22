@@ -29,6 +29,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
+import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import BookingDetailModal from './BookingDetailModal'
 import PaymentDuePanel from './PaymentDuePanel'
 import PageHeader from '../../../components/PageHeader'
@@ -75,6 +76,24 @@ export type Booking = {
   // Set when the booking was cancelled (fully or partway): it's then only
   // billed for delivered trips (deliveryAmountFor in lib/paymentDue.ts).
   cancelled_at?: string | null
+}
+
+// One row of the bookings query in loadBookings().
+type BookingRow = {
+  booking_id: number
+  client_id: number
+  quote_request_id: number | null
+  place_of_pickup_id: number
+  place_of_delivery_id: number
+  pickup_address_detail: string | null
+  delivery_address_detail: string | null
+  booking_date: string
+  booking_status: string | null
+  cancelled_at: string | null
+  rate_of_delivery_service: number | null
+  amount_to_pay: number | null
+  amount_paid: number | null
+  invoice_number: string | null
 }
 
 const STATUS_FILTERS = [
@@ -190,16 +209,21 @@ function BookingsSection() {
   async function loadBookings() {
     setLoading(true)
 
-    // 1. Load the bookings themselves.
-    const { data: bookingRows, error: bookingsError } = await supabase
-      .from('bookings')
-      .select(
-        'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
-      )
-      .order('created_at', { ascending: false })
+    // 1. Load the bookings themselves -- every page (Supabase returns at
+    // most 1000 rows per request; fetchAll keeps going past that).
+    const { rows: bookingRows, error: bookingsError } = await fetchAll<BookingRow>((from, to) =>
+      supabase
+        .from('bookings')
+        .select(
+          'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
+        )
+        .order('created_at', { ascending: false })
+        .order('booking_id', { ascending: false })
+        .range(from, to),
+    )
 
     if (bookingsError) {
-      setError(bookingsError.message)
+      setError(bookingsError)
       setLoading(false)
       return
     }
@@ -228,28 +252,41 @@ function BookingsSection() {
       .filter((id): id is number => id !== null)
     const bookingIds = bookingRows.map((b) => b.booking_id)
 
+    // fetchIn = .in() a few hundred ids at a time (one huge id list makes
+    // the URL too long), each chunk paged past 1000 rows.
     const [clientsResult, placesResult, quotesResult, itinerariesResult] = await Promise.all([
-      supabase.from('clients').select('client_id, client_name').in('client_id', clientIds),
-      supabase.from('places').select('place_id, place_name, city, barangay').in('place_id', placeIds),
-      quoteIds.length > 0
-        ? supabase
-            .from('quote_requests')
-            .select('quote_request_id, reference_code')
-            .in('quote_request_id', quoteIds)
-        : Promise.resolve({
-            data: [] as { quote_request_id: number; reference_code: string | null }[],
-            error: null,
-          }),
-      supabase
-        .from('itineraries')
-        .select('booking_id, itinerary_status')
-        .in('booking_id', bookingIds),
+      fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
+        supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
+      ),
+      fetchIn<{ place_id: number; place_name: string; city: string | null; barangay: string | null }>(
+        placeIds,
+        (chunk, from, to) =>
+          supabase
+            .from('places')
+            .select('place_id, place_name, city, barangay')
+            .in('place_id', chunk)
+            .range(from, to),
+      ),
+      fetchIn<{ quote_request_id: number; reference_code: string | null }>(quoteIds, (chunk, from, to) =>
+        supabase
+          .from('quote_requests')
+          .select('quote_request_id, reference_code')
+          .in('quote_request_id', chunk)
+          .range(from, to),
+      ),
+      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+        supabase
+          .from('itineraries')
+          .select('booking_id, itinerary_status')
+          .in('booking_id', chunk)
+          .range(from, to),
+      ),
     ])
 
     const firstError =
       clientsResult.error ?? placesResult.error ?? quotesResult.error ?? itinerariesResult.error
     if (firstError) {
-      setError(firstError.message)
+      setError(firstError)
       setLoading(false)
       return
     }
@@ -264,12 +301,10 @@ function BookingsSection() {
       return
     }
 
-    const clientNameById = new Map(
-      (clientsResult.data ?? []).map((c) => [c.client_id, c.client_name]),
-    )
-    const placeById = new Map((placesResult.data ?? []).map((p) => [p.place_id, p]))
+    const clientNameById = new Map(clientsResult.rows.map((c) => [c.client_id, c.client_name]))
+    const placeById = new Map(placesResult.rows.map((p) => [p.place_id, p]))
     const referenceByQuote = new Map(
-      (quotesResult.data ?? []).map((q) => [q.quote_request_id, q.reference_code]),
+      quotesResult.rows.map((q) => [q.quote_request_id, q.reference_code]),
     )
 
     // "Warehouse 3, Brgy. Sasa, Davao City" -- falls back to the place's
@@ -285,7 +320,7 @@ function BookingsSection() {
 
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
-    const itineraryRows = itinerariesResult.data ?? []
+    const itineraryRows = itinerariesResult.rows
     const cancelledTripsByBooking = new Map<number, number>()
     itineraryRows.forEach((itinerary) => {
       // Cancelled trips aren't part of the contract any more (counted separately).
@@ -449,6 +484,22 @@ function BookingsSection() {
               )}
             </button>
           </div>
+
+          {/* A ?booking= link (Dispatch Board, Quotations, Find trip)
+              pointing at a booking that isn't there -- say so instead of
+              silently opening nothing. */}
+          {!loading && !error && linkedBookingId && !linkedBooking && !selectedBooking && (
+            <p className="mb-4 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Booking #{linkedBookingId} was not found.{' '}
+              <button
+                type="button"
+                onClick={() => setSearchParams({}, { replace: true })}
+                className="font-medium underline"
+              >
+                Dismiss
+              </button>
+            </p>
+          )}
 
           {loading ? (
             <p className="text-slate-500">Loading bookings…</p>

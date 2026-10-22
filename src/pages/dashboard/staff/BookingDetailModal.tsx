@@ -374,19 +374,26 @@ function BookingDetailModal({
         toChain.map(() => hours * 3_600_000),
       )
       for (let i = 0; i < toChain.length; i++) {
-        const { error: tripError } = await supabase
+        // Only while the trip is STILL Awaiting (the list above is from
+        // when this opened -- a trip dispatched since keeps its slot), and
+        // check a row really changed.
+        const { data: moved, error: tripError } = await supabase
           .from('itineraries')
           .update({
             trip_start_at: new Date(slots[i].start).toISOString(),
             trip_end_at: new Date(slots[i].end).toISOString(),
           })
           .eq('itinerary_id', toChain[i].itinerary_id)
+          .eq('itinerary_status', 'Awaiting')
+          .select('itinerary_id')
+          .maybeSingle()
         if (tripError) failures.push(`trip #${toChain[i].itinerary_id}: ${tripError.message}`)
+        else if (!moved) failures.push(`trip #${toChain[i].itinerary_id}: no longer Awaiting, left as is`)
       }
     }
     setHoursSaving(false)
     if (failures.length > 0) {
-      setHoursError(`Hours per trip saved, but some trips kept their old end time (${failures.join('; ')}).`)
+      setHoursError(`Hours per trip saved, but some trips kept their old time slot (${failures.join('; ')}).`)
     } else {
       setHoursDraft(null)
     }
@@ -434,7 +441,6 @@ function BookingDetailModal({
 
   const trips = details?.trips ?? []
   const awaitingTrips = trips.filter((t) => t.status === 'Awaiting')
-  const tripsOnRoad = trips.filter((t) => ON_THE_ROAD.has(t.status))
   const anyDelivered = trips.some((t) => t.status === 'Delivered')
   const isClosed = booking.status === 'Cancelled' || booking.status === 'Delivered'
   // Partial cancel (some trips delivered) only makes sense with trips left to cancel.
@@ -447,16 +453,50 @@ function BookingDetailModal({
       setCancelError('Enter a reason for cancelling.')
       return
     }
-    if (tripsOnRoad.length > 0) {
-      setCancelError(
-        `Trip ${tripsOnRoad.map((t) => `#${t.itinerary_id}`).join(', ')} is already on the road. ` +
-          'Finish or reset it on the Dispatch Board before cancelling.',
-      )
-      return
-    }
 
     setCancelling(true)
     setCancelError(null)
+
+    // Re-read the trips NOW -- the ones on screen are from when this was
+    // opened, and a trip may have been dispatched or delivered since
+    // (Dispatch Board / driver). Every decision below uses these.
+    const { data: freshTrips, error: freshError } = await supabase
+      .from('itineraries')
+      .select('itinerary_id, itinerary_status')
+      .eq('booking_id', booking.booking_id)
+    if (freshError) {
+      setCancelling(false)
+      setCancelError(freshError.message)
+      return
+    }
+    const onRoadNow = freshTrips.filter((t) => ON_THE_ROAD.has(t.itinerary_status ?? ''))
+    const deliveredNow = freshTrips.some((t) => t.itinerary_status === 'Delivered')
+    const awaitingNow = freshTrips.filter((t) => (t.itinerary_status ?? 'Awaiting') === 'Awaiting')
+
+    if (onRoadNow.length > 0) {
+      setCancelling(false)
+      setCancelError(
+        `Trip ${onRoadNow.map((t) => `#${t.itinerary_id}`).join(', ')} is already on the road. ` +
+          'Finish or reset it on the Dispatch Board before cancelling.',
+      )
+      reload()
+      return
+    }
+    // A trip was delivered (or reset) since this opened: what "Cancel"
+    // means changed, so show the new state and ask again.
+    if (deliveredNow !== anyDelivered || (deliveredNow && awaitingNow.length === 0)) {
+      setCancelling(false)
+      setCancelError(
+        deliveredNow && awaitingNow.length === 0
+          ? 'Every trip is delivered now -- there is nothing left to cancel.'
+          : deliveredNow
+            ? 'A trip was delivered since you opened this booking, so only the remaining trips can be cancelled. Check and click again.'
+            : 'The trips changed since you opened this booking. Check and click again.',
+      )
+      reload()
+      return
+    }
+
     const now = new Date().toISOString()
 
     // 1. The booking. Full cancel sets Cancelled (guarded so two staff
@@ -488,24 +528,44 @@ function BookingDetailModal({
     // 2. Its trips that haven't started. Only rows still Awaiting are
     // touched, so a trip dispatched in the meantime is left alone.
     let cancelledTrips: { itinerary_id: number; plate_number: string | null; trailer_id: number | null }[] = []
-    if (awaitingTrips.length > 0) {
+    if (awaitingNow.length > 0) {
       const { data, error: tripsError } = await supabase
         .from('itineraries')
         .update({ itinerary_status: 'Cancelled' })
-        .in('itinerary_id', awaitingTrips.map((t) => t.itinerary_id))
+        .in('itinerary_id', awaitingNow.map((t) => t.itinerary_id))
         .eq('itinerary_status', 'Awaiting')
         .select('itinerary_id, plate_number, trailer_id')
 
       if (tripsError) {
         setCancelling(false)
-        setCancelError(
+        // A toast, not cancelError: onChanged() below closes this modal
+        // (or reloads the inline list), which would wipe an in-modal message.
+        showToast(
           `Booking #${booking.booking_id} was marked cancelled, but its trips couldn't be ` +
             `(${tripsError.message}). This needs manual review on the Dispatch Board.`,
+          'error',
         )
         onChanged?.()
         return
       }
       cancelledTrips = data ?? []
+
+      // Take the driver/helper off the cancelled trips (same as a reassign
+      // on the Dispatch Board: deactivate, keep the row as history). Frees
+      // their time slot, and the itinerary_crews_notify trigger tells them.
+      if (cancelledTrips.length > 0) {
+        const { error: crewError } = await supabase
+          .from('itinerary_crews')
+          .update({ is_active: false, completed_at: now })
+          .in('itinerary_id', cancelledTrips.map((t) => t.itinerary_id))
+          .eq('is_active', true)
+        if (crewError) {
+          showToast(
+            `Trips cancelled, but their driver/helper couldn't be unassigned (${crewError.message}). Remove them on the Dispatch Board.`,
+            'error',
+          )
+        }
+      }
 
       // Free any truck/trailer that was assigned to a cancelled trip --
       // only if it's In Transit and not on another active trip
@@ -538,10 +598,11 @@ function BookingDetailModal({
 
     setCancelling(false)
 
-    if (cancelledTrips.length < awaitingTrips.length) {
-      setCancelError(
-        `Cancelled, but ${awaitingTrips.length - cancelledTrips.length} trip(s) changed status in the ` +
+    if (cancelledTrips.length < awaitingNow.length) {
+      showToast(
+        `Cancelled, but ${awaitingNow.length - cancelledTrips.length} trip(s) changed status in the ` +
           'meantime and were left as they are. Check them on the Dispatch Board.',
+        'error',
       )
       onChanged?.()
       return

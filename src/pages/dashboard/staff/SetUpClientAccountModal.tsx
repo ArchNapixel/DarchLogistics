@@ -7,6 +7,12 @@
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
+import {
+  ACCOUNT_MAX,
+  filterUsername,
+  passwordError,
+  usernameError,
+} from '../../../lib/clientAccount'
 
 const fieldClasses =
   'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -28,7 +34,10 @@ function SetUpClientAccountModal({
   onCreated: (clientId: number) => void
 }) {
   const [email, setEmail] = useState(client.email ?? '')
-  const [username, setUsername] = useState(client.client_name)
+  // Same username rules as the client's own sign-up (lib/clientAccount.ts),
+  // so the name can be typed at Client Login -- the company name with its
+  // spaces removed is just a starting suggestion.
+  const [username, setUsername] = useState(filterUsername(client.client_name).slice(0, ACCOUNT_MAX.username))
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,8 +48,9 @@ function SetUpClientAccountModal({
       setError('Enter an email, username, and password.')
       return
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.')
+    const ruleError = usernameError(username) ?? passwordError(password, password)
+    if (ruleError) {
+      setError(ruleError)
       return
     }
 
@@ -51,8 +61,9 @@ function SetUpClientAccountModal({
       'create-user-account',
       {
         body: {
-          email,
-          username,
+          // Lowercased like the client sign-up does, so Foo@x.com = foo@x.com.
+          email: email.trim().toLowerCase(),
+          username: username.trim(),
           password,
           user_role: 'Client',
           client_id: client.client_id,
@@ -127,7 +138,8 @@ function SetUpClientAccountModal({
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(filterUsername(e.target.value))}
+                  maxLength={ACCOUNT_MAX.username}
                   className={fieldClasses}
                 />
               </label>

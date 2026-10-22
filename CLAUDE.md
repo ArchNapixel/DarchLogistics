@@ -1058,7 +1058,9 @@ before creating it.
     `notifications` (`employee_id, kind assigned|removed|rescheduled,
     itinerary_id, read_at`; own SELECT/UPDATE). Time changes are NOT
     logged to `dispatch_status_logs` on purpose (its latest Delivered row
-    is the payroll delivery date). Booking cancel sends no "removed".
+    is the payroll delivery date). Booking cancel (2026-10-22) now
+    deactivates the cancelled trips' crew rows, so drivers DO get
+    "removed"; it also re-reads the trips fresh before deciding.
   - **A booking's trips run back to back** (no gap, no night cut-off):
     `chainSlots()` in `lib/tripSchedule.ts`. Approve chains them from the
     default start; saving a trip's time in EditTripTimeModal re-chains the

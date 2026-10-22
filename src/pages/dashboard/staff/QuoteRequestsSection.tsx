@@ -128,12 +128,22 @@ function QuoteRequestsSection() {
         title="Quotations"
         subtitle="Quote requests: waiting for review, approved into bookings, and rejected."
         actions={
-          <button
-            onClick={() => setShowNewQuote(true)}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
-            New Quote
-          </button>
+          <div className="flex gap-2">
+            {/* The list doesn't update by itself -- quotes other admins
+                handled, or new client quotes, show after a refresh. */}
+            <button
+              onClick={loadQuotes}
+              className="btn-secondary px-4 py-2 text-sm font-medium"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowNewQuote(true)}
+              className="btn-primary px-4 py-2 text-sm font-medium"
+            >
+              New Quote
+            </button>
+          </div>
         }
       />
 

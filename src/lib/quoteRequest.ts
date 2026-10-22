@@ -126,6 +126,9 @@ export function emailError(email: string): string | null {
 
 // Heaviest load one trailer can carry.
 export const MAX_WEIGHT_TONS = 45
+// Most trips one quote can ask for -- Approve creates one itinerary per
+// delivery, so an unbounded number would flood the Dispatch Board.
+export const MAX_DELIVERY_ORDERS = 50
 
 // Checks every shipment field and returns a message for each one with
 // a problem (empty object = all good). Number(...) on an empty/invalid
@@ -162,6 +165,8 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
   const deliveryOrderCount = Number(form.deliveryOrderCount)
   if (!Number.isInteger(deliveryOrderCount) || deliveryOrderCount <= 0) {
     errors.deliveryOrderCount = 'Enter 1 or more.'
+  } else if (deliveryOrderCount > MAX_DELIVERY_ORDERS) {
+    errors.deliveryOrderCount = `Max ${MAX_DELIVERY_ORDERS} per quote.`
   }
 
   if (!form.preferredPickupDate) {

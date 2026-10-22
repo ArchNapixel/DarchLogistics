@@ -190,7 +190,23 @@ export default function TripDocuments({
     if (files.length > 0) uploadMany(files)
   }
 
-  if (loadFailed) return <p className="text-sm text-red-600">Documents couldn't be loaded.</p>
+  if (loadFailed) {
+    return (
+      <p className="text-sm text-red-600">
+        Documents couldn't be loaded.{' '}
+        <button
+          type="button"
+          onClick={() => {
+            setLoadFailed(false)
+            load()
+          }}
+          className="font-medium underline"
+        >
+          Retry
+        </button>
+      </p>
+    )
+  }
 
   return (
     <div className="text-sm">

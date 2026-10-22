@@ -6,6 +6,7 @@
 // client portal. amount_to_pay itself never includes it, so an override
 // can't swallow or double-count a damage charge.
 import { supabase } from './supabaseClient'
+import { fetchIn } from './dashboardExpenses'
 
 // booking_id -> total approved Client damage (bookings with none are absent).
 export async function loadClientDamageChargesByBooking(bookingIds: number[]): Promise<{
@@ -15,20 +16,31 @@ export async function loadClientDamageChargesByBooking(bookingIds: number[]): Pr
   const byBooking = new Map<number, number>()
   if (bookingIds.length === 0) return { byBooking, error: null }
 
-  const { data: trips, error: tripsError } = await supabase
-    .from('itineraries')
-    .select('itinerary_id, booking_id')
-    .in('booking_id', bookingIds)
-  if (tripsError) return { byBooking, error: tripsError.message }
+  // fetchIn: ids in chunks (a long list makes the URL too big) and every
+  // page past Supabase's 1000-row cap.
+  const { rows: trips, error: tripsError } = await fetchIn<{ itinerary_id: number; booking_id: number }>(
+    bookingIds,
+    (chunk, from, to) =>
+      supabase.from('itineraries').select('itinerary_id, booking_id').in('booking_id', chunk).range(from, to),
+  )
+  if (tripsError) return { byBooking, error: tripsError }
   if (trips.length === 0) return { byBooking, error: null }
 
-  const { data: damageRows, error: damageError } = await supabase
-    .from('delivery_damage_records')
-    .select('itinerary_id, estimated_damage_cost')
-    .in('itinerary_id', trips.map((t) => t.itinerary_id))
-    .eq('damage_status', 'Approved')
-    .eq('charge_to', 'Client')
-  if (damageError) return { byBooking, error: damageError.message }
+  const { rows: damageRows, error: damageError } = await fetchIn<{
+    itinerary_id: number
+    estimated_damage_cost: number | string | null
+  }>(
+    trips.map((t) => t.itinerary_id),
+    (chunk, from, to) =>
+      supabase
+        .from('delivery_damage_records')
+        .select('itinerary_id, estimated_damage_cost')
+        .in('itinerary_id', chunk)
+        .eq('damage_status', 'Approved')
+        .eq('charge_to', 'Client')
+        .range(from, to),
+  )
+  if (damageError) return { byBooking, error: damageError }
 
   const bookingByTrip = new Map(trips.map((t) => [t.itinerary_id, t.booking_id]))
   for (const row of damageRows) {

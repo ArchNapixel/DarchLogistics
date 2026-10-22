@@ -33,7 +33,11 @@
 // auto-rejects anything, it's just information for staff to weigh
 // before clicking Approve.
 //
-// Approve does 5 steps in order: resolve the client -- the `client_id`
+// Approve first CLAIMS the quote (Pending -> Approved, only if still
+// Pending, checked with .select().maybeSingle()) so two admins can never
+// both approve it; if a step fails before the booking exists, the claim
+// is released back to Pending. Reject has the same "still Pending" guard.
+// Then it does 5 steps in order: resolve the client -- the `client_id`
 // staff already linked on the request if there is one, else an existing
 // `clients` row matching by email (clients.email is unique), else a new
 // one created from the quote's free-text client info -- reuse existing `places` rows by
@@ -54,14 +58,20 @@
 // leave things half-done (quote Approved + booking created, but zero or
 // partial itineraries), so that failure is surfaced with an explicit
 // "needs manual review" message instead of a generic one.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { showToast } from '../../../components/Toast'
 import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
 import { formatMoney, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
-import { PAYMENT_TERMS_LABELS, REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
+import {
+  MAX_DELIVERY_ORDERS,
+  PAYMENT_TERMS_LABELS,
+  REJECTION_TAGS,
+  type RejectionTag,
+} from '../../../lib/quoteRequest'
 import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentFor } from '../../../lib/downpayment'
 
@@ -263,13 +273,26 @@ function QuoteReviewModal({
   const [driverPerTripFee, setDriverPerTripFee] = useState<number | null>(
     null,
   )
+  // True once staff typed in the distance box -- the background estimate
+  // below must never overwrite their number.
+  const distanceTypedRef = useRef(false)
+  // True once this quote is no longer Pending (our own Approve claimed
+  // it), so closing the modal must also drop it from the Pending list.
+  const [claimed, setClaimed] = useState(false)
+
+  // Close: if the quote already left Pending, tell the list to drop it
+  // (✕ after an approval used to leave it there, ready to approve twice).
+  function close() {
+    if (claimed) onResolved(quote.quote_request_id)
+    else onClose()
+  }
 
   // Load the settings the profitability panel needs. If any aren't
   // configured yet, that value stays null and the panel shows a note
   // instead of numbers.
   useEffect(() => {
     async function loadSettings() {
-      const { data } = await supabase
+      const { data, error: settingsError } = await supabase
         .from('app_settings')
         .select('setting_key, setting_value')
         .in('setting_key', [
@@ -279,7 +302,10 @@ function QuoteReviewModal({
           'default_trip_start_time',
         ])
 
-      if (!data) {
+      if (settingsError || !data) {
+        // Say what actually failed, instead of Approve later claiming the
+        // Settings rows are missing.
+        setError(`Couldn't load Settings (${settingsError?.message ?? 'no data'}). Close and reopen this quote.`)
         return
       }
 
@@ -320,6 +346,16 @@ function QuoteReviewModal({
   // fetchDrivingDistanceKm above). Either way the field stays editable.
   useEffect(() => {
     async function loadDistance() {
+      // Fills the box only if staff haven't typed in it yet -- the lookups
+      // below can take a few seconds (geocoding is throttled to 1/sec).
+      function applyEstimate(km: string, source: 'pins' | 'cache' | 'auto') {
+        if (distanceTypedRef.current) return
+        setEstimatedDistanceKm(km)
+        setDistanceIsFromPins(source === 'pins')
+        setDistanceIsCached(source === 'cache')
+        setDistanceIsAutoEstimated(source === 'auto')
+      }
+
       if (
         typeof quote.pickup_lat === 'number' &&
         typeof quote.pickup_lng === 'number' &&
@@ -333,8 +369,7 @@ function QuoteReviewModal({
             { lat: quote.delivery_lat, lon: quote.delivery_lng },
           )
           if (km !== null) {
-            setEstimatedDistanceKm(km.toFixed(2))
-            setDistanceIsFromPins(true)
+            applyEstimate(km.toFixed(2), 'pins')
             return
           }
         } catch {
@@ -353,8 +388,7 @@ function QuoteReviewModal({
       if (pickupId !== null && deliveryId !== null) {
         const cachedKm = await findCachedDistance(pickupId, deliveryId)
         if (cachedKm !== null) {
-          setEstimatedDistanceKm(String(cachedKm))
-          setDistanceIsCached(true)
+          applyEstimate(String(cachedKm), 'cache')
           return
         }
       }
@@ -379,8 +413,7 @@ function QuoteReviewModal({
 
         const km = await fetchDrivingDistanceKm(pickupPoint, deliveryPoint)
         if (km !== null) {
-          setEstimatedDistanceKm(km.toFixed(2))
-          setDistanceIsAutoEstimated(true)
+          applyEstimate(km.toFixed(2), 'auto')
         }
       } catch {
         // Geocoding/routing failed (network, rate limit, no match) --
@@ -435,8 +468,63 @@ function QuoteReviewModal({
       return
     }
 
+    // Older quotes can predate the delivery cap in lib/quoteRequest.ts.
+    const requestedTrips = quote.delivery_order_count ?? 1
+    if (requestedTrips > MAX_DELIVERY_ORDERS) {
+      setError(
+        `This quote asks for ${requestedTrips} trips (max ${MAX_DELIVERY_ORDERS}). Reject it ("Other") so the client splits it into smaller quotes.`,
+      )
+      return
+    }
+
     setSubmitting(true)
     setError(null)
+
+    // 0. Claim the quote FIRST: mark it Approved only if it's still
+    // Pending, and check a row really changed (.select().maybeSingle() --
+    // a blocked or already-handled update reports no error but changes
+    // nothing). Nothing else is written until this succeeds, so two
+    // admins / two tabs can never both create a booking for one quote.
+    const { data: claimedRow, error: claimError } = await supabase
+      .from('quote_requests')
+      .update({ request_status: 'Approved' })
+      .eq('quote_request_id', quote.quote_request_id)
+      .eq('request_status', 'Pending')
+      .select('quote_request_id')
+      .maybeSingle()
+
+    if (claimError) {
+      setError(claimError.message)
+      setSubmitting(false)
+      return
+    }
+    if (!claimedRow) {
+      setSubmitting(false)
+      showToast('Another admin already handled this quote -- it is no longer pending.', 'error')
+      onResolved(quote.quote_request_id)
+      return
+    }
+    setClaimed(true)
+
+    // A step before the booking failed: put the quote back to Pending so
+    // it can simply be approved again (no booking exists yet). Guarded on
+    // 'Approved' so it never undoes anything else.
+    async function releaseClaim(message: string) {
+      const { data: released } = await supabase
+        .from('quote_requests')
+        .update({ request_status: 'Pending' })
+        .eq('quote_request_id', quote.quote_request_id)
+        .eq('request_status', 'Approved')
+        .select('quote_request_id')
+        .maybeSingle()
+      if (released) setClaimed(false)
+      setError(
+        released
+          ? `${message} Nothing was created; the quote is back to Pending.`
+          : `${message} The quote could not be set back to Pending -- check the Approved tab (it will show "No booking found").`,
+      )
+      setSubmitting(false)
+    }
 
     // 1. Resolve the client, in order of how certain we are: a client
     // staff already linked on the request itself, else an existing one
@@ -452,35 +540,37 @@ function QuoteReviewModal({
       // would duplicate the client whenever they have no email on file.
       clientId = quote.client_id
     } else if (quote.contact_email) {
-      const { data: existingClient, error: existingClientError } =
+      // Case-insensitive (Juan@x.com = juan@x.com). ilike treats % and _ as
+      // wildcards, so they're escaped to match literally.
+      const email = quote.contact_email.trim().toLowerCase()
+      const { data: existingClients, error: existingClientError } =
         await supabase
           .from('clients')
           .select('client_id')
-          .eq('email', quote.contact_email)
-          .maybeSingle()
+          .ilike('email', email.replace(/[\\%_]/g, '\\$&'))
+          .order('client_id')
+          .limit(1)
 
       if (existingClientError) {
-        setError(existingClientError.message)
-        setSubmitting(false)
+        await releaseClaim(existingClientError.message)
         return
       }
 
-      if (existingClient) {
-        clientId = existingClient.client_id
+      if (existingClients.length > 0) {
+        clientId = existingClients[0].client_id
       } else {
         const { data: newClient, error: clientError } = await supabase
           .from('clients')
           .insert({
             client_name: quote.client_name,
-            email: quote.contact_email,
+            email,
             phone_number: quote.contact_number,
           })
           .select('client_id')
           .single()
 
         if (clientError || !newClient) {
-          setError(clientError?.message ?? 'Could not create client record.')
-          setSubmitting(false)
+          await releaseClaim(clientError?.message ?? 'Could not create client record.')
           return
         }
 
@@ -499,8 +589,7 @@ function QuoteReviewModal({
         .single()
 
       if (clientError || !newClient) {
-        setError(clientError?.message ?? 'Could not create client record.')
-        setSubmitting(false)
+        await releaseClaim(clientError?.message ?? 'Could not create client record.')
         return
       }
 
@@ -514,16 +603,14 @@ function QuoteReviewModal({
     // free-text landmark reads completely differently.
     const pickupResult = await findOrCreatePlace(quote.pickup_city, quote.pickup_barangay)
     if ('error' in pickupResult) {
-      setError(pickupResult.error)
-      setSubmitting(false)
+      await releaseClaim(pickupResult.error)
       return
     }
     const pickupPlace = { place_id: pickupResult.placeId }
 
     const deliveryResult = await findOrCreatePlace(quote.delivery_city, quote.delivery_barangay)
     if ('error' in deliveryResult) {
-      setError(deliveryResult.error)
-      setSubmitting(false)
+      await releaseClaim(deliveryResult.error)
       return
     }
     const deliveryPlace = { place_id: deliveryResult.placeId }
@@ -543,12 +630,11 @@ function QuoteReviewModal({
         { onConflict: 'place_id_a,place_id_b' },
       )
 
-    // 3. Update the quote request: approved, with the final rate/terms
-    // and links to the client/place records just created.
-    const { error: updateError } = await supabase
+    // 3. Link the (already Approved, step 0) quote to the client/place
+    // records just resolved, with the final rate/terms.
+    const { data: linkedRow, error: updateError } = await supabase
       .from('quote_requests')
       .update({
-        request_status: 'Approved',
         proposed_rate: rateValue,
         payment_terms: paymentTerms,
         client_id: clientId,
@@ -556,10 +642,11 @@ function QuoteReviewModal({
         place_of_delivery_id: deliveryPlace.place_id,
       })
       .eq('quote_request_id', quote.quote_request_id)
+      .select('quote_request_id')
+      .maybeSingle()
 
-    if (updateError) {
-      setError(updateError.message)
-      setSubmitting(false)
+    if (updateError || !linkedRow) {
+      await releaseClaim(updateError?.message ?? 'Could not update the quote.')
       return
     }
 
@@ -600,8 +687,8 @@ function QuoteReviewModal({
       .single()
 
     if (bookingError || !newBooking) {
-      setSubmitting(false)
-      setError(bookingError?.message ?? 'Could not create booking.')
+      // No booking exists yet, so the quote can safely go back to Pending.
+      await releaseClaim(bookingError?.message ?? 'Could not create booking.')
       return
     }
 
@@ -677,7 +764,9 @@ function QuoteReviewModal({
     setSubmitting(true)
     setError(null)
 
-    const { error: rejectError } = await supabase
+    // Only while still Pending -- never overwrite a quote another admin
+    // already approved (its booking would stay, labelled Rejected).
+    const { data: rejectedRow, error: rejectError } = await supabase
       .from('quote_requests')
       .update({
         request_status: 'Rejected',
@@ -685,12 +774,18 @@ function QuoteReviewModal({
         rejection_tag: rejectTag,
       })
       .eq('quote_request_id', quote.quote_request_id)
+      .eq('request_status', 'Pending')
+      .select('quote_request_id')
+      .maybeSingle()
 
     setSubmitting(false)
 
     if (rejectError) {
       setError(rejectError.message)
       return
+    }
+    if (!rejectedRow) {
+      showToast('Another admin already handled this quote -- it is no longer pending.', 'error')
     }
 
     onResolved(quote.quote_request_id)
@@ -756,7 +851,7 @@ function QuoteReviewModal({
             )}
           </h3>
           <button
-            onClick={onClose}
+            onClick={close}
             aria-label="Close"
             className="text-slate-400 hover:text-slate-700"
           >
@@ -866,6 +961,7 @@ function QuoteReviewModal({
                   step="0.01"
                   value={estimatedDistanceKm}
                   onChange={(e) => {
+                    distanceTypedRef.current = true
                     setEstimatedDistanceKm(e.target.value)
                     setDistanceIsCached(false)
                     setDistanceIsAutoEstimated(false)

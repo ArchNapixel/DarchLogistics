@@ -111,14 +111,21 @@ function EditTripTimeModal({
     )
     const failures: string[] = []
     for (let i = 0; i < laterTrips.length; i++) {
-      const { error: chainError } = await supabase
+      // Only while the trip is STILL Awaiting (laterTrips is from when the
+      // board loaded -- one dispatched since keeps its slot), and check a
+      // row really changed.
+      const { data: moved, error: chainError } = await supabase
         .from('itineraries')
         .update({
           trip_start_at: new Date(slots[i].start).toISOString(),
           trip_end_at: new Date(slots[i].end).toISOString(),
         })
         .eq('itinerary_id', laterTrips[i].itinerary_id)
+        .eq('itinerary_status', 'Awaiting')
+        .select('itinerary_id')
+        .maybeSingle()
       if (chainError) failures.push(`trip #${laterTrips[i].itinerary_id}: ${chainError.message}`)
+      else if (!moved) failures.push(`trip #${laterTrips[i].itinerary_id}: no longer Awaiting, left as is`)
     }
     setSaving(false)
     onSaved(
