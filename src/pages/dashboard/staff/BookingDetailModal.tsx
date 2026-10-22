@@ -261,7 +261,10 @@ function BookingDetailModal({
   onChanged,
   inline = false,
   onMinimize,
+  highlightTripId = null,
 }: {
+  // Trip to highlight + scroll to in the trips table (Bookings' "Find trip").
+  highlightTripId?: number | null
   // Inline only: shows a "Minimize" button that collapses the card.
   onMinimize?: () => void
   booking: Booking
@@ -283,6 +286,13 @@ function BookingDetailModal({
   const [cancelError, setCancelError] = useState<string | null>(null)
   // Which trip's documents panel is open under the trips table (null = none).
   const [docsTripId, setDocsTripId] = useState<number | null>(null)
+
+  // Once the trips have loaded, bring the highlighted trip's row into view.
+  useEffect(() => {
+    if (details && highlightTripId) {
+      document.getElementById(`trip-row-${highlightTripId}`)?.scrollIntoView({ block: 'center' })
+    }
+  }, [details, highlightTripId])
 
   // Keeps the "N files" label in the table in step with uploads/deletes.
   const updateDocumentCount = useCallback((itineraryId: number, count: number) => {
@@ -612,8 +622,19 @@ function BookingDetailModal({
                 </thead>
                 <tbody>
                   {trips.map((trip) => (
-                    <tr key={trip.itinerary_id} className="border-b border-slate-100 last:border-0">
-                      <td className="px-3 py-2 text-slate-900">#{trip.itinerary_id}</td>
+                    <tr
+                      key={trip.itinerary_id}
+                      id={`trip-row-${trip.itinerary_id}`}
+                      className={`border-b border-slate-100 last:border-0 ${
+                        trip.itinerary_id === highlightTripId ? 'bg-amber-50 outline-2 -outline-offset-2 outline-amber-400' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-slate-900">
+                        #{trip.itinerary_id}
+                        {trip.itinerary_id === highlightTripId && (
+                          <span className="block text-xs font-medium text-amber-700">Found</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} />
                       </td>

@@ -16,8 +16,12 @@
 // Delivered as the trips move (sync_booking_status trigger in the DB).
 //
 // /dashboard/bookings?booking=12 opens booking #12's detail straight
-// away -- the Dispatch Board links its booking numbers here.
-import { useEffect, useState } from 'react'
+// away -- the Dispatch Board links its booking numbers here. Adding
+// &trip=57 also highlights trip #57's row in it; the "Find trip #" box
+// looks up which booking a trip number belongs to and opens that link.
+// Trip numbers are itineraries.itinerary_id -- one running number
+// across all bookings, not "trip 1 of booking 12".
+import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
@@ -97,6 +101,9 @@ function BookingsSection() {
   const [error, setError] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [search, setSearch] = useState('')
+  const [tripQuery, setTripQuery] = useState('')
+  const [tripError, setTripError] = useState<string | null>(null)
+  const [findingTrip, setFindingTrip] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Active')
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode)
   // Full view: bookings the user expanded/minimized away from the default.
@@ -121,6 +128,7 @@ function BookingsSection() {
     }
   }
   const linkedBookingId = Number(searchParams.get('booking')) || null
+  const linkedTripId = Number(searchParams.get('trip')) || null
 
   useEffect(() => {
     loadBookings()
@@ -135,6 +143,36 @@ function BookingsSection() {
   function closeDetail() {
     setSelectedBooking(null)
     if (linkedBookingId) setSearchParams({}, { replace: true })
+  }
+
+  // "Find trip #": which booking is this trip on? Then open that booking
+  // with the trip highlighted (same ?booking= link the Dispatch Board uses).
+  async function findTrip(e: FormEvent) {
+    e.preventDefault()
+    const tripId = Number(tripQuery.replace(/[^\d]/g, ''))
+    if (!tripId) {
+      setTripError('Enter a trip number.')
+      return
+    }
+    setFindingTrip(true)
+    const { data, error: tripLookupError } = await supabase
+      .from('itineraries')
+      .select('booking_id')
+      .eq('itinerary_id', tripId)
+      .maybeSingle()
+    setFindingTrip(false)
+
+    if (tripLookupError) {
+      setTripError(tripLookupError.message)
+      return
+    }
+    if (!data) {
+      setTripError(`No trip #${tripId} found.`)
+      return
+    }
+    setTripError(null)
+    setSelectedBooking(null)
+    setSearchParams({ booking: String(data.booking_id), trip: String(tripId) })
   }
 
   async function loadBookings() {
@@ -341,6 +379,29 @@ function BookingsSection() {
               aria-label="Search bookings"
               className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
             />
+            <form onSubmit={findTrip} className="flex">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={tripQuery}
+                onChange={(e) => {
+                  setTripQuery(e.target.value.replace(/[^\d#]/g, ''))
+                  setTripError(null)
+                }}
+                placeholder="Trip #"
+                aria-label="Find a trip by number"
+                maxLength={10}
+                className="w-24 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={findingTrip}
+                className="-ml-px border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {findingTrip ? 'Finding…' : 'Find trip'}
+              </button>
+            </form>
+            {tripError && <p className="w-full text-sm text-red-700">{tripError}</p>}
             {/* View toggle -- shows the icon of the view you'd switch TO. */}
             <button
               type="button"
@@ -508,6 +569,8 @@ function BookingsSection() {
       {shownBooking && (
         <BookingDetailModal
           booking={shownBooking}
+          // Only when opened from a ?trip= link (Find trip), not a row click.
+          highlightTripId={selectedBooking ? null : linkedTripId}
           onClose={closeDetail}
           onChanged={() => {
             closeDetail()

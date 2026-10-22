@@ -31,7 +31,13 @@ before creating it.
   `bookings` directly), and submitting a new quote (`NewQuoteModal.tsx`,
   uses the same `LocationPicker` as the public quote form).
 - Quotations (`/dashboard/quotations`, QuoteRequestsSection +
-  QuoteReviewModal) — Approve finds-or-creates the `clients` row, creates 2
+  QuoteReviewModal) — tabs Pending / Approved / Rejected (2026-10-22).
+  Approved lists each approved quote with its booking (found via
+  `bookings.quote_request_id`, client name from that booking's
+  `clients` row, link to `/dashboard/bookings?booking=ID`, booking
+  status; "No booking found — needs manual review" if Approve failed
+  halfway). Rejected shows the tag + reason. Both read-only, newest 200.
+  Approve finds-or-creates the `clients` row, creates 2
   `places` rows, marks the quote `Approved`, creates the `bookings` row
   (`booking_status: 'Draft'`, `rate_of_delivery_service` set from the
   approved rate), then creates a matching `itineraries` row
@@ -167,7 +173,12 @@ before creating it.
   Receivable; the dashboard revenue card was not changed. Freed trucks/trailers set back to `Available`,
   each trip change logged to `dispatch_status_logs`. The detail modal
   also shows cargo, schedule, terms, pin links, and a trips table
-  (status/driver/helper/truck/trailer).
+  (status/driver/helper/truck/trailer). **Find trip #** box (2026-10-22)
+  on Bookings: looks up `itineraries.booking_id` for that trip number
+  and opens `?booking=ID&trip=N`, which highlights + scrolls to that
+  trip's row (`highlightTripId` prop). Trip number = `itinerary_id`, one
+  running number across all bookings (user's choice — no "trip 1 of
+  booking 12" numbering).
 - Dispatch Board (`/dashboard/dispatch`, DispatchBoardSection) — reads
   active itineraries (`itinerary_status` not in Delivered/Cancelled),
   joined in JS with `places` for pickup/delivery names. Status dropdown
