@@ -14,6 +14,20 @@ const fieldClasses =
   'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
+// Max characters per field (also the inputs' maxLength). Password is 72
+// because Supabase silently ignores anything past 72 bytes.
+const MAX = { username: 30, name: 100, email: 100, password: 72 }
+
+// Typing filters, so bad characters never get into the boxes at all.
+// Username: letters, digits, dot, underscore, dash.
+const filterUsername = (v: string) => v.replace(/[^A-Za-z0-9._-]/g, '')
+// Name or company: letters (any language), digits, and . , ' & ( ) / -
+// plus single spaces (companies like "3M Trading Co., Inc." must fit).
+const filterName = (v: string) =>
+  v.replace(/\s/g, ' ').replace(/[^\p{L}\p{M}0-9 .,'’&()/-]/gu, '').replace(/ {2,}/g, ' ')
+// Email / username-or-email: no spaces anywhere.
+const filterNoSpaces = (v: string) => v.replace(/\s/g, '')
+
 function ClientLoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [name, setName] = useState('')
@@ -42,17 +56,27 @@ function ClientLoginPage() {
       if (!name.trim()) return setError('Enter your name or company name.')
       const pErr = phoneError(phone)
       if (pErr) return setError(pErr)
+      if (name.trim().length > MAX.name)
+        return setError(`Name is too long (max ${MAX.name} characters).`)
       const u = username.trim()
-      if (u.length < 3 || u.includes('@') || /\s/.test(u))
-        return setError('Username: at least 3 characters, no spaces or "@".')
+      if (u.length < 3 || u.length > MAX.username || !/^[A-Za-z0-9._-]+$/.test(u))
+        return setError(
+          `Username: 3–${MAX.username} characters, letters, numbers, dot, underscore or dash only.`,
+        )
+      if (email.trim().length > MAX.email)
+        return setError(`Email is too long (max ${MAX.email} characters).`)
       if (password.length < 6)
         return setError('Password must be at least 6 characters.')
+      if (new TextEncoder().encode(password).length > MAX.password)
+        return setError(`Password is too long (max ${MAX.password} characters).`)
       if (password !== confirmPassword)
         return setError('Passwords do not match.')
     }
 
     setSubmitting(true)
-    const cleanEmail = email.trim()
+    // Emails are lowercased so Foo@x.com and foo@x.com are one account.
+    // A username (no "@") is left as typed -- its lookup decides the case rule.
+    const cleanEmail = email.includes('@') ? email.trim().toLowerCase() : email.trim()
 
     if (signingUp) {
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -63,7 +87,7 @@ function ClientLoginPage() {
           emailRedirectTo: `${window.location.origin}/client-login`,
           data: {
             sign_up_as_client: true,
-            client_name: name.trim(),
+            client_name: name.trim().replace(/\s+/g, ' '),
             username: username.trim(),
             phone_number: phoneDigits(phone),
           },
@@ -149,8 +173,9 @@ function ClientLoginPage() {
               <input
                 type="text"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(filterNoSpaces(e.target.value))}
                 required
+                maxLength={MAX.email}
                 autoComplete="username"
                 className={fieldClasses}
               />
@@ -162,8 +187,9 @@ function ClientLoginPage() {
               <input
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(filterUsername(e.target.value))}
                 required
+                maxLength={MAX.username}
                 autoComplete="username"
                 className={fieldClasses}
               />
@@ -177,6 +203,7 @@ function ClientLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              maxLength={MAX.password}
               autoComplete={signingUp ? 'new-password' : 'current-password'}
               className={fieldClasses}
             />
@@ -199,6 +226,7 @@ function ClientLoginPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  maxLength={MAX.password}
                   autoComplete="new-password"
                   className={fieldClasses}
                 />
@@ -208,8 +236,9 @@ function ClientLoginPage() {
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => setName(filterName(e.target.value))}
                   required
+                  maxLength={MAX.name}
                   autoComplete="name"
                   className={fieldClasses}
                 />
@@ -219,8 +248,9 @@ function ClientLoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(filterNoSpaces(e.target.value))}
                   required
+                  maxLength={MAX.email}
                   autoComplete="email"
                   className={fieldClasses}
                 />
@@ -257,6 +287,9 @@ function ClientLoginPage() {
           type="button"
           onClick={() => {
             setMode(signingUp ? 'login' : 'signup')
+            // Don't carry a typed password over to the other form.
+            setPassword('')
+            setConfirmPassword('')
             setError(null)
             setNotice(null)
           }}
