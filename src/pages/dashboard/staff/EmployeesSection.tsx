@@ -4,6 +4,8 @@
 // status name is looked up separately and merged in here (same pattern
 // as place-name lookups in DriverTasks.tsx / MyBookingsSection.tsx).
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
@@ -272,6 +274,8 @@ function EmployeesSection() {
       (!statusFilter || employee.status === statusFilter),
   )
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(filteredEmployees, `${activeTab}|${searchTerm}|${positionFilter}|${statusFilter}`)
   return (
     <div>
       <PageHeader
@@ -383,7 +387,7 @@ function EmployeesSection() {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((employee) => {
+              {paged.rows.map((employee) => {
                 const isLinked = linkedEmployeeIds.has(employee.employee_id)
                 return (
                   <tr
@@ -448,6 +452,7 @@ function EmployeesSection() {
               })}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
 

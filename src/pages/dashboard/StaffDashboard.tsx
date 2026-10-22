@@ -18,6 +18,9 @@ const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On H
 // color (see the design system notes in index.css).
 const ATTENTION_CARDS = new Set(['Pending Quotes', 'Pending Approval', 'Current Balance'])
 
+// Today's Deliveries shows this many trips per page (no scrolling box).
+const DELIVERIES_PER_PAGE = 5
+
 // The period dropdown. Each `period` is one fixed object so the expense
 // cards (which reload when it changes) don't reload on every render.
 const REVENUE_RANGES = [
@@ -66,6 +69,7 @@ function StaffDashboard() {
   const [revenueLoading, setRevenueLoading] = useState(true)
   const [revenueError, setRevenueError] = useState<string | null>(null)
   const [todayDeliveryRows, setTodayDeliveryRows] = useState<TodayDelivery[]>([])
+  const [deliveryPage, setDeliveryPage] = useState(0)
   const [todayDeliveriesLoading, setTodayDeliveriesLoading] = useState(true)
   const [todayDeliveriesError, setTodayDeliveriesError] = useState<string | null>(
     null,
@@ -404,6 +408,15 @@ function StaffDashboard() {
     },
   ]
 
+  // Today's Deliveries: 5 per page instead of a scrolling box.
+  const deliveryPageCount = Math.max(Math.ceil(todayDeliveryRows.length / DELIVERIES_PER_PAGE), 1)
+  // Clamp in case the list got shorter (e.g. after a refresh).
+  const safeDeliveryPage = Math.min(deliveryPage, deliveryPageCount - 1)
+  const deliveriesOnPage = todayDeliveryRows.slice(
+    safeDeliveryPage * DELIVERIES_PER_PAGE,
+    (safeDeliveryPage + 1) * DELIVERIES_PER_PAGE,
+  )
+
   // Title + one row of cards (as many equal columns as there are cards).
   // Used both beside Top Unpaid Clients and in the lower rows.
   const renderGroup = (group: (typeof summaryGroups)[number], columns = group.cards.length, large = false) => (
@@ -417,16 +430,16 @@ function StaffDashboard() {
           <div
             key={card.label}
             className={`reports-blueprint-card dashboard-card-bold ${
-              large ? 'flex flex-col justify-center px-5 py-4' : 'px-3 py-2.5 sm:px-4 sm:py-3'
+              large ? 'flex flex-col justify-center px-4 py-2.5' : 'px-3 py-2 sm:px-4'
             }`}
           >
-            <p className={`font-ui leading-tight text-reports-ink ${large ? 'text-base' : 'text-xs sm:text-sm'}`}>
+            <p className={`font-ui leading-tight text-reports-ink ${large ? 'text-sm' : 'text-xs sm:text-sm'}`}>
               {card.label}
             </p>
             <p
               className={`font-condensed leading-none font-semibold ${
                 ATTENTION_CARDS.has(card.label) ? 'text-primary' : 'text-reports-ink'
-              } ${large ? 'mt-3 text-5xl font-bold' : 'mt-1 text-xl sm:text-2xl'}`}
+              } ${large ? 'mt-1.5 text-3xl font-bold' : 'mt-1 text-xl'}`}
             >
               {loading ? '--' : card.value}
             </p>
@@ -454,11 +467,20 @@ function StaffDashboard() {
         </p>
       )}
 
-      <div className="reports-blueprint-card dashboard-card-bold mt-4 px-[22px] py-4">
-        <div className="flex items-center justify-between">
+      <div className="reports-blueprint-card dashboard-card-bold mt-3 px-5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-4">
           <p className="font-ui text-sm font-medium text-neutral-500">
             Total Revenue <span className="normal-case">(collected)</span>
           </p>
+          {revenueError ? (
+            <p className="font-ui text-sm text-red-700">{revenueError}</p>
+          ) : (
+            <p className="font-condensed text-[28px] leading-none font-bold text-reports-ink">
+              {revenueLoading ? '--' : `${formatMoney(revenue)}`}
+            </p>
+          )}
+          </div>
           <div className="flex items-center gap-2">
             <select
               value={revenueRange}
@@ -481,19 +503,12 @@ function StaffDashboard() {
             </button>
           </div>
         </div>
-        {revenueError ? (
-          <p className="mt-2 font-ui text-sm text-red-700">{revenueError}</p>
-        ) : (
-          <p className="font-condensed mt-2 text-[40px] leading-none font-bold text-reports-ink">
-            {revenueLoading ? '--' : `${formatMoney(revenue)}`}
-          </p>
-        )}
       </div>
 
       {/* Costs for the same period as the revenue dropdown above. */}
       {/* Stacked in a column on the left; hovering a card expands just that one. */}
-      <div className="mt-5 flex flex-col gap-3 sm:gap-5 lg:flex-row lg:items-start">
-      <div className="flex flex-col gap-3 sm:gap-5 lg:w-1/3">
+      <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-3 lg:w-1/3">
         {[
           <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} />,
           <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'pay'} />,
@@ -510,13 +525,13 @@ function StaffDashboard() {
       </div>
       {/* Leaderboard to the right of the expense cards */}
       {/* Middle column: Top Unpaid Clients stretches to the full height of the row */}
-      {/* ponytail: side columns are a fixed 376px (= 3 collapsed expense cards) so
+      {/* ponytail: side columns are a fixed 264px (= 3 collapsed expense cards) so
           they don't grow when an expense card expands; update if card sizes change */}
-      <div className="lg:h-[376px] lg:w-1/3">
+      <div className="lg:h-[264px] lg:w-1/3">
         <TopCreditorsCard refreshKey={refreshKey} />
       </div>
       {/* Right column: the remaining summary groups, stacked */}
-      <div className="flex flex-col gap-4 lg:h-[376px] lg:w-1/3">
+      <div className="flex flex-col gap-3 lg:h-[264px] lg:w-1/3">
         {summaryGroups
           .filter((g) => ['Maintenance', 'Human Resource'].includes(g.title))
           .map((group) => (
@@ -526,7 +541,7 @@ function StaffDashboard() {
       </div>
 
       {/* Cash Advance with Operations to its right (width shared by card count) */}
-      <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:gap-5">
+      <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:gap-3">
         {['Cash Advance', 'Operations'].map((title) => {
           const group = summaryGroups.find((g) => g.title === title)!
           return (
@@ -537,9 +552,10 @@ function StaffDashboard() {
         })}
       </div>
 
-      <div className="mt-5">
+      <div className="mt-3">
         <h2 className="font-ui text-sm font-medium text-neutral-500">
           Today's Deliveries
+          {todayDeliveryRows.length > 0 && <span className="ml-1 text-neutral-400">({todayDeliveryRows.length})</span>}
         </h2>
 
         {todayDeliveriesLoading && (
@@ -558,7 +574,7 @@ function StaffDashboard() {
           <>
           {/* Phone: one stacked card per delivery (the table is too wide) */}
           <div className="mt-3 flex flex-col gap-3 sm:hidden">
-            {todayDeliveryRows.map((row) => (
+            {deliveriesOnPage.map((row) => (
               <div
                 key={row.itinerary_id}
                 className="border-2 border-slate-400 bg-reports-bg p-3 font-ui text-sm"
@@ -578,34 +594,34 @@ function StaffDashboard() {
             ))}
           </div>
 
-          <div className="mt-3 hidden max-h-96 overflow-y-auto overflow-x-auto border-2 border-slate-400 bg-reports-bg sm:block">
+          <div className="mt-2 hidden overflow-x-auto border-2 border-slate-400 bg-reports-bg sm:block">
             <table className="w-full text-left font-ui text-sm">
-              <thead className="sticky top-0 border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
+              <thead className="border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>
-                  <th className="px-4 py-3 font-medium">From</th>
-                  <th className="px-4 py-3 font-medium">To</th>
-                  <th className="px-4 py-3 font-medium">Rate</th>
-                  <th className="px-4 py-3 font-medium">Truck Assigned</th>
-                  <th className="px-4 py-3 font-medium">Trailer Assigned</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">From</th>
+                  <th className="px-4 py-2 font-medium">To</th>
+                  <th className="px-4 py-2 font-medium">Rate</th>
+                  <th className="px-4 py-2 font-medium">Truck Assigned</th>
+                  <th className="px-4 py-2 font-medium">Trailer Assigned</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {todayDeliveryRows.map((row) => (
+                {deliveriesOnPage.map((row) => (
                   <tr
                     key={row.itinerary_id}
                     className="border-b border-reports-hairline last:border-0"
                   >
-                    <td className="px-4 py-3 text-reports-ink">{row.from}</td>
-                    <td className="px-4 py-3 text-neutral-600">{row.to}</td>
-                    <td className="px-4 py-3 text-neutral-600">
+                    <td className="px-4 py-2 text-reports-ink">{row.from}</td>
+                    <td className="px-4 py-2 text-neutral-600">{row.to}</td>
+                    <td className="px-4 py-2 text-neutral-600">
                       {row.rate != null ? `${formatMoney(row.rate)}` : 'N/A'}
                     </td>
                     <td
                       className={
                         row.truckPlateNumber
-                          ? 'px-4 py-3 text-neutral-600'
-                          : 'px-4 py-3 text-neutral-400'
+                          ? 'px-4 py-2 text-neutral-600'
+                          : 'px-4 py-2 text-neutral-400'
                       }
                     >
                       {row.truckPlateNumber ?? 'Unassigned'}
@@ -613,13 +629,13 @@ function StaffDashboard() {
                     <td
                       className={
                         row.trailerPlateNumber
-                          ? 'px-4 py-3 text-neutral-600'
-                          : 'px-4 py-3 text-neutral-400'
+                          ? 'px-4 py-2 text-neutral-600'
+                          : 'px-4 py-2 text-neutral-400'
                       }
                     >
                       {row.trailerPlateNumber ?? 'Unassigned'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2">
                       <StatusBadge status={row.status} />
                     </td>
                   </tr>
@@ -627,6 +643,29 @@ function StaffDashboard() {
               </tbody>
             </table>
           </div>
+          {deliveryPageCount > 1 && (
+            <div className="mt-2 flex items-center justify-end gap-3 font-ui text-sm text-neutral-600">
+              <button
+                type="button"
+                onClick={() => setDeliveryPage((p) => Math.max(p - 1, 0))}
+                disabled={safeDeliveryPage === 0}
+                className="border border-reports-hairline px-2.5 py-1 hover:border-accent-500 disabled:opacity-40"
+              >
+                ‹ Previous
+              </button>
+              <span>
+                Page {safeDeliveryPage + 1} of {deliveryPageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDeliveryPage((p) => Math.min(p + 1, deliveryPageCount - 1))}
+                disabled={safeDeliveryPage >= deliveryPageCount - 1}
+                className="border border-reports-hairline px-2.5 py-1 hover:border-accent-500 disabled:opacity-40"
+              >
+                Next ›
+              </button>
+            </div>
+          )}
           </>
         )}
       </div>

@@ -4,6 +4,8 @@
 // state for delete failures so the list stays visible underneath a
 // failed-delete message instead of disappearing.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import AddInventoryItemModal, {
   type EditableInventoryItem,
@@ -112,6 +114,8 @@ function InventorySection() {
     loadItems()
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(items, '')
   return (
     <div>
       <PageHeader
@@ -159,7 +163,7 @@ function InventorySection() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {paged.rows.map((item) => (
                 <tr
                   key={item.item_id}
                   className="border-b border-slate-100 last:border-0"
@@ -198,6 +202,7 @@ function InventorySection() {
               ))}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
 

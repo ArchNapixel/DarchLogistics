@@ -22,10 +22,13 @@
 // Trip numbers are itineraries.itinerary_id -- one running number
 // across all bookings, not "trip 1 of booking 12".
 import { useEffect, useState, type FormEvent } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { deliveryAmountFor } from '../../../lib/paymentDue'
 import BookingDetailModal from './BookingDetailModal'
 import PaymentDuePanel from './PaymentDuePanel'
 import PageHeader from '../../../components/PageHeader'
@@ -66,6 +69,12 @@ export type Booking = {
   // When the booking was created (Bills Receivable: earliest allowed
   // "date received" for its payments). Optional for the same reason.
   created_at?: string
+  // Cancelled trips -- NOT in total_trips (a 3-trip booking with 2
+  // cancelled reads "1/1 · 2 cancelled"). Optional for the same reason.
+  cancelled_trips?: number
+  // Set when the booking was cancelled (fully or partway): it's then only
+  // billed for delivered trips (deliveryAmountFor in lib/paymentDue.ts).
+  cancelled_at?: string | null
 }
 
 const STATUS_FILTERS = [
@@ -185,7 +194,7 @@ function BookingsSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
+        'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
       )
       .order('created_at', { ascending: false })
 
@@ -277,9 +286,13 @@ function BookingsSection() {
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
     const itineraryRows = itinerariesResult.data ?? []
+    const cancelledTripsByBooking = new Map<number, number>()
     itineraryRows.forEach((itinerary) => {
-      // Cancelled trips aren't part of the contract any more.
-      if (itinerary.itinerary_status === 'Cancelled') return
+      // Cancelled trips aren't part of the contract any more (counted separately).
+      if (itinerary.itinerary_status === 'Cancelled') {
+        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
+        return
+      }
       totalTripsByBooking.set(
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
@@ -299,7 +312,12 @@ function BookingsSection() {
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
+        const billableAmount =
+          deliveryAmountFor({
+            amountToPay: b.amount_to_pay,
+            computedBillable: computedBillableAmount,
+            hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
+          }) + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -322,6 +340,8 @@ function BookingsSection() {
           reference_code:
             b.quote_request_id !== null ? (referenceByQuote.get(b.quote_request_id) ?? null) : null,
           invoice_number: b.invoice_number,
+          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
+          cancelled_at: b.cancelled_at,
         }
       }),
     )
@@ -347,6 +367,8 @@ function BookingsSection() {
   const countFor = (filter: StatusFilter) =>
     bookings.filter((booking) => matchesStatus(booking.status, filter)).length
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(visibleBookings, `${statusFilter}|${search}|${viewMode}`)
   return (
     <div>
       <PageHeader title="Bookings & Trips" subtitle="Every client booking and its trips." />
@@ -454,7 +476,7 @@ function BookingsSection() {
             // Finished bookings (Delivered/Cancelled) start minimized to one
             // line; active ones start expanded. Clicking flips either way.
             <div className="grid gap-4">
-              {visibleBookings.map((booking) => {
+              {paged.rows.map((booking) => {
                 const finished = booking.status === 'Delivered' || booking.status === 'Cancelled'
                 // toggledIds = bookings clicked away from their default state.
                 const expanded = finished === toggledIds.has(booking.booking_id)
@@ -503,7 +525,7 @@ function BookingsSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleBookings.map((booking) => (
+                  {paged.rows.map((booking) => (
                     <tr
                       key={booking.booking_id}
                       onClick={() => setSelectedBooking(booking)}
@@ -552,8 +574,8 @@ function BookingsSection() {
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {formatMoney(booking.total_contract_value)}
                         <span className="ml-1 text-xs text-slate-400">
-                          ({booking.completed_trips}/{booking.total_trips}{' '}
-                          trips)
+                          ({booking.completed_trips}/{booking.total_trips} trips
+                          {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''})
                         </span>
                       </td>
                     </tr>
@@ -562,6 +584,7 @@ function BookingsSection() {
               </table>
             </div>
           )}
+          <Pager {...paged.pager} />
         </div>
 
         <div className="w-full lg:max-w-sm">

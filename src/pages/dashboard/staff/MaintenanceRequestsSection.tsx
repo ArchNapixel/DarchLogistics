@@ -8,6 +8,8 @@
 // Approve/Reject are Admin-only -- Dispatchers can see this page (it's
 // shared with them via the Maintenance/Reports tabs) but can't act here.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { isAdmin } from '../../../lib/roles'
 import {
@@ -112,6 +114,8 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
     onChanged?.()
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(requests, '', 5)
   if (loading) {
     return <p className="text-slate-500">Loading maintenance requests...</p>
   }
@@ -132,7 +136,7 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
         <EmptyState message="No pending maintenance requests." />
       ) : (
         <div className="grid gap-3">
-          {requests.map((request) => (
+          {paged.rows.map((request) => (
             <div
               key={request.request_id}
               className="border border-slate-200 bg-white p-4 shadow-sm"
@@ -176,6 +180,7 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
           ))}
         </div>
       )}
+      <Pager {...paged.pager} />
     </div>
   )
 }

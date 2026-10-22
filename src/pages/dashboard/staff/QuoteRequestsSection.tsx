@@ -16,6 +16,11 @@ import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import StatusBadge from '../../../components/StatusBadge'
+import Pager from '../../../components/Pager'
+import { pageSlice } from '../../../lib/pageSlice'
+
+// Rows per page on every tab (Pending, Approved, Rejected).
+const QUOTES_PER_PAGE = 10
 import { REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
 
 // The shape of a row from the quote_requests table (only the fields we
@@ -73,6 +78,7 @@ function QuoteRequestsSection() {
     null,
   )
   const [showNewQuote, setShowNewQuote] = useState(false)
+  const [pendingPage, setPendingPage] = useState(0)
 
   useEffect(() => {
     loadQuotes()
@@ -96,6 +102,8 @@ function QuoteRequestsSection() {
     setError(null)
     setLoading(false)
   }
+
+  const pendingSlice = pageSlice(quotes, pendingPage, QUOTES_PER_PAGE)
 
   // Called by the modal after a successful approve/reject -- the quote is
   // no longer Pending, so just remove it from this list.
@@ -166,7 +174,7 @@ function QuoteRequestsSection() {
               </tr>
             </thead>
             <tbody>
-              {quotes.map((quote) => (
+              {pendingSlice.rows.map((quote) => (
                 <tr
                   key={quote.quote_request_id}
                   className="border-b border-slate-100 last:border-0"
@@ -219,6 +227,9 @@ function QuoteRequestsSection() {
             </tbody>
           </table>
         </div>
+      )}
+      {tab === 'pending' && (
+        <Pager page={pendingSlice.page} pageCount={pendingSlice.pageCount} onChange={setPendingPage} />
       )}
 
       {selectedQuote && (
@@ -340,6 +351,8 @@ function QuoteHistory({ status }: { status: 'Approved' | 'Rejected' }) {
   }, [status])
 
   const rows = result?.rows ?? []
+  const [page, setPage] = useState(0)
+  const pageRows = pageSlice(rows, page, QUOTES_PER_PAGE)
   const bookingByQuote = result?.bookingByQuote ?? new Map<number, LinkedBooking>()
 
   if (loading) return <p className="mt-4 text-slate-500">Loading {status.toLowerCase()} quotes...</p>
@@ -370,7 +383,7 @@ function QuoteHistory({ status }: { status: 'Approved' | 'Rejected' }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((q) => {
+          {pageRows.rows.map((q) => {
             const booking = bookingByQuote.get(q.quote_request_id)
             const tag =
               q.rejection_tag && q.rejection_tag in REJECTION_TAGS
@@ -454,6 +467,7 @@ function QuoteHistory({ status }: { status: 'Approved' | 'Rejected' }) {
           })}
         </tbody>
       </table>
+      <Pager page={pageRows.page} pageCount={pageRows.pageCount} onChange={setPage} className="border-t border-slate-200 px-4 py-2" />
     </div>
   )
 }

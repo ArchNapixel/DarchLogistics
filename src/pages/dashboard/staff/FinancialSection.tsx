@@ -20,6 +20,8 @@
 // less left to pay. Paid ahead of delivery shows as "Paid ahead", not
 // "Refund".
 import { useEffect, useRef, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { Link } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
@@ -45,6 +47,7 @@ import PageHeader from '../../../components/PageHeader'
 import { formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpayment'
+import { deliveryAmountFor } from '../../../lib/paymentDue'
 
 // PaymentDetailsFields: method / date received / reference / OR number /
 // note / optional proof file, shown under the amount in every payment form.
@@ -729,9 +732,9 @@ function FinancialActionModal({
 // amount_to_pay override (see paymentDue.ts).
 // Delivery part only -- this is what gets written to amount_to_pay.
 function getDeliveryTarget(booking: Booking): number {
-  // A cancelled booking is only ever billed for the trips actually
-  // delivered -- an earlier lock at the full contract value is capped.
-  if (booking.status === 'Cancelled') {
+  // A booking with any cancellation is only ever billed for the trips
+  // actually delivered -- an earlier lock at the full contract value is capped.
+  if (booking.status === 'Cancelled' || booking.cancelled_at) {
     return Math.min(booking.amount_to_pay ?? Infinity, booking.computed_billable_amount)
   }
   return booking.amount_to_pay ?? booking.total_contract_value
@@ -785,7 +788,7 @@ function FinancialSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at, created_at',
+        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
       )
       .order('created_at', { ascending: false })
 
@@ -854,7 +857,13 @@ function FinancialSection() {
 
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
+    const cancelledTripsByBooking = new Map<number, number>()
     itinerariesResult.data.forEach((itinerary) => {
+      // Cancelled trips aren't part of the booking any more (counted separately).
+      if (itinerary.itinerary_status === 'Cancelled') {
+        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
+        return
+      }
       totalTripsByBooking.set(
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
@@ -896,11 +905,12 @@ function FinancialSection() {
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        // Cancelled: only delivered trips are billable (same cap as getDeliveryTarget).
-        const deliveryAmount =
-          b.booking_status === 'Cancelled'
-            ? Math.min(b.amount_to_pay ?? Infinity, computedBillableAmount)
-            : (b.amount_to_pay ?? computedBillableAmount)
+        // Any cancellation: only delivered trips are billable (same cap as getDeliveryTarget).
+        const deliveryAmount = deliveryAmountFor({
+          amountToPay: b.amount_to_pay,
+          computedBillable: computedBillableAmount,
+          hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
+        })
         const billableAmount = deliveryAmount + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
@@ -923,6 +933,8 @@ function FinancialSection() {
           balance_due: billableAmount - amountPaid,
           invoice_number: b.invoice_number,
           created_at: b.created_at,
+          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
+          cancelled_at: b.cancelled_at,
         }
       }),
     )
@@ -939,6 +951,8 @@ function FinancialSection() {
 
   const visibleBookings = bookings.filter((b) => getTab(b) === tab)
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(visibleBookings, tab)
   return (
     <div>
       <PageHeader title="Bills Receivable" subtitle="What each client owes, payments received, and refunds." />
@@ -994,7 +1008,7 @@ function FinancialSection() {
               </tr>
             </thead>
             <tbody>
-              {visibleBookings.map((booking) => {
+              {paged.rows.map((booking) => {
                 const downpayment = downpaymentById.get(booking.booking_id) ?? null
                 // Still has trips to come: money above what's billed so far is paid ahead, not a refund.
                 const tripsToCome = booking.status !== 'Delivered' && booking.status !== 'Cancelled'
@@ -1004,7 +1018,12 @@ function FinancialSection() {
                     <td className="px-4 py-3 text-slate-900">{booking.client_name}</td>
                     <td className="px-4 py-3 text-slate-600">{booking.invoice_number || '—'}</td>
                     <td className="px-4 py-3"><StatusBadge status={booking.status} /></td>
-                    <td className="px-4 py-3 text-slate-600">{booking.completed_trips}/{booking.total_trips}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {booking.completed_trips}/{booking.total_trips}
+                      {booking.cancelled_trips ? (
+                        <span className="block text-xs text-slate-400">{booking.cancelled_trips} cancelled</span>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">
@@ -1069,6 +1088,7 @@ function FinancialSection() {
               })}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
       {partialBooking && (

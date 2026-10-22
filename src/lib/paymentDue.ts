@@ -51,6 +51,23 @@
 import { supabase } from './supabaseClient'
 import { loadClientDamageChargesByBooking } from './damageCharges'
 
+// What a booking's DELIVERY amount is (damage is added on top elsewhere).
+// Normally staff's locked/overridden amount_to_pay, else rate x delivered
+// trips. Once a booking had ANY cancellation -- fully Cancelled, or
+// cancelled partway and ended Delivered -- it's only billed for trips
+// actually delivered, so an earlier lock at the full contract value is
+// capped. Shared by Payments Due, Bills Receivable, Bookings and the
+// client booking history so they can't disagree.
+export function deliveryAmountFor(args: {
+  amountToPay: number | null
+  computedBillable: number // rate x delivered trips
+  hadCancellation: boolean // booking_status Cancelled OR cancelled_at set
+}): number {
+  return args.hadCancellation
+    ? Math.min(args.amountToPay ?? Infinity, args.computedBillable)
+    : (args.amountToPay ?? args.computedBillable)
+}
+
 export type PaymentDueRow = {
   booking_id: number
   booking_date: string
@@ -109,7 +126,7 @@ export async function loadPaymentDueReport(
   let bookingsQuery = supabase
     .from('bookings')
     .select(
-      'booking_id, booking_date, client_id, quote_request_id, booking_status, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
+      'booking_id, booking_date, client_id, quote_request_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
     )
   // Cancelled bookings stay in: they still owe for trips delivered before
   // the cancellation (billed below, same cap as FinancialSection). Ones with
@@ -264,12 +281,12 @@ export async function loadPaymentDueReport(
       const totalContractValue = rate * totalTrips
       const computedBillableAmount = rate * completedTrips
       const damageCharges = damageByBooking.get(booking.booking_id) ?? 0
-      // Cancelled: only delivered trips are billable, so an override can
-      // lower the amount but never raise it past what was delivered.
-      const deliveryAmount =
-        booking.booking_status === 'Cancelled'
-          ? Math.min(booking.amount_to_pay ?? Infinity, computedBillableAmount)
-          : (booking.amount_to_pay ?? computedBillableAmount)
+      // Any cancellation: only delivered trips are billable (deliveryAmountFor).
+      const deliveryAmount = deliveryAmountFor({
+        amountToPay: booking.amount_to_pay,
+        computedBillable: computedBillableAmount,
+        hadCancellation: booking.booking_status === 'Cancelled' || booking.cancelled_at != null,
+      })
       const billableAmount = deliveryAmount + damageCharges
       const amountPaid = booking.amount_paid ?? 0
       const balanceDue = billableAmount - amountPaid

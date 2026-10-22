@@ -4,6 +4,8 @@
 // and the Maintenance page so staff can see it from either place. Mark
 // Done clears it once the actual maintenance happens.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import {
   loadPendingMaintenanceSchedules,
@@ -68,6 +70,8 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
     onChanged?.()
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(schedules, '', 5)
   if (loading) {
     return <p className="text-slate-500">Loading maintenance schedules...</p>
   }
@@ -88,7 +92,7 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
         <EmptyState message="No upcoming maintenance schedules." />
       ) : (
         <div className="grid gap-3">
-          {schedules.map((schedule) => {
+          {paged.rows.map((schedule) => {
             const due = formatScheduleDueDate(schedule.due_date)
             return (
               <div
@@ -122,6 +126,7 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
           })}
         </div>
       )}
+      <Pager {...paged.pager} />
     </div>
   )
 }

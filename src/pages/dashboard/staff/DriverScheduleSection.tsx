@@ -7,7 +7,8 @@
 //
 // Bars use the trip's slot (trip_start_at -> trip_end_at). A trip on the
 // road past its end is drawn up to "now" and red (Overdue). Approved
-// leave is a grey band. Deactivated/Terminated people are left out, same
+// leave is a grey band. The red line with the "Now" tag is the current
+// time (moves every minute). Deactivated/Terminated people are left out, same
 // as the Dispatch Board's dropdowns. A "day" runs 6 AM to 6 AM the next
 // morning (DAY_START_HOUR), Week = Sunday 6 AM to the next Sunday 6 AM
 // (Manila time).
@@ -16,7 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
-import { formatClock, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
+import { formatClock, formatDate, formatSlot, formatTime, manilaTimestamp } from '../../../lib/format'
 import { loadApprovedLeave, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import { busyUntil, isOverdue, manilaWeek } from '../../../lib/tripSchedule'
@@ -48,14 +49,16 @@ const DAY_START_HOUR = 6
 // The schedule day `at` belongs to: before 6 AM still counts as the day before.
 const scheduleDay = (at: number) => toManilaDate(new Date(at - DAY_START_HOUR * HOUR_MS))
 
-// Status colours follow the Dispatch Board's mono accent ramp.
+// One clear colour per status, each with a border so neighbouring bars
+// stay separate. Awaiting is an outline (not started yet).
 const BAR_STYLES: Record<string, string> = {
-  Awaiting: 'bg-slate-300 text-slate-800',
-  Dispatched: 'bg-accent-300 text-accent-900',
-  PickedUp: 'bg-accent-500 text-white',
-  InTransit: 'bg-accent-700 text-white',
-  Delivered: 'bg-slate-200 text-slate-500',
+  Awaiting: 'border-slate-400 bg-white text-slate-700',
+  Dispatched: 'border-amber-400 bg-amber-100 text-amber-900',
+  PickedUp: 'border-sky-500 bg-sky-100 text-sky-900',
+  InTransit: 'border-sky-800 bg-sky-700 text-white',
+  Delivered: 'border-green-500 bg-green-100 text-green-900',
 }
+const OVERDUE_STYLE = 'border-red-800 bg-red-600 text-white'
 
 async function fetchSchedule(role: CrewRole, from: number, to: number): Promise<PersonRow[]> {
   const [usersResult, statusesResult, leaveResult] = await Promise.all([
@@ -187,6 +190,9 @@ function DriverScheduleSection() {
             timeZone: 'Asia/Manila',
           }),
         }))
+  // Faint hour lines between the labelled ones (every 6 h in week view).
+  const minorStep = view === 'day' ? HOUR_MS : 6 * HOUR_MS
+  const minorLines = Array.from({ length: Math.round((to - from) / minorStep) }, (_, i) => from + i * minorStep)
   const title =
     view === 'day'
       ? formatDate(day)
@@ -243,25 +249,39 @@ function DriverScheduleSection() {
         <div className="mt-4 overflow-x-auto border border-slate-200 bg-white">
           <div className="min-w-[760px]">
             {/* Time axis */}
-            <div className="flex border-b border-slate-200 text-[11px] text-slate-500">
-              <div className="w-40 shrink-0 px-3 py-2 font-medium">{role}</div>
-              <div className="relative h-8 flex-1">
+            <div className="flex border-b-2 border-slate-300 bg-slate-50 text-xs font-medium text-slate-600">
+              <div className="w-44 shrink-0 border-r border-slate-300 px-3 py-2.5 font-semibold text-slate-800">{role}</div>
+              <div className="relative h-10 flex-1">
                 {ticks.map((t) => (
-                  <span key={t.at} className="absolute top-2 -translate-x-0 border-l border-slate-200 pl-1" style={{ left: `${pct(t.at)}%` }}>
+                  <span key={t.at} className="absolute inset-y-0 border-l border-slate-300 pt-2.5 pl-1.5" style={{ left: `${pct(t.at)}%` }}>
                     {t.label}
                   </span>
                 ))}
+                {nowInWindow && (
+                  <span
+                    className="absolute bottom-0 -translate-x-1/2 bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white uppercase"
+                    style={{ left: `${pct(now)}%` }}
+                  >
+                    Now
+                  </span>
+                )}
               </div>
             </div>
 
-            {rows.map((person) => (
-              <div key={person.employee_id} className="flex border-b border-slate-100 last:border-0">
-                <div className="w-40 shrink-0 truncate px-3 py-3 text-sm font-medium text-slate-900">
-                  {person.full_name}
+            {rows.map((person, index) => (
+              <div
+                key={person.employee_id}
+                className={`flex border-b border-slate-200 last:border-0 ${index % 2 === 1 ? 'bg-slate-50/70' : 'bg-white'}`}
+              >
+                <div className="flex w-44 shrink-0 items-center border-r border-slate-300 px-3 text-sm font-semibold text-slate-900">
+                  <span className="truncate">{person.full_name}</span>
                 </div>
-                <div className="relative h-12 flex-1">
+                <div className="relative h-16 flex-1">
+                  {minorLines.map((at) => (
+                    <span key={`m${at}`} className="absolute inset-y-0 border-l border-slate-100" style={{ left: `${pct(at)}%` }} />
+                  ))}
                   {ticks.map((t) => (
-                    <span key={t.at} className="absolute inset-y-0 border-l border-slate-100" style={{ left: `${pct(t.at)}%` }} />
+                    <span key={t.at} className="absolute inset-y-0 border-l border-slate-300" style={{ left: `${pct(t.at)}%` }} />
                   ))}
                   {person.leave.map((l) => {
                     const ls = new Date(manilaTimestamp(l.start_date, 0)).getTime()
@@ -270,7 +290,7 @@ function DriverScheduleSection() {
                     return (
                       <div
                         key={`${l.start_date}-${l.end_date}`}
-                        className="absolute inset-y-1 flex items-center bg-slate-100 px-2 text-[11px] text-slate-500"
+                        className="absolute inset-y-1.5 flex items-center border border-dashed border-slate-400 bg-slate-100 px-2 text-[11px] font-medium text-slate-600"
                         style={{ left: `${pct(ls)}%`, width: `${pct(le) - pct(ls)}%` }}
                       >
                         On leave
@@ -288,17 +308,25 @@ function DriverScheduleSection() {
                         type="button"
                         onClick={() => navigate(`/dashboard/bookings?booking=${bar.booking_id}&trip=${bar.itinerary_id}`)}
                         title={`Trip #${bar.itinerary_id} · ${bar.route}\n${formatSlot(bar.trip_start_at, bar.trip_end_at)}${overdue ? ' · OVERDUE' : ''}`}
-                        className={`absolute inset-y-1.5 overflow-hidden px-2 text-left text-[11px] leading-tight font-medium whitespace-nowrap hover:brightness-95 ${
-                          overdue ? 'bg-red-600 text-white' : (BAR_STYLES[bar.status] ?? BAR_STYLES.Awaiting)
+                        // 2px gap each side so back-to-back trips read as separate blocks.
+                        className={`absolute inset-y-2 flex flex-col justify-center overflow-hidden border-l-4 border-y border-r px-2 text-left leading-tight whitespace-nowrap shadow-sm hover:brightness-95 ${
+                          overdue ? OVERDUE_STYLE : (BAR_STYLES[bar.status] ?? BAR_STYLES.Awaiting)
                         }`}
-                        style={{ left: `${pct(start)}%`, width: `${Math.max(pct(end) - pct(start), 0.8)}%` }}
+                        style={{
+                          left: `calc(${pct(start)}% + 2px)`,
+                          width: `calc(${Math.max(pct(end) - pct(start), 0.8)}% - 4px)`,
+                        }}
                       >
-                        #{bar.itinerary_id} {bar.route}
+                        <span className="truncate text-[11px] font-bold">
+                          #{bar.itinerary_id} · {formatTime(bar.trip_start_at)} – {formatTime(bar.trip_end_at)}
+                          {overdue ? ' · OVERDUE' : ''}
+                        </span>
+                        <span className="truncate text-[11px] opacity-90">{bar.route}</span>
                       </button>
                     )
                   })}
                   {nowInWindow && (
-                    <span className="absolute inset-y-0 border-l-2 border-red-500" style={{ left: `${pct(now)}%` }} aria-hidden="true" />
+                    <span className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-red-600" style={{ left: `${pct(now)}%` }} aria-hidden="true" />
                   )}
                 </div>
               </div>
@@ -307,19 +335,22 @@ function DriverScheduleSection() {
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-600">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
         {Object.entries({ Awaiting: 'Awaiting', Dispatched: 'Dispatched', PickedUp: 'Picked up', InTransit: 'In transit', Delivered: 'Delivered' }).map(
           ([status, label]) => (
-            <span key={status} className="flex items-center gap-1">
-              <span className={`inline-block h-3 w-3 ${BAR_STYLES[status]}`} /> {label}
+            <span key={status} className="flex items-center gap-1.5">
+              <span className={`inline-block h-3.5 w-5 border border-l-4 ${BAR_STYLES[status]}`} /> {label}
             </span>
           ),
         )}
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 bg-red-600" /> Overdue
+        <span className="flex items-center gap-1.5">
+          <span className={`inline-block h-3.5 w-5 border border-l-4 ${OVERDUE_STYLE}`} /> Overdue
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 bg-slate-100" /> On leave
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3.5 w-5 border border-dashed border-slate-400 bg-slate-100" /> On leave
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3.5 border-l-2 border-red-600" /> Now
         </span>
       </div>
     </div>

@@ -40,6 +40,7 @@ const TAB_ICONS: Record<string, string> = {
   Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
   'Revenue Reconciliation': 'M4 7h16M4 17h16M8 3l-4 4 4 4M16 13l4 4-4 4',
   'Profit & Loss': 'M3 3v18h18M7 14l4-4 3 3 5-6',
+  'Money Summary': 'M3 3v18h18M7 14l4-4 3 3 5-6',
   'Accounts Payable':'M2 5h20v14H2zM2 10h20M6 15h4',
   Billing:'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
   Statements:
@@ -88,8 +89,8 @@ const TAB_ICONS: Record<string, string> = {
 function TabIcon({ label }: { label: string }) {
   return (
     <svg
-      width="14"
-      height="14"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -145,7 +146,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
     // The print: classes only matter when printing a page (Statements of
     // Account): hide the header/sidebar and let the page flow past one screen.
     <div className="flex h-dvh flex-col bg-slate-50 print:block print:h-auto">
-      <header className="flex items-center justify-between gap-2 border-b print:hidden border-slate-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
+      <header className="flex items-center justify-between gap-2 border-b print:hidden border-slate-200 bg-white px-3 py-2.5 sm:px-6 sm:py-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {sidebarLinks.length > 0 && (
             <button
@@ -212,7 +213,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             so it stands out from the navy. Colors: index.css. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-y-auto print:hidden bg-navy p-3 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-y-auto print:hidden bg-navy p-3 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
@@ -226,7 +227,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         end
                         onClick={closeNav}
                         className={({ isActive }) =>
-                          `flex items-center px-2.5 py-1 text-xs font-medium ${
+                          `flex items-center px-2.5 py-1 text-sm font-medium ${
                             isActive
                               ? 'bg-primary text-white'
                               : 'text-slate-200 hover:bg-navy-hover hover:text-white'
@@ -249,7 +250,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
                   return (
                     <div key={link.label} className="mt-2 flex flex-col gap-0.5">
-                      <div className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                         {link.label}
                       </div>
                       {tabs.map((child) => (
@@ -259,7 +260,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           end
                           onClick={closeNav}
                           className={({ isActive }) =>
-                            `flex items-center px-2.5 py-1 text-xs font-medium ${
+                            `flex items-center px-2.5 py-1 text-sm font-medium ${
                               isActive
                                 ? 'bg-primary text-white'
                                 : 'text-slate-200 hover:bg-navy-hover hover:text-white'
@@ -280,7 +281,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   to="/dashboard/settings"
                   onClick={closeNav}
                   className={({ isActive }) =>
-                    `mt-2 flex items-center border-t border-white/10 px-2.5 py-1 pt-2 text-xs font-medium ${
+                    `mt-2 flex items-center border-t border-white/10 px-2.5 py-1 pt-2 text-sm font-medium ${
                       isActive ? 'bg-primary text-white' : 'text-slate-300 hover:bg-navy-hover hover:text-white'
                     }`
                   }
@@ -293,7 +294,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </>
         )}
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
+        {/* Tighter top/bottom than sides so pages fit more on one screen. */}
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

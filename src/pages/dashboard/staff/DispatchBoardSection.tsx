@@ -45,6 +45,8 @@
 // the database (require_downpayment trigger) enforces the same rule for
 // drivers' phones too.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -1388,6 +1390,8 @@ function DispatchBoardSection() {
     { id: 'completed', label: 'Completed', rows: completedRows, empty: 'No delivered trips yet.' },
   ] as const
   const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]
+  // One page of the active tab at a time (back to page 1 on a tab/search change).
+  const pagedTrips = usePaged(activeTab.rows, `${tab}|${search}`)
 
   return (
     <div>
@@ -1468,7 +1472,10 @@ function DispatchBoardSection() {
             {activeTab.rows.length === 0 ? (
               <p className="font-ui text-sm text-neutral-500">{activeTab.empty}</p>
             ) : (
-              <DispatchTable rows={activeTab.rows} {...tableProps} readOnly={tab === 'completed'} />
+              <>
+                <DispatchTable rows={pagedTrips.rows} {...tableProps} readOnly={tab === 'completed'} />
+                <Pager {...pagedTrips.pager} />
+              </>
             )}
           </div>
         </div>

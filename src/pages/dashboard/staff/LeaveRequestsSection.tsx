@@ -4,6 +4,8 @@
 // those days as Leave in the attendance sheet; if the person is already
 // crewed on a trip in those dates, Admin gets a warning to reassign it.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import {
@@ -85,6 +87,8 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
     await load()
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(requests, '', 5)
   if (loading) return <p className="text-slate-500">Loading leave requests...</p>
   if (error) return <p className="text-red-700">{error}</p>
 
@@ -99,7 +103,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
         <EmptyState message="No pending leave requests." className="mt-3" />
       ) : (
         <div className="mt-3 grid gap-3">
-          {requests.map((request) => (
+          {paged.rows.map((request) => (
             <div key={request.leave_id} className="border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
@@ -134,6 +138,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
           ))}
         </div>
       )}
+      <Pager {...paged.pager} />
     </div>
   )
 }

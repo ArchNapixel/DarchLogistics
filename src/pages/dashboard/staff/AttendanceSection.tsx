@@ -14,6 +14,8 @@
 //   to Absent/Leave, use Edit or Regenerate on that payslip.
 // - "All present" in a day's header marks that day's unmarked people Present.
 import { useCallback, useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, saveAttendanceRecord, type AttendanceRecord, type AttendanceStatus } from '../../../lib/employeeAttendance'
 import { toManilaDate } from '../../../lib/payslip'
@@ -125,6 +127,8 @@ function AttendanceSection() {
     return runSaves(recorderId ? unmarked.map((e) => save(e.employee_id, date, 'Present')) : [])
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(employees, weekStart)
   return (
     <div>
       <PageHeader title="Attendance" subtitle="Mark each employee Present, Leave or Absent for the week." />
@@ -205,7 +209,7 @@ function AttendanceSection() {
               </tr>
             </thead>
             <tbody>
-              {employees.map((e) => {
+              {paged.rows.map((e) => {
                 let presentDays = 0
                 return (
                   <tr key={e.employee_id} className="border-b border-slate-100 last:border-0">
@@ -240,6 +244,7 @@ function AttendanceSection() {
               })}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
     </div>

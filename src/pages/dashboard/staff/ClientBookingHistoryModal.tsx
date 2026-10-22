@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { deliveryAmountFor } from '../../../lib/paymentDue'
 import BookingDetailModal from './BookingDetailModal'
 import { type Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
@@ -51,7 +52,7 @@ function ClientBookingHistoryModal({
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, cargo_type',
+        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, cargo_type',
       )
       .eq('client_id', client.client_id)
       .order('created_at', { ascending: false })
@@ -111,7 +112,13 @@ function ClientBookingHistoryModal({
 
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
+    const cancelledTripsByBooking = new Map<number, number>()
     itinerariesResult.data.forEach((itinerary) => {
+      // Cancelled trips aren't part of the booking any more (counted separately).
+      if (itinerary.itinerary_status === 'Cancelled') {
+        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
+        return
+      }
       totalTripsByBooking.set(
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
@@ -131,7 +138,12 @@ function ClientBookingHistoryModal({
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
         const computedBillableAmount = rate * completedTrips
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        const billableAmount = (b.amount_to_pay ?? computedBillableAmount) + damageCharges
+        const billableAmount =
+          deliveryAmountFor({
+            amountToPay: b.amount_to_pay,
+            computedBillable: computedBillableAmount,
+            hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
+          }) + damageCharges
         const amountPaid = b.amount_paid ?? 0
 
         return {
@@ -152,6 +164,8 @@ function ClientBookingHistoryModal({
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
           cargo_type: b.cargo_type,
+          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
+          cancelled_at: b.cancelled_at,
         }
       }),
     )

@@ -791,7 +791,8 @@ function BookingDetailModal({
 
         <div className="mt-6">
           <h4 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            Trips ({booking.completed_trips}/{booking.total_trips} delivered)
+            Trips ({booking.completed_trips}/{booking.total_trips} delivered
+            {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''})
           </h4>
           {loadError ? (
             <p className="mt-2 text-sm text-slate-500">Trips couldn't be loaded.</p>

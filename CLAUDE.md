@@ -756,6 +756,16 @@ before creating it.
   badge + next status disabled "(downpayment first)". Client portal My
   Bookings shows required / paid / to go. #9: the 25%/50% partial-payment
   buttons were removed (only "Full remaining" left).
+- **Cancelled trips (2026-10-22):** trip counts everywhere ("x/y trips")
+  leave cancelled trips out and show them separately ("1/1 · 2
+  cancelled") -- Bills Receivable, Bookings & Trips, BookingDetailModal,
+  ClientBookingHistoryModal (Payments Due already excluded them). Billing:
+  `deliveryAmountFor()` in `lib/paymentDue.ts` is the one rule -- once a
+  booking had ANY cancellation (status Cancelled OR `cancelled_at` set,
+  i.e. cancelled partway and ended Delivered), a locked `amount_to_pay`
+  is capped at rate x delivered trips. Before this, a partway-cancelled
+  booking with an earlier payment (which locks the full contract) kept
+  billing the cancelled trips (booking #44 billed ₱30,000 for 1 trip).
 - Client Login & Security (2026-10-22, #7) — "Login & Security" under
   My Profile in the client portal (`client/ClientAccountSection.tsx`):
   change username via RPC `change_my_username(p_username)` (SECURITY
@@ -787,6 +797,20 @@ before creating it.
   every step clickable. Staff see a "Resubmitted" badge in Quotations
   and "Previously rejected: …" in QuoteReviewModal. Staff's own
   NewQuoteRequestModal (phone/walk-in) is unchanged.
+- **Paged tables (2026-10-22):** admin lists show 10 rows per page (5 for
+  side panels) with `components/Pager.tsx` instead of growing/scrolling --
+  via `usePaged(rows, resetKey, perPage?)` in `lib/usePaged.ts` (back to
+  page 1 when `resetKey` -- tab/search/filters -- changes; clamps when the
+  list shrinks) over `lib/pageSlice.ts`. Applied to Quotations (3 tabs),
+  Bookings & Trips (both views) + Payments Due panel (5), Clients,
+  Dispatch Board (per tab), Employees, Attendance (week table), Leave
+  requests (5), Payroll (employee groups), Cash Advance requests (5) +
+  ledger, Bills Receivable, Collections, Truck Monitoring odometer
+  suggestions, Maintenance requests/schedules (5), Fleet (trucks,
+  trailers), Maintenance work orders, Inventory; Dashboard's Today's
+  Deliveries pages 5 inline. Totals/tab counts still use the full list.
+  NOT paged: Billing/Statements (printable documents), Reports logs (still
+  "Load more"), Driver Schedule.
 - Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to
   `index.html` so refreshing a `/dashboard/...` URL works on Vercel).
 - Design (as of 2026-10-19): the 2026-09-22 "sharp edges + blue
@@ -801,7 +825,25 @@ before creating it.
 
 - **Accounting module (2026-10-19, Admin only — no Accountant role).** A
   sidebar group below Human Resource, **labelled "Expenses" in the nav
-  since 2026-10-22** (the group heading only; its pages keep their names). Built so far:
+  since 2026-10-22** (the group heading only; its pages keep their names).
+  **Also 2026-10-22: the sidebar group shows only Bills Receivable,
+  Collections (un-hidden the same day -- it has the 📎 proof links),
+  Billing and Statements.** Accounts Payable, Revenue
+  Reconciliation, Profit & Loss, AR Aging, Remittances and Trip
+  Profitability are hidden (commented out in `staffLinks`, routes and
+  files untouched, still reachable by URL) -- planned for removal, user
+  said not to delete them yet.
+  **Money Summary** (`/dashboard/money-summary`, top of the Expenses
+  group, `staff/MoneySummarySection.tsx`, 2026-10-22): one month --
+  Revenue / Expenses / Net profit (Net loss when negative, with % of
+  revenue), Collected this month, a Revenue breakdown by client (from
+  `loadProfitLoss().revenueRows`, i.e. Revenue Reconciliation's per-booking
+  trip revenue + adjustments) and an Expenses breakdown (Salaries, Diesel,
+  Trip expenses, Truck repairs, Damage we paid for). Built on `loadProfitLoss()` (which now also
+  returns `tripCount` and plain `parts`) via `buildMoneySummary()` in
+  `lib/moneySummary.ts` (self-check `node scripts/check-money-summary.ts`).
+  Supplier bills left out (Accounts Payable hidden). Replaces the hidden
+  Profit & Loss page for day-to-day use (user found P&L too complex). Built so far:
   - **Bills Receivable** moved here (was a top-level link).
   - **AR Aging** (`/dashboard/ar-aging`, `staff/ArAgingSection.tsx` +
     `lib/arAging.ts`, self-check `node scripts/check-ar-aging.ts`) —

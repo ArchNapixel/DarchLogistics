@@ -49,7 +49,7 @@ function TopCreditorsCard({ refreshKey }: { refreshKey: number }) {
     // Header sits above the box (like the Maintenance group); the box fills the rest
     <div className="flex h-full flex-col">
     <h2 className="font-ui text-sm font-medium text-neutral-500">Top Unpaid Clients</h2>
-    <div className="reports-blueprint-card dashboard-card-bold mt-2 min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
+    <div className="reports-blueprint-card dashboard-card-bold mt-2 min-h-0 flex-1 overflow-y-auto px-5 py-3">
       {loading && <p className="font-ui text-sm text-neutral-500">Loading...</p>}
       {error && <p className="font-ui text-sm text-red-700">{error}</p>}
       {!loading && !error && creditors.length === 0 && (

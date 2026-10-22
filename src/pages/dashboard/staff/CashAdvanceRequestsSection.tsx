@@ -4,6 +4,8 @@
 // path -- that keeps working exactly as it does now for advances staff
 // give proactively, without a request.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import {
   loadPendingCashAdvanceRequests,
@@ -91,6 +93,8 @@ function CashAdvanceRequestsSection() {
     )
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(requests, '', 5)
   if (loading) {
     return <p className="text-slate-500">Loading pending requests...</p>
   }
@@ -115,7 +119,7 @@ function CashAdvanceRequestsSection() {
         <EmptyState message="No pending requests." className="mt-3" />
       ) : (
         <div className="mt-3 grid gap-3">
-          {requests.map((request) => (
+          {paged.rows.map((request) => (
             <div
               key={request.cash_advance_id}
               className="border border-slate-200 p-4"
@@ -151,6 +155,7 @@ function CashAdvanceRequestsSection() {
           ))}
         </div>
       )}
+      <Pager {...paged.pager} />
     </div>
   )
 }

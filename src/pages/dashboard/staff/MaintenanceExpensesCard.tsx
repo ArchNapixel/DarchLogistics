@@ -97,7 +97,7 @@ function MaintenanceExpensesCard({
   }, [period, refreshKey])
 
   return (
-    <div className="reports-blueprint-card dashboard-card-bold px-3 pt-3 pb-3 sm:px-[22px] sm:pt-[22px] sm:pb-5">
+    <div className="reports-blueprint-card dashboard-card-bold px-3 py-2.5 sm:px-5 sm:py-3">
       <p className="font-ui text-xs leading-tight font-medium text-neutral-500 sm:text-sm">
         Maintenance Expenses <span className="normal-case max-sm:hidden">(parts)</span>
       </p>
@@ -106,7 +106,7 @@ function MaintenanceExpensesCard({
         <p className="mt-2 font-ui text-sm text-red-700">{error}</p>
       ) : (
         <>
-          <p className="font-condensed mt-1.5 text-2xl sm:mt-2 sm:text-[40px] leading-none font-bold text-reports-ink">
+          <p className="font-condensed mt-1 text-2xl sm:text-[28px] leading-none font-bold text-reports-ink">
             {loading || !data ? '--' : formatMoney(data.total)}
           </p>
 

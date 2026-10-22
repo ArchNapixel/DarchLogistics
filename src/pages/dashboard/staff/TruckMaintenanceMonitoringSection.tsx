@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
@@ -352,6 +354,8 @@ function OdometerUpdatesSection() {
     setSuggestions((current) => current.filter((item) => item.itinerary_id !== suggestion.itinerary_id))
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(suggestions, '')
   if (loading) return <p className="text-slate-500">Loading odometer suggestions...</p>
   if (error) return <p className="text-red-700">{error}</p>
   if (suggestions.length === 0) return <EmptyState message="No odometer updates are waiting for confirmation." />
@@ -372,7 +376,7 @@ function OdometerUpdatesSection() {
           </tr>
         </thead>
         <tbody>
-          {suggestions.map((suggestion) => (
+          {paged.rows.map((suggestion) => (
             <tr key={suggestion.itinerary_id} className="border-b border-slate-100 last:border-0">
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.plate_number}</td>
               <td className="px-4 py-3 text-slate-600">{formatDate(suggestion.trip_date)}</td>
@@ -400,6 +404,7 @@ function OdometerUpdatesSection() {
           ))}
         </tbody>
       </table>
+      <Pager {...paged.pager} />
     </div>
   )
 }

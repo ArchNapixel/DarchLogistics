@@ -9,6 +9,8 @@
 // the Reports page's "Payments Due" tab instead -- this is just a quick
 // glance while working the main Bookings list.
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import {
   loadPaymentDueReport,
   formatDaysUntilDue,
@@ -43,6 +45,8 @@ function PaymentDuePanel() {
     setLoading(false)
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(rows, '', 5)
   return (
     <div className="border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
@@ -57,8 +61,8 @@ function PaymentDuePanel() {
       )}
 
       {!loading && rows.length > 0 && (
-        <div className="mt-3 flex max-h-[28rem] flex-col gap-2 overflow-y-auto">
-          {rows.map((row) => {
+        <div className="mt-3 flex flex-col gap-2">
+          {paged.rows.map((row) => {
             const due = formatDaysUntilDue(row.days_until_due)
             return (
               <div
@@ -90,6 +94,7 @@ function PaymentDuePanel() {
           })}
         </div>
       )}
+      <Pager {...paged.pager} />
     </div>
   )
 }

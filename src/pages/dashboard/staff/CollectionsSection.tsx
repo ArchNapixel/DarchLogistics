@@ -6,6 +6,8 @@
 // toward the booking's amount paid (a DB trigger does that).
 // Totals math: lib/paymentTotals.ts. Loading/saving: lib/bookingPayments.ts.
 import { useEffect, useMemo, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { Link } from 'react-router-dom'
 import {
   PAYMENT_METHODS,
@@ -120,6 +122,8 @@ function CollectionsSection() {
 
   const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(visible, `${from}|${to}|${methodFilter}|${clientFilter}|${showVoided}`)
   return (
     <div>
       <PageHeader
@@ -204,7 +208,7 @@ function CollectionsSection() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => {
+                {paged.rows.map((r) => {
                   const voided = r.voided_at !== null
                   return (
                     <tr key={r.payment_id} className={`border-b border-slate-100 ${voided ? 'bg-slate-50 text-slate-400' : ''}`}>
@@ -259,6 +263,7 @@ function CollectionsSection() {
                 })}
               </tbody>
             </table>
+            <Pager {...paged.pager} />
           </div>
         </>
       )}

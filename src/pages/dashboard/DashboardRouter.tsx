@@ -46,6 +46,7 @@ import RevenueReconciliationSection from './staff/RevenueReconciliationSection'
 import ProfitLossSection from './staff/ProfitLossSection'
 import PayrollRemittanceSection from './staff/PayrollRemittanceSection'
 import TripProfitSection from './staff/TripProfitSection'
+import MoneySummarySection from './staff/MoneySummarySection'
 import SettingsSection from './staff/SettingsSection'
 import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
 import DamageChargesSection from './staff/DamageChargesSection'
@@ -82,16 +83,20 @@ const staffLinks = [
   {
     label: 'Expenses',
     children: [
+      { label: 'Money Summary', to: '/dashboard/money-summary' },
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
-      { label: 'Accounts Payable', to: '/dashboard/bills-payable' },
       { label: 'Collections', to: '/dashboard/collections' },
       { label: 'Billing', to: '/dashboard/billing' },
       { label: 'Statements', to: '/dashboard/statements' },
-      { label: 'Revenue Reconciliation', to: '/dashboard/revenue-reconciliation' },
-      { label: 'Profit & Loss', to: '/dashboard/profit-loss' },
-      { label: 'AR Aging', to: '/dashboard/ar-aging' },
-      { label: 'Remittances', to: '/dashboard/payroll-remittances' },
-      { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
+      // Hidden from the sidebar 2026-10-22 (planned for removal, not
+      // deleted yet). Their routes below still work by URL; put a line
+      // back here to show the page again.
+      // { label: 'Accounts Payable', to: '/dashboard/bills-payable' },
+      // { label: 'Revenue Reconciliation', to: '/dashboard/revenue-reconciliation' },
+      // { label: 'Profit & Loss', to: '/dashboard/profit-loss' },
+      // { label: 'AR Aging', to: '/dashboard/ar-aging' },
+      // { label: 'Remittances', to: '/dashboard/payroll-remittances' },
+      // { label: 'Trip Profitability', to: '/dashboard/trip-profitability' },
     ],
   },
   {
@@ -185,6 +190,7 @@ function DashboardRouter() {
           <Route path="ar-aging" element={<ArAgingSection />} />
           <Route path="payroll-remittances" element={<PayrollRemittanceSection />} />
           <Route path="trip-profitability" element={<TripProfitSection />} />
+          <Route path="money-summary" element={<MoneySummarySection />} />
           <Route path="settings" element={<SettingsSection />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

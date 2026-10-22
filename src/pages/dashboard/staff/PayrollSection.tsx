@@ -14,6 +14,8 @@
 // the employee's own payslip page. "Mark Paid" (finalized only) is the
 // separate step once money has actually changed hands.
 import { useEffect, useRef, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   markPayslipPaid,
@@ -141,7 +143,7 @@ function PayrollSection() {
       const { error: holdError } = await setPayslipHold(createdIds[0], true)
       if (holdError) return `Regenerated, but the hold couldn't be re-applied: ${holdError}`
     }
-    return (
+  return (
       generateError ??
       warnings[0] ??
       (createdIds.length === 0 ? `${draft.employee_name} has nothing to pay for ${draft.period} anymore, so no draft was created.` : null)
@@ -367,6 +369,8 @@ function PayrollSection() {
     }
   }
 
+  // One page of employees (10) at a time.
+  const paged = usePaged(employeeGroups, '')
   return (
     <div>
       <PageHeader title="Payroll" subtitle="Weekly payslip drafts: review, finalize, then mark paid." />
@@ -433,7 +437,7 @@ function PayrollSection() {
       {/* One card per employee: click it to list all their payslips, click a payslip for its breakdown */}
       {!loading && !error && payroll.length > 0 && (
         <div className="mt-4 flex flex-col gap-3">
-          {employeeGroups.map((group) => {
+          {paged.rows.map((group) => {
             const isOpen = openEmployeeId === group.employee_id
             const draftCount = group.entries.filter((e) => e.status === 'Draft').length
             const pendingCount = group.entries.filter((e) => e.status === 'Pending').length
@@ -627,6 +631,7 @@ function PayrollSection() {
           })}
         </div>
       )}
+      <Pager {...paged.pager} />
 
       {editingDraft && (
         <EditDraftPayslipModal

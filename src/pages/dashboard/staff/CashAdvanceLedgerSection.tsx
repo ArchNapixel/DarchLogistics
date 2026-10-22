@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
@@ -103,9 +105,11 @@ function CashAdvanceLedgerSection() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadLedger(), 0)
-    return () => window.clearTimeout(timer)
+  return () => window.clearTimeout(timer)
   }, [loadLedger])
 
+  // One page at a time.
+  const paged = usePaged(rows, '')
   return (
     <div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -144,7 +148,7 @@ function CashAdvanceLedgerSection() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {paged.rows.map((row) => (
                 <tr key={row.cash_advance_id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3 text-slate-900">{row.employee_name}</td>
                   <td className="px-4 py-3 text-slate-600">{formatDate(row.created_at)}</td>
@@ -160,6 +164,7 @@ function CashAdvanceLedgerSection() {
               ))}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
     </div>

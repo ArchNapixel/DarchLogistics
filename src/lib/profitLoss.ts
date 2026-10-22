@@ -16,7 +16,20 @@ import { loadMaintenanceCostReport } from './maintenanceCostReport'
 import { nextMonthStart } from './remittanceTotals'
 import { buildProfitLoss } from './profitLossTotals'
 
-export type ProfitLoss = ReturnType<typeof buildProfitLoss>
+// Also returned (for the Money Summary tab): the month's delivered trip
+// count and the plain cost amounts before they become P&L lines.
+export type ProfitLoss = ReturnType<typeof buildProfitLoss> & {
+  tripCount: number
+  // Each booking's revenue this month (trips + adjustments), with its client.
+  revenueRows: { client_name: string; amount: number }[]
+  parts: {
+    payroll: number // gross + employer shares
+    diesel: number
+    tripExpenses: number
+    companyDamage: number
+    maintenanceParts: number
+  }
+}
 
 export async function loadProfitLoss(
   month: string,
@@ -77,8 +90,11 @@ export async function loadProfitLoss(
     billsByCategory.set(b.category, (billsByCategory.get(b.category) ?? 0) + Number(b.amount)),
   )
 
+  const maintenanceParts = maintenance.workOrders.reduce((s, w) => s + w.total, 0)
+
   return {
-    data: buildProfitLoss({
+    data: {
+      ...buildProfitLoss({
       tripRevenue: recon.data.tripRevenue,
       adjustments: recon.data.adjustments,
       payrollGross,
@@ -88,10 +104,23 @@ export async function loadProfitLoss(
       dieselEstimated,
       otherTripExpenses,
       companyDamage,
-      maintenanceParts: maintenance.workOrders.reduce((s, w) => s + w.total, 0),
+      maintenanceParts,
       billsByCategory,
       collected: recon.data.collected,
-    }),
+      }),
+      tripCount: trips.rows.length,
+      revenueRows: recon.data.rows.map((r) => ({
+        client_name: r.client_name,
+        amount: r.trip_revenue + r.adjustments,
+      })),
+      parts: {
+        payroll: payrollGross + employerShares,
+        diesel: dieselLogged + dieselEstimated,
+        tripExpenses: otherTripExpenses,
+        companyDamage,
+        maintenanceParts,
+      },
+    },
     error: null,
   }
 }

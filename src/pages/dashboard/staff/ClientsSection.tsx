@@ -6,6 +6,8 @@
 // same email, and shared with the client directly. The client's own
 // first login auto-links the two (see AuthContext.tsx).
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
@@ -128,6 +130,8 @@ function ClientsSection() {
     loadClients()
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(clients, '')
   if (loading) {
     return <p className="text-slate-500">Loading clients...</p>
   }
@@ -159,7 +163,7 @@ function ClientsSection() {
               </tr>
             </thead>
             <tbody>
-              {clients.map((client) => {
+              {paged.rows.map((client) => {
                 const isLinked = linkedClientIds.has(client.client_id)
                 const isDelinquent = delinquentClientIds.has(client.client_id)
                 return (
@@ -208,6 +212,7 @@ function ClientsSection() {
               })}
             </tbody>
           </table>
+          <Pager {...paged.pager} />
         </div>
       )}
 

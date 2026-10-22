@@ -6,6 +6,8 @@
 // WorkOrderDetailModal (mechanic's notes/parts so far, reassign, change
 // status or cancel).
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
@@ -137,6 +139,8 @@ function MaintenanceSection() {
       : !ACTIVE_STATUSES.includes(o.work_order_status),
   )
 
+  // One page at a time (back to page 1 when the filters change).
+  const paged = usePaged(filteredOrders, activeTab)
   return (
     <div>
       <PageHeader
@@ -208,7 +212,7 @@ function MaintenanceSection() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOrders.map((order) => (
+                      {paged.rows.map((order) => (
                         <tr
                           key={order.work_order_id}
                           className="border-b border-slate-100 last:border-0"
@@ -242,6 +246,7 @@ function MaintenanceSection() {
                       ))}
                     </tbody>
                   </table>
+                  <Pager {...paged.pager} />
                 </div>
               )}
             </div>

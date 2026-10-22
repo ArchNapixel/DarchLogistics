@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import AddTruckModal from './AddTruckModal'
@@ -209,6 +211,10 @@ function FleetSection() {
     }
   }
 
+  // One page at a time (back to page 1 when the filters change).
+  const pagedTrucks = usePaged(trucks, activeTab)
+  // One page at a time (back to page 1 when the filters change).
+  const pagedTrailers = usePaged(trailers, activeTab)
   return (
     <div>
       <PageHeader
@@ -276,7 +282,7 @@ function FleetSection() {
               </tr>
             </thead>
             <tbody>
-              {trucks.map((truck) => (
+              {pagedTrucks.rows.map((truck) => (
                 <tr
                   key={truck.plate_number}
                   onClick={() => setViewingTruck(truck)}
@@ -305,6 +311,7 @@ function FleetSection() {
               ))}
             </tbody>
           </table>
+          <Pager {...pagedTrucks.pager} />
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
@@ -318,7 +325,7 @@ function FleetSection() {
               </tr>
             </thead>
             <tbody>
-              {trailers.map((trailer) => (
+              {pagedTrailers.rows.map((trailer) => (
                 <tr
                   key={trailer.trailer_id}
                   onClick={() => setViewingTrailer(trailer)}
@@ -345,6 +352,7 @@ function FleetSection() {
               ))}
             </tbody>
           </table>
+          <Pager {...pagedTrailers.pager} />
         </div>
       )}
 
