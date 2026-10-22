@@ -21,7 +21,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 
 type HistoryStatus = 'Completed' | 'Cancelled'
 
@@ -73,7 +73,7 @@ function TripDetailModal({
       const { data: trip, error: tripError } = await supabase
         .from('itineraries')
         .select(
-          'trip_date_from, trip_date_to, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
+          'trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
         )
         .eq('itinerary_id', itineraryId)
         .maybeSingle()
@@ -118,9 +118,11 @@ function TripDetailModal({
         client_name: clientRateResult.data?.client_name ?? null,
         rate: rate != null ? Number(rate) : null,
         route: `${placeName.get(trip.place_of_pickup_id) ?? '—'} → ${placeName.get(trip.place_of_delivery_id) ?? '—'}`,
-        dates: trip.trip_date_to
-          ? `${formatDate(trip.trip_date_from)} – ${formatDate(trip.trip_date_to)}`
-          : formatDate(trip.trip_date_from),
+        dates: trip.trip_start_at
+          ? formatSlot(trip.trip_start_at, trip.trip_end_at)
+          : trip.trip_date_to
+            ? `${formatDate(trip.trip_date_from)} – ${formatDate(trip.trip_date_to)}`
+            : formatDate(trip.trip_date_from),
         status: trip.itinerary_status,
         truck: trip.plate_number,
         trailer:

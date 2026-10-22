@@ -27,6 +27,7 @@ import QuoteRequestsSection from './staff/QuoteRequestsSection'
 import ClientsSection from './staff/ClientsSection'
 import BookingsSection from './staff/BookingsSection'
 import DispatchBoardSection from './staff/DispatchBoardSection'
+import DriverScheduleSection from './staff/DriverScheduleSection'
 import FleetSection from './staff/FleetSection'
 import MaintenanceSection from './staff/MaintenanceSection'
 import InventorySection from './staff/InventorySection'
@@ -54,6 +55,7 @@ import MyPayslipPage from './employee/MyPayslipPage'
 import MyAttendanceSection from './employee/MyAttendanceSection'
 import MyLeaveSection from './employee/MyLeaveSection'
 import MyProfileSection from './employee/MyProfileSection'
+import MyScheduleSection from './employee/MyScheduleSection'
 
 const staffLinks = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -65,6 +67,7 @@ const staffLinks = [
       { label: 'Bookings & Trips', to: '/dashboard/bookings' },
       { label: 'Clients', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
+      { label: 'Driver Schedule', to: '/dashboard/driver-schedule' },
     ],
   },
   {
@@ -104,6 +107,7 @@ const staffLinks = [
 
 const dispatcherLinks = [
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
+  { label: 'Driver Schedule', to: '/dashboard/driver-schedule' },
   { label: 'Bookings & Trips', to: '/dashboard/bookings' },
   { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
@@ -121,8 +125,12 @@ const employeeLinks = [
   { label: 'My Payslips', to: '/dashboard/payslips' },
   { label: 'My Profile', to: '/dashboard/profile' },
 ]
+// Drivers and helpers also get "My Schedule" (their trips' time slots),
+// right after Dashboard. Mechanics aren't on trips.
+const scheduleLink = { label: 'My Schedule', to: '/dashboard/schedule' }
+const helperLinks = [employeeLinks[0], scheduleLink, ...employeeLinks.slice(1)]
 // Drivers are paid per trip, so they have no attendance page
-const driverLinks = employeeLinks
+const driverLinks = helperLinks
   .filter((link) => link.to !== '/dashboard/attendance')
   .map((link) =>
     link.to === '/dashboard/history' ? { ...link, label: 'My Trips History' } : link,
@@ -156,6 +164,7 @@ function DashboardRouter() {
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="clients" element={<ClientsSection />} />
           <Route path="dispatch" element={<DispatchBoardSection />} />
+          <Route path="driver-schedule" element={<DriverScheduleSection />} />
           <Route path="fleet" element={<FleetSection />} />
           <Route path="maintenance" element={<MaintenanceSection />} />
           <Route path="maintenance-monitoring" element={<TruckMaintenanceMonitoringSection />} />
@@ -192,6 +201,7 @@ function DashboardRouter() {
             element={<Navigate to="/dashboard/dispatch" replace />}
           />
           <Route path="dispatch" element={<DispatchBoardSection />} />
+          <Route path="driver-schedule" element={<DriverScheduleSection />} />
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
@@ -211,8 +221,17 @@ function DashboardRouter() {
   if (isEmployee(role)) {
     return (
       <Routes>
-        <Route element={<DashboardLayout sidebarLinks={role === 'Driver' ? driverLinks : employeeLinks} />}>
+        <Route
+          element={
+            <DashboardLayout
+              sidebarLinks={role === 'Driver' ? driverLinks : role === 'Helper' ? helperLinks : employeeLinks}
+            />
+          }
+        >
           <Route index element={<EmployeeDashboard />} />
+          {(role === 'Driver' || role === 'Helper') && (
+            <Route path="schedule" element={<MyScheduleSection />} />
+          )}
           <Route path="history" element={<HistorySection />} />
           {role !== 'Driver' && <Route path="attendance" element={<MyAttendanceSection />} />}
           <Route path="leave" element={<MyLeaveSection />} />

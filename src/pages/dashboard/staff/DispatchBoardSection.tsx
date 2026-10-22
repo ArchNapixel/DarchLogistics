@@ -29,6 +29,15 @@
 // (full_name) -- the employee_id list of who counts as a "driver" comes
 // from `users` where user_role = 'Driver', since that's the same role
 // value already used everywhere else in the app (isEmployee(), RoleBadge).
+//
+// Time slots (#5/#6): every trip has a slot (itineraries.trip_start_at ->
+// trip_end_at, set on quote approval, edited here via EditTripTimeModal).
+// A driver/helper can't be picked until the trip has a slot; people busy
+// on an overlapping trip (or on leave) are greyed out, free people are
+// ranked "Suggested" (lib/tripSchedule.ts: longest since their last trip), and a trip past its end shows "Overdue" with a
+// "running late -- reassign?" note on the same person's next trip. The
+// database enforces the no-overlap rule too (itinerary_crews_check_slot),
+// so its refusal message is what shows if two people race.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
@@ -46,8 +55,16 @@ import { showToast } from '../../../components/Toast'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
-import { formatDate } from '../../../lib/format'
+import { formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import EditTripTimeModal from './EditTripTimeModal'
+import {
+  SUGGESTED_COUNT,
+  isOverdue,
+  lateEarlierTrip,
+  rankCandidates,
+  type ScheduledTrip,
+} from '../../../lib/tripSchedule'
 
 type DispatchRow = {
   itinerary_id: number
@@ -56,6 +73,11 @@ type DispatchRow = {
   delivery_location: string
   trip_date_from: string
   trip_date_to: string | null
+  // The trip's time slot (null on trips from before slots existed).
+  trip_start_at: string | null
+  trip_end_at: string | null
+  // The booking's hours per trip -- length of a newly set slot.
+  hours_per_trip: number | null
   status: string
   assigned_employee_id: number | null
   assigned_driver_name: string | null
@@ -70,12 +92,18 @@ type DispatchRow = {
 // A trip is "Assigned" (vs "Needs Assignment") once it has a driver,
 // truck and trailer -- this is what decides which board table it's in.
 function isFullyAssigned(r: DispatchRow) {
-  return r.assigned_employee_id !== null && r.plate_number !== null && r.trailer_id !== null
+  return (
+    r.trip_start_at !== null &&
+    r.assigned_employee_id !== null &&
+    r.plate_number !== null &&
+    r.trailer_id !== null
+  )
 }
 
 // What a trip still needs before it can leave Awaiting. Helper is optional.
 function missingForDispatch(r: DispatchRow): string {
   const missing = []
+  if (r.trip_start_at === null) missing.push('time slot')
   if (r.assigned_employee_id === null) missing.push('driver')
   if (r.plate_number === null) missing.push('truck')
   if (r.trailer_id === null) missing.push('trailer')
@@ -107,12 +135,121 @@ type TrailerOption = {
   current_status: string | null
 }
 
-// " (on booking #X)" after a driver/helper already on another active
-// trip -- a hint only, they can still be picked.
-function crewHint(row: DispatchRow, rows: DispatchRow[], isOnRow: (r: DispatchRow) => boolean) {
-  if (isOnRow(row)) return ''
-  const otherTrip = rows.find((r) => r !== row && r.status !== 'Delivered' && isOnRow(r))
-  return otherTrip ? ` (on booking #${otherTrip.booking_id})` : ''
+const crewSelectClasses =
+  'w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none'
+
+// Driver or helper picker for one trip. Locked until the trip has a time
+// slot. Options are grouped: Suggested (the top free people), Other free,
+// and Unavailable (busy on an overlapping trip, or on leave -- disabled,
+// except whoever is already assigned so the dropdown still shows them).
+function CrewSelect({
+  row,
+  crewRole,
+  people,
+  allRows,
+  leaveByEmployee,
+  now,
+  disabled,
+  onChange,
+}: {
+  row: DispatchRow
+  crewRole: 'Driver' | 'Helper'
+  people: DriverOption[]
+  allRows: DispatchRow[]
+  leaveByEmployee: Map<number, LeaveRange[]>
+  now: number
+  disabled: boolean
+  onChange: (employeeId: number | null) => void
+}) {
+  const currentId = crewRole === 'Driver' ? row.assigned_employee_id : row.assigned_helper_employee_id
+  const currentName = crewRole === 'Driver' ? row.assigned_driver_name : row.assigned_helper_name
+
+  if (!row.trip_start_at) {
+    return (
+      <div className="flex flex-col gap-1">
+        <select disabled className={`${crewSelectClasses} opacity-60`} value="">
+          <option value="">{currentName ?? 'Unassigned'}</option>
+        </select>
+        <span className="text-[11px] text-amber-700">Set the trip time first</span>
+      </div>
+    )
+  }
+
+  // A person's trips = every trip they're the active driver or helper on.
+  const tripsOf = (employeeId: number): ScheduledTrip[] =>
+    allRows.filter((r) => r.assigned_employee_id === employeeId || r.assigned_helper_employee_id === employeeId)
+  const ranked = rankCandidates(
+    row,
+    people,
+    tripsOf,
+    now,
+    (clash) => ` — busy ${formatSlot(clash.trip_start_at, clash.trip_end_at)} (trip #${clash.itinerary_id})`,
+    (employeeId) => leaveHint(row, employeeId, false, leaveByEmployee),
+  )
+  const free = ranked.filter((p) => p.blockedBy === null)
+  const suggested = free.slice(0, SUGGESTED_COUNT)
+  const otherFree = free.slice(SUGGESTED_COUNT)
+  const unavailable = ranked.filter((p) => p.blockedBy !== null)
+
+  // The assigned person's earlier trip running late into this one (#6).
+  const late = currentId !== null ? lateEarlierTrip(row, tripsOf(currentId), now) : null
+  const topPick = currentId === null ? suggested[0] : undefined
+
+  return (
+    <div className="flex flex-col gap-1">
+      <select
+        value={currentId ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        className={crewSelectClasses}
+      >
+        <option value="">Unassigned</option>
+        {suggested.length > 0 && (
+          <optgroup label="★ Suggested">
+            {suggested.map((p) => (
+              <option key={p.employee_id} value={p.employee_id}>
+                {p.full_name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {otherFree.length > 0 && (
+          <optgroup label="Other free">
+            {otherFree.map((p) => (
+              <option key={p.employee_id} value={p.employee_id}>
+                {p.full_name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {unavailable.length > 0 && (
+          <optgroup label="Unavailable">
+            {unavailable.map((p) => (
+              <option key={p.employee_id} value={p.employee_id} disabled={p.employee_id !== currentId}>
+                {p.full_name}
+                {p.blockedBy}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      {topPick && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(topPick.employee_id)}
+          className="text-left text-[11px] font-semibold text-accent-700 underline hover:text-accent-900 disabled:opacity-50"
+        >
+          Assign {topPick.full_name}
+        </button>
+      )}
+      {late && (
+        <span className="text-[11px] font-medium text-amber-700">
+          ⚠ {currentName ?? 'They'}'s trip #{late.itinerary_id} is running late — reassign?
+        </span>
+      )}
+    </div>
+  )
 }
 
 // A driver/helper on approved leave during this trip's dates can't be
@@ -264,8 +401,13 @@ function DispatchTable({
   readOnly = false,
   allRows,
   leaveByEmployee,
+  now,
+  onEditTime,
 }: {
   rows: DispatchRow[]
+  // Current time (ms), ticking each minute -- drives Overdue / busy checks.
+  now: number
+  onEditTime: (row: DispatchRow) => void
   allRows: DispatchRow[]
   leaveByEmployee: Map<number, LeaveRange[]>
   drivers: DriverOption[]
@@ -303,7 +445,7 @@ function DispatchTable({
               Origin → Destination
             </th>
             <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Trip Date
+              Time Slot
             </th>
             <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
               Status
@@ -339,9 +481,32 @@ function DispatchTable({
               <td className="px-4 py-3 text-neutral-600">
                 {row.pickup_location} → {row.delivery_location}
               </td>
-              <td className="whitespace-nowrap px-4 py-3 text-neutral-600">
-                {formatDate(row.trip_date_from)}
-                {row.trip_date_to ? ` – ${formatDate(row.trip_date_to)}` : ''}
+              <td className="px-4 py-3 text-neutral-600">
+                <div className="flex flex-col items-start gap-1">
+                  {row.trip_start_at ? (
+                    <span className="whitespace-nowrap">{formatSlot(row.trip_start_at, row.trip_end_at)}</span>
+                  ) : (
+                    <>
+                      <span className="whitespace-nowrap">{formatDate(row.trip_date_from)}</span>
+                      <span className="text-[11px] font-medium text-amber-700">No time set</span>
+                    </>
+                  )}
+                  {isOverdue(row, now) && (
+                    <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
+                      Overdue
+                    </span>
+                  )}
+                  {!readOnly && canEditStatus && (
+                    <button
+                      type="button"
+                      onClick={() => onEditTime(row)}
+                      disabled={savingId === row.itinerary_id}
+                      className="text-[11px] font-semibold text-accent-700 underline hover:text-accent-900"
+                    >
+                      {row.trip_start_at ? 'Edit time' : 'Set time'}
+                    </button>
+                  )}
+                </div>
               </td>
               <td className="px-4 py-3">
                 <div className="flex flex-col items-start gap-1.5">
@@ -350,7 +515,9 @@ function DispatchTable({
                       value={row.status}
                       disabled={savingId === row.itinerary_id}
                       onChange={(e) => onStatusChange(row.itinerary_id, row.status, e.target.value)}
-                      className={`border px-2 py-1 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
+                      // Fixed width: the long "(assign … first)" option text would
+                      // otherwise stretch it; the open list still shows it in full.
+                      className={`w-44 border px-2 py-1 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
                         STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
                       }`}
                     >
@@ -404,60 +571,32 @@ function DispatchTable({
                 {readOnly ? (
                   <span className="text-xs text-reports-ink">{row.assigned_driver_name ?? '—'}</span>
                 ) : (
-                  <select
-                    value={row.assigned_employee_id ?? ''}
+                  <CrewSelect
+                    row={row}
+                    crewRole="Driver"
+                    people={drivers}
+                    allRows={allRows}
+                    leaveByEmployee={leaveByEmployee}
+                    now={now}
                     disabled={savingId === row.itinerary_id}
-                    onChange={(e) =>
-                      onCrewChange(
-                        row.itinerary_id,
-                        'Driver',
-                        row.assigned_employee_id,
-                        e.target.value ? Number(e.target.value) : null,
-                      )
-                    }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {drivers.map((driver) => {
-                      const onLeave = leaveHint(row, driver.employee_id, row.assigned_employee_id === driver.employee_id, leaveByEmployee)
-                      return (
-                        <option key={driver.employee_id} value={driver.employee_id} disabled={onLeave !== null}>
-                          {driver.full_name}
-                          {onLeave ?? crewHint(row, allRows, (r) => r.assigned_employee_id === driver.employee_id)}
-                        </option>
-                      )
-                    })}
-                  </select>
+                    onChange={(id) => onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
+                  />
                 )}
               </td>
               <td className="px-4 py-3">
                 {readOnly ? (
                   <span className="text-xs text-reports-ink">{row.assigned_helper_name ?? '—'}</span>
                 ) : (
-                  <select
-                    value={row.assigned_helper_employee_id ?? ''}
+                  <CrewSelect
+                    row={row}
+                    crewRole="Helper"
+                    people={helpers}
+                    allRows={allRows}
+                    leaveByEmployee={leaveByEmployee}
+                    now={now}
                     disabled={savingId === row.itinerary_id}
-                    onChange={(e) =>
-                      onCrewChange(
-                        row.itinerary_id,
-                        'Helper',
-                        row.assigned_helper_employee_id,
-                        e.target.value ? Number(e.target.value) : null,
-                      )
-                    }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {helpers.map((helper) => {
-                      const onLeave = leaveHint(row, helper.employee_id, row.assigned_helper_employee_id === helper.employee_id, leaveByEmployee)
-                      return (
-                        <option key={helper.employee_id} value={helper.employee_id} disabled={onLeave !== null}>
-                          {helper.full_name}
-                          {onLeave ?? crewHint(row, allRows, (r) => r.assigned_helper_employee_id === helper.employee_id)}
-                        </option>
-                      )
-                    })}
-                  </select>
+                    onChange={(id) => onCrewChange(row.itinerary_id, 'Helper', row.assigned_helper_employee_id, id)}
+                  />
                 )}
               </td>
               <td className="px-4 py-3">
@@ -569,9 +708,20 @@ function DispatchBoardSection() {
   const [savingId, setSavingId] = useState<number | null>(null)
   const [myRequests, setMyRequests] = useState<MyItineraryRelogRequest[]>([])
   const [search, setSearch] = useState('')
+  // Trip whose time slot is being edited (EditTripTimeModal).
+  const [editTimeRow, setEditTimeRow] = useState<DispatchRow | null>(null)
+  // Settings' default trip start (minutes after midnight), for trips with no slot yet.
+  const [defaultStartMinutes, setDefaultStartMinutes] = useState(360)
+  // "Now", refreshed every minute so Overdue / running-late flags appear on their own.
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     loadDispatchBoard()
+  }, [])
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   // Dispatcher only: their own correction requests and how they went.
@@ -610,7 +760,7 @@ function DispatchBoardSection() {
     const { data: itineraryRows, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
-        'itinerary_id, booking_id, trip_date_from, trip_date_to, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
+        'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
       )
       .neq('itinerary_status', 'Cancelled')
       .order('trip_date_from', { ascending: false })
@@ -624,10 +774,17 @@ function DispatchBoardSection() {
     // Trucks/trailers to populate the assignment dropdowns -- needed
     // even when there are no active itineraries yet, so load them
     // regardless.
-    const [trucksResult, trailersResult] = await Promise.all([
+    const [trucksResult, trailersResult, startSettingResult] = await Promise.all([
       supabase.from('truck_profiles').select('plate_number, current_status').order('plate_number'),
       supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').order('trailer_id'),
+      supabase
+        .from('app_settings')
+        .select('setting_value')
+        .eq('setting_key', 'default_trip_start_time')
+        .maybeSingle(),
     ])
+    // Missing setting just keeps the 6 AM fallback.
+    if (startSettingResult.data) setDefaultStartMinutes(Number(startSettingResult.data.setting_value))
 
     if (trucksResult.error) {
       setError(trucksResult.error.message)
@@ -644,7 +801,7 @@ function DispatchBoardSection() {
     const bookingIds = [...new Set(itineraryRows.map((it) => it.booking_id))]
     const { data: bookingTypeRows, error: bookingTypeError } = await supabase
       .from('bookings')
-      .select('booking_id, trailer_type')
+      .select('booking_id, trailer_type, hours_per_trip')
       .in('booking_id', bookingIds)
     if (bookingTypeError) {
       setError(bookingTypeError.message)
@@ -653,6 +810,9 @@ function DispatchBoardSection() {
     }
     const trailerTypeByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.trailer_type as string | null]),
+    )
+    const hoursPerTripByBooking = new Map(
+      bookingTypeRows.map((b) => [b.booking_id as number, b.hours_per_trip as number | null]),
     )
 
     setTrucks(trucksResult.data)
@@ -818,6 +978,9 @@ function DispatchBoardSection() {
             placeNameById.get(it.place_of_delivery_id) ?? '—',
           trip_date_from: it.trip_date_from,
           trip_date_to: it.trip_date_to,
+          trip_start_at: it.trip_start_at,
+          trip_end_at: it.trip_end_at,
+          hours_per_trip: hoursPerTripByBooking.get(it.booking_id) ?? null,
           status: it.itinerary_status ?? 'Awaiting',
           assigned_employee_id: assignedEmployeeId,
           assigned_driver_name:
@@ -963,10 +1126,14 @@ function DispatchBoardSection() {
         // reflect that on screen instead of leaving the old name showing,
         // which would make it look like nothing happened.
         const role = crewRole.toLowerCase()
+        // The database refuses overlapping slots with a readable message
+        // ("Juan is already on trip #57 at that time.").
         setError(
-          `The previous ${role} was removed, but assigning the new one ` +
-            `failed (${assignError.message}). This trip now has no ` +
-            `${role} assigned -- please pick one again.`,
+          previousEmployeeId === null
+            ? assignError.message
+            : `The previous ${role} was removed, but assigning the new one ` +
+                `failed (${assignError.message}). This trip now has no ` +
+                `${role} assigned -- please pick one again.`,
         )
         setSavingId(null)
         setRows((prev) =>
@@ -1165,6 +1332,8 @@ function DispatchBoardSection() {
     onTruckChange: handleTruckChange,
     onTrailerChange: handleTrailerChange,
     onViewLogs: setLogsItineraryId,
+    now,
+    onEditTime: setEditTimeRow,
   }
 
   const tabs = [
@@ -1333,6 +1502,35 @@ function DispatchBoardSection() {
                 r.itinerary_id === itineraryId ? { ...r, status: 'Delivered' } : r,
               ),
             )
+          }}
+        />
+      )}
+
+      {editTimeRow && (
+        <EditTripTimeModal
+          itineraryId={editTimeRow.itinerary_id}
+          start={editTimeRow.trip_start_at}
+          end={editTimeRow.trip_end_at}
+          fallbackDate={editTimeRow.trip_date_from}
+          defaultStartMinutes={defaultStartMinutes}
+          hoursPerTrip={editTimeRow.hours_per_trip}
+          // Same booking, later in trip order, not started yet.
+          laterTrips={rows
+            .filter(
+              (r) =>
+                r.booking_id === editTimeRow.booking_id &&
+                r.itinerary_id > editTimeRow.itinerary_id &&
+                r.status === 'Awaiting',
+            )
+            .sort((a, b) => a.itinerary_id - b.itinerary_id)}
+          onClose={() => setEditTimeRow(null)}
+          onSaved={(warning) => {
+            const itineraryId = editTimeRow.itinerary_id
+            setEditTimeRow(null)
+            // Later trips may have moved too -- reload to show every new slot.
+            loadDispatchBoard()
+            if (warning) setError(warning)
+            else showToast(`Trip #${itineraryId} time saved.`)
           }}
         />
       )}

@@ -6,11 +6,17 @@
 // added by inserting a row into `app_settings` directly (SQL), and they
 // show up here automatically since the form just maps over whatever
 // rows exist.
+//
+// A row with unit 'time' (default_trip_start_time) is a time of day
+// stored as minutes after midnight (360 = 6 AM), edited with the 12-hour
+// TimeInput12 picker instead of a number box.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import PageHeader from '../../../components/PageHeader'
 import { showToast } from '../../../components/Toast'
 import EmptyState from '../../../components/EmptyState'
+import TimeInput12 from '../../../components/TimeInput12'
+import { formatMinutesOfDay } from '../../../lib/format'
 
 type Setting = {
   setting_key: string
@@ -90,7 +96,7 @@ function SettingsSection() {
     <div>
       <PageHeader
         title="Settings"
-        subtitle="Business constants used across the app -- diesel price, commission rates, and similar values."
+        subtitle="Business constants used across the app -- diesel price, commission rates, trip start time, and similar values."
       />
 
       {loading && <p className="mt-4 text-slate-500">Loading settings...</p>}
@@ -109,6 +115,20 @@ function SettingsSection() {
                 className="flex flex-col gap-1 text-sm font-medium text-slate-700"
               >
                 {setting.label}
+                {setting.unit === 'time' ? (
+                  <div className="flex items-center gap-3">
+                    <TimeInput12
+                      label={setting.label}
+                      value={Number(values[setting.setting_key]) || 0}
+                      onChange={(minutes) =>
+                        setValues((prev) => ({ ...prev, [setting.setting_key]: String(minutes) }))
+                      }
+                    />
+                    <span className="text-sm text-slate-400">
+                      {formatMinutesOfDay(Number(values[setting.setting_key]) || 0)}
+                    </span>
+                  </div>
+                ) : (
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -126,6 +146,7 @@ function SettingsSection() {
                     <span className="text-sm text-slate-400">{setting.unit}</span>
                   )}
                 </div>
+                )}
               </label>
             ))}
           </div>

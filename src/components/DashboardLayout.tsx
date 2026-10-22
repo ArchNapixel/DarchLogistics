@@ -10,6 +10,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
+import TripNotifications from './TripNotifications'
 import { isAdmin } from '../lib/roles'
 import RoleBadge from './RoleBadge'
 import { showToast } from './Toast'
@@ -52,6 +53,8 @@ const TAB_ICONS: Record<string, string> = {
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   Clients:
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+  'Driver Schedule': 'M3 4h18M3 4v16M7 8h6M10 12h8M5 16h7',
+  'My Schedule': 'M3 4h18M3 4v16M7 8h6M10 12h8M5 16h7',
   'Dispatch Board':
     'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   Employees: 'M2 7h20v14H2zM16 7V3H8v4',
@@ -178,6 +181,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+          <TripNotifications />
           <ComplianceExpiryAlerts />
           {/* Role pill is nice-to-have; drop it on phones to save room */}
           <span className="hidden sm:inline">

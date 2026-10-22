@@ -927,6 +927,55 @@ before creating it.
   phone rule, and `employees.emergency_contact_number` has no cleanup or
   constraint.
 
+- **Driver time slots (#5/#6) — built 2026-10-22 (SQL run by user,
+  untested in the browser at time of writing).**
+  - Schema: `app_settings.default_trip_start_time` (minutes after
+    midnight, unit `time`, 360 = 6 AM); `bookings.hours_per_trip`;
+    `itineraries.trip_start_at` / `trip_end_at` (timestamptz). Triggers:
+    `itinerary_slot_defaults` (BEFORE; end = start + hours_per_trip when
+    missing, moving the start keeps the length, syncs `trip_date_from/to`
+    to Manila dates), `itinerary_crews_check_slot` (BEFORE; refuses an
+    active Driver/Helper in an overlapping slot via `crew_slot_conflict()`,
+    advisory lock per employee; a started trip is busy until now even past
+    its end; trips with no start time are skipped — the UI requires one),
+    `itineraries_after_reschedule` (AFTER; re-checks crew, logs to
+    `itinerary_schedule_logs`, notifies crew), `itinerary_crews_notify`
+    (assigned/removed). Tables `itinerary_schedule_logs` (staff SELECT),
+    `notifications` (`employee_id, kind assigned|removed|rescheduled,
+    itinerary_id, read_at`; own SELECT/UPDATE). Time changes are NOT
+    logged to `dispatch_status_logs` on purpose (its latest Delivered row
+    is the payroll delivery date). Booking cancel sends no "removed".
+  - **A booking's trips run back to back** (no gap, no night cut-off):
+    `chainSlots()` in `lib/tripSchedule.ts`. Approve chains them from the
+    default start; saving a trip's time in EditTripTimeModal re-chains the
+    booking's LATER Awaiting trips (incl. ones with no time yet), each
+    keeping its own length; changing hours per trip re-chains from the
+    first timed Awaiting trip. Started/delivered trips never move.
+  - Rules live in `lib/tripSchedule.ts` (self-check
+    `node scripts/check-trip-schedule.ts`): overlap (back-to-back OK),
+    `isOverdue`, `lateEarlierTrip`, `rankCandidates` (free first, then
+    longest since their last trip; top 3 = Suggested -- no hours-per-week
+    counting, removed at the user's request). 12-hour display helpers in `lib/format.ts`
+    (`formatClock` 12 NN / 12 MN, `formatTime`, `formatSlot`,
+    `manilaTimestamp`, `splitManila`; self-check
+    `node scripts/check-time-format.ts`). `components/TimeInput12.tsx` =
+    hour/minute/AM-PM selects (browser time inputs can show 24-hour).
+  - Screens: Settings (time picker for unit-`time` rows); QuoteReviewModal
+    requires Hours per trip, trips created at pickup date + default start;
+    Dispatch Board "Time Slot" column with Set/Edit time
+    (`staff/EditTripTimeModal.tsx`, end can be extended), Overdue badge,
+    `CrewSelect` (locked until a slot exists; Suggested / Other free /
+    Unavailable groups; "Assign X" one-click; "running late — reassign?"),
+    trip can't leave Awaiting without a slot; BookingDetailModal shows
+    slots + edits Hours per trip (re-times Awaiting trips);
+    `staff/DriverScheduleSection.tsx` (`/dashboard/driver-schedule`,
+    Admin + Dispatcher, Drivers/Helpers tabs, Day/Week timeline, bars
+    link to `?booking=&trip=`); driver portal: slots on My Tasks / History
+    detail, `employee/MyScheduleSection.tsx` (`/dashboard/schedule`,
+    Driver + Helper only), `components/TripNotifications.tsx` bell in the
+    header (Driver/Helper; polls every minute, opening marks read). It is
+    separate from `ComplianceExpiryAlerts` (licence/medical bell).
+
 ## Currently in progress
 Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
 now), awaiting user testing (6a SQL has been run). Not built: payment history in the client

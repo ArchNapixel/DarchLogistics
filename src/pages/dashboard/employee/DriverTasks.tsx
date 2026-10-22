@@ -16,13 +16,16 @@ import { supabase } from '../../../lib/supabaseClient'
 import UpdateStatusControl from './UpdateStatusControl'
 import AddExpenseModal from './AddExpenseModal'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 type Trip = {
   itinerary_id: number
   trip_date_from: string
   trip_date_to: string | null
+  // Time slot set by dispatch (null on trips from before slots existed).
+  trip_start_at: string | null
+  trip_end_at: string | null
   itinerary_status: string
   pickup_place_name: string
   delivery_place_name: string
@@ -67,7 +70,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
     const { data: itineraries, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
-        'itinerary_id, trip_date_from, trip_date_to, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
+        'itinerary_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
       )
       .in('itinerary_id', itineraryIds)
       .not('itinerary_status', 'in', '(Delivered,Cancelled)')
@@ -133,6 +136,8 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
         itinerary_id: trip.itinerary_id,
         trip_date_from: trip.trip_date_from,
         trip_date_to: trip.trip_date_to,
+        trip_start_at: trip.trip_start_at,
+        trip_end_at: trip.trip_end_at,
         itinerary_status: trip.itinerary_status,
         pickup_place_name: placeNameById.get(trip.place_of_pickup_id) ?? '—',
         delivery_place_name:
@@ -209,8 +214,14 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           <StatusBadge status={trip.itinerary_status} />
         </div>
         <p className="mt-1 text-sm text-slate-500">
-          {formatDate(trip.trip_date_from)}
-          {trip.trip_date_to ? ` – ${formatDate(trip.trip_date_to)}` : ''}
+          {trip.trip_start_at ? (
+            formatSlot(trip.trip_start_at, trip.trip_end_at)
+          ) : (
+            <>
+              {formatDate(trip.trip_date_from)}
+              {trip.trip_date_to ? ` – ${formatDate(trip.trip_date_to)}` : ''}
+            </>
+          )}
         </p>
         <p className="mt-1 text-sm text-slate-600">
           Truck:{' '}

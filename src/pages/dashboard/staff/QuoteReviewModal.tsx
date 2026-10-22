@@ -3,6 +3,10 @@
 // required), plus Approve/Reject actions. The proposed rate, payment
 // terms and trip start date (= preferred pickup date) are the client's
 // and read-only -- to change them, Reject with a preset reason.
+// Staff also enter the booking's hours per trip (bookings.hours_per_trip).
+// The trips run one after another: trip 1 starts on the pickup date at
+// Settings' default trip start time (default_trip_start_time, 6 AM if
+// unset), trip 2 starts when trip 1 ends, and so on (chainSlots).
 //
 // Distance, most precise source first (the field stays editable either
 // way):
@@ -52,8 +56,14 @@ import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatMoney, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
 import { PAYMENT_TERMS_LABELS, REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
+import { chainSlots } from '../../../lib/tripSchedule'
+
+// Used when Settings has no default_trip_start_time row: 6 AM.
+const DEFAULT_TRIP_START_MINUTES = 360
+// Same cap as the bookings.hours_per_trip CHECK constraint.
+const MAX_HOURS_PER_TRIP = 72
 
 const fieldClasses =
   'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -220,6 +230,10 @@ function QuoteReviewModal({
   const paymentTerms = quote.payment_terms
   const tripDateFrom = quote.preferred_pickup_date ?? ''
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
+  // Length of each trip's time slot (bookings.hours_per_trip).
+  const [hoursPerTrip, setHoursPerTrip] = useState('')
+  // Settings' default trip start time, minutes after midnight.
+  const [defaultStartMinutes, setDefaultStartMinutes] = useState(DEFAULT_TRIP_START_MINUTES)
   const [distanceIsCached, setDistanceIsCached] = useState(false)
   const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
   const [distanceIsFromPins, setDistanceIsFromPins] = useState(false)
@@ -257,6 +271,7 @@ function QuoteReviewModal({
           'diesel_price_per_liter',
           'driver_commission_rate',
           'driver_per_trip_fee',
+          'default_trip_start_time',
         ])
 
       if (!data) {
@@ -281,6 +296,12 @@ function QuoteReviewModal({
       }
       if (perTripFeeSetting) {
         setDriverPerTripFee(perTripFeeSetting.setting_value)
+      }
+      const startSetting = data.find(
+        (setting) => setting.setting_key === 'default_trip_start_time',
+      )
+      if (startSetting) {
+        setDefaultStartMinutes(Number(startSetting.setting_value))
       }
     }
 
@@ -392,6 +413,12 @@ function QuoteReviewModal({
 
     if (!tripDateFrom) {
       setError('This quote has no pickup date. Reject it ("Schedule unavailable") so the client can add one.')
+      return
+    }
+
+    const hoursValue = Number(hoursPerTrip)
+    if (!hoursPerTrip || !(hoursValue > 0) || hoursValue > MAX_HOURS_PER_TRIP) {
+      setError(`Enter the hours per trip (more than 0, up to ${MAX_HOURS_PER_TRIP}) before approving.`)
       return
     }
 
@@ -553,6 +580,7 @@ function QuoteReviewModal({
         booking_date: quote.preferred_pickup_date,
         estimated_distance_km: distanceValue,
         rate_of_delivery_service: rateValue,
+        hours_per_trip: hoursValue,
       })
       .select('booking_id')
       .single()
@@ -572,11 +600,19 @@ function QuoteReviewModal({
     // needs manual follow-up instead of just retrying "Approve" (which
     // would create a duplicate booking).
     const deliveryCount = quote.delivery_order_count ?? 1
-    const itineraryRows = Array.from({ length: deliveryCount }, () => ({
+    // Back-to-back slots: trip 1 at the default start on the pickup date,
+    // each next trip when the one before ends. Dispatch can move them.
+    const slots = chainSlots(
+      new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime(),
+      Array.from({ length: deliveryCount }, () => hoursValue * 3_600_000),
+    )
+    const itineraryRows = slots.map((slot) => ({
       booking_id: newBooking.booking_id,
       place_of_pickup_id: pickupPlace.place_id,
       place_of_delivery_id: deliveryPlace.place_id,
       trip_date_from: tripDateFrom,
+      trip_start_at: new Date(slot.start).toISOString(),
+      trip_end_at: new Date(slot.end).toISOString(),
       itinerary_status: 'Awaiting',
     }))
 
@@ -843,6 +879,31 @@ function QuoteReviewModal({
                     pins). Check it before approving.
                   </span>
                 )}
+              </label>
+
+              <label className={labelClasses}>
+                Hours per trip
+                <input
+                  type="number"
+                  min="0.5"
+                  max={MAX_HOURS_PER_TRIP}
+                  step="0.5"
+                  value={hoursPerTrip}
+                  onChange={(e) => setHoursPerTrip(e.target.value)}
+                  placeholder="e.g. 6"
+                  className={fieldClasses}
+                />
+                <span className="text-xs font-normal text-slate-500">
+                  {Number(hoursPerTrip) > 0 && tripDateFrom
+                    ? `${(quote.delivery_order_count ?? 1) > 1 ? 'Trip 1' : 'Each trip'}: ${formatSlot(
+                        manilaTimestamp(tripDateFrom, defaultStartMinutes),
+                        new Date(
+                          new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime() +
+                            Number(hoursPerTrip) * 3_600_000,
+                        ),
+                      )}${(quote.delivery_order_count ?? 1) > 1 ? ', the rest follow back to back' : ''} (dispatch can move them)`
+                    : 'How long one trip takes. Sets each driver\'s time slot.'}
+                </span>
               </label>
 
               <InfoRow

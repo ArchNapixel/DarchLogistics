@@ -31,7 +31,8 @@ import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
+import { chainSlots } from '../../../lib/tripSchedule'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
 // here rather than imported, like EmployeeDetailModal does).
@@ -49,6 +50,9 @@ type Trip = {
   itinerary_id: number
   status: string
   trip_date_from: string | null
+  // Time slot (null on trips from before slots existed).
+  trip_start_at: string | null
+  trip_end_at: string | null
   plate_number: string | null
   trailer_id: number | null
   trailer_plate: string | null
@@ -75,6 +79,8 @@ type Details = {
   pickup_pin: string | null
   delivery_pin: string | null
   estimated_distance_km: number | null
+  // Length of each trip's time slot (bookings.hours_per_trip).
+  hours_per_trip: number | null
   preferred_delivery_date: string | null
   is_priority: boolean
   cancellation_reason: string | null
@@ -130,7 +136,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, cancellation_reason, cancelled_at, invoice_number',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cancellation_reason, cancelled_at, invoice_number',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -150,7 +156,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       : Promise.resolve({ data: null, error: null }),
     supabase
       .from('itineraries')
-      .select('itinerary_id, itinerary_status, trip_date_from, plate_number, trailer_id')
+      .select('itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id')
       .eq('booking_id', bookingId)
       .order('itinerary_id', { ascending: true }),
   ])
@@ -235,6 +241,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       pickup_pin: pinLink(b.pickup_lat, b.pickup_lng),
       delivery_pin: pinLink(b.delivery_lat, b.delivery_lng),
       estimated_distance_km: b.estimated_distance_km,
+      hours_per_trip: b.hours_per_trip,
       preferred_delivery_date: quoteResult.data?.preferred_delivery_date ?? null,
       is_priority: quoteResult.data?.is_last_day_of_port_storage === true,
       cancellation_reason: b.cancellation_reason,
@@ -243,6 +250,8 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         itinerary_id: t.itinerary_id,
         status: t.itinerary_status ?? 'Awaiting',
         trip_date_from: t.trip_date_from,
+        trip_start_at: t.trip_start_at,
+        trip_end_at: t.trip_end_at,
         plate_number: t.plate_number,
         trailer_id: t.trailer_id,
         trailer_plate: t.trailer_id !== null ? (trailerPlateById.get(t.trailer_id) ?? null) : null,
@@ -279,6 +288,10 @@ function BookingDetailModal({
 }) {
   const { employeeId, role } = useAuth()
   const [details, setDetails] = useState<Details | null>(null)
+  // Hours-per-trip editor (staff Bookings only): null = not editing.
+  const [hoursDraft, setHoursDraft] = useState<string | null>(null)
+  const [hoursSaving, setHoursSaving] = useState(false)
+  const [hoursError, setHoursError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
@@ -303,6 +316,62 @@ function BookingDetailModal({
       },
     )
   }, [])
+
+  // Changing hours per trip also re-times the trips that haven't left yet:
+  // from the first Awaiting trip that has a slot, every Awaiting trip after
+  // it gets the new length, back to back (chainSlots). Trips already on the
+  // road keep their slot. The database re-checks each trip's crew, so an
+  // overlap stops that trip's update with a message naming the clash.
+  async function saveHoursPerTrip() {
+    const hours = Number(hoursDraft)
+    if (!(hours > 0) || hours > 72) {
+      setHoursError('Enter more than 0 and up to 72 hours.')
+      return
+    }
+    setHoursSaving(true)
+    setHoursError(null)
+    const { data: updated, error: bookingError } = await supabase
+      .from('bookings')
+      .update({ hours_per_trip: hours })
+      .eq('booking_id', booking.booking_id)
+      .select('booking_id')
+      .maybeSingle()
+    if (bookingError || !updated) {
+      setHoursSaving(false)
+      setHoursError(bookingError?.message ?? 'The booking was not updated.')
+      return
+    }
+
+    const failures: string[] = []
+    const awaiting = (details?.trips ?? [])
+      .filter((t) => t.status === 'Awaiting')
+      .sort((a, b) => a.itinerary_id - b.itinerary_id)
+    const firstTimed = awaiting.findIndex((t) => t.trip_start_at !== null)
+    if (firstTimed !== -1) {
+      const toChain = awaiting.slice(firstTimed)
+      const slots = chainSlots(
+        new Date(toChain[0].trip_start_at!).getTime(),
+        toChain.map(() => hours * 3_600_000),
+      )
+      for (let i = 0; i < toChain.length; i++) {
+        const { error: tripError } = await supabase
+          .from('itineraries')
+          .update({
+            trip_start_at: new Date(slots[i].start).toISOString(),
+            trip_end_at: new Date(slots[i].end).toISOString(),
+          })
+          .eq('itinerary_id', toChain[i].itinerary_id)
+        if (tripError) failures.push(`trip #${toChain[i].itinerary_id}: ${tripError.message}`)
+      }
+    }
+    setHoursSaving(false)
+    if (failures.length > 0) {
+      setHoursError(`Hours per trip saved, but some trips kept their old end time (${failures.join('; ')}).`)
+    } else {
+      setHoursDraft(null)
+    }
+    reload()
+  }
 
   const reload = useCallback(() => {
     loadDetails(booking.booking_id).then(({ details: loaded, error }) => {
@@ -521,6 +590,55 @@ function BookingDetailModal({
 
           <SectionTitle>Schedule</SectionTitle>
           <InfoRow label="Pickup date" value={booking.date ? formatDate(booking.date) : '—'} />
+          <div>
+            <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">Hours per trip</p>
+            {hoursDraft === null ? (
+              <p className="mt-1 text-sm text-slate-900">
+                {details?.hours_per_trip != null ? `${details.hours_per_trip} h` : '—'}
+                {onChanged && details && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHoursDraft(details.hours_per_trip != null ? String(details.hours_per_trip) : '')
+                      setHoursError(null)
+                    }}
+                    className="ml-2 text-xs font-medium text-slate-600 underline hover:text-slate-900"
+                  >
+                    Edit
+                  </button>
+                )}
+              </p>
+            ) : (
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0.5"
+                  max="72"
+                  step="0.5"
+                  aria-label="Hours per trip"
+                  value={hoursDraft}
+                  onChange={(e) => setHoursDraft(e.target.value)}
+                  className="w-20 border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={saveHoursPerTrip}
+                  disabled={hoursSaving}
+                  className="btn-primary px-3 py-1 text-xs font-medium"
+                >
+                  {hoursSaving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHoursDraft(null)}
+                  className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {hoursError && <p className="mt-1 text-xs text-red-700">{hoursError}</p>}
+          </div>
           <InfoRow
             label="Delivery date"
             value={
@@ -613,7 +731,7 @@ function BookingDetailModal({
                   <tr>
                     <th className="px-3 py-2 font-medium">Trip</th>
                     <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Date</th>
+                    <th className="px-3 py-2 font-medium">Time slot</th>
                     <th className="px-3 py-2 font-medium">Driver</th>
                     <th className="px-3 py-2 font-medium">Truck / trailer</th>
                     <th className="px-3 py-2 font-medium">Expenses</th>
@@ -638,8 +756,15 @@ function BookingDetailModal({
                       <td className="px-3 py-2">
                         <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} />
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                        {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
+                      <td className="px-3 py-2 text-slate-600">
+                        {trip.trip_start_at ? (
+                          formatSlot(trip.trip_start_at, trip.trip_end_at)
+                        ) : (
+                          <>
+                            {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
+                            <span className="block text-xs text-amber-700">No time set</span>
+                          </>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-slate-600">
                         {trip.driver ?? <span className="text-slate-400">Not assigned</span>}
