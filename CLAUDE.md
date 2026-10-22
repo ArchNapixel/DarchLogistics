@@ -775,7 +775,8 @@ before creating it.
   (describes the old blue sidebar).
 
 - **Accounting module (2026-10-19, Admin only — no Accountant role).** A
-  sidebar group below Human Resource. Built so far:
+  sidebar group below Human Resource, **labelled "Expenses" in the nav
+  since 2026-10-22** (the group heading only; its pages keep their names). Built so far:
   - **Bills Receivable** moved here (was a top-level link).
   - **AR Aging** (`/dashboard/ar-aging`, `staff/ArAgingSection.tsx` +
     `lib/arAging.ts`, self-check `node scripts/check-ar-aging.ts`) —

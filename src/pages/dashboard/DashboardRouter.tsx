@@ -80,7 +80,7 @@ const staffLinks = [
     ],
   },
   {
-    label: 'Accounting',
+    label: 'Expenses',
     children: [
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
       { label: 'Accounts Payable', to: '/dashboard/bills-payable' },
