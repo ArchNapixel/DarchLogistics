@@ -1,11 +1,10 @@
 // ClientProfileSection: view/edit form for the logged-in client's own
 // contact info (clients.client_name/email/phone_number). Profile state
-// and loading/error live in the parent (ClientDashboard) instead of
-// here, since the welcome banner up there also needs client_name --
+// and loading/error come from useClientProfile() (below) in the parent
+// page, since the Home page's welcome banner also needs client_name --
 // this component just renders what it's given and reports back the
-// updated row on save, via onSaved, so the parent can update the
-// banner without a second fetch.
-import { useState } from 'react'
+// updated row on save, via onSaved.
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { phoneDigits, phoneError, phoneInput as formatPhone } from '../../../lib/quoteRequest'
 
@@ -13,6 +12,37 @@ export type ClientProfile = {
   client_name: string
   email: string | null
   phone_number: string | null
+}
+
+// Loads the client's own profile row. Used by the Home page (welcome
+// banner) and the My Profile page.
+export function useClientProfile(clientId: number | null) {
+  const [profile, setProfile] = useState<ClientProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!clientId) {
+      setLoading(false)
+      return
+    }
+    supabase
+      .from('clients')
+      .select('client_name, email, phone_number')
+      .eq('client_id', clientId)
+      .maybeSingle()
+      .then(({ data, error: loadError }) => {
+        if (loadError) {
+          setError(loadError.message)
+        } else {
+          setProfile(data)
+          setError(null)
+        }
+        setLoading(false)
+      })
+  }, [clientId])
+
+  return { profile, loading, error, setProfile }
 }
 
 const fieldClasses =

@@ -1,7 +1,39 @@
 // NewQuoteModal: the client portal's pop-up around ClientQuoteForm (which
 // has the actual fields/submit logic). Used for "New Quote" on the
 // dashboard and for "Edit & resubmit" on a rejected quote (`resubmit` set).
+import { useState } from 'react'
 import ClientQuoteForm, { type ResubmitTarget } from './ClientQuoteForm'
+
+// The "New Quote Request" button + its modal, for page headers.
+// `onCreated` lets the My Quotes page reload its list afterwards.
+export function NewQuoteButton({
+  clientId,
+  onCreated,
+}: {
+  clientId: number
+  onCreated?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="btn-primary px-4 py-2 text-sm font-medium"
+      >
+        New Quote Request
+      </button>
+      {open && (
+        <NewQuoteModal
+          clientId={clientId}
+          onCreated={() => {
+            setOpen(false)
+            onCreated?.()
+          }}
+        />
+      )}
+    </>
+  )
+}
 
 function NewQuoteModal({
   clientId,

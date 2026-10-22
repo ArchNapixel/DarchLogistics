@@ -16,10 +16,14 @@ import EmptyState from '../../../components/EmptyState'
 function ClientPaymentsSection({
   clientId,
   onLoaded,
+  limit,
 }: {
   clientId: number
   // Hands the rows up to ClientDashboard for its summary strip.
   onLoaded?: (rows: PaymentDueRow[]) => void
+  // Home-page preview: only the first `limit` rows that still owe money
+  // (rows come soonest-due first).
+  limit?: number
 }) {
   const [rows, setRows] = useState<PaymentDueRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,9 +62,17 @@ function ClientPaymentsSection({
     return <EmptyState message="No bookings to track yet." />
   }
 
+  const shownRows = limit
+    ? rows.filter((row) => row.balance_due > 0).slice(0, limit)
+    : rows
+
+  if (shownRows.length === 0) {
+    return <EmptyState message="Nothing due right now." />
+  }
+
   return (
     <div className="grid gap-3">
-      {rows.map((row) => {
+      {shownRows.map((row) => {
         const due = formatDaysUntilDue(row.days_until_due)
         return (
           <div

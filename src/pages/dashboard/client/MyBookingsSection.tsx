@@ -85,13 +85,14 @@ export function isActiveBooking(booking: Booking): boolean {
 }
 
 function MyBookingsSection({
-  onStatusRequested,
   onLoaded,
+  limit,
 }: {
-  onStatusRequested?: () => void
   // Hands the loaded list up to ClientDashboard for its summary strip,
   // so it doesn't need a second fetch.
   onLoaded?: (bookings: Booking[]) => void
+  // Home-page preview: only the first `limit` active bookings, no tabs.
+  limit?: number
 }) {
   const { clientId } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -227,13 +228,13 @@ function MyBookingsSection({
   }
 
   const activeCount = bookings.filter(isActiveBooking).length
-  const visibleBookings = bookings.filter(
-    (booking) => isActiveBooking(booking) !== showPast,
-  )
+  const visibleBookings = limit
+    ? bookings.filter(isActiveBooking).slice(0, limit)
+    : bookings.filter((booking) => isActiveBooking(booking) !== showPast)
 
   return (
     <div className="grid gap-4">
-      <div className="flex gap-2">
+      {!limit && <div className="flex gap-2">
         {[
           { label: `Active (${activeCount})`, past: false },
           { label: `Past (${bookings.length - activeCount})`, past: true },
@@ -250,7 +251,7 @@ function MyBookingsSection({
             {tab.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {visibleBookings.length === 0 && (
         <p className="text-slate-500">
@@ -437,7 +438,6 @@ function MyBookingsSection({
           onClose={() => setRequesting(null)}
           onRequested={() => {
             setRequesting(null)
-            onStatusRequested?.()
           }}
         />
       )}

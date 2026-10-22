@@ -22,6 +22,8 @@ type SidebarLink = {
   // link, just the thing that reveals the flyout.
   to?: string
   children?: { label: string; to: string }[]
+  // Pinned to the bottom of the sidebar (e.g. the client's My Profile).
+  bottom?: boolean
 }
 
 // Icon shown beside each sidebar tab, looked up by its label. Each value is
@@ -32,6 +34,11 @@ const FILE =
   'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8'
 const TAB_ICONS: Record<string, string> = {
   Dashboard: HOME,
+  Home: HOME,
+  'My Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+  Payments: 'M2 5h20v14H2zM2 10h20',
+  'My Quotes': FILE,
+  'My Requests': 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   Reports: 'M18 20V10M12 20V4M6 20v-6',
   'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
   'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
@@ -228,6 +235,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                         onClick={closeNav}
                         className={({ isActive }) =>
                           `flex items-center px-2.5 py-1 text-sm font-medium ${
+                            link.bottom ? 'mt-auto border-t border-white/10 pt-2 ' : ''
+                          }${
                             isActive
                               ? 'bg-primary text-white'
                               : 'text-slate-200 hover:bg-navy-hover hover:text-white'

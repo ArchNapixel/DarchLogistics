@@ -23,6 +23,13 @@ import DashboardLayout from '../../components/DashboardLayout'
 import StaffDashboard from './StaffDashboard'
 import EmployeeDashboard from './EmployeeDashboard'
 import ClientDashboard from './ClientDashboard'
+import {
+  ClientBookingsPage,
+  ClientPaymentsPage,
+  ClientQuotesPage,
+  ClientRequestsPage,
+  ClientProfilePage,
+} from './client/ClientPages'
 import QuoteRequestsSection from './staff/QuoteRequestsSection'
 import ClientsSection from './staff/ClientsSection'
 import BookingsSection from './staff/BookingsSection'
@@ -108,6 +115,17 @@ const staffLinks = [
       { label: 'Inventory', to: '/dashboard/inventory' },
     ],
   },
+]
+
+// Client portal: one page per link (pages in client/ClientPages.tsx).
+const clientLinks = [
+  { label: 'Home', to: '/dashboard' },
+  { label: 'My Bookings', to: '/dashboard/bookings' },
+  { label: 'Payments', to: '/dashboard/payments' },
+  { label: 'My Quotes', to: '/dashboard/quotes' },
+  { label: 'My Requests', to: '/dashboard/requests' },
+  // "Rate Us" lives on the My Profile page.
+  { label: 'My Profile', to: '/dashboard/profile', bottom: true },
 ]
 
 const dispatcherLinks = [
@@ -252,8 +270,13 @@ function DashboardRouter() {
   if (role === 'Client') {
     return (
       <Routes>
-        <Route element={<DashboardLayout sidebarLinks={[]} />}>
+        <Route element={<DashboardLayout sidebarLinks={clientLinks} />}>
           <Route index element={<ClientDashboard />} />
+          <Route path="bookings" element={<ClientBookingsPage />} />
+          <Route path="payments" element={<ClientPaymentsPage />} />
+          <Route path="quotes" element={<ClientQuotesPage />} />
+          <Route path="requests" element={<ClientRequestsPage />} />
+          <Route path="profile" element={<ClientProfilePage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
