@@ -951,6 +951,14 @@ before creating it.
     damage, reflects discounts). Trip Profitability = BILLED (rate × trips
     delivered, by delivery date, calendar month, Cancelled bookings'
     delivered trips included, ignores `amount_to_pay` overrides, no damage).
+    **Changed 2026-10-22:** the dashboard card is now non-voided
+    `booking_payments` by `paid_on` in the period, net of refunds (= the
+    Collections page), incl. Cancelled bookings -- the description above
+    is the old rule. Same day: Today's Deliveries uses the Manila date and
+    skips Cancelled trips, Trucks/Trailers Operational read Fleet
+    `current_status`, Drivers Available excludes approved leave, Refresh
+    reloads every card, and `loadCashAdvanceTotals` counts only finalized
+    payslips' deductions and pages past 1000 rows.
     The dashboard card and Trip Profitability are NOT relabelled (user
     chose a reconciliation page instead).
   - **Billing (per booking, 2026-10-19)** — Accounting → Billing,

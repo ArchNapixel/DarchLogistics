@@ -16,6 +16,7 @@
 // their next payslip.
 import { supabase } from './supabaseClient'
 import { getOutstandingCashAdvance } from './payslip'
+import { fetchAll } from './dashboardExpenses'
 
 export type CashAdvanceStatus = 'Pending' | 'Approved' | 'Rejected'
 
@@ -83,19 +84,30 @@ export async function loadCashAdvanceTotals(): Promise<{
   totals: { pending: number; issued: number; deducted: number; current: number }
   error: string | null
 }> {
+  // Every page (Supabase stops at 1000 rows), and only FINALIZED payslips:
+  // a draft's deduction hasn't been taken from anyone yet and can still be
+  // edited or regenerated.
   const [advances, payslips] = await Promise.all([
-    supabase.from('cash_advances').select('amount, status'),
-    supabase.from('payroll_payslips').select('cash_advance_deducted'),
+    fetchAll<{ amount: number | string; status: string }>((from, to) =>
+      supabase.from('cash_advances').select('amount, status').range(from, to),
+    ),
+    fetchAll<{ cash_advance_deducted: number | string | null }>((from, to) =>
+      supabase
+        .from('payroll_payslips')
+        .select('cash_advance_deducted')
+        .not('finalized_at', 'is', null)
+        .range(from, to),
+    ),
   ])
   const failed = advances.error ?? payslips.error
   if (failed) {
-    return { totals: { pending: 0, issued: 0, deducted: 0, current: 0 }, error: failed.message }
+    return { totals: { pending: 0, issued: 0, deducted: 0, current: 0 }, error: failed }
   }
 
   const sumByStatus = (status: string) =>
-    (advances.data ?? []).filter((a) => a.status === status).reduce((sum, a) => sum + Number(a.amount), 0)
+    advances.rows.filter((a) => a.status === status).reduce((sum, a) => sum + Number(a.amount), 0)
   const issued = sumByStatus('Approved')
-  const deducted = (payslips.data ?? []).reduce((sum, p) => sum + Number(p.cash_advance_deducted ?? 0), 0)
+  const deducted = payslips.rows.reduce((sum, p) => sum + Number(p.cash_advance_deducted ?? 0), 0)
 
   return {
     totals: { pending: sumByStatus('Pending'), issued, deducted, current: Math.max(0, issued - deducted) },

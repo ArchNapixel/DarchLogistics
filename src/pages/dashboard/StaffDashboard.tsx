@@ -3,6 +3,9 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
 import { loadCashAdvanceTotals } from '../../lib/cashAdvanceRequests'
+import { toManilaDate } from '../../lib/payslip'
+import { loadApprovedLeave } from '../../lib/leaveRequests'
+import { fetchAll } from '../../lib/dashboardExpenses'
 import MaintenanceExpensesCard from './staff/MaintenanceExpensesCard'
 import OperationalExpensesCard from './staff/OperationalExpensesCard'
 import PayrollExpensesCard from './staff/PayrollExpensesCard'
@@ -12,7 +15,13 @@ import StatusBadge from '../../components/StatusBadge'
 import { formatMoney } from '../../lib/format'
 import EmptyState from '../../components/EmptyState'
 
-const ACTIVE_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
+// A truck/trailer at one of these statuses (Fleet's current_status) isn't
+// operational.
+const NOT_OPERATIONAL = new Set(['Under Maintenance', 'Out of Service'])
+
+// Trips that still count as "today's deliveries": anything not Cancelled.
+// (A plain .neq() would also drop rows whose status is still null.)
+const NOT_CANCELLED = 'itinerary_status.is.null,itinerary_status.neq.Cancelled'
 
 // Cards whose number means "someone needs to act" -- shown in the accent
 // color (see the design system notes in index.css).
@@ -53,7 +62,6 @@ function StaffDashboard() {
     trailerCount: 0,
     trucksOperational: 0,
     trailersOperational: 0,
-    underMaintenance: 0,
   })
   const [loading, setLoading] = useState(true)
   const [summaryError, setSummaryError] = useState<string | null>(null)
@@ -78,9 +86,10 @@ function StaffDashboard() {
   useEffect(() => {
     async function loadSummary() {
       try {
-        const today = new Date().toISOString().slice(0, 10)
+        // Manila date, not UTC (toISOString gave yesterday before 8 AM).
+        const today = toManilaDate(new Date())
 
-        const [quotes, bookings, deliveries, trucks, trailers, activeWorkOrders] =
+        const [quotes, bookings, deliveries, trucks, trailers] =
           await Promise.all([
             supabase
               .from('quote_requests')
@@ -93,17 +102,10 @@ function StaffDashboard() {
             supabase
               .from('itineraries')
               .select('itinerary_id', { count: 'exact', head: true })
-              .eq('trip_date_from', today),
-            supabase
-              .from('truck_profiles')
-              .select('plate_number', { count: 'exact', head: true }),
-            supabase
-              .from('trailers')
-              .select('trailer_id', { count: 'exact', head: true }),
-            supabase
-              .from('work_orders')
-              .select('plate_number, trailer_id')
-              .in('work_order_status', ACTIVE_WORK_ORDER_STATUSES),
+              .eq('trip_date_from', today)
+              .or(NOT_CANCELLED),
+            supabase.from('truck_profiles').select('current_status'),
+            supabase.from('trailers').select('current_status'),
           ])
 
         if (
@@ -111,16 +113,14 @@ function StaffDashboard() {
           bookings.error ||
           deliveries.error ||
           trucks.error ||
-          trailers.error ||
-          activeWorkOrders.error
+          trailers.error
         ) {
           const firstError =
             quotes.error ??
             bookings.error ??
             deliveries.error ??
             trucks.error ??
-            trailers.error ??
-            activeWorkOrders.error!
+            trailers.error!
           console.error('Failed to load dashboard summary', firstError)
           setSummaryError(
             `Couldn't load the dashboard summary (${firstError.message}). Try refreshing the page.`,
@@ -130,31 +130,20 @@ function StaffDashboard() {
 
         setSummaryError(null)
 
-        // A truck/trailer can have more than one active work order -- count
-        // distinct vehicles, not distinct work orders.
-        const trucksUnderMaintenance = new Set(
-          activeWorkOrders.data
-            .filter((w) => w.plate_number)
-            .map((w) => w.plate_number),
-        ).size
-        const trailersUnderMaintenance = new Set(
-          activeWorkOrders.data
-            .filter((w) => w.trailer_id)
-            .map((w) => w.trailer_id),
-        ).size
-
-        const truckCount = trucks.count ?? 0
-        const trailerCount = trailers.count ?? 0
+        // Operational = the vehicle's own Fleet status isn't Under
+        // Maintenance / Out of Service (null counts as Available, same as
+        // the Fleet page's badge).
+        const operational = (rows: { current_status: string | null }[]) =>
+          rows.filter((r) => !NOT_OPERATIONAL.has(r.current_status ?? 'Available')).length
 
         setSummary({
           pendingQuotes: quotes.count ?? 0,
           activeBookings: bookings.count ?? 0,
           todayDeliveries: deliveries.count ?? 0,
-          truckCount,
-          trailerCount,
-          trucksOperational: truckCount - trucksUnderMaintenance,
-          trailersOperational: trailerCount - trailersUnderMaintenance,
-          underMaintenance: trucksUnderMaintenance + trailersUnderMaintenance,
+          truckCount: trucks.data.length,
+          trailerCount: trailers.data.length,
+          trucksOperational: operational(trucks.data),
+          trailersOperational: operational(trailers.data),
         })
       } catch (error) {
         console.error('Failed to load dashboard summary', error)
@@ -167,7 +156,7 @@ function StaffDashboard() {
     }
 
     loadSummary()
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
     async function loadRevenue() {
@@ -178,29 +167,28 @@ function StaffDashboard() {
         REVENUE_RANGES.find((r) => r.value === revenueRange)!.period,
       )
 
-      // Cash actually collected (amount_paid), not rate x deliveries --
-      // Financial Records (FinancialSection.tsx) can record payment
-      // ahead of delivery (e.g. "Paid Full" against the whole contract),
-      // so this tracks real money in hand rather than earned-on-delivery
-      // revenue. amount_paid is written directly by that page; nothing
-      // here needs the itineraries table at all.
-      const { data: bookingRows, error: bookingError } = await supabase
-        .from('bookings')
-        .select('amount_paid')
-        .neq('booking_status', 'Cancelled')
-        .gte('booking_date', cutoffDate)
+      // Cash actually collected in the period: every non-voided payment in
+      // booking_payments by the date it was received, refunds (negative
+      // amounts) subtracted -- the same money the Collections page lists.
+      // Counts payments on any booking, incl. older and Cancelled ones.
+      const payments = await fetchAll<{ amount: number | string }>((from, to) =>
+        supabase
+          .from('booking_payments')
+          .select('amount')
+          .is('voided_at', null)
+          .gte('paid_on', cutoffDate)
+          .range(from, to),
+      )
 
-      if (bookingError) {
-        console.error('Failed to load revenue', bookingError)
-        setRevenueError(`Couldn't load revenue (${bookingError.message}).`)
+      if (payments.error) {
+        console.error('Failed to load revenue', payments.error)
+        setRevenueError(`Couldn't load revenue (${payments.error}).`)
         setRevenueLoading(false)
         return
       }
 
       setRevenueError(null)
-      setRevenue(
-        bookingRows.reduce((sum, booking) => sum + (booking.amount_paid ?? 0), 0),
-      )
+      setRevenue(payments.rows.reduce((sum, p) => sum + Number(p.amount), 0))
       setRevenueLoading(false)
     }
 
@@ -209,12 +197,15 @@ function StaffDashboard() {
 
   // Cash advance totals (same four numbers as the Cash Advance page ledger)
   const [cashAdvance, setCashAdvance] = useState<string[] | null>(null)
+  const [cashAdvanceError, setCashAdvanceError] = useState<string | null>(null)
   useEffect(() => {
     loadCashAdvanceTotals().then(({ totals, error }) => {
       if (error) {
         console.error('Failed to load cash advance totals', error)
+        setCashAdvanceError(`Couldn't load cash advances (${error}).`)
         return
       }
+      setCashAdvanceError(null)
       setCashAdvance(
         [totals.pending, totals.issued, totals.deducted, totals.current].map(
           (n) => `${formatMoney(n)}`,
@@ -225,11 +216,14 @@ function StaffDashboard() {
 
   // Human Resource card numbers. Employees = everyone not Deactivated/
   // Terminated. A driver is "available" unless they're active crew on a
-  // trip that's on the road (Dispatched / PickedUp / InTransit).
+  // trip that's on the road (Dispatched / PickedUp / InTransit) or on
+  // approved leave today.
   const [hr, setHr] = useState<{ total: number; drivers: number; available: number } | null>(null)
+  const [hrError, setHrError] = useState<string | null>(null)
   useEffect(() => {
     async function loadHr() {
-      const [statuses, employees, crews, trips] = await Promise.all([
+      const today = toManilaDate(new Date())
+      const [statuses, employees, crews, trips, leave] = await Promise.all([
         supabase.from('employment_status').select('status_id, status_name'),
         supabase.from('employees').select('employee_id, position, employment_status_id'),
         supabase
@@ -241,13 +235,21 @@ function StaffDashboard() {
           .from('itineraries')
           .select('itinerary_id')
           .in('itinerary_status', ['Dispatched', 'PickedUp', 'InTransit']),
+        loadApprovedLeave(today),
       ])
-      const err = statuses.error ?? employees.error ?? crews.error ?? trips.error
-      if (!statuses.data || !employees.data || !crews.data || !trips.data) return
-      if (err) {
+      // Check the error FIRST (a failed query has no data either).
+      const err =
+        statuses.error?.message ??
+        employees.error?.message ??
+        crews.error?.message ??
+        trips.error?.message ??
+        leave.error
+      if (err || !statuses.data || !employees.data || !crews.data || !trips.data) {
         console.error('Failed to load HR summary', err)
+        setHrError(`Couldn't load employees (${err ?? 'no data'}).`)
         return
       }
+      setHrError(null)
       const inactiveIds = new Set(
         statuses.data
           .filter((s) => s.status_name === 'Deactivated' || s.status_name === 'Terminated')
@@ -261,6 +263,11 @@ function StaffDashboard() {
       const busy = new Set(
         crews.data.filter((c) => onRoad.has(c.itinerary_id)).map((c) => c.employee_id),
       )
+      // On approved leave covering today (dates are 'yyyy-mm-dd', so plain
+      // string comparison works).
+      for (const [employeeId, ranges] of leave.byEmployee) {
+        if (ranges.some((r) => r.start_date <= today && today <= r.end_date)) busy.add(employeeId)
+      }
       setHr({
         total: current.length,
         drivers: drivers.length,
@@ -274,7 +281,7 @@ function StaffDashboard() {
     async function loadTodayDeliveries() {
       setTodayDeliveriesLoading(true)
 
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toManilaDate(new Date())
 
       const { data: itineraryRows, error: itineraryError } = await supabase
         .from('itineraries')
@@ -282,6 +289,7 @@ function StaffDashboard() {
           'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
         )
         .eq('trip_date_from', today)
+        .or(NOT_CANCELLED)
 
       if (itineraryError) {
         console.error('Failed to load today\'s deliveries', itineraryError)
@@ -371,7 +379,7 @@ function StaffDashboard() {
     }
 
     loadTodayDeliveries()
-  }, [])
+  }, [refreshKey])
 
   // Cards grouped by the same module names as the sidebar
   const summaryGroups = [
@@ -392,6 +400,7 @@ function StaffDashboard() {
     },
     {
       title: 'Human Resource',
+      error: hrError,
       cards: [
         { label: 'Total Employees', value: hr?.total ?? '--' },
         { label: 'Drivers Available', value: hr ? `${hr.available}/${hr.drivers}` : '--' },
@@ -399,6 +408,7 @@ function StaffDashboard() {
     },
     {
       title: 'Cash Advance',
+      error: cashAdvanceError,
       cards: [
         { label: 'Pending Approval', value: cashAdvance?.[0] ?? '--' },
         { label: 'Disbursed', value: cashAdvance?.[1] ?? '--' },
@@ -422,6 +432,9 @@ function StaffDashboard() {
   const renderGroup = (group: (typeof summaryGroups)[number], columns = group.cards.length, large = false) => (
     <>
       <h2 className="font-ui text-sm font-medium text-neutral-500">{group.title}</h2>
+      {'error' in group && group.error && (
+        <p className="mt-1 font-ui text-xs text-red-700">{group.error}</p>
+      )}
       <div
         className="mt-2 grid flex-1 gap-2 sm:gap-3"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
