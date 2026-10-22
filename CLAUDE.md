@@ -679,7 +679,7 @@ before creating it.
   (`ClientLoginPage.tsx`): log in with username OR email (same
   `get_login_email` lookup as staff). Sign-up form order: Username,
   Password, Confirm password, Name or company (= `clients.client_name`,
-  shown in the portal), Email, Phone. Two sign-up paths:
+  shown in the portal), Email, Phone. Sign-up:
   - **Email:** `supabase.auth.signUp` with metadata
     (`sign_up_as_client`, `username`, `client_name`, `phone_number`);
     DB trigger `on_client_signup` on `auth.users` →
@@ -688,15 +688,9 @@ before creating it.
     trigger's error text ("Database error saving new user") — the page
     maps it to "username may already be taken". Confirmation link
     returns to `/client-login`.
-  - **Google:** "Continue with Google" → `/client-setup`
-    (`ClientSetupPage.tsx`): pick username + password (set via
-    `auth.updateUser`), name, phone → RPC `complete_client_signup`.
-    Later logins are username + password, not Google. A Google session
-    with no `users` row is sent to `/client-setup` from `/client-login`.
-    Google Cloud OAuth client lives in project `manifest-field-491605-q0`
-    (shared with RoomManager; app name set to Darch Logistics); app is
-    in Testing — only listed test users can sign in until published.
-  Supabase redirect URLs: `/client-setup` and `/client-login` for
+  Google login was removed 2026-10-22 (`/client-setup` page + route deleted;
+  the `complete_client_signup` RPC is now unused and can be dropped).
+  Supabase redirect URL: `/client-login` for
   localhost:5173 and darch-logistics.vercel.app. SQL run by user, no
   migration file. **Known gap:** signing up with an email that already
   has a `clients` row (from an approved quote) creates a second

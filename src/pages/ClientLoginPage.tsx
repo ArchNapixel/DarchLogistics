@@ -26,11 +26,9 @@ function ClientLoginPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
-  const { session, role, loading } = useAuth()
+  const { session, loading } = useAuth()
 
   if (loading) return null
-  // Signed in with Google but no account yet -> finish setup first.
-  if (session && !role) return <Navigate to="/client-setup" replace />
   if (session) return <Navigate to="/dashboard" replace />
 
   const signingUp = mode === 'signup'
@@ -119,16 +117,6 @@ function ClientLoginPage() {
       )
     }
     navigate('/dashboard')
-  }
-
-  // Google proves the email, then /client-setup asks for username + password.
-  async function handleGoogle() {
-    setError(null)
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/client-setup` },
-    })
-    if (oauthError) setError(oauthError.message)
   }
 
   return (
@@ -264,16 +252,6 @@ function ClientLoginPage() {
                 : 'Log In'}
           </button>
         </form>
-
-        {signingUp && (
-          <button
-            type="button"
-            onClick={handleGoogle}
-            className="mt-3 w-full border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Continue with Google
-          </button>
-        )}
 
         <button
           type="button"

@@ -6,7 +6,6 @@ import LandingPage from './pages/LandingPage'
 import QuoteRequestPage from './pages/QuoteRequestPage'
 import LoginPage from './pages/LoginPage'
 import ClientLoginPage from './pages/ClientLoginPage'
-import ClientSetupPage from './pages/ClientSetupPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardRouter from './pages/dashboard/DashboardRouter'
@@ -19,7 +18,6 @@ function App() {
       <Route path="/quote-request" element={<QuoteRequestPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/client-login" element={<ClientLoginPage />} />
-      <Route path="/client-setup" element={<ClientSetupPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
