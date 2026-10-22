@@ -5,6 +5,7 @@
 // The desktop row and the mobile menu share one `links` list below.
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
+import { logOut, useAuth } from '../context/AuthContext'
 
 // Plain <a> for the in-page anchors on purpose: a full load from another
 // page lands on the right section natively.
@@ -19,6 +20,7 @@ const focusRing =
 function NavBar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const closeMenu = () => setMobileMenuOpen(false)
+  const { session } = useAuth()
 
   return (
     <header className="sticky top-0 z-50 bg-brand-navy">
@@ -43,18 +45,40 @@ function NavBar() {
               {l.label}
             </a>
           ))}
-          <Link
-            to="/client-login"
-            className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
-          >
-            Client Login
-          </Link>
-          <Link
-            to="/login"
-            className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
-          >
-            Staff Login
-          </Link>
+          {/* Logged in: Dashboard + Log out, so a saved session is obvious
+              instead of the login links silently bouncing to the dashboard. */}
+          {session ? (
+            <>
+              <Link
+                to="/dashboard"
+                className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
+              >
+                Dashboard
+              </Link>
+              <button
+                type="button"
+                onClick={logOut}
+                className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/client-login"
+                className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
+              >
+                Client Login
+              </Link>
+              <Link
+                to="/login"
+                className={`text-sm font-medium text-slate-200 hover:text-white ${focusRing}`}
+              >
+                Staff Login
+              </Link>
+            </>
+          )}
           {/* Main call to action -- the filled button */}
           <NavLink
             to="/quote-request"
@@ -101,20 +125,44 @@ function NavBar() {
               {l.label}
             </a>
           ))}
-          <Link
-            to="/client-login"
-            onClick={closeMenu}
-            className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
-          >
-            Client Login
-          </Link>
-          <Link
-            to="/login"
-            onClick={closeMenu}
-            className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
-          >
-            Staff Login
-          </Link>
+          {session ? (
+            <>
+              <Link
+                to="/dashboard"
+                onClick={closeMenu}
+                className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+              >
+                Dashboard
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  closeMenu()
+                  logOut()
+                }}
+                className="px-3 py-2 text-left text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/client-login"
+                onClick={closeMenu}
+                className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+              >
+                Client Login
+              </Link>
+              <Link
+                to="/login"
+                onClick={closeMenu}
+                className="px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 hover:text-white"
+              >
+                Staff Login
+              </Link>
+            </>
+          )}
           <NavLink
             to="/quote-request"
             onClick={closeMenu}

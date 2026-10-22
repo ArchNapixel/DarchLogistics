@@ -1,10 +1,12 @@
-// LoginPage: sign-in at "/login" for every role (staff, employees, clients).
-// Uses Supabase Auth's signInWithPassword. On success, sends the user to
-// /dashboard. If someone is already logged in, skips straight to /dashboard.
+// LoginPage: staff + employee sign-in at "/login" (clients use
+// /client-login and are refused here). Uses Supabase Auth's
+// signInWithPassword. On success, sends the user to /dashboard. If a staff
+// or employee is already logged in, skips straight to /dashboard.
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+import SignedInPanel from '../components/SignedInPanel'
 
 const fieldClasses =
   'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
@@ -17,10 +19,16 @@ function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const navigate = useNavigate()
-  const { session } = useAuth()
+  const { session, role, loading } = useAuth()
 
-  // Already logged in? No reason to show the form.
-  if (session) return <Navigate to="/dashboard" replace />
+  // Wait for the saved session check, so the form doesn't flash first.
+  if (loading) return null
+  // Already logged in as staff/employee? No reason to show the form. A
+  // saved Client session (or one whose role failed to load) gets the
+  // "you're logged in as..." panel instead of a silent redirect.
+  if (session && role && role !== 'Client') return <Navigate to="/dashboard" replace />
+  if (session)
+    return <SignedInPanel hint="Log out first to log in with a staff account." />
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -42,9 +50,25 @@ function LoginPage() {
 
     // Unknown username -> same message as a wrong password, so the form
     // doesn't reveal which usernames exist.
-    const { error: signInError } = loginEmail
+    const { data: signInData, error: signInError } = loginEmail
       ? await supabase.auth.signInWithPassword({ email: loginEmail, password })
-      : { error: true }
+      : { data: null, error: true }
+
+    // Client accounts belong on Client Login: sign them straight back out
+    // (mirror of the staff check in ClientLoginPage).
+    if (!signInError && signInData?.user) {
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('user_role')
+        .eq('auth_user_id', signInData.user.id)
+        .maybeSingle()
+      if (userRow?.user_role === 'Client') {
+        await supabase.auth.signOut()
+        setSubmitting(false)
+        setError('This is a client account — please use Client Login.')
+        return
+      }
+    }
 
     setSubmitting(false)
 

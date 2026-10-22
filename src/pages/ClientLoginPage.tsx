@@ -8,6 +8,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+import SignedInPanel from '../components/SignedInPanel'
 import { phoneDigits, phoneError, phoneInput } from '../lib/quoteRequest'
 import { ACCOUNT_MAX as MAX, filterUsername, passwordError, usernameError } from '../lib/clientAccount'
 
@@ -45,10 +46,15 @@ function ClientLoginPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
-  const { session, loading } = useAuth()
+  const { session, role, loading } = useAuth()
 
   if (loading) return null
-  if (session) return <Navigate to={next} replace />
+  // Only a CLIENT session skips the form. Any other saved session (e.g. an
+  // Admin who never logged out) gets a "you're logged in as..." panel
+  // instead of being dropped into the staff dashboard from Client Login.
+  if (session && role === 'Client') return <Navigate to={next} replace />
+  if (session)
+    return <SignedInPanel hint="Log out first to log in with a client account." />
 
   const signingUp = mode === 'signup'
 
@@ -124,9 +130,27 @@ function ClientLoginPage() {
       })
       loginEmail = data ?? null
     }
-    const { error: signInError } = loginEmail
+    const { data: signInData, error: signInError } = loginEmail
       ? await supabase.auth.signInWithPassword({ email: loginEmail, password })
-      : { error: true }
+      : { data: null, error: true }
+
+    // Staff accounts belong on Staff Login: sign them straight back out.
+    // No users row found (an old staff-created client account claimed on
+    // first login by AuthContext) is let through -- only a known non-Client
+    // role is refused.
+    if (!signInError && signInData?.user) {
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('user_role')
+        .eq('auth_user_id', signInData.user.id)
+        .maybeSingle()
+      if (userRow && userRow.user_role !== 'Client') {
+        await supabase.auth.signOut()
+        setSubmitting(false)
+        return setError('This is a staff account — please use Staff Login.')
+      }
+    }
+
     setSubmitting(false)
     if (signInError) {
       // Right password, but the sign-up email link hasn't been clicked yet.

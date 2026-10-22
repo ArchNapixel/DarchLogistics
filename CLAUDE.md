@@ -701,6 +701,13 @@ before creating it.
     trigger's error text ("Database error saving new user") — the page
     maps it to "username may already be taken". Confirmation link
     returns to `/client-login`.
+  **Login pages are role-separated (2026-10-22):** Client Login refuses
+  staff accounts and Staff Login refuses Client accounts (signs them
+  back out with "use the other login"). A saved session of the wrong
+  kind shows `components/SignedInPanel.tsx` ("logged in as X — Log out /
+  Go to dashboard") instead of redirecting. Public NavBar shows
+  Dashboard / Log out when logged in; `logOut()` lives in AuthContext.
+  `ProtectedRoute` still sends logged-out users to `/login` (staff).
   Google login was removed 2026-10-22 (`/client-setup` page + route deleted;
   the `complete_client_signup` RPC is now unused and can be dropped).
   Supabase redirect URL: `/client-login` for

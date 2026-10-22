@@ -9,7 +9,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import Footer from '../components/Footer'
 import ClientQuoteForm from './dashboard/client/ClientQuoteForm'
-import { useAuth } from '../context/AuthContext'
+import { logOut, useAuth } from '../context/AuthContext'
 
 const steps = [
   'We check your load against our trailers.',
@@ -62,6 +62,18 @@ function QuoteRequestPage() {
                   ? 'Quote requests are sent from a client account. Staff can log quotes from Quotations in the dashboard.'
                   : "It's free and takes a minute. Your account lets you follow your quote, see our reply, and fix and resend it if we can't accept it as is."}
               </p>
+              {/* Logged in with a non-client account: offer a way out so
+                  they can log in as a client (the login links would just
+                  bounce while this session exists). */}
+              {session && (
+                <button
+                  type="button"
+                  onClick={logOut}
+                  className="btn-primary mt-6 px-5 py-3 text-sm font-semibold"
+                >
+                  Log out
+                </button>
+              )}
               {!session && (
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
                   <Link to={loginLink('signup')} className="btn-primary px-5 py-3 text-sm font-semibold">

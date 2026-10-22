@@ -11,6 +11,7 @@ import {
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
+import { showToast } from '../components/Toast'
 
 // employees.employment_status_id has no foreign key at the database
 // level (same as everywhere else it's read, e.g. EmployeesSection.tsx),
@@ -180,4 +181,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   return useContext(AuthContext)
+}
+
+// Log out from the public pages (NavBar, login pages, quote page). The
+// dashboard has its own handleLogout in DashboardLayout. A failed sign-out
+// may leave the session valid, so say so plainly instead of hiding it.
+export async function logOut() {
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    console.error('Sign out failed', error)
+    showToast(
+      "Logging out didn't fully complete. If you're on a shared computer, " +
+        'please close the browser to be safe, then try logging out again.',
+      'error',
+    )
+  }
 }
