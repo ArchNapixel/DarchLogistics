@@ -708,6 +708,29 @@ before creating it.
   migration file. **Known gap:** signing up with an email that already
   has a `clients` row (from an approved quote) creates a second
   `clients` row — old bookings don't show in the new account.
+- **Downpayment (#9–#11, 2026-10-22; SQL given in chat).** Before ANY
+  trip of a booking may leave Awaiting, the client must have paid
+  `cost + 25% x (contract - cost)` (cost = `bookings.cost_per_trip` x
+  non-cancelled trips; contract = rate x those trips) -- or an Admin
+  waived it. `cost_per_trip` is saved at Approve (QuoteReviewModal: the
+  profitability panel's diesel + commission + per-trip fee at today's
+  Settings; Approve is blocked if those Settings are missing). Old
+  bookings (no cost_per_trip) aren't gated. Formula in
+  `lib/downpayment.ts` (self-check `node scripts/check-downpayment.ts`)
+  mirrored by SQL `booking_downpayment(booking_id)`; trigger
+  `require_downpayment` (BEFORE UPDATE OF itinerary_status on
+  itineraries, Awaiting -> anything but Cancelled) enforces it for the
+  board AND drivers. Admin override: RPC `waive_downpayment(booking_id,
+  reason)` (uses `current_admin_employee_id()`) -> `bookings.
+  downpayment_waived_at/_by/_waive_reason`, button in BookingDetailModal.
+  Bills Receivable: Downpayment column + `DownpaymentModal` that records
+  the payment WITHOUT locking amount_to_pay, so billing still follows
+  delivered trips and the payment terms count from delivery with less
+  left; a negative balance on a booking with trips still to come shows
+  "Paid ahead", not "Refund". Dispatch Board: "Awaiting downpayment"
+  badge + next status disabled "(downpayment first)". Client portal My
+  Bookings shows required / paid / to go. #9: the 25%/50% partial-payment
+  buttons were removed (only "Full remaining" left).
 - Client Login & Security (2026-10-22, #7) — "Login & Security" under
   My Profile in the client portal (`client/ClientAccountSection.tsx`):
   change username via RPC `change_my_username(p_username)` (SECURITY

@@ -24,6 +24,7 @@ import ClientStatusRequestModal from './ClientStatusRequestModal'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { downpaymentStatus } from '../../../lib/downpayment'
 
 type Itinerary = {
   itinerary_id: number
@@ -40,6 +41,10 @@ export type Booking = {
   container_type: string
   trailer_type: string | null
   rate_of_delivery_service: number | null
+  // Downpayment inputs (lib/downpayment.ts): trips can't start until it's paid.
+  cost_per_trip: number | null
+  amount_paid: number | null
+  downpayment_waived_at: string | null
   pickup_place_name: string
   delivery_place_name: string
   itineraries: Itinerary[]
@@ -117,7 +122,7 @@ function MyBookingsSection({
     const { data: bookingRows, error: bookingError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, booking_status, booking_date, cargo_type, container_type, trailer_type, rate_of_delivery_service, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_status, booking_date, cargo_type, container_type, trailer_type, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, place_of_pickup_id, place_of_delivery_id',
       )
       .eq('client_id', id)
       .order('booking_date', { ascending: false })
@@ -195,6 +200,9 @@ function MyBookingsSection({
         container_type: b.container_type,
         trailer_type: b.trailer_type,
         rate_of_delivery_service: b.rate_of_delivery_service,
+        cost_per_trip: b.cost_per_trip,
+        amount_paid: b.amount_paid,
+        downpayment_waived_at: b.downpayment_waived_at,
         pickup_place_name: placeNameById.get(b.place_of_pickup_id) ?? '—',
         delivery_place_name:
           placeNameById.get(b.place_of_delivery_id) ?? '—',
@@ -260,6 +268,13 @@ function MyBookingsSection({
         const billableTripCount = booking.itineraries.filter(
           (itinerary) => itinerary.itinerary_status !== 'Cancelled',
         ).length
+        const downpayment = downpaymentStatus({
+          ratePerTrip: booking.rate_of_delivery_service,
+          costPerTrip: booking.cost_per_trip,
+          trips: billableTripCount,
+          amountPaid: booking.amount_paid,
+          waivedAt: booking.downpayment_waived_at,
+        })
 
         return (
           <div
@@ -279,6 +294,27 @@ function MyBookingsSection({
               </div>
               <StatusBadge status={booking.booking_status} />
             </div>
+
+            {/* Only while it matters: before trips start (a waived one isn't the client's business). */}
+            {downpayment && !downpayment.waived && booking.booking_status !== 'Cancelled' && (
+              <p
+                className={`mt-3 px-3 py-2 text-sm ${
+                  downpayment.met ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-900'
+                }`}
+              >
+                {downpayment.met ? (
+                  <>✓ Downpayment of {formatMoney(downpayment.required)} received.</>
+                ) : (
+                  <>
+                    <span className="font-semibold">Downpayment: {formatMoney(downpayment.required)}</span>
+                    {' · '}Paid {formatMoney(downpayment.paid)}
+                    {' · '}
+                    {formatMoney(downpayment.missing)} to go. Your trips start once it's paid; the rest is due
+                    after delivery under your payment terms.
+                  </>
+                )}
+              </p>
+            )}
 
             <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Field label="Cargo" value={booking.cargo_type} />

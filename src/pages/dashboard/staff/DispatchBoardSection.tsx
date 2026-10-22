@@ -38,6 +38,12 @@
 // "running late -- reassign?" note on the same person's next trip. The
 // database enforces the no-overlap rule too (itinerary_crews_check_slot),
 // so its refusal message is what shows if two people race.
+//
+// Downpayment (#10/#11): no trip of a booking can leave Awaiting until the
+// client's downpayment (lib/downpayment.ts) is paid or an Admin waived it.
+// The row shows "Awaiting downpayment" and the next status is disabled;
+// the database (require_downpayment trigger) enforces the same rule for
+// drivers' phones too.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
@@ -55,9 +61,10 @@ import { showToast } from '../../../components/Toast'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
-import { formatDate, formatSlot } from '../../../lib/format'
+import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import EditTripTimeModal from './EditTripTimeModal'
+import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import {
   SUGGESTED_COUNT,
   isOverdue,
@@ -78,6 +85,8 @@ type DispatchRow = {
   trip_end_at: string | null
   // The booking's hours per trip -- length of a newly set slot.
   hours_per_trip: number | null
+  // The booking's downpayment (null = no requirement, older bookings).
+  downpayment: DownpaymentStatus | null
   status: string
   assigned_employee_id: number | null
   assigned_driver_name: string | null
@@ -535,12 +544,19 @@ function DispatchTable({
                           // Same rule as the driver's side: a trip can't
                           // leave Awaiting without a driver, truck and
                           // trailer (helper is optional).
-                          disabled={row.status === 'Awaiting' && status !== 'Awaiting' && !isFullyAssigned(row)}
+                          // ...nor before the booking's downpayment is paid (or waived).
+                          disabled={
+                            row.status === 'Awaiting' &&
+                            status !== 'Awaiting' &&
+                            (!isFullyAssigned(row) || !tripsMayStart(row.downpayment))
+                          }
                         >
                           {STATUS_LABELS[status]}
                           {row.status === 'Awaiting' && status !== 'Awaiting' && !isFullyAssigned(row)
                             ? ` (assign ${missingForDispatch(row)} first)`
-                            : ''}
+                            : row.status === 'Awaiting' && status !== 'Awaiting' && !tripsMayStart(row.downpayment)
+                              ? ' (downpayment first)'
+                              : ''}
                         </option>
                       ))}
                     </select>
@@ -552,6 +568,17 @@ function DispatchTable({
                     >
                       {STATUS_LABELS[row.status] ?? row.status}
                     </span>
+                  )}
+                  {row.status === 'Awaiting' && row.downpayment && !tripsMayStart(row.downpayment) && (
+                    <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                      Awaiting downpayment — {formatMoney(row.downpayment.missing)} to go
+                      <span className="block font-normal">
+                        {formatMoney(row.downpayment.paid)} of {formatMoney(row.downpayment.required)} paid
+                      </span>
+                    </span>
+                  )}
+                  {row.status === 'Awaiting' && row.downpayment?.waived && !row.downpayment.met && (
+                    <span className="text-[11px] font-medium text-neutral-500">Downpayment waived by Admin</span>
                   )}
                   {/* Same as picking Delivered in the dropdown -- opens
                   MarkDeliveredModal, where damage is recorded. */}
@@ -801,7 +828,7 @@ function DispatchBoardSection() {
     const bookingIds = [...new Set(itineraryRows.map((it) => it.booking_id))]
     const { data: bookingTypeRows, error: bookingTypeError } = await supabase
       .from('bookings')
-      .select('booking_id, trailer_type, hours_per_trip')
+      .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at')
       .in('booking_id', bookingIds)
     if (bookingTypeError) {
       setError(bookingTypeError.message)
@@ -813,6 +840,24 @@ function DispatchBoardSection() {
     )
     const hoursPerTripByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.hours_per_trip as number | null]),
+    )
+    // Downpayment per booking: trips = its non-cancelled itineraries (the
+    // board already loads exactly those).
+    const tripCountByBooking = new Map<number, number>()
+    itineraryRows.forEach((it) =>
+      tripCountByBooking.set(it.booking_id, (tripCountByBooking.get(it.booking_id) ?? 0) + 1),
+    )
+    const downpaymentByBooking = new Map(
+      bookingTypeRows.map((b) => [
+        b.booking_id as number,
+        downpaymentStatus({
+          ratePerTrip: b.rate_of_delivery_service,
+          costPerTrip: b.cost_per_trip,
+          trips: tripCountByBooking.get(b.booking_id) ?? 0,
+          amountPaid: b.amount_paid,
+          waivedAt: b.downpayment_waived_at,
+        }),
+      ]),
     )
 
     setTrucks(trucksResult.data)
@@ -981,6 +1026,7 @@ function DispatchBoardSection() {
           trip_start_at: it.trip_start_at,
           trip_end_at: it.trip_end_at,
           hours_per_trip: hoursPerTripByBooking.get(it.booking_id) ?? null,
+          downpayment: downpaymentByBooking.get(it.booking_id) ?? null,
           status: it.itinerary_status ?? 'Awaiting',
           assigned_employee_id: assignedEmployeeId,
           assigned_driver_name:

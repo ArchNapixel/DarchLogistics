@@ -33,6 +33,8 @@ import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
+import { downpaymentStatus } from '../../../lib/downpayment'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
 // here rather than imported, like EmployeeDetailModal does).
@@ -81,6 +83,10 @@ type Details = {
   estimated_distance_km: number | null
   // Length of each trip's time slot (bookings.hours_per_trip).
   hours_per_trip: number | null
+  // Downpayment inputs (lib/downpayment.ts) and the Admin waiver, if any.
+  cost_per_trip: number | null
+  downpayment_waived_at: string | null
+  downpayment_waive_reason: string | null
   preferred_delivery_date: string | null
   is_priority: boolean
   cancellation_reason: string | null
@@ -136,7 +142,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cancellation_reason, cancelled_at, invoice_number',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -242,6 +248,9 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       delivery_pin: pinLink(b.delivery_lat, b.delivery_lng),
       estimated_distance_km: b.estimated_distance_km,
       hours_per_trip: b.hours_per_trip,
+      cost_per_trip: b.cost_per_trip,
+      downpayment_waived_at: b.downpayment_waived_at,
+      downpayment_waive_reason: b.downpayment_waive_reason,
       preferred_delivery_date: quoteResult.data?.preferred_delivery_date ?? null,
       is_priority: quoteResult.data?.is_last_day_of_port_storage === true,
       cancellation_reason: b.cancellation_reason,
@@ -317,6 +326,17 @@ function BookingDetailModal({
     )
   }, [])
 
+  // Downpayment (null = no requirement): non-cancelled trips only.
+  const downpayment = details
+    ? downpaymentStatus({
+        ratePerTrip: booking.rate,
+        costPerTrip: details.cost_per_trip,
+        trips: details.trips.filter((t) => t.status !== 'Cancelled').length,
+        amountPaid: booking.amount_paid,
+        waivedAt: details.downpayment_waived_at,
+      })
+    : null
+
   // Changing hours per trip also re-times the trips that haven't left yet:
   // from the first Awaiting trip that has a slot, every Awaiting trip after
   // it gets the new length, back to back (chainSlots). Trips already on the
@@ -370,6 +390,31 @@ function BookingDetailModal({
     } else {
       setHoursDraft(null)
     }
+    reload()
+  }
+
+  // Admin only: let this booking's trips start without the downpayment.
+  // waive_downpayment() checks the caller is an Admin and records who/when/why.
+  async function waiveDownpayment() {
+    const reason = await promptDialog({
+      title: 'Allow trips without downpayment',
+      message: 'Why can this booking start before the client pays the downpayment?',
+      confirmLabel: 'Allow trips',
+    })
+    if (reason === null) return
+    if (!reason.trim()) {
+      showToast('A reason is required.', 'error')
+      return
+    }
+    const { error: waiveError } = await supabase.rpc('waive_downpayment', {
+      p_booking_id: booking.booking_id,
+      p_reason: reason.trim(),
+    })
+    if (waiveError) {
+      showToast(waiveError.message, 'error')
+      return
+    }
+    showToast('Trips can now start without the downpayment.')
     reload()
   }
 
@@ -702,6 +747,38 @@ function BookingDetailModal({
           <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
           <InfoRow label="Invoice no." value={details?.invoice_number || '—'} />
         </div>
+        {downpayment && (
+          <div
+            className={`mt-3 px-4 py-3 text-sm ${
+              downpayment.met ? 'bg-green-50 text-green-800' : downpayment.waived ? 'bg-slate-50 text-slate-700' : 'bg-amber-50 text-amber-900'
+            }`}
+          >
+            <p className="font-semibold">
+              Downpayment {formatMoney(downpayment.required)}
+              {downpayment.met
+                ? ' · ✓ received'
+                : downpayment.waived
+                  ? ' · waived by Admin'
+                  : ` · ${formatMoney(downpayment.paid)} paid, ${formatMoney(downpayment.missing)} to go`}
+            </p>
+            <p className="mt-0.5 text-xs">
+              {downpayment.met
+                ? 'All trips can go. The rest is due under the payment terms after delivery.'
+                : downpayment.waived
+                  ? `Trips may start without it${details?.downpayment_waive_reason ? ` -- reason: ${details.downpayment_waive_reason}` : ''}.`
+                  : 'Trip cost + 25% of the rest of the contract. No trip can start until it is paid.'}
+            </p>
+            {isAdmin(role) && onChanged && !downpayment.met && !downpayment.waived && (
+              <button
+                type="button"
+                onClick={waiveDownpayment}
+                className="mt-2 text-xs font-medium underline hover:no-underline"
+              >
+                Allow trips without downpayment
+              </button>
+            )}
+          </div>
+        )}
         {/* Admin only: the Billing page exists only in the Admin routes */}
         {isAdmin(role) && (
           <Link

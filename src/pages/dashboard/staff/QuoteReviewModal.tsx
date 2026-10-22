@@ -7,6 +7,10 @@
 // The trips run one after another: trip 1 starts on the pickup date at
 // Settings' default trip start time (default_trip_start_time, 6 AM if
 // unset), trip 2 starts when trip 1 ends, and so on (chainSlots).
+// Approve also saves the estimated cost per trip (bookings.cost_per_trip,
+// the profitability panel's diesel + commission + per-trip fee at today's
+// Settings) -- the client's downpayment is worked out from it
+// (lib/downpayment.ts), and no trip can start until it's paid.
 //
 // Distance, most precise source first (the field stays editable either
 // way):
@@ -59,6 +63,7 @@ import type { QuoteRequest } from './QuoteRequestsSection'
 import { formatMoney, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
 import { PAYMENT_TERMS_LABELS, REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
 import { chainSlots } from '../../../lib/tripSchedule'
+import { downpaymentFor } from '../../../lib/downpayment'
 
 // Used when Settings has no default_trip_start_time row: 6 AM.
 const DEFAULT_TRIP_START_MINUTES = 360
@@ -416,6 +421,14 @@ function QuoteReviewModal({
       return
     }
 
+    // The downpayment is worked out from the trip cost, so the cost must be known.
+    if (!canCalculateProfitability) {
+      setError(
+        'The trip cost (and so the client\'s downpayment) can\'t be worked out -- check that Settings has the diesel price, driver commission rate and per-trip fee.',
+      )
+      return
+    }
+
     const hoursValue = Number(hoursPerTrip)
     if (!hoursPerTrip || !(hoursValue > 0) || hoursValue > MAX_HOURS_PER_TRIP) {
       setError(`Enter the hours per trip (more than 0, up to ${MAX_HOURS_PER_TRIP}) before approving.`)
@@ -581,6 +594,7 @@ function QuoteReviewModal({
         estimated_distance_km: distanceValue,
         rate_of_delivery_service: rateValue,
         hours_per_trip: hoursValue,
+        cost_per_trip: costPerTrip,
       })
       .select('booking_id')
       .single()
@@ -722,6 +736,9 @@ function QuoteReviewModal({
     ? totalCost / totalContractValue
     : 0
   const isLowMargin = canCalculateProfitability && costRatio >= 0.5
+  // Saved on the booking at Approve; the downpayment comes from it.
+  const costPerTrip = Math.round((totalCost / deliveryCount) * 100) / 100
+  const downpayment = canCalculateProfitability ? downpaymentFor(rateForCalc, costPerTrip, deliveryCount) : null
 
   const showProfitabilityPanel = approvedBookingId === null && distanceForCalc > 0
 
@@ -1066,6 +1083,16 @@ function QuoteReviewModal({
                   <div className="absolute inset-y-0 left-1/2 w-px bg-slate-400/70" />
                 </div>
               </div>
+
+              {downpayment !== null && (
+                <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                  <span className="text-slate-500">
+                    Client downpayment
+                    <span className="block text-xs">cost + 25% of the rest · before any trip starts</span>
+                  </span>
+                  <span className="font-bold text-slate-900">{formatMoney(downpayment)}</span>
+                </div>
+              )}
 
               {isLowMargin && (
                 <p className="bg-red-50 px-3 py-2 text-xs text-red-700">

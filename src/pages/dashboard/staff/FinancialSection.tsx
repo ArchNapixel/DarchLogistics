@@ -11,6 +11,14 @@
 // = the sum of non-voided rows -- never write amount_paid directly). The
 // Payments Due panel/tab (Bookings page, Reports page) and the client portal
 // are read-only views of the same numbers.
+//
+// Downpayment (#10/#11): bookings with a saved cost_per_trip need a
+// downpayment before any trip can start (lib/downpayment.ts). The
+// Downpayment column shows what's still missing, and its button records a
+// payment WITHOUT locking amount_to_pay -- so billing still follows the
+// delivered trips and the payment terms count from delivery, just with
+// less left to pay. Paid ahead of delivery shows as "Paid ahead", not
+// "Refund".
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
@@ -29,6 +37,7 @@ import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpayment'
 
 // PaymentDetailsFields: method / date received / reference / OR number / note,
 // shown under the amount in both payment forms. Controlled by the parent.
@@ -86,7 +95,7 @@ function PaymentDetailsFields({
 }
 
 // PartialPaymentModal: opened by the "Partial Payment" button. Shows what's
-// owed, takes the amount received (with quick-fill buttons) and previews
+// owed, takes the amount received (typed in, or "Full remaining") and previews
 // the balance that will be left before anything is saved.
 function PartialPaymentModal({
   booking,
@@ -125,7 +134,7 @@ function PartialPaymentModal({
   const dateError = paymentDateError(details.paidOn)
   const canSave = amountText !== '' && !inputError && !dateError && !saving
 
-  // Round to cents so 25% of an odd number doesn't give 1234.5600000001.
+  // Round to cents so a float remainder doesn't show as 1234.5600000001.
   function fill(value: number) {
     setAmountText(String(Math.round(value * 100) / 100))
   }
@@ -200,18 +209,8 @@ function PartialPaymentModal({
         />
         {inputError && <p className="mt-1 text-xs text-red-700">{inputError}</p>}
 
-        {/* Quick-fill buttons */}
+        {/* Quick-fill: the whole remaining balance (no % presets -- staff type the amount received). */}
         <div className="mt-2 flex gap-2">
-          {[0.25, 0.5].map((share) => (
-            <button
-              key={share}
-              type="button"
-              onClick={() => fill(remaining * share)}
-              className="border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {share * 100}%
-            </button>
-          ))}
           <button
             type="button"
             onClick={() => fill(remaining)}
@@ -240,6 +239,123 @@ function PartialPaymentModal({
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={onClose} className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
           <button onClick={save} disabled={!canSave} className="btn-primary px-4 py-2 text-sm font-medium">{saving ? 'Saving...' : 'Record payment'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// DownpaymentModal: records the client's downpayment (or part of it).
+// Starts with what's still missing; saved as a normal payment row but
+// without locking amount_to_pay (see the header comment).
+function DownpaymentModal({
+  booking,
+  status,
+  onClose,
+  onSaved,
+}: {
+  booking: Booking
+  status: DownpaymentStatus
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [amountText, setAmountText] = useState(String(status.missing))
+  const [details, setDetails] = useState(() => ({ ...emptyPaymentDetails(), note: 'Downpayment' }))
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const amount = Number(amountText)
+  const amountError =
+    amountText !== '' && (!Number.isFinite(amount) || amount <= 0) ? 'Enter an amount greater than zero.' : null
+  const dateError = paymentDateError(details.paidOn)
+  const canSave = amountText !== '' && !amountError && !dateError && !saving
+  const stillMissing = Math.max(Math.round((status.missing - (amount || 0)) * 100) / 100, 0)
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+    const recordError = await recordBookingPayment({ bookingId: booking.booking_id, amount, details })
+    setSaving(false)
+    if (recordError) {
+      setSaveError(recordError)
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Downpayment</p>
+            <h3 className="text-lg font-bold text-slate-900">
+              Booking #{booking.booking_id} · {booking.client_name}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <p className="text-xs text-slate-400">Required</p>
+            <p className="font-semibold text-slate-900">{formatMoney(status.required)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Paid so far</p>
+            <p className="font-semibold text-slate-900">{formatMoney(status.paid)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Still missing</p>
+            <p className="font-semibold text-slate-900">{formatMoney(status.missing)}</p>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Trip cost + 25% of the rest of the contract. No trip can start until it's paid.
+        </p>
+
+        <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="downpayment-amount">
+          Amount received (₱)
+        </label>
+        <input
+          id="downpayment-amount"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          autoFocus
+          value={amountText}
+          onChange={(e) => setAmountText(e.target.value.replace(/[^0-9.]/g, ''))}
+          onKeyDown={(e) => e.key === 'Enter' && canSave && save()}
+          className="mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-slate-900"
+        />
+        {amountError && <p className="mt-1 text-xs text-red-700">{amountError}</p>}
+
+        <PaymentDetailsFields details={details} onChange={setDetails} />
+        {dateError && <p className="mt-1 text-xs text-red-700">{dateError}</p>}
+
+        {amountText !== '' && !amountError && (
+          <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            {stillMissing === 0 ? (
+              <span className="font-semibold text-green-700">Downpayment met -- trips can start.</span>
+            ) : (
+              <>
+                Still missing after this: <span className="font-semibold text-slate-900">{formatMoney(stillMissing)}</span>
+              </>
+            )}
+          </p>
+        )}
+
+        {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">
+            Cancel
+          </button>
+          <button onClick={save} disabled={!canSave} className="btn-primary px-4 py-2 text-sm font-medium">
+            {saving ? 'Saving…' : 'Record downpayment'}
+          </button>
         </div>
       </div>
     </div>
@@ -573,6 +689,9 @@ function FinancialSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [paymentIsFull, setPaymentIsFull] = useState(false)
   const [tab, setTab] = useState<Tab>('ongoing')
+  // Downpayment per booking (null = no requirement) and the one being recorded.
+  const [downpaymentById, setDownpaymentById] = useState<Map<number, DownpaymentStatus | null>>(new Map())
+  const [downpaymentBooking, setDownpaymentBooking] = useState<Booking | null>(null)
 
   useEffect(() => {
     loadBookings()
@@ -584,7 +703,7 @@ function FinancialSection() {
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
+        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at',
       )
       .order('created_at', { ascending: false })
 
@@ -665,6 +784,28 @@ function FinancialSection() {
         )
       }
     })
+
+    // Downpayment counts only non-cancelled trips.
+    const liveTripsByBooking = new Map<number, number>()
+    itinerariesResult.data.forEach((it) => {
+      if (it.itinerary_status !== 'Cancelled') {
+        liveTripsByBooking.set(it.booking_id, (liveTripsByBooking.get(it.booking_id) ?? 0) + 1)
+      }
+    })
+    setDownpaymentById(
+      new Map(
+        bookingRows.map((b) => [
+          b.booking_id,
+          downpaymentStatus({
+            ratePerTrip: b.rate_of_delivery_service,
+            costPerTrip: b.cost_per_trip,
+            trips: liveTripsByBooking.get(b.booking_id) ?? 0,
+            amountPaid: b.amount_paid,
+            waivedAt: b.downpayment_waived_at,
+          }),
+        ]),
+      ),
+    )
 
     setBookings(
       bookingRows.map((b) => {
@@ -766,12 +907,16 @@ function FinancialSection() {
                 <th className="px-4 py-3 font-medium">Amount to pay</th>
                 <th className="px-4 py-3 font-medium">Amount paid</th>
                 <th className="px-4 py-3 font-medium">Balance due</th>
+                <th className="px-4 py-3 font-medium">Downpayment</th>
                 <th className="px-4 py-3 font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {visibleBookings.map((booking) => {
                 const remaining = getPaymentTarget(booking) - booking.amount_paid
+                const downpayment = downpaymentById.get(booking.booking_id) ?? null
+                // Still has trips to come: money above what's billed so far is paid ahead, not a refund.
+                const tripsToCome = booking.status !== 'Delivered' && booking.status !== 'Cancelled'
                 return (
                   <tr key={booking.booking_id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 text-slate-900">#{booking.booking_id}</td>
@@ -782,12 +927,37 @@ function FinancialSection() {
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.billable_amount)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatMoney(booking.amount_paid)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">
-                      {booking.balance_due < 0 ? (
+                      {booking.balance_due < 0 && tripsToCome ? (
+                        <span className="text-slate-600">Paid ahead {formatMoney(-booking.balance_due)}</span>
+                      ) : booking.balance_due < 0 ? (
                         <span className="text-amber-700">Refund {formatMoney(-booking.balance_due)}</span>
                       ) : (
                         <span className={booking.balance_due > 0 ? 'font-semibold text-primary' : ''}>
                           {formatMoney(booking.balance_due)}
                         </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {downpayment === null ? (
+                        <span className="text-slate-400">—</span>
+                      ) : downpayment.met ? (
+                        <span className="font-medium text-green-700">✓ {formatMoney(downpayment.required)}</span>
+                      ) : downpayment.waived ? (
+                        <span className="text-slate-500">Waived</span>
+                      ) : (
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="font-semibold text-amber-800">{formatMoney(downpayment.missing)} to go</span>
+                          <span className="text-slate-500">of {formatMoney(downpayment.required)}</span>
+                          <button
+                            onClick={() => {
+                              setActionError(null)
+                              setDownpaymentBooking(booking)
+                            }}
+                            className="btn-primary px-2 py-1 text-xs font-medium"
+                          >
+                            Downpayment
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -828,6 +998,17 @@ function FinancialSection() {
           onClose={() => setPartialBooking(null)}
           onSaved={() => {
             setPartialBooking(null)
+            loadBookings()
+          }}
+        />
+      )}
+      {downpaymentBooking && downpaymentById.get(downpaymentBooking.booking_id) && (
+        <DownpaymentModal
+          booking={downpaymentBooking}
+          status={downpaymentById.get(downpaymentBooking.booking_id)!}
+          onClose={() => setDownpaymentBooking(null)}
+          onSaved={() => {
+            setDownpaymentBooking(null)
             loadBookings()
           }}
         />
