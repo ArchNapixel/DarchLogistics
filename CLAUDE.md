@@ -631,7 +631,7 @@ before creating it.
   used, so later price changes don't rewrite history.
 - Dashboard shell/UX helpers (2026-09-29 "nav bar upgrades"/"dynamic ui"):
   `DashboardLayout` sidebar is a phone slide-in drawer with hover/click
-  category flyouts. Admin sidebar as of 2026-10-19 (labels renamed in the
+  category flyouts. Admin sidebar as of 2026-10-19 ("Bookings" → "Bookings & Trips" 2026-10-22; labels renamed in the
   "nav bar adjustments" commit): Dashboard; Reports; Operations = Client
   Quotations, Client Bookings, Client Accounts, Dispatch Board; Human
   Resource = Employee List, Attendance, Payroll Master, Cash Advance;

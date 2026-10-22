@@ -62,7 +62,7 @@ const staffLinks = [
     label: 'Operations',
     children: [
       { label: 'Quotations', to: '/dashboard/quotations' },
-      { label: 'Bookings', to: '/dashboard/bookings' },
+      { label: 'Bookings & Trips', to: '/dashboard/bookings' },
       { label: 'Clients', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
     ],
@@ -104,7 +104,7 @@ const staffLinks = [
 
 const dispatcherLinks = [
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
-  { label: 'Bookings', to: '/dashboard/bookings' },
+  { label: 'Bookings & Trips', to: '/dashboard/bookings' },
   { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
   { label: 'My Attendance', to: '/dashboard/attendance' },

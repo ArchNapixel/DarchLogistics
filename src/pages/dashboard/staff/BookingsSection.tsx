@@ -346,7 +346,7 @@ function BookingsSection() {
 
   return (
     <div>
-      <PageHeader title="Bookings" subtitle="Every client booking and its trips." />
+      <PageHeader title="Bookings & Trips" subtitle="Every client booking and its trips." />
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">

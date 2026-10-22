@@ -47,7 +47,7 @@ const TAB_ICONS: Record<string, string> = {
   'Client Quotations': FILE,
   'Client Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   Quotations: FILE,
-  Bookings: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+  'Bookings & Trips': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   'Client Accounts':
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   Clients:
