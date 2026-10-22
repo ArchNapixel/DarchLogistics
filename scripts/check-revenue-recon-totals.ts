@@ -2,7 +2,7 @@
 //   node scripts/check-revenue-recon-totals.ts
 // Prints "ok" or throws on the first wrong number.
 import assert from 'node:assert/strict'
-import { reconcileRevenue } from '../src/lib/revenueReconTotals.ts'
+import { gapByReason, reconcileRevenue } from '../src/lib/revenueReconTotals.ts'
 import { buildStatement } from '../src/lib/statementTotals.ts'
 
 // Same ledger as the statement check: October 2026 for three bookings.
@@ -68,5 +68,11 @@ const earlier = reconcileRevenue(
   new Map([[9, { client_name: 'Dan', balance_due: 0, total_trips: 1, completed_trips: 1 }]]),
 )
 assert.equal(earlier.rows[0].reason, 'Paying earlier months')
+
+// Money Summary card: gap per tag. Booking 1 billed 11,500 more than it
+// collected and booking 3 billed 500 more -> both "Not fully paid yet".
+assert.deepEqual(gapByReason(recon.rows), [{ reason: 'Not fully paid yet', amount: -12_000, bookings: 2 }])
+assert.equal(gapByReason(ahead.rows)[0].amount, 5_000)
+assert.deepEqual(gapByReason([]), [])
 
 console.log('ok')

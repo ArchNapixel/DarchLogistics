@@ -34,6 +34,23 @@ export type ReconRow = {
 // Round to cents so sums don't show 1234.5600000001.
 const cents = (v: number) => Math.round(v * 100) / 100
 
+// Adds up each booking's difference per "why" tag, for the Money Summary
+// card. amount = collected minus billed (positive = cash came in ahead of
+// billing), biggest first; "Matches" rows are left out.
+export function gapByReason(rows: ReconRow[]) {
+  const groups = new Map<string, { amount: number; bookings: number }>()
+  rows.forEach((r) => {
+    if (r.difference === 0) return
+    const g = groups.get(r.reason) ?? { amount: 0, bookings: 0 }
+    g.amount -= r.difference
+    g.bookings += 1
+    groups.set(r.reason, g)
+  })
+  return Array.from(groups, ([reason, g]) => ({ reason, amount: cents(g.amount), bookings: g.bookings })).sort(
+    (a, b) => Math.abs(b.amount) - Math.abs(a.amount),
+  )
+}
+
 export function reconcileRevenue(lines: StatementLine[], meta: Map<number, BookingMeta>) {
   const byBooking = new Map<number, { trip: number; adj: number; collected: number }>()
   lines.forEach((l) => {
