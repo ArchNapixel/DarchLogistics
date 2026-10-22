@@ -429,7 +429,7 @@ function StaffDashboard() {
         {group.cards.map((card) => (
           <div
             key={card.label}
-            className={`reports-blueprint-card dashboard-card-bold ${
+            className={`reports-blueprint-card ${
               large ? 'flex flex-col justify-center px-4 py-2.5' : 'px-3 py-2 sm:px-4'
             }`}
           >
@@ -467,7 +467,7 @@ function StaffDashboard() {
         </p>
       )}
 
-      <div className="reports-blueprint-card dashboard-card-bold mt-3 px-5 py-2.5">
+      <div className="reports-blueprint-card mt-3 px-5 py-[22px]">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-baseline gap-x-4">
           <p className="font-ui text-sm font-medium text-neutral-500">

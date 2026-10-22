@@ -61,7 +61,7 @@ function OperationalExpensesCard({
     : []
 
   return (
-    <div className="reports-blueprint-card dashboard-card-bold px-3 py-2.5 sm:px-5 sm:py-3">
+    <div className="reports-blueprint-card px-3 py-2.5 sm:px-5 sm:py-3">
       <p className="font-ui text-xs leading-tight font-medium text-neutral-500 sm:text-sm">
         Operational Expenses
       </p>
