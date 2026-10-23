@@ -279,8 +279,13 @@ function BookingDetailModal({
   onChanged,
   inline = false,
   onMinimize,
+  startDetailsHidden,
   highlightTripId = null,
 }: {
+  // Inline only: when set, route/schedule/cargo/money are behind a
+  // "Show details" toggle (header + trips always show). true = start hidden.
+  // Bookings uses it for finished (Delivered/Cancelled) bookings.
+  startDetailsHidden?: boolean
   // Trip to highlight + scroll to in the trips table (Bookings' "Find trip").
   highlightTripId?: number | null
   // Inline only: shows a "Minimize" button that collapses the card.
@@ -297,6 +302,7 @@ function BookingDetailModal({
 }) {
   const { employeeId, role } = useAuth()
   const [details, setDetails] = useState<Details | null>(null)
+  const [showDetails, setShowDetails] = useState(!startDetailsHidden)
   // Hours-per-trip editor (staff Bookings only): null = not editing.
   const [hoursDraft, setHoursDraft] = useState<string | null>(null)
   const [hoursSaving, setHoursSaving] = useState(false)
@@ -647,6 +653,16 @@ function BookingDetailModal({
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge status={booking.status} />
+            {inline && startDetailsHidden !== undefined && (
+              <button
+                type="button"
+                onClick={() => setShowDetails((v) => !v)}
+                aria-expanded={showDetails}
+                className="text-xs font-medium text-slate-500 hover:text-slate-900"
+              >
+                {showDetails ? 'Hide details ▴' : 'Show details ▾'}
+              </button>
+            )}
             {inline && onMinimize && (
               <button
                 type="button"
@@ -686,6 +702,8 @@ function BookingDetailModal({
           </p>
         )}
 
+        {showDetails && (
+        <>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <SectionTitle>Route</SectionTitle>
           <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
@@ -848,6 +866,8 @@ function BookingDetailModal({
           >
             Billing
           </Link>
+        )}
+        </>
         )}
 
         <div className="mt-6">

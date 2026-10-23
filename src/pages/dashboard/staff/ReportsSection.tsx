@@ -85,7 +85,7 @@ function PaymentsDueTab() {
               const notBillable = row.completed_trips === 0 && row.billable_amount <= 0
               const due = notBillable
                 ? { label: 'Not billable yet', tone: 'unknown' as const }
-                : formatDaysUntilDue(row.days_until_due)
+                : formatDaysUntilDue(row.days_until_due, row.balance_due)
               const open = openId === row.booking_id
               return (
                 <Fragment key={row.booking_id}>

@@ -2,7 +2,7 @@
 //   node scripts/check-expense-totals.ts
 // Prints "ok" or throws on the first wrong number.
 import assert from 'node:assert/strict'
-import { payslipCost, rangeStartManila, summarizeParts } from '../src/lib/expenseTotals.ts'
+import { payslipCost, rangeEndManila, rangeStartManila, summarizeParts } from '../src/lib/expenseTotals.ts'
 
 // Gross + employer shares; null contribution columns count as 0.
 assert.deepEqual(
@@ -28,6 +28,14 @@ assert.equal(rangeStartManila({ days: 14 }, new Date('2026-10-02T04:00:00Z')), '
 assert.equal(rangeStartManila({ days: 7 }, new Date('2026-01-03T04:00:00Z')), '2025-12-28')
 // 11pm UTC on Oct 1 is already Oct 2 in Manila.
 assert.equal(rangeStartManila({ days: 7 }, new Date('2026-10-01T23:00:00Z')), '2026-09-26')
+
+// Calendar month: 1st of the month up to (not incl.) the 1st of the next.
+assert.equal(rangeStartManila({ month: '2026-10' }), '2026-10-01')
+assert.equal(rangeEndManila({ month: '2026-10' }), '2026-11-01')
+assert.equal(rangeEndManila({ month: '2026-12' }), '2027-01-01')
+// Dashboard periods end tomorrow (they include today), Manila time.
+assert.equal(rangeEndManila({ days: 7 }, new Date('2026-10-01T23:00:00Z')), '2026-10-03')
+assert.equal(rangeEndManila({ months: 1 }, new Date('2026-12-31T04:00:00Z')), '2027-01-01')
 
 // Parts: grouped by type, unpriced parts flagged and counted as 0.
 const parts = summarizeParts([

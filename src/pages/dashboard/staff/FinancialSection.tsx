@@ -462,12 +462,10 @@ function FinancialActionModal({
   onClose: () => void
   onUpdated: (booking: Booking) => void
 }) {
-  const [paymentAmount, setPaymentAmount] = useState('')
   // The override is the delivery amount only (damage is added on top).
   const [overrideAmount, setOverrideAmount] = useState(
     String(booking.billable_amount - booking.damage_charges),
   )
-  const [paymentDetails, setPaymentDetails] = useState(emptyPaymentDetails)
   const [invoiceText, setInvoiceText] = useState(booking.invoice_number ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -524,35 +522,6 @@ function FinancialActionModal({
       balance_due: booking.billable_amount - nextPaid,
     })
     return true
-  }
-
-  async function savePayment() {
-    // Same amount rules as the Record payment form.
-    const parsed = parseAmount(paymentAmount)
-    if (parsed.value === null) {
-      setError(parsed.error ?? 'Enter a payment amount greater than zero.')
-      return
-    }
-    const payment = parsed.value
-    if (payment > cents(booking.balance_due)) {
-      setError(
-        `Payment can't exceed the current balance due (${formatMoney(booking.balance_due)}).`,
-      )
-      return
-    }
-    const detailsError = paymentDetailsError(
-      paymentDetails,
-      booking.created_at ? toManilaDate(booking.created_at) : undefined,
-    )
-    if (detailsError) {
-      setError(detailsError)
-      return
-    }
-
-    if (await addPayment(payment, paymentDetails)) {
-      setPaymentAmount('')
-      setPaymentDetails(emptyPaymentDetails())
-    }
   }
 
   // Overpaid (e.g. cancelled before delivery): hand the extra back. Saved as
@@ -714,20 +683,9 @@ function FinancialActionModal({
           </div>
         )}
 
+        {/* Payments are recorded with the row's "Record payment" button
+            (it locks the amount to pay the same way every time), not here. */}
         <div className="mt-6 bg-slate-50 p-4">
-          <h4 className="font-medium text-slate-900">Record payment received</h4>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="text" inputMode="decimal" autoComplete="off" value={paymentAmount} onChange={(e) => setPaymentAmount(filterAmountInput(e.target.value))} placeholder="Payment amount" aria-label="Payment amount" className="w-full border border-slate-300 bg-white px-3 py-2 text-slate-900" />
-            <button onClick={savePayment} disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">{saving ? 'Saving...' : 'Save Payment'}</button>
-          </div>
-          <PaymentDetailsFields
-            details={paymentDetails}
-            onChange={setPaymentDetails}
-            earliest={booking.created_at ? toManilaDate(booking.created_at) : undefined}
-          />
-        </div>
-
-        <div className="mt-4 bg-slate-50 p-4">
           <h4 className="font-medium text-slate-900">Override amount to pay</h4>
           <p className="mt-1 text-xs text-slate-500">
             Defaults to rate x trips completed ({formatMoney(booking.computed_billable_amount)}).

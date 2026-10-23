@@ -78,6 +78,10 @@ input[type="number"]::-webkit-outer-spin-button {
 /* Makes clicking anchor links (like #quote) scroll smoothly instead of jumping */
 html {
   scroll-behavior: smooth;
+  /* Always reserve the scrollbar's space, so a page growing taller (e.g. an
+     expense card expanding on hover) doesn't narrow everything and re-wrap
+     cards like Total Revenue. */
+  scrollbar-gutter: stable;
 }
 
 /* Reports page redesign tokens ("Industry" design system) -- Barlow

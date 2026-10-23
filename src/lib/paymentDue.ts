@@ -51,6 +51,7 @@
 import { supabase } from './supabaseClient'
 import { loadClientDamageChargesByBooking } from './damageCharges'
 import { fetchAll, fetchIn } from './dashboardExpenses'
+import { toManilaDate } from './payslip'
 
 // One row of the bookings / quote queries in loadPaymentDueReport().
 type DueBookingRow = {
@@ -328,7 +329,9 @@ export async function loadPaymentDueReport(
         const receiptDates = deliveredItineraries
           .map((itinerary) => receivedAtByItinerary.get(itinerary.itinerary_id))
           .filter((date): date is string => Boolean(date))
-          .map((date) => date.slice(0, 10))
+          // Manila date (like Statements/payroll) -- slicing the UTC timestamp
+          // put deliveries made 12 MN-8 AM on the day before.
+          .map((date) => toManilaDate(date))
 
         if (receiptDates.length > 0) {
           baseDate = receiptDates.reduce((latest, date) =>
@@ -402,10 +405,18 @@ export const DUE_TONE_STYLES: Record<DueTone, string> = {
 
 // Shared day-counter label + color tone, so the Reports page, the
 // Bookings side panel, and the client portal all read the same way.
-export function formatDaysUntilDue(days: number | null): {
+// Pass the balance: a booking with nothing owed (paid up, or paid ahead
+// with trips still to come) is never "Overdue", whatever its date.
+export function formatDaysUntilDue(
+  days: number | null,
+  balanceDue?: number,
+): {
   label: string
   tone: DueTone
 } {
+  if (balanceDue !== undefined && balanceDue <= 0) {
+    return { label: 'Nothing due', tone: 'normal' }
+  }
   if (days === null) {
     return { label: 'Unknown', tone: 'unknown' }
   }

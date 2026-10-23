@@ -187,7 +187,8 @@ export async function loadOverdueRiskClients(
   const worstByClient = new Map<number, OverdueRiskClient>()
 
   for (const row of rows) {
-    if (row.days_until_due === null || row.days_until_due >= -thresholdDays) continue
+    // Nothing owed (paid up / paid ahead) = not at risk, whatever the date.
+    if (row.balance_due <= 0 || row.days_until_due === null || row.days_until_due >= -thresholdDays) continue
     const daysOverdue = -row.days_until_due
     const existing = worstByClient.get(row.client_id)
     if (!existing || daysOverdue > existing.days_overdue) {

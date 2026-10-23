@@ -13,8 +13,14 @@
 // Accounting -> Revenue Reconciliation (loadRevenueReconciliation +
 // gapByReason). It loads on its own, so if it fails the rest of the page
 // still shows.
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+//
+// Second tab, "Expense Breakdown" (?tab=expenses): the Admin dashboard's
+// Operational / Payroll / Maintenance expense cards, fully opened, for the
+// same month. The dashboard cards link here (#op / #pay / #mt scrolls to
+// the one clicked). Those cards use their own loaders (dashboardExpenses.ts),
+// so their totals can differ a little from the Summary tab's Expenses.
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
@@ -22,6 +28,14 @@ import { loadProfitLoss } from '../../../lib/profitLoss'
 import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
 import { gapByReason } from '../../../lib/revenueReconTotals'
 import { buildMoneySummary, monthLabel, shiftMonth, type MoneySummary } from '../../../lib/moneySummary'
+import OperationalExpensesCard from './OperationalExpensesCard'
+import PayrollExpensesCard from './PayrollExpensesCard'
+import MaintenanceExpensesCard from './MaintenanceExpensesCard'
+
+const TABS = [
+  { key: 'summary', label: 'Summary' },
+  { key: 'expenses', label: 'Expense Breakdown' },
+] as const
 
 // The summary plus short notes on the Expenses figure -- what in it is an
 // estimate or not final yet, so the profit isn't read as exact.
@@ -200,6 +214,16 @@ function MoneySummarySection() {
   const [gap, setGap] = useState<Gap | null>(null)
   const [gapError, setGapError] = useState<string | null>(null)
   const thisMonth = toManilaDate(new Date()).slice(0, 7)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'expenses' ? 'expenses' : 'summary'
+  const { hash } = useLocation()
+  // Memoized: the expense cards reload whenever this object changes.
+  const period = useMemo(() => ({ month }), [month])
+
+  // Coming from a dashboard card (#op / #pay / #mt): scroll to that card.
+  useEffect(() => {
+    if (tab === 'expenses' && hash) document.getElementById(hash.slice(1))?.scrollIntoView()
+  }, [tab, hash])
 
   useEffect(() => {
     let cancelled = false
@@ -248,7 +272,33 @@ function MoneySummarySection() {
         </button>
       </div>
 
-      {error ? (
+      <div className="mt-4 flex gap-2 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setSearchParams(t.key === 'summary' ? {} : { tab: t.key })}
+            className={`px-4 py-2 text-sm font-medium ${
+              tab === t.key ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'expenses' ? (
+        <div className="mt-6 grid gap-4 lg:grid-cols-3 lg:items-start">
+          <div id="op" className="scroll-mt-4">
+            <OperationalExpensesCard period={period} refreshKey={0} />
+          </div>
+          <div id="pay" className="scroll-mt-4">
+            <PayrollExpensesCard period={period} refreshKey={0} />
+          </div>
+          <div id="mt" className="scroll-mt-4">
+            <MaintenanceExpensesCard period={period} refreshKey={0} />
+          </div>
+        </div>
+      ) : error ? (
         <p className="mt-6 text-red-700">{error}</p>
       ) : !summary ? (
         <p className="mt-6 text-slate-500">Loading…</p>

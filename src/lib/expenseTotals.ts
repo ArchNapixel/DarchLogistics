@@ -30,8 +30,9 @@ export function payslipCost(row: PayslipCostRow) {
   return { gross, employerShares, total: gross + employerShares }
 }
 
-// A dashboard period: a number of whole months OR a number of days.
-export type Period = { months: number } | { days: number }
+// A period: a number of whole months OR a number of days back from today
+// (Admin dashboard), or one calendar month 'yyyy-mm' (Money Summary).
+export type Period = { months: number } | { days: number } | { month: string }
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -39,7 +40,9 @@ const pad = (n: number) => String(n).padStart(2, '0')
 //  - days: "last N days" INCLUDING today, so 7 days = today and the 6 before.
 //  - months: `months` back from today, with the day clamped so Mar 31 minus
 //    1 month is Feb 28/29 (not Mar 3, which setMonth() would give).
+//  - month: the 1st of that month.
 export function rangeStartManila(period: Period, now: Date = new Date()): string {
+  if ('month' in period) return `${period.month}-01`
   const [year, month, day] = toManilaDate(now).split('-').map(Number)
   if ('days' in period) {
     const start = new Date(Date.UTC(year, month - 1, day - (period.days - 1)))
@@ -50,6 +53,21 @@ export function rangeStartManila(period: Period, now: Date = new Date()): string
   const startMonth = (index % 12) + 1
   const daysInMonth = new Date(startYear, startMonth, 0).getDate()
   return `${startYear}-${pad(startMonth)}-${pad(Math.min(day, daysInMonth))}`
+}
+
+// The day AFTER the period's last day ('yyyy-mm-dd', Manila), for `< end`
+// filters: tomorrow for the dashboard periods (they run up to today), the
+// 1st of the next month for a calendar month.
+export function rangeEndManila(period: Period, now: Date = new Date()): string {
+  const [year, month, day] =
+    'month' in period
+      ? [...period.month.split('-').map(Number), 0]
+      : toManilaDate(now).split('-').map(Number)
+  const end =
+    'month' in period
+      ? new Date(Date.UTC(year, month, 1))
+      : new Date(Date.UTC(year, month - 1, day + 1))
+  return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}`
 }
 
 export type PartLine = {

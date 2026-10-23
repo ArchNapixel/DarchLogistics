@@ -139,9 +139,6 @@ function StaffDashboard() {
     useState<(typeof REVENUE_RANGES)[number]['value']>('1M')
   // Bumped by the Refresh button; revenue and both cost cards reload on change.
   const [refreshKey, setRefreshKey] = useState(0)
-  // Expense cards show only their big number until the pointer is over one
-  // (key of the hovered card, or null).
-  const [openCard, setOpenCard] = useState<string | null>(null)
   const rangePeriod = REVENUE_RANGES.find((r) => r.value === revenueRange)!.period
   // True from a Refresh click until the summary has reloaded.
   const [refreshing, setRefreshing] = useState(false)
@@ -587,38 +584,15 @@ function StaffDashboard() {
           day: 'numeric',
           year: 'numeric',
         })}`}
-      />
-
-      {summaryError && (
-        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-          {summaryError}
-        </p>
-      )}
-
-      {/* Revenue and Net share one row, each only as wide as its content. */}
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-      <div className="reports-blueprint-card flex min-h-[110px] flex-col justify-center px-5 py-5">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-          {/* Same row layout and header width as the Net card, so the amounts line up. */}
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          <p className="font-ui text-[35px] leading-none font-medium text-black md:min-w-[22rem]">
-            Total Revenue <span className="text-sm normal-case">(collected)</span>
-          </p>
-          {revenueError ? (
-            <p className="font-ui text-sm text-red-700">{revenueError}</p>
-          ) : (
-            <p className="font-condensed text-[28px] leading-none font-bold text-black">
-              {revenueLoading ? '--' : `${formatMoney(revenue)}`}
-            </p>
-          )}
-          </div>
-          <div className="flex items-center gap-2">
+        // Period for revenue + every expense card; Refresh reloads the whole page.
+        actions={
+          <>
             <select
               value={revenueRange}
               onChange={(e) =>
                 setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
               }
-              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
+              className="border border-reports-hairline bg-white px-2 py-1 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none"
             >
               {REVENUE_RANGES.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -632,12 +606,34 @@ function StaffDashboard() {
                 setRefreshKey((k) => k + 1)
               }}
               disabled={refreshing}
-              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500 disabled:opacity-50"
+              className="border border-reports-hairline bg-white px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500 disabled:opacity-50"
             >
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
-          </div>
-        </div>
+          </>
+        }
+      />
+
+      {summaryError && (
+        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
+          {summaryError}
+        </p>
+      )}
+
+      {/* Revenue and Net share one row, each only as wide as its content. */}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="reports-blueprint-card flex min-h-[110px] flex-wrap content-center items-baseline gap-x-6 gap-y-1 px-5 py-5">
+        {/* Same layout and header width as the Net card, so the amounts line up. */}
+        <p className="font-ui text-[35px] leading-none font-medium text-black md:min-w-[22rem]">
+          Total Revenue <span className="text-sm normal-case">(collected)</span>
+        </p>
+        {revenueError ? (
+          <p className="font-ui text-sm text-red-700">{revenueError}</p>
+        ) : (
+          <p className="font-condensed text-[28px] leading-none font-bold text-black">
+            {revenueLoading ? '--' : `${formatMoney(revenue)}`}
+          </p>
+        )}
       </div>
 
       {/* Net = cash collected - (operational + maintenance expenses). Operational
@@ -684,27 +680,22 @@ function StaffDashboard() {
       )}
 
       {/* Costs for the same period as the revenue dropdown above. */}
-      {/* Stacked in a column on the left; hovering a card expands just that one. */}
+      {/* Stacked in a column on the left; each shows only its total and links
+          to its full breakdown on Money Summary's "Expense Breakdown" tab. */}
       <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start">
       <div className="flex flex-col gap-3 lg:w-1/3">
         {[
-          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} onTotal={setOpsTotal} />,
-          <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'pay'} />,
-          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'mt'} onTotal={setMaintTotal} />,
+          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed onTotal={setOpsTotal} />,
+          <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed />,
+          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} collapsed onTotal={setMaintTotal} />,
         ].map((card) => (
-          <div
+          <Link
             key={card.key}
-            // Hover for a mouse; click/tap and keyboard focus for touch and keyboard users.
-            tabIndex={0}
-            aria-expanded={openCard === card.key}
-            onPointerEnter={(e) => e.pointerType === 'mouse' && setOpenCard(card.key as string)}
-            onPointerLeave={(e) => e.pointerType === 'mouse' && setOpenCard(null)}
-            onClick={() => setOpenCard((c) => (c === card.key ? null : (card.key as string)))}
-            onFocus={() => setOpenCard(card.key as string)}
-            onBlur={() => setOpenCard(null)}
+            to={`/dashboard/money-summary?tab=expenses#${card.key}`}
+            className="block hover:[&>div]:border-accent-500"
           >
             {card}
-          </div>
+          </Link>
         ))}
       </div>
       {/* Leaderboard to the right of the expense cards */}

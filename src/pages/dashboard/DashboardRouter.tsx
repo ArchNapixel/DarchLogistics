@@ -120,9 +120,9 @@ const staffLinks = [
 // Client portal: one page per link (pages in client/ClientPages.tsx).
 const clientLinks = [
   { label: 'Home', to: '/dashboard' },
+  { label: 'My Quotes', to: '/dashboard/quotes' },
   { label: 'My Bookings', to: '/dashboard/bookings' },
   { label: 'Payments', to: '/dashboard/payments' },
-  { label: 'My Quotes', to: '/dashboard/quotes' },
   { label: 'My Requests', to: '/dashboard/requests' },
   // "Rate Us" lives on the My Profile page.
   { label: 'My Profile', to: '/dashboard/profile', bottom: true },

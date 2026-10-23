@@ -31,7 +31,6 @@ import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import BookingDetailModal from './BookingDetailModal'
-import PaymentDuePanel from './PaymentDuePanel'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
@@ -105,18 +104,21 @@ const STATUS_FILTERS = [
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
 
-// Two ways to show the list: "full" = every booking as an expanded card
-// (BookingDetailModal rendered inline -- trips, documents, money all
-// visible), "compact" = the one-row-per-booking table. The choice is
-// remembered in this browser only.
-type ViewMode = 'full' | 'compact'
+// Two ways to show the list: "split" = one-line bookings on the left, the
+// clicked one's card (BookingDetailModal inline -- trips, documents, money)
+// on the right, so the page doesn't need scrolling; "compact" = the
+// one-row-per-booking table that opens a pop-up. Remembered in this
+// browser only. Phones get the split list but open the pop-up (no room
+// for two panes).
+type ViewMode = 'split' | 'compact'
 const VIEW_KEY = 'bookings-view'
+const WIDE = '(min-width: 1024px)' // Tailwind's lg
 
 function readViewMode(): ViewMode {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'compact' ? 'compact' : 'full'
+    return localStorage.getItem(VIEW_KEY) === 'compact' ? 'compact' : 'split'
   } catch {
-    return 'full'
+    return 'split'
   }
 }
 
@@ -137,20 +139,20 @@ function BookingsSection() {
   const [findingTrip, setFindingTrip] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Active')
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode)
-  // Full view: bookings the user expanded/minimized away from the default.
-  const [toggledIds, setToggledIds] = useState<Set<number>>(new Set())
-
-  function toggleExpanded(bookingId: number) {
-    setToggledIds((prev) => {
-      const next = new Set(prev)
-      if (!next.delete(bookingId)) next.add(bookingId)
-      return next
-    })
-  }
+  // Split view: the booking shown in the right pane (null = first on the page).
+  const [paneId, setPaneId] = useState<number | null>(null)
+  const [isWide, setIsWide] = useState(() => window.matchMedia(WIDE).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE)
+    const onChange = () => setIsWide(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  const split = viewMode === 'split' && isWide
   const [searchParams, setSearchParams] = useSearchParams()
 
   function toggleViewMode() {
-    const next = viewMode === 'full' ? 'compact' : 'full'
+    const next = viewMode === 'split' ? 'compact' : 'split'
     setViewMode(next)
     try {
       localStorage.setItem(VIEW_KEY, next)
@@ -404,12 +406,27 @@ function BookingsSection() {
 
   // One page at a time (back to page 1 when the filters change).
   const paged = usePaged(visibleBookings, `${statusFilter}|${search}|${viewMode}`)
+
+  // Split view's right pane: a ?booking= link (Find trip, Dispatch Board)
+  // wins, else the clicked row, else the first booking on this page.
+  const paneBooking =
+    linkedBooking ?? paged.rows.find((b) => b.booking_id === paneId) ?? paged.rows[0] ?? null
+
+  function openBooking(booking: Booking) {
+    if (split) {
+      setPaneId(booking.booking_id)
+      if (linkedBookingId) setSearchParams({}, { replace: true })
+    } else {
+      setSelectedBooking(booking)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Bookings & Trips" subtitle="Every client booking and its trips." />
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1">
+      <div>
+        <div className="min-w-0">
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <div role="group" aria-label="Filter by status" className="flex">
               {STATUS_FILTERS.map((filter) => (
@@ -466,20 +483,20 @@ function BookingsSection() {
             <button
               type="button"
               onClick={toggleViewMode}
-              title={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
-              aria-label={viewMode === 'full' ? 'Switch to compact list' : 'Switch to full details'}
+              title={viewMode === 'split' ? 'Switch to table' : 'Switch to list + details'}
+              aria-label={viewMode === 'split' ? 'Switch to table' : 'Switch to list + details'}
               className="border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-slate-500"
             >
-              {viewMode === 'full' ? (
-                // Compact: stacked rows
+              {viewMode === 'split' ? (
+                // Table: stacked rows
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               ) : (
-                // Full details: stacked cards
+                // List + details: two panes
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="3" width="18" height="8" rx="1.5" />
-                  <rect x="3" y="13" width="18" height="8" rx="1.5" />
+                  <rect x="3" y="3" width="7" height="18" rx="1.5" />
+                  <rect x="12" y="3" width="9" height="18" rx="1.5" />
                 </svg>
               )}
             </button>
@@ -521,45 +538,59 @@ function BookingsSection() {
                 Clear filters
               </button>
             </p>
-          ) : viewMode === 'full' ? (
-            // ponytail: each card loads its own details (~6 queries each) --
-            // fine for tens of bookings; add paging if "All" grows to hundreds.
-            // Finished bookings (Delivered/Cancelled) start minimized to one
-            // line; active ones start expanded. Clicking flips either way.
-            <div className="grid gap-4">
-              {paged.rows.map((booking) => {
-                const finished = booking.status === 'Delivered' || booking.status === 'Cancelled'
-                // toggledIds = bookings clicked away from their default state.
-                const expanded = finished === toggledIds.has(booking.booking_id)
-                return expanded ? (
+          ) : viewMode === 'split' ? (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+              <div>
+                <ul className="border border-slate-200 bg-white shadow-sm">
+                  {paged.rows.map((booking) => {
+                    const active = split && paneBooking?.booking_id === booking.booking_id
+                    return (
+                      <li key={booking.booking_id} className="border-b border-slate-100 last:border-0">
+                        <button
+                          type="button"
+                          onClick={() => openBooking(booking)}
+                          aria-current={active || undefined}
+                          className={`block w-full px-4 py-2.5 text-left text-sm ${
+                            active ? 'bg-slate-100 shadow-[inset_3px_0_0_var(--color-slate-900)]' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate">
+                              <span className="font-semibold text-slate-900">#{booking.booking_id}</span>{' '}
+                              <span className="text-slate-700">{booking.client_name}</span>
+                            </span>
+                            <StatusBadge status={booking.status} />
+                          </span>
+                          <span
+                            className="mt-0.5 block truncate text-xs text-slate-500"
+                            title={`${booking.pickup_location} → ${booking.delivery_location}`}
+                          >
+                            {booking.date ? `${formatDate(booking.date)} · ` : ''}
+                            {booking.pickup_location} → {booking.delivery_location}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <Pager {...paged.pager} />
+              </div>
+              {/* Right pane: scrolls on its own if a booking is long, so the
+                  list stays in place. key = fresh card per booking. */}
+              {split && paneBooking && (
+                <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
                   <BookingDetailModal
-                    key={booking.booking_id}
-                    booking={booking}
+                    key={paneBooking.booking_id}
+                    booking={paneBooking}
                     inline
                     onChanged={loadBookings}
-                    onMinimize={() => toggleExpanded(booking.booking_id)}
+                    highlightTripId={linkedBooking ? linkedTripId : null}
+                    startDetailsHidden={
+                      paneBooking.status === 'Delivered' || paneBooking.status === 'Cancelled' || undefined
+                    }
                   />
-                ) : (
-                  <button
-                    key={booking.booking_id}
-                    type="button"
-                    onClick={() => toggleExpanded(booking.booking_id)}
-                    aria-expanded={false}
-                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 border border-slate-200 bg-white px-5 py-3 text-left text-sm shadow-sm hover:bg-slate-50"
-                  >
-                    <span className="font-semibold text-slate-900">Booking #{booking.booking_id}</span>
-                    <span className="text-slate-700">{booking.client_name}</span>
-                    <span className="min-w-0 flex-1 truncate text-slate-500" title={`${booking.pickup_location} → ${booking.delivery_location}`}>
-                      {booking.pickup_location} → {booking.delivery_location}
-                    </span>
-                    <span className="whitespace-nowrap text-slate-500">
-                      {booking.date ? formatDate(booking.date) : '—'}
-                    </span>
-                    <StatusBadge status={booking.status} />
-                    <span className="text-xs font-medium text-slate-500">Show details ▾</span>
-                  </button>
-                )
-              })}
+                </div>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
@@ -579,7 +610,7 @@ function BookingsSection() {
                   {paged.rows.map((booking) => (
                     <tr
                       key={booking.booking_id}
-                      onClick={() => setSelectedBooking(booking)}
+                      onClick={() => openBooking(booking)}
                       className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                     >
                       <td className="px-4 py-3 text-slate-900">
@@ -588,7 +619,7 @@ function BookingsSection() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setSelectedBooking(booking)
+                            openBooking(booking)
                           }}
                           className="font-medium underline-offset-2 hover:underline"
                         >
@@ -635,15 +666,12 @@ function BookingsSection() {
               </table>
             </div>
           )}
-          <Pager {...paged.pager} />
-        </div>
-
-        <div className="w-full lg:max-w-sm">
-          <PaymentDuePanel />
+          {viewMode === 'compact' && <Pager {...paged.pager} />}
         </div>
       </div>
 
-      {shownBooking && (
+      {/* Pop-up for the table view and phones; the split view uses its pane. */}
+      {shownBooking && !split && (
         <BookingDetailModal
           booking={shownBooking}
           // Only when opened from a ?trip= link (Find trip), not a row click.

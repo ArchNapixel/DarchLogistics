@@ -73,7 +73,7 @@ function ClientPaymentsSection({
   return (
     <div className="grid gap-3">
       {shownRows.map((row) => {
-        const due = formatDaysUntilDue(row.days_until_due)
+        const due = formatDaysUntilDue(row.days_until_due, row.balance_due)
         return (
           <div
             key={row.booking_id}

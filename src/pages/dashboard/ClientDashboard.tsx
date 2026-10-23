@@ -21,6 +21,7 @@ import MyBookingsSection, {
 import { formatDaysUntilDue, type PaymentDueRow } from '../../lib/paymentDue'
 import { useClientProfile } from './client/ClientProfileSection'
 import ClientPaymentsSection from './client/ClientPaymentsSection'
+import MyQuoteRequestsSection from './client/MyQuoteRequestsSection'
 import { NewQuoteButton } from './client/NewQuoteModal'
 import PageHeader, { SectionHeader } from '../../components/PageHeader'
 import { formatMoney, formatDate } from '../../lib/format'
@@ -93,7 +94,18 @@ function ClientDashboard() {
         ))}
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+      {/* Pending / Rejected quotes, above bookings */}
+      <div className="mt-8 border border-slate-200 bg-white p-6 shadow-sm">
+        <SectionHeader
+          title="My Quote Requests"
+          actions={<ViewAll to="/dashboard/quotes" />}
+        />
+        <div className="mt-4">
+          <MyQuoteRequestsSection />
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
         <div className="min-w-0 border border-slate-200 bg-white p-6 shadow-sm">
           <SectionHeader
             title="Active Bookings"

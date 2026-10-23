@@ -19,10 +19,10 @@
 // Every row is counted once; every query is paged past Supabase's
 // 1000-row default so a long range can't silently cap.
 import { supabase } from './supabaseClient'
-import { toManilaDate } from './payslip'
 import { dieselForTrip } from './tripCost'
 import {
   payslipCost,
+  rangeEndManila,
   rangeStartManila,
   type Period,
   summarizeParts,
@@ -90,7 +90,8 @@ export async function loadOperationalExpenses(
 ): Promise<{ data: OperationalExpenses | null; error: string | null }> {
   const cutoff = rangeStartManila(period)
   const cutoffTs = `${cutoff}T00:00:00+08:00`
-  const today = toManilaDate(new Date())
+  const end = rangeEndManila(period)
+  const endTs = `${end}T00:00:00+08:00`
 
   // Payslips by period START (the current week's end is still in the
   // future) -- drafts included, so a payroll run shows as it happens.
@@ -100,7 +101,7 @@ export async function loadOperationalExpenses(
         .from('payroll_payslips')
         .select('finalized_at, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
         .gte('payroll_period_start', cutoff)
-        .lte('payroll_period_start', today)
+        .lt('payroll_period_start', end)
         .range(from, to),
     ),
     fetchAll<LogRow>((from, to) =>
@@ -109,6 +110,7 @@ export async function loadOperationalExpenses(
         .select('itinerary_id')
         .eq('new_status', 'Delivered')
         .gte('status_changed_at', cutoffTs)
+        .lt('status_changed_at', endTs)
         .range(from, to),
     ),
     fetchAll<ExpenseRow>((from, to) =>
@@ -116,6 +118,7 @@ export async function loadOperationalExpenses(
         .from('itinerary_expenses')
         .select('expense_id, itinerary_id, amount, category')
         .gte('created_at', cutoffTs)
+        .lt('created_at', endTs)
         .range(from, to),
     ),
     supabase
@@ -263,7 +266,7 @@ export async function loadPayrollExpenses(
         .from('payroll_payslips')
         .select('employee_id, finalized_at, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
         .gte('payroll_period_start', rangeStartManila(period))
-        .lte('payroll_period_start', toManilaDate(new Date()))
+        .lt('payroll_period_start', rangeEndManila(period))
         .range(from, to),
     ),
     fetchAll<{ employee_id: number; full_name: string | null; position: string | null }>(
@@ -308,6 +311,7 @@ export async function loadMaintenanceExpenses(
   period: Period,
 ): Promise<{ data: MaintenanceExpenses | null; error: string | null }> {
   const cutoffTs = `${rangeStartManila(period)}T00:00:00+08:00`
+  const endTs = `${rangeEndManila(period)}T00:00:00+08:00`
 
   const [completions, logged] = await Promise.all([
     fetchAll<CompletionRow>((from, to) =>
@@ -315,6 +319,7 @@ export async function loadMaintenanceExpenses(
         .from('work_order_completions')
         .select('completion_id, work_order_id')
         .gte('completed_at', cutoffTs)
+        .lt('completed_at', endTs)
         .range(from, to),
     ),
     fetchAll<LogPartRow>((from, to) =>
@@ -322,6 +327,7 @@ export async function loadMaintenanceExpenses(
         .from('work_order_parts_log')
         .select('work_order_id, item_id, item_name_text, quantity, unit_cost')
         .gte('used_at', cutoffTs)
+        .lt('used_at', endTs)
         .range(from, to),
     ),
   ])
