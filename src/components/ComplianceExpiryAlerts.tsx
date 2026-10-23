@@ -11,7 +11,8 @@
 // and it's fixed on the Employees page.
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { isStaff } from '../lib/roles'
+import { Link } from 'react-router-dom'
+import { isAdmin, isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
 
@@ -24,6 +25,7 @@ type ComplianceRow = {
 }
 
 type ExpiryAlert = {
+  employeeId: number
   employeeName: string
   kind: 'Driver license' | 'Medical exam'
   // null = no licence on record at all (shown as "not on record").
@@ -41,6 +43,25 @@ function daysUntil(date: string) {
 // unique enough to dismiss a single notification by.
 function alertKey(alert: ExpiryAlert) {
   return `${alert.employeeName}-${alert.kind}`
+}
+
+// One notification's text: a link when `to` is given, else a plain block.
+function Wrapper({
+  to,
+  onNavigate,
+  children,
+}: {
+  to: string | null
+  onNavigate: () => void
+  children: React.ReactNode
+}) {
+  return to ? (
+    <Link to={to} onClick={onNavigate} className="block flex-1 text-sm hover:bg-slate-50">
+      {children}
+    </Link>
+  ) : (
+    <div className="flex-1 text-sm">{children}</div>
+  )
 }
 
 function ComplianceExpiryAlerts() {
@@ -93,6 +114,7 @@ function ComplianceExpiryAlerts() {
       // No licence on record at all is worse than one expiring soon.
       if (!row.driver_license_expiry_date) {
         nextAlerts.push({
+          employeeId: row.employee_id,
           employeeName: row.full_name,
           kind: 'Driver license',
           date: null,
@@ -103,6 +125,7 @@ function ComplianceExpiryAlerts() {
         const daysRemaining = daysUntil(row.driver_license_expiry_date)
         if (daysRemaining <= 30) {
           nextAlerts.push({
+            employeeId: row.employee_id,
             employeeName: row.full_name,
             kind: 'Driver license',
             date: row.driver_license_expiry_date,
@@ -114,6 +137,7 @@ function ComplianceExpiryAlerts() {
         const daysRemaining = daysUntil(row.medical_exam_expiry_date)
         if (daysRemaining <= 30) {
           nextAlerts.push({
+            employeeId: row.employee_id,
             employeeName: row.full_name,
             kind: 'Medical exam',
             date: row.medical_exam_expiry_date,
@@ -158,7 +182,7 @@ function ComplianceExpiryAlerts() {
       <button
         onClick={handleToggle}
         aria-label="Notifications"
-        className="flex items-center justify-center p-2 text-white/90 hover:bg-brand-steel-dark hover:text-white"
+        className="flex items-center justify-center p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       >
         <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
           <path
@@ -206,7 +230,13 @@ function ComplianceExpiryAlerts() {
                     key={alertKey(alert)}
                     className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"
                   >
-                    <div className="flex-1 text-sm">
+                    {/* Admin: the notice opens that employee's edit form on the
+                        Employees page, where the date is fixed. Dispatcher/Driver
+                        can't edit it, so for them it stays plain text. */}
+                    <Wrapper
+                      to={isAdmin(role) ? `/dashboard/employees?employee=${alert.employeeId}` : null}
+                      onNavigate={() => setOpen(false)}
+                    >
                       <p className="font-medium text-slate-900">
                         {alert.employeeName}
                       </p>
@@ -223,7 +253,12 @@ function ComplianceExpiryAlerts() {
                           </>
                         )}
                       </p>
-                    </div>
+                      {isAdmin(role) && (
+                        <p className="mt-0.5 text-xs font-medium text-slate-600 underline">
+                          Open employee to update →
+                        </p>
+                      )}
+                    </Wrapper>
                     <button
                       onClick={() =>
                         setDismissedKeys((prev) => [...prev, alertKey(alert)])

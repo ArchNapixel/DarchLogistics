@@ -327,7 +327,9 @@ function AddEmployeeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-xl bg-white p-6 shadow-lg">
+      {/* Wide, 4-column layout so the whole form fits on one screen without
+          scrolling (it drops to 2 / 1 columns on tablets / phones). */}
+      <div className="w-full max-w-5xl bg-white p-5 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">
             {isEditing ? 'Edit Employee' : 'Add Employee'}
@@ -346,9 +348,10 @@ function AddEmployeeModal({
           </p>
         )}
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {/* First, middle (optional), last -- full_name is built from these. */}
-          <div className="grid items-end gap-4 sm:col-span-2 sm:grid-cols-3">
+        <div className="mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* First, middle (optional), last -- full_name is built from these.
+              `contents` makes the three fields cells of the grid itself. */}
+          <div className="contents">
             <label className={labelClasses}>
               First name
               <input
@@ -452,7 +455,7 @@ function AddEmployeeModal({
             </label>
           )}
 
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">
             <input
               type="checkbox"
               checked={isMinimumWageEarner}
@@ -464,11 +467,9 @@ function AddEmployeeModal({
 
           {/* Everything below is optional. Government IDs are safe to show
               here: only Admin can reach the Employees page. */}
-          <details className="border border-slate-200 p-3 sm:col-span-2" open={isEditing}>
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">
-              More details (optional)
-            </summary>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div className="border border-slate-200 p-3 sm:col-span-2 lg:col-span-4">
+            <p className="text-sm font-semibold text-slate-900">More details (optional)</p>
+            <div className="mt-2 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className={labelClasses}>
                 Date of birth
                 <input type="date" min={MIN_BIRTH_DATE} max={toManilaDate(new Date())} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={fieldClasses} />
@@ -477,7 +478,7 @@ function AddEmployeeModal({
                 Personal email
                 <input type="email" {...bind('email', personalEmail, setPersonalEmail)} className={fieldClasses} />
               </label>
-              <label className={`${labelClasses} sm:col-span-2`}>
+              <label className={labelClasses}>
                 Address
                 <input type="text" {...bind('address', address, setAddress)} className={fieldClasses} />
               </label>
@@ -493,7 +494,6 @@ function AddEmployeeModal({
                 Zip code
                 <input type="text" {...bind('zip_code', zipCode, setZipCode)} className={fieldClasses} />
               </label>
-              <span className="hidden sm:block" />
               <label className={labelClasses}>
                 Emergency contact name
                 <input type="text" {...bind('emergency_contact_name', emergencyName, setEmergencyName)} className={fieldClasses} />
@@ -519,7 +519,7 @@ function AddEmployeeModal({
                 <input type="text" {...bind('pagibig_number', pagibigNumber, setPagibigNumber)} className={fieldClasses} />
               </label>
             </div>
-          </details>
+          </div>
 
           {isEditing && position === 'Driver' && (
             <>
@@ -543,8 +543,8 @@ function AddEmployeeModal({
           )}
 
           {isEditing && accountLoaded && (
-            <div className="grid gap-4 border-t border-slate-200 pt-4 sm:col-span-2">
-              <p className="text-sm font-semibold text-slate-900">
+            <div className="grid gap-x-4 gap-y-3 border-t border-slate-200 pt-3 sm:col-span-2 sm:grid-cols-3 lg:col-span-4">
+              <p className="text-sm font-semibold text-slate-900 sm:col-span-3">
                 {account ? 'Login account' : 'Login account (none yet -- fill in to create one)'}
               </p>
               <label className={labelClasses}>
@@ -569,7 +569,7 @@ function AddEmployeeModal({
           )}
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-4">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-3">
           {isEditing && onToggleStatus && onDelete && (
             <div className="mr-auto flex gap-3">
               <button

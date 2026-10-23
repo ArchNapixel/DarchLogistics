@@ -4,6 +4,7 @@
 // status name is looked up separately and merged in here (same pattern
 // as place-name lookups in DriverTasks.tsx / MyBookingsSection.tsx).
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
@@ -86,6 +87,17 @@ function EmployeesSection() {
   useEffect(() => {
     loadEmployees()
   }, [])
+
+  // /dashboard/employees?employee=12 (the header bell's expiry notices) opens
+  // that employee's edit form once the list has loaded, then clears the link.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const linkedEmployeeId = Number(searchParams.get('employee')) || null
+  useEffect(() => {
+    if (!linkedEmployeeId || employees.length === 0) return
+    const match = employees.find((e) => e.employee_id === linkedEmployeeId)
+    if (match) setEditingEmployee(match)
+    setSearchParams({}, { replace: true })
+  }, [linkedEmployeeId, employees, setSearchParams])
 
   async function handleSetStatus(employee: Employee, statusName: 'Deactivated' | 'Active') {
     const statusId = statusIdByName.get(statusName)
