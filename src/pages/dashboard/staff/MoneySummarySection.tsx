@@ -9,9 +9,9 @@
 // buildMoneySummary() (lib/moneySummary.ts). Supplier bills are left out
 // for now (Accounts Payable is hidden).
 //
-// The "Why Collected differs from Revenue" card is a short version of
-// Accounting -> Revenue Reconciliation (loadRevenueReconciliation +
-// gapByReason). It loads on its own, so if it fails the rest of the page
+// The "Why Collected differs from Revenue" card comes from the revenue
+// reconciliation numbers (loadRevenueReconciliation + gapByReason; the
+// full Revenue Reconciliation page was removed 2026-10-23). It loads on its own, so if it fails the rest of the page
 // still shows.
 //
 // Second tab, "Expense Breakdown" (?tab=expenses): the Admin dashboard's
@@ -20,7 +20,7 @@
 // the one clicked). Those cards use their own loaders (dashboardExpenses.ts),
 // so their totals can differ a little from the Summary tab's Expenses.
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
@@ -155,12 +155,7 @@ function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | nul
     : false
   return (
     <div className="mt-6 border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-900">Why Collected is not the same as Revenue</h3>
-        <Link to="/dashboard/revenue-reconciliation" className="shrink-0 text-sm font-medium text-primary hover:underline">
-          See details →
-        </Link>
-      </div>
+      <h3 className="text-sm font-semibold text-slate-900">Why Collected is not the same as Revenue</h3>
       {error ? (
         <p className="mt-3 text-sm text-red-700">{error}</p>
       ) : !gap ? (
@@ -198,7 +193,7 @@ function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | nul
           {mismatch && (
             <p className="mt-3 text-xs text-amber-700">
               These figures differ slightly from the cards above ({formatMoney(gap.billed)} billed,{' '}
-              {formatMoney(gap.collected)} collected) -- check Revenue Reconciliation.
+              {formatMoney(gap.collected)} collected).
             </p>
           )}
         </>
