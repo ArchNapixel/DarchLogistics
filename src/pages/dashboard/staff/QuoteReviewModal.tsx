@@ -83,8 +83,7 @@ const DEFAULT_TRIP_START_MINUTES = 360
 const MAX_HOURS_PER_TRIP = 72
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'w-full border-2 border-slate-300 bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary focus:outline-none'
 
 // Looks up an existing place by city+barangay (trimmed, case-insensitive)
 // before creating a new one -- barangay is the routing/cache unit (see
@@ -201,33 +200,69 @@ function pinLink(lat: number | null | undefined, lng: number | null | undefined)
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`
 }
 
-function InfoRow({
-  label,
-  value,
-  pin,
-}: {
-  label: string
-  value: string
-  pin?: string | null
-}) {
+// One read-only label/value pair (inside a <dl>).
+function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-      </p>
-      <p className="text-slate-900">{value}</p>
-      {pin && (
-        <a
-          href={pin}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
-        >
-          View pinned spot on map
-        </a>
-      )}
+    <div className={className}>
+      <dt className="text-[13px] text-slate-500">{label}</dt>
+      <dd className="text-[15px] text-slate-900">{children}</dd>
     </div>
   )
+}
+
+// Small heading over each group in the left column, with a rule under it.
+function GroupHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="mb-3 border-b border-slate-200 pb-2 text-[15px] font-semibold text-slate-900">{children}</h3>
+  )
+}
+
+// One row of the profitability panel: label (+ optional hint) and amount.
+function CostRow({ label, hint, value, strong = false }: { label: string; hint?: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-2">
+      <span className={strong ? 'font-semibold text-slate-900' : 'text-slate-700'}>
+        {label}
+        {hint && <span className="block text-[13px] font-normal text-slate-500">{hint}</span>}
+      </span>
+      <span className={`tabular-nums ${strong ? 'font-bold text-slate-900' : 'font-semibold text-slate-900'}`}>{value}</span>
+    </div>
+  )
+}
+
+// Outline icons (24x24 SVG paths, same style as the sidebar's).
+const ICONS = {
+  close: 'M18 6L6 18M6 6l12 12',
+  check: 'M20 6L9 17l-5-5',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+}
+
+function Icon({ name, size = 16 }: { name: keyof typeof ICONS; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="inline-block shrink-0"
+      aria-hidden="true"
+    >
+      <path d={ICONS[name]} />
+    </svg>
+  )
+}
+
+// Hours-per-trip rule, used on blur and again on Approve.
+function hoursProblem(value: string): string | null {
+  const hours = Number(value)
+  if (!value.trim()) return 'Enter how many hours one trip takes.'
+  if (!(hours > 0)) return 'Enter a number of hours greater than 0.'
+  if (hours > MAX_HOURS_PER_TRIP) return `One trip can be at most ${MAX_HOURS_PER_TRIP} hours.`
+  return null
 }
 
 function QuoteReviewModal({
@@ -253,6 +288,9 @@ function QuoteReviewModal({
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   // Length of each trip's time slot (bookings.hours_per_trip).
   const [hoursPerTrip, setHoursPerTrip] = useState('')
+  // Inline error under the hours box (checked on blur and on Approve).
+  const [hoursError, setHoursError] = useState<string | null>(null)
+  const hoursInputRef = useRef<HTMLInputElement>(null)
   // Settings' default trip start time, minutes after midnight.
   const [defaultStartMinutes, setDefaultStartMinutes] = useState(DEFAULT_TRIP_START_MINUTES)
   const [distanceIsCached, setDistanceIsCached] = useState(false)
@@ -455,6 +493,15 @@ function QuoteReviewModal({
       return
     }
 
+    // Checked before the storage-day confirm below, so a missing hours
+    // value is fixed first. Shown under the box, not as a top error.
+    const hoursMessage = hoursProblem(hoursPerTrip)
+    if (hoursMessage) {
+      setHoursError(hoursMessage)
+      hoursInputRef.current?.focus()
+      return
+    }
+
     if (!tripDateFrom) {
       setError('This quote has no pickup date. Reject it ("Schedule unavailable") so the client can add one.')
       return
@@ -482,11 +529,7 @@ function QuoteReviewModal({
       return
     }
 
-    const hoursValue = Number(hoursPerTrip)
-    if (!hoursPerTrip || !(hoursValue > 0) || hoursValue > MAX_HOURS_PER_TRIP) {
-      setError(`Enter the hours per trip (more than 0, up to ${MAX_HOURS_PER_TRIP}) before approving.`)
-      return
-    }
+    const hoursValue = Number(hoursPerTrip) // validated above (hoursProblem)
 
     // Older quotes can predate the delivery cap in lib/quoteRequest.ts.
     const requestedTrips = quote.delivery_order_count ?? 1
@@ -861,388 +904,510 @@ function QuoteReviewModal({
   const costPerTrip = Math.round((totalCost / deliveryCount) * 100) / 100
   const downpayment = canCalculateProfitability ? downpaymentFor(rateForCalc, costPerTrip, deliveryCount) : null
 
-  const showProfitabilityPanel = approvedBookingId === null && distanceForCalc > 0
+  const estimatedProfit = totalContractValue - totalCost
+  const pickupToday = tripDateFrom !== '' && tripDateFrom === toManilaDate(new Date())
+  const quoteLabel = quote.reference_code ?? `#${quote.quote_request_id}`
+  const pickupPin = pinLink(quote.pickup_lat, quote.pickup_lng)
+  const deliveryPin = pinLink(quote.delivery_lat, quote.delivery_lng)
+
+  // Dialog behaviour: Esc closes, Tab stays inside the panel, and focus
+  // goes back to whatever opened it (the row's Review button) on close.
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Latest close() for the Esc handler below (it's set up once).
+  const closeRef = useRef(close)
+  useEffect(() => {
+    closeRef.current = close
+  })
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    panelRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        // Leave Esc to a confirm dialog opened on top of this panel.
+        if (panelRef.current?.contains(document.activeElement) || document.activeElement === document.body) {
+          e.preventDefault()
+          closeRef.current()
+        }
+        return
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])',
+        ),
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      // The opener may be gone (the quote left the Pending list).
+      if (opener?.isConnected) opener.focus()
+    }
+  }, [])
+
+  const footerButton = 'flex h-11 items-center gap-2 px-5 text-sm font-semibold disabled:opacity-50'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center sm:py-8">
-      <div className="flex w-full max-w-4xl flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-center">
-      <div className="max-h-[90vh] w-full overflow-y-auto bg-white p-6 shadow-lg lg:max-w-lg">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">
-            Quote #{quote.quote_request_id}
+    <div className="fixed inset-0 z-50">
+      {/* Dim backdrop over the Pending list; clicking it closes the panel. */}
+      <div className="absolute inset-0 bg-slate-900/50" onClick={close} aria-hidden="true" />
+
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-quote-title"
+        className="absolute inset-y-0 right-0 flex w-full max-w-[1100px] flex-col border-l-2 border-slate-300 bg-white transition-transform duration-200 ease-out starting:translate-x-full motion-reduce:transition-none"
+      >
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b-2 border-slate-200 px-7 py-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 id="review-quote-title" className="text-xl font-bold text-slate-900">
+              Review Quote #{quote.quote_request_id}
+            </h2>
             {quote.reference_code && (
-              <span className="ml-2 font-mono text-sm font-medium text-slate-500">
-                {quote.reference_code}
+              <span className="font-mono text-xs font-semibold text-slate-600">{quote.reference_code}</span>
+            )}
+            <span className="bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+              {approvedBookingId !== null ? 'Approved' : 'Pending'}
+            </span>
+            {pickupToday && (
+              <span className="flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                <Icon name="clock" size={12} />
+                Pickup Today
               </span>
             )}
-          </h3>
+          </div>
           <button
             onClick={close}
-            aria-label="Close"
-            className="text-slate-400 hover:text-slate-700"
+            aria-label="Close review"
+            data-autofocus
+            className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-slate-300 text-slate-700 hover:border-slate-500 hover:text-slate-900"
           >
-            ✕
+            <Icon name="close" size={18} />
           </button>
         </div>
 
-        {error && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </p>
-        )}
-
-        {approvedBookingId !== null ? (
-          <>
-            <p className="mt-4 bg-green-50 px-4 py-3 text-sm text-green-800">
-              Quote approved. Booking #{approvedBookingId} was created with{' '}
-              {itinerariesCreated}{' '}
-              {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'}{' '}
-              (status "Awaiting"). Assign a truck, trailer, and driver to
-              each from the Dispatch Board.
-            </p>
-            <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
-              <button
-                onClick={() => onResolved(quote.quote_request_id)}
-                className="btn-primary px-4 py-2 text-sm font-medium"
-              >
-                Done
-              </button>
+        {/* Body: fits a 1080p screen; scrolls only on smaller windows. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {approvedBookingId !== null ? (
+            <div className="px-7 py-6">
+              <p className="border-2 border-green-200 bg-green-50 px-4 py-3 text-[15px] text-green-900">
+                Quote approved. Booking #{approvedBookingId} was created with {itinerariesCreated}{' '}
+                {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'} (status "Awaiting"). Assign a truck,
+                trailer, and driver to each from the Dispatch Board.
+              </p>
             </div>
-          </>
-        ) : (
-          <>
-            {quote.resubmit_count > 0 && (
-              <div className="mt-4 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <p className="font-semibold">
-                  Resubmitted by the client
-                  {quote.resubmit_count > 1 ? ` (${quote.resubmit_count} times)` : ''}
-                </p>
-                {quote.previous_rejection_reason && (
-                  <p className="mt-1">Previously rejected: {quote.previous_rejection_reason}</p>
+          ) : (
+            <div className="grid gap-8 px-7 py-6 lg:grid-cols-[minmax(0,1fr)_436px]">
+              {/* LEFT: the request, read-only */}
+              <div className="flex flex-col gap-6">
+                {quote.resubmit_count > 0 && (
+                  <div className="border-2 border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                    <p className="font-semibold">
+                      Resubmitted by the client
+                      {quote.resubmit_count > 1 ? ` (${quote.resubmit_count} times)` : ''}
+                    </p>
+                    {quote.previous_rejection_reason && (
+                      <p className="mt-0.5">Previously rejected: {quote.previous_rejection_reason}</p>
+                    )}
+                  </div>
                 )}
+                {urgent && (
+                  <div className="border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                    <p className="font-semibold">Urgent · last free storage day</p>
+                    <p className="mt-0.5">
+                      Every trip must be picked up from the port by 11:59 PM on{' '}
+                      {tripDateFrom ? formatDate(tripDateFrom) : '—'}. Approving starts all trips at the same time.
+                      {tripDateFrom && tripDateFrom < toManilaDate(new Date()) && (
+                        <span className="block font-semibold text-red-700">That day has already passed.</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                <section>
+                  <GroupHeading>Client</GroupHeading>
+                  <dl className="grid grid-cols-2 gap-4">
+                    <Field label="Client name">
+                      <span className="text-lg font-semibold">{quote.client_name}</span>
+                    </Field>
+                    <Field label="Contact">
+                      {[quote.contact_number, quote.contact_email].filter(Boolean).join(' / ') || '—'}
+                    </Field>
+                  </dl>
+                </section>
+
+                <section>
+                  <GroupHeading>Route</GroupHeading>
+                  {/* Two stops joined by a line: hollow circle = pickup, filled square = delivery */}
+                  <dl className="relative flex flex-col gap-4 pl-7">
+                    <span className="absolute top-2 bottom-8 left-[5px] w-0.5 bg-slate-300" aria-hidden="true" />
+                    <div className="relative">
+                      <span
+                        className="absolute top-1 -left-7 h-3 w-3 rounded-full border-2 border-primary bg-white"
+                        aria-hidden="true"
+                      />
+                      <dt className="text-[13px] text-slate-500">Pickup</dt>
+                      <dd className="text-[15px] text-slate-900">
+                        {formatLocationDisplay({
+                          city: quote.pickup_city,
+                          barangay: quote.pickup_barangay,
+                          detail: quote.pickup_location_text,
+                        })}
+                        {pickupPin && (
+                          <a href={pickupPin} target="_blank" rel="noreferrer" className="ml-3 text-[13px] text-primary underline">
+                            View pinned spot on map
+                          </a>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute top-1 -left-7 h-3 w-3 bg-primary" aria-hidden="true" />
+                      <dt className="text-[13px] text-slate-500">Delivery</dt>
+                      <dd className="text-[15px] text-slate-900">
+                        {formatLocationDisplay({
+                          city: quote.delivery_city,
+                          barangay: quote.delivery_barangay,
+                          detail: quote.delivery_location_text,
+                        })}
+                        {deliveryPin && (
+                          <a href={deliveryPin} target="_blank" rel="noreferrer" className="ml-3 text-[13px] text-primary underline">
+                            View pinned spot on map
+                          </a>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section>
+                  <GroupHeading>Cargo</GroupHeading>
+                  <dl className="grid grid-cols-4 gap-4">
+                    <Field label="Cargo type">{quote.cargo_type}</Field>
+                    <Field label="Trailer size">{quote.container_type}</Field>
+                    <Field label="Trailer type">{quote.trailer_type ?? '—'}</Field>
+                    <Field label="Weight (tons)">{String(quote.weight)}</Field>
+                    <Field label="Cargo description" className="col-span-4">
+                      {quote.cargo_description || '—'}
+                    </Field>
+                  </dl>
+                </section>
+
+                <section>
+                  <GroupHeading>Schedule</GroupHeading>
+                  <dl className="grid grid-cols-4 gap-4">
+                    <Field label="Number of deliveries">{String(deliveryCount)}</Field>
+                    <Field label={urgent ? 'Last free storage day (pick up by)' : 'Preferred pickup date'}>
+                      {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
+                    </Field>
+                    <Field label="Deadline date">
+                      {quote.preferred_delivery_date ? formatDate(quote.preferred_delivery_date) : 'Not given'}
+                    </Field>
+                    <Field label="Trip start date">{tripDateFrom ? formatDate(tripDateFrom) : '—'}</Field>
+                  </dl>
+                </section>
+
+                <section>
+                  <GroupHeading>Terms</GroupHeading>
+                  <dl className="grid grid-cols-2 gap-4">
+                    <Field label="Proposed rate">
+                      {quote.proposed_rate !== null ? (
+                        <>
+                          <span className="text-2xl font-bold tabular-nums">{formatMoney(quote.proposed_rate)}</span>{' '}
+                          <span className="text-[13px] text-slate-500">per trip</span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </Field>
+                    <Field label="Payment terms">
+                      {PAYMENT_TERMS_LABELS[paymentTerms as keyof typeof PAYMENT_TERMS_LABELS] ?? paymentTerms}
+                    </Field>
+                  </dl>
+                </section>
               </div>
-            )}
-            {urgent && (
-              <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <p className="font-semibold">Urgent · last free storage day</p>
-                <p className="mt-1">
-                  Every trip must be picked up from the port by 11:59 PM on{' '}
-                  {tripDateFrom ? formatDate(tripDateFrom) : '—'}. Approving starts all trips at the same time.
-                  {tripDateFrom && tripDateFrom < toManilaDate(new Date()) && (
-                    <span className="block font-semibold text-red-700">That day has already passed.</span>
-                  )}
-                </p>
-              </div>
-            )}
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <InfoRow label="Client name" value={quote.client_name} />
-              <InfoRow
-                label="Contact"
-                value={
-                  [quote.contact_number, quote.contact_email]
-                    .filter(Boolean)
-                    .join(' / ') || '—'
-                }
-              />
-              <InfoRow
-                label="Pickup"
-                value={formatLocationDisplay({
-                  city: quote.pickup_city,
-                  barangay: quote.pickup_barangay,
-                  detail: quote.pickup_location_text,
-                })}
-                pin={pinLink(quote.pickup_lat, quote.pickup_lng)}
-              />
-              <InfoRow
-                label="Delivery"
-                value={formatLocationDisplay({
-                  city: quote.delivery_city,
-                  barangay: quote.delivery_barangay,
-                  detail: quote.delivery_location_text,
-                })}
-                pin={pinLink(quote.delivery_lat, quote.delivery_lng)}
-              />
-              <InfoRow label="Cargo type" value={quote.cargo_type} />
-              <InfoRow label="Trailer size" value={quote.container_type} />
-              <InfoRow label="Trailer type" value={quote.trailer_type ?? '—'} />
-              <InfoRow label="Weight (tons)" value={String(quote.weight)} />
-              <InfoRow
-                label="Number of deliveries"
-                value={String(quote.delivery_order_count ?? 1)}
-              />
-              <InfoRow
-                label={urgent ? 'Last free storage day (pick up by)' : 'Preferred pickup date'}
-                value={quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
-              />
-              <InfoRow
-                label="Deadline date"
-                value={quote.preferred_delivery_date ? formatDate(quote.preferred_delivery_date) : 'Not given'}
-              />
-              <InfoRow
-                label="Cargo description"
-                value={quote.cargo_description}
-              />
-            </div>
 
-            <div className="mt-6 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
-              <InfoRow
-                label="Proposed rate"
-                value={quote.proposed_rate !== null ? `${formatMoney(quote.proposed_rate)} per trip` : '—'}
-              />
-
-              <InfoRow
-                label="Payment terms"
-                value={PAYMENT_TERMS_LABELS[paymentTerms as keyof typeof PAYMENT_TERMS_LABELS] ?? paymentTerms}
-              />
-
-              <label className={labelClasses}>
-                Estimated distance (km)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={estimatedDistanceKm}
-                  onChange={(e) => {
-                    distanceTypedRef.current = true
-                    setEstimatedDistanceKm(e.target.value)
-                    setDistanceIsCached(false)
-                    setDistanceIsAutoEstimated(false)
-                    setDistanceIsFromPins(false)
-                  }}
-                  className={fieldClasses}
-                />
-                {autoEstimatingDistance && (
-                  <span className="text-xs font-normal text-slate-500">
-                    Estimating distance…
-                  </span>
-                )}
-                {distanceIsCached && (
-                  <span className="text-xs font-normal text-slate-500">
-                    From a previous trip between these barangays. Edit it if
-                    this route differs.
-                  </span>
-                )}
-                {distanceIsFromPins && (
-                  <span className="text-xs font-normal text-slate-500">
-                    Driving distance between the two pinned spots. Check it
-                    before approving.
-                  </span>
-                )}
-                {distanceIsAutoEstimated && (
-                  <span className="text-xs font-normal text-slate-500">
-                    Rough estimate between the two barangay centres (no exact
-                    pins). Check it before approving.
-                  </span>
-                )}
-              </label>
-
-              <label className={labelClasses}>
-                Hours per trip
-                <input
-                  type="number"
-                  min="0.5"
-                  max={MAX_HOURS_PER_TRIP}
-                  step="0.5"
-                  value={hoursPerTrip}
-                  onChange={(e) => setHoursPerTrip(e.target.value)}
-                  placeholder="e.g. 6"
-                  className={fieldClasses}
-                />
-                <span className="text-xs font-normal text-slate-500">
-                  {Number(hoursPerTrip) > 0 && tripDateFrom
-                    ? `${(quote.delivery_order_count ?? 1) > 1 ? 'Trip 1' : 'Each trip'}: ${formatSlot(
-                        manilaTimestamp(tripDateFrom, defaultStartMinutes),
-                        new Date(
-                          new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime() +
-                            Number(hoursPerTrip) * 3_600_000,
-                        ),
-                      )}${(quote.delivery_order_count ?? 1) > 1 ? (urgent ? ', all trips at the same time' : ', the rest follow back to back') : ''} (dispatch can move them)`
-                    : 'How long one trip takes. Sets each driver\'s time slot.'}
-                </span>
-              </label>
-
-              <InfoRow
-                label="Trip start date"
-                value={tripDateFrom ? formatDate(tripDateFrom) : '—'}
-              />
-            </div>
-
-            {showRejectForm ? (
-              <div className="mt-6 border-t border-slate-200 pt-4">
-                <p className="text-sm font-medium text-slate-700">Why is it rejected?</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(Object.keys(REJECTION_TAGS) as RejectionTag[]).map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => pickRejectTag(tag)}
-                      aria-pressed={rejectTag === tag}
-                      className={`border px-3 py-1.5 text-sm font-medium ${
-                        rejectTag === tag
-                          ? 'border-red-600 bg-red-600 text-white'
-                          : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      {REJECTION_TAGS[tag].label}
-                    </button>
-                  ))}
-                </div>
-                <label className={`${labelClasses} mt-4`}>
-                  {rejectTag === 'Other' ? 'Reason for rejection' : 'Message to the client'}
+              {/* RIGHT: what the admin decides, then the result */}
+              {showRejectForm ? (
+                <section className="self-start border-2 border-red-300 px-5 py-5">
+                  <h3 className="text-[17px] font-semibold text-slate-900">Reject this quote</h3>
+                  <p className="mt-1 text-[13px] text-slate-500">
+                    The client sees the reason and can fix the quote and resubmit it.
+                  </p>
+                  <fieldset className="mt-4">
+                    <legend className="text-sm font-semibold text-slate-900">Why is it rejected?</legend>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(Object.keys(REJECTION_TAGS) as RejectionTag[]).map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => pickRejectTag(tag)}
+                          aria-pressed={rejectTag === tag}
+                          className={`flex items-center gap-1.5 border-2 px-3 py-1.5 text-sm font-medium ${
+                            rejectTag === tag
+                              ? 'border-red-700 bg-red-700 text-white'
+                              : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {rejectTag === tag && <Icon name="check" size={14} />}
+                          {REJECTION_TAGS[tag].label}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <label htmlFor="reject-reason" className="mt-4 block text-sm font-semibold text-slate-900">
+                    {rejectTag === 'Other' ? 'Reason for rejection' : 'Message to the client'}
+                  </label>
                   <textarea
+                    id="reject-reason"
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
-                    rows={3}
-                    className={fieldClasses}
+                    rows={4}
+                    className={`${fieldClasses} mt-1.5`}
                   />
-                </label>
-                <div className="mt-4 flex justify-end gap-3">
-                  <button
-                    onClick={() => setShowRejectForm(false)}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  {/* A preset must be picked first (handleReject checks too). */}
-                  <button
-                    onClick={handleReject}
-                    disabled={submitting || !rejectTag}
-                    title={rejectTag ? undefined : 'Pick a reason above first'}
-                    className="bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
-                  >
-                    {submitting ? 'Rejecting...' : 'Confirm Reject'}
-                  </button>
+                </section>
+              ) : (
+                <div className="flex flex-col gap-4 self-start">
+                  <section className="border-2 border-slate-300 px-5 py-5">
+                    <h3 className="text-[17px] font-semibold text-slate-900">Confirm Trip Details</h3>
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="review-distance" className="block text-sm font-semibold text-slate-900">
+                          Estimated distance (km)
+                        </label>
+                        <input
+                          id="review-distance"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={estimatedDistanceKm}
+                          aria-describedby="review-distance-hint"
+                          onChange={(e) => {
+                            distanceTypedRef.current = true
+                            setEstimatedDistanceKm(e.target.value)
+                            setDistanceIsCached(false)
+                            setDistanceIsAutoEstimated(false)
+                            setDistanceIsFromPins(false)
+                          }}
+                          className={`${fieldClasses} mt-1.5 tabular-nums`}
+                        />
+                        <p id="review-distance-hint" className="mt-1.5 text-[13px] text-slate-500">
+                          {autoEstimatingDistance
+                            ? 'Estimating distance…'
+                            : distanceIsCached
+                              ? 'From a previous trip between these barangays. Edit it if this route differs.'
+                              : distanceIsFromPins
+                                ? 'Driving distance between the two pinned spots. Check it before approving.'
+                                : distanceIsAutoEstimated
+                                  ? 'Rough estimate between the two barangay centres (no exact pins). Check it before approving.'
+                                  : 'One way, pickup to delivery.'}
+                        </p>
+                      </div>
+                      <div>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <label htmlFor="review-hours" className="block text-sm font-semibold text-slate-900">
+                            Hours per trip
+                          </label>
+                          <span className="text-[13px] font-medium text-amber-800">Required</span>
+                        </div>
+                        <input
+                          id="review-hours"
+                          ref={hoursInputRef}
+                          type="number"
+                          min="0.5"
+                          max={MAX_HOURS_PER_TRIP}
+                          step="0.5"
+                          required
+                          value={hoursPerTrip}
+                          placeholder="e.g. 6"
+                          aria-invalid={hoursError !== null}
+                          aria-describedby="review-hours-hint"
+                          onChange={(e) => {
+                            setHoursPerTrip(e.target.value)
+                            // Clear the error as soon as the value is fixed.
+                            if (hoursError && !hoursProblem(e.target.value)) setHoursError(null)
+                          }}
+                          onBlur={() => setHoursError(hoursProblem(hoursPerTrip))}
+                          className={`${fieldClasses} mt-1.5 tabular-nums ${hoursError ? 'border-red-700' : ''}`}
+                        />
+                        <p
+                          id="review-hours-hint"
+                          className={`mt-1.5 text-[13px] ${hoursError ? 'font-medium text-red-700' : 'text-slate-500'}`}
+                        >
+                          {hoursError ??
+                            (Number(hoursPerTrip) > 0 && tripDateFrom
+                              ? `${deliveryCount > 1 ? 'Trip 1' : 'Each trip'}: ${formatSlot(
+                                  manilaTimestamp(tripDateFrom, defaultStartMinutes),
+                                  new Date(
+                                    new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime() +
+                                      Number(hoursPerTrip) * 3_600_000,
+                                  ),
+                                )}${deliveryCount > 1 ? (urgent ? ', all trips at the same time' : ', the rest follow back to back') : ''} (dispatch can move them)`
+                              : "How long one trip takes. Sets each driver's time slot.")}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="border-2 border-slate-300 px-5 py-5" aria-live="polite">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h3 className="text-[17px] font-semibold text-slate-900">Profitability Estimate</h3>
+                      <span className="text-[13px] text-slate-500">Updates with distance</span>
+                    </div>
+
+                    {!settingsLoaded ? (
+                      <p className="mt-3 text-sm text-slate-600">
+                        Set diesel price and driver commission rate under Settings to see this estimate.
+                      </p>
+                    ) : rateForCalc <= 0 ? (
+                      <p className="mt-3 text-sm text-slate-600">This quote has no proposed rate to calculate with.</p>
+                    ) : distanceForCalc <= 0 ? (
+                      <p className="mt-3 text-sm text-slate-600">Enter the estimated distance to see the costs.</p>
+                    ) : (
+                      <div className="mt-2 text-[15px]">
+                        <CostRow
+                          label="Contract value"
+                          hint={`${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${formatMoney(rateForCalc)}`}
+                          value={formatMoney(totalContractValue)}
+                          strong
+                        />
+                        <div className="border-t border-slate-200 pt-1">
+                          <CostRow label="Diesel cost" value={formatMoney(dieselCost)} />
+                          <CostRow label="Driver commission" value={formatMoney(driverCommissionCost)} />
+                          <CostRow label="Driver per-trip fee" value={formatMoney(perTripFeeCost)} />
+                        </div>
+                        <div className="border-t border-slate-200 pt-1">
+                          <CostRow label="Total cost" value={formatMoney(totalCost)} strong />
+                          <div className="flex items-baseline justify-between gap-3 pt-1">
+                            <span className="text-slate-700">Cost vs. rate</span>
+                            <span className="font-semibold tabular-nums text-slate-900">
+                              {(costRatio * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          <div
+                            className="mt-2 h-2.5 bg-slate-200"
+                            role="img"
+                            aria-label={`Costs are ${(costRatio * 100).toFixed(1)}% of the contract value`}
+                          >
+                            <div
+                              className="h-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
+                              style={{ width: `${Math.min(costRatio * 100, 100)}%` }}
+                            />
+                          </div>
+                          {isLowMargin && (
+                            <p className="mt-2 text-[13px] font-medium text-red-700">
+                              Costs are at or above 50% of the rate. Informational only; Approve is still your call.
+                            </p>
+                          )}
+                        </div>
+                        <div className="mt-3 border-t border-slate-200 pt-1">
+                          <div className="flex items-baseline justify-between gap-3 py-2">
+                            <span className="font-semibold text-slate-900">
+                              Estimated profit
+                              <span className="block text-[13px] font-normal text-slate-500">
+                                Contract value − total cost
+                              </span>
+                            </span>
+                            <span
+                              className={`text-xl font-bold tabular-nums ${estimatedProfit < 0 ? 'text-red-700' : 'text-slate-900'}`}
+                            >
+                              {estimatedProfit < 0 ? '−' : ''}
+                              {formatMoney(Math.abs(estimatedProfit))}
+                            </span>
+                          </div>
+                        </div>
+                        {downpayment !== null && (
+                          <div className="mt-2 flex items-center justify-between gap-4 border-2 border-accent-300 bg-accent-100 px-4 py-3">
+                            <span className="font-semibold text-slate-900">
+                              Client downpayment
+                              <span className="block text-[13px] font-normal text-slate-600">
+                                Total cost + 25% of the rest, due before any trip starts.
+                              </span>
+                            </span>
+                            <span className="text-2xl font-bold tabular-nums text-primary">
+                              {formatMoney(downpayment)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </section>
                 </div>
-              </div>
-            ) : (
-              <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
-                <button
-                  onClick={() => setShowRejectForm(true)}
-                  disabled={submitting}
-                  className="border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                >
-                  Reject
-                </button>
-                <button
-                  onClick={handleApprove}
-                  disabled={submitting}
-                  className="btn-primary px-4 py-2 text-sm font-medium"
-                >
-                  {submitting ? 'Approving...' : 'Approve'}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {showProfitabilityPanel && (
-        <div className="w-full overflow-y-auto bg-white p-6 shadow-lg lg:max-w-xs">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Profitability Estimate
-          </h3>
-
-          {!settingsLoaded && (
-            <p className="mt-3 text-sm text-slate-500">
-              Set diesel price and driver commission rate under Settings to
-              see this estimate.
-            </p>
-          )}
-
-          {settingsLoaded && rateForCalc <= 0 && (
-            <p className="mt-3 text-sm text-slate-500">
-              Enter a proposed rate to calculate.
-            </p>
-          )}
-
-          {canCalculateProfitability && (
-            <div className="mt-4 flex flex-col gap-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">
-                  Contract value ({deliveryCount}{' '}
-                  {deliveryCount === 1 ? 'trip' : 'trips'} ×{' '}
-                  {formatMoney(rateForCalc)})
-                </span>
-                <span className="font-medium text-slate-900">
-                  {formatMoney(totalContractValue)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Diesel cost</span>
-                <span className="font-medium text-slate-900">
-                  {formatMoney(dieselCost)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Driver commission</span>
-                <span className="font-medium text-slate-900">
-                  {formatMoney(driverCommissionCost)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Driver per-trip fee</span>
-                <span className="font-medium text-slate-900">
-                  {formatMoney(perTripFeeCost)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                <span className="text-slate-500">Total cost</span>
-                <span className="font-bold text-slate-900">
-                  {formatMoney(totalCost)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Cost vs. rate</span>
-                  <span
-                    className={`font-bold ${
-                      isLowMargin
-                        ? 'text-red-600'
-                        : costRatio >= 0.4
-                          ? 'text-amber-600'
-                          : 'text-green-700'
-                    }`}
-                  >
-                    {(costRatio * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="relative h-3 w-full overflow-hidden bg-slate-100">
-                  <div
-                    className={`h-full transition-all duration-500 ease-out ${
-                      isLowMargin
-                        ? 'bg-red-500'
-                        : costRatio >= 0.4
-                          ? 'bg-amber-400'
-                          : 'bg-green-500'
-                    }`}
-                    style={{ width: `${Math.min(costRatio * 100, 100)}%` }}
-                  />
-                  {/* Marker at the 50% rejection-review threshold. */}
-                  <div className="absolute inset-y-0 left-1/2 w-px bg-slate-400/70" />
-                </div>
-              </div>
-
-              {downpayment !== null && (
-                <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                  <span className="text-slate-500">
-                    Client downpayment
-                    <span className="block text-xs">cost + 25% of the rest · before any trip starts</span>
-                  </span>
-                  <span className="font-bold text-slate-900">{formatMoney(downpayment)}</span>
-                </div>
-              )}
-
-              {isLowMargin && (
-                <p className="bg-red-50 px-3 py-2 text-xs text-red-700">
-                  Costs are at or above 50% of the rate, so this trip may not
-                  be worth approving as priced. This is informational only;
-                  Approve/Reject is still your call.
-                </p>
               )}
             </div>
           )}
         </div>
-      )}
+
+        {/* Footer: Reject far left, Approve far right */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-t-2 border-slate-200 px-7 py-4">
+          {approvedBookingId !== null ? (
+            <>
+              <span />
+              <button onClick={() => onResolved(quote.quote_request_id)} className={`btn-primary ${footerButton}`}>
+                <Icon name="check" />
+                Done
+              </button>
+            </>
+          ) : showRejectForm ? (
+            <>
+              <button
+                onClick={() => {
+                  setShowRejectForm(false)
+                  setError(null)
+                }}
+                disabled={submitting}
+                className={`border-2 border-slate-300 text-slate-700 hover:bg-slate-50 ${footerButton}`}
+              >
+                Back to review
+              </button>
+              <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
+                {error}
+              </p>
+              {/* A preset must be picked first (handleReject checks too). */}
+              <button
+                onClick={handleReject}
+                disabled={submitting || !rejectTag}
+                title={rejectTag ? undefined : 'Pick a reason first'}
+                className={`bg-red-700 text-white hover:bg-red-800 ${footerButton}`}
+              >
+                <Icon name="close" />
+                {submitting ? 'Rejecting...' : `Reject quote ${quoteLabel}`}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setShowRejectForm(true)
+                  setError(null)
+                }}
+                disabled={submitting}
+                className={`border-2 border-red-700 text-red-700 hover:bg-red-50 ${footerButton}`}
+              >
+                <Icon name="close" />
+                Reject Quote...
+              </button>
+              <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
+                {error}
+              </p>
+              <button onClick={handleApprove} disabled={submitting} className={`btn-primary ${footerButton}`}>
+                <Icon name="check" />
+                {submitting ? 'Approving...' : 'Approve Quote'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@
 // - Rejected: rejected quotes with the preset tag + reason staff gave
 //   (a quote the client resubmitted is back under Pending).
 // Approved/Rejected are read-only and load when their tab is opened.
+// One search box (client name or quote reference) filters whichever tab is open.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
@@ -14,10 +15,9 @@ import NewQuoteRequestModal from './NewQuoteRequestModal'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
-import EmptyState from '../../../components/EmptyState'
+import { toManilaDate } from '../../../lib/payslip'
 import StatusBadge from '../../../components/StatusBadge'
-import Pager from '../../../components/Pager'
-import { pageSlice } from '../../../lib/pageSlice'
+import { usePaged } from '../../../lib/usePaged'
 
 // Rows per page on every tab (Pending, Approved, Rejected).
 const QUOTES_PER_PAGE = 10
@@ -75,8 +75,173 @@ export type QuoteRequest = {
 
 type Tab = 'pending' | 'approved' | 'rejected'
 
+// ---- Shared table pieces (same look on all three tabs) -------------
+
+// Small outline icons (24x24 SVG paths, same style as the sidebar's).
+const ICONS = {
+  refresh: 'M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15',
+  plus: 'M12 5v14M5 12h14',
+  chevron: 'M9 6l6 6-6 6',
+}
+
+function Icon({ name }: { name: keyof typeof ICONS }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="inline-block shrink-0"
+      aria-hidden="true"
+    >
+      <path d={ICONS[name]} />
+    </svg>
+  )
+}
+
+const TH = 'px-5 py-3 font-semibold'
+const TD = 'px-5 py-3'
+
+// The bordered box every tab's table sits in: fills the screen height, with
+// a footer line at the bottom -- the pager when there's more than one page,
+// otherwise `summary` ("6 rejected quotations").
+function TableCard({
+  head,
+  children,
+  pager,
+  summary,
+}: {
+  head: React.ReactNode
+  children: React.ReactNode
+  pager: { page: number; pageCount: number; onChange: (page: number) => void }
+  summary: string
+}) {
+  const button =
+    'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  return (
+    <div className="mt-4 flex min-h-[calc(100dvh-15rem)] flex-col border-2 border-slate-300 bg-white">
+      <div className="flex-1 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-xs tracking-wider text-slate-600 uppercase">
+            <tr>{head}</tr>
+          </thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-700">
+        {pager.pageCount > 1 ? (
+          <>
+            <span>
+              Page {pager.page + 1} of {pager.pageCount}
+            </span>
+            <span className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => pager.onChange(pager.page - 1)}
+                disabled={pager.page === 0}
+                className={button}
+              >
+                ‹ Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => pager.onChange(pager.page + 1)}
+                disabled={pager.page >= pager.pageCount - 1}
+                className={button}
+              >
+                Next ›
+              </button>
+            </span>
+          </>
+        ) : (
+          <span>{summary}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// One table row for a message (loading / error / nothing found).
+function MessageRow({ colSpan, children, tone = 'text-slate-500' }: { colSpan: number; children: React.ReactNode; tone?: string }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className={`px-5 py-8 text-center ${tone}`}>
+        {children}
+      </td>
+    </tr>
+  )
+}
+
+function ResubmittedChip({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-2 bg-amber-100 px-1.5 py-0.5 font-sans text-xs font-medium text-amber-800">
+      Resubmitted{count > 1 ? ` ×${count}` : ''}
+    </span>
+  )
+}
+
+// Reference code (mono) + optional "Requested <date>" line.
+function QuoteCell({ q, showDate = true }: { q: { reference_code: string | null; quote_request_id: number; resubmit_count: number; created_at: string }; showDate?: boolean }) {
+  return (
+    <td className={`${TD} whitespace-nowrap`}>
+      <span className="font-mono text-xs font-semibold text-slate-900">
+        {q.reference_code ?? `#${q.quote_request_id}`}
+      </span>
+      <ResubmittedChip count={q.resubmit_count} />
+      {showDate && <span className="block text-slate-500">Requested {formatDate(q.created_at)}</span>}
+    </td>
+  )
+}
+
+type RouteFields = {
+  pickup_city: string | null
+  pickup_barangay: string | null
+  pickup_location_text: string
+  delivery_city: string | null
+  delivery_barangay: string | null
+  delivery_location_text: string
+}
+
+// Pickup on the first line, "→ delivery" under it.
+function RouteCell({ q }: { q: RouteFields }) {
+  return (
+    <td className={TD}>
+      <p className="text-slate-900">
+        {formatLocationDisplay({ city: q.pickup_city, barangay: q.pickup_barangay, detail: q.pickup_location_text })}
+      </p>
+      <p className="text-primary">
+        →{' '}
+        {formatLocationDisplay({
+          city: q.delivery_city,
+          barangay: q.delivery_barangay,
+          detail: q.delivery_location_text,
+        })}
+      </p>
+    </td>
+  )
+}
+
+// Search box matches the client name or the quote's reference code / id.
+function matchesSearch(q: { client_name: string; reference_code: string | null; quote_request_id: number }, search: string) {
+  const s = search.trim().toLowerCase()
+  if (!s) return true
+  return (
+    q.client_name.toLowerCase().includes(s) ||
+    (q.reference_code ?? '').toLowerCase().includes(s) ||
+    String(q.quote_request_id) === s.replace(/^#/, '')
+  )
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
 function QuoteRequestsSection() {
   const [tab, setTab] = useState<Tab>('pending')
+  const [search, setSearch] = useState('')
   const [quotes, setQuotes] = useState<QuoteRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +249,8 @@ function QuoteRequestsSection() {
     null,
   )
   const [showNewQuote, setShowNewQuote] = useState(false)
-  const [pendingPage, setPendingPage] = useState(0)
+  // Bumped by Refresh so the Approved/Rejected tab reloads too.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     loadQuotes()
@@ -109,7 +275,9 @@ function QuoteRequestsSection() {
     setLoading(false)
   }
 
-  const pendingSlice = pageSlice(quotes, pendingPage, QUOTES_PER_PAGE)
+  const visiblePending = quotes.filter((q) => matchesSearch(q, search))
+  const pendingPaged = usePaged(visiblePending, search, QUOTES_PER_PAGE)
+  const today = toManilaDate(new Date())
 
   // Called by the modal after a successful approve/reject -- the quote is
   // no longer Pending, so just remove it from this list.
@@ -118,14 +286,6 @@ function QuoteRequestsSection() {
       prev.filter((q) => q.quote_request_id !== quoteRequestId),
     )
     setSelectedQuote(null)
-  }
-
-  if (loading) {
-    return <p className="text-slate-500">Loading quote requests...</p>
-  }
-
-  if (error) {
-    return <p className="text-red-700">{error}</p>
   }
 
   return (
@@ -138,119 +298,134 @@ function QuoteRequestsSection() {
             {/* The list doesn't update by itself -- quotes other admins
                 handled, or new client quotes, show after a refresh. */}
             <button
-              onClick={loadQuotes}
-              className="btn-secondary px-4 py-2 text-sm font-medium"
+              onClick={() => {
+                loadQuotes()
+                setRefreshKey((k) => k + 1)
+              }}
+              className="btn-secondary flex items-center gap-2 px-4 py-2 text-sm font-medium"
             >
+              <Icon name="refresh" />
               Refresh
             </button>
             <button
               onClick={() => setShowNewQuote(true)}
-              className="btn-primary px-4 py-2 text-sm font-medium"
+              className="btn-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
             >
+              <Icon name="plus" />
               New Quote
             </button>
           </div>
         }
       />
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {([
-          ['pending', `Pending (${quotes.length})`],
+          ['pending', 'Pending'],
           ['approved', 'Approved'],
           ['rejected', 'Rejected'],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-3 py-1.5 text-sm font-medium ${
-              tab === key ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+            aria-pressed={tab === key}
+            className={`flex items-center gap-2.5 border px-5 py-2.5 text-sm font-medium ${
+              tab === key
+                ? 'border-primary bg-primary text-white'
+                : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
             }`}
           >
             {label}
+            {key === 'pending' && !loading && (
+              <span
+                className={`px-1.5 text-xs ${tab === key ? 'bg-white text-primary' : 'bg-primary text-white'}`}
+              >
+                {quotes.length}
+              </span>
+            )}
           </button>
         ))}
+        <label className="ml-auto flex items-center gap-3 text-sm text-slate-700">
+          Search
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Client or quote ID"
+            className="w-64 border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-primary focus:outline-none sm:w-80"
+          />
+        </label>
       </div>
 
       {tab !== 'pending' ? (
-        // key: reload when switching between the two history tabs
-        <QuoteHistory key={tab} status={tab === 'approved' ? 'Approved' : 'Rejected'} />
-      ) : quotes.length === 0 ? (
-        <EmptyState message="No pending quote requests." className="mt-4" />
+        // key: reload when switching between the two history tabs or on Refresh
+        <QuoteHistory
+          key={`${tab}-${refreshKey}`}
+          status={tab === 'approved' ? 'Approved' : 'Rejected'}
+          search={search}
+        />
       ) : (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Client</th>
-                <th className="px-4 py-3 font-medium">Cargo Type</th>
-                <th className="px-4 py-3 font-medium">Pickup → Delivery</th>
-                <th className="px-4 py-3 font-medium">Pickup Date</th>
-                <th className="px-4 py-3 font-medium">Deliveries</th>
-                <th className="px-4 py-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingSlice.rows.map((quote) => (
-                <tr
-                  key={quote.quote_request_id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 text-slate-900">
-                    {quote.client_name}
-                    {quote.resubmit_count > 0 && (
-                      <span className="ml-2 bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                        Resubmitted{quote.resubmit_count > 1 ? ` ×${quote.resubmit_count}` : ''}
-                      </span>
-                    )}
-                    {quote.reference_code && (
-                      <span className="block font-mono text-xs text-slate-500">
-                        {quote.reference_code}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {quote.cargo_type}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {formatLocationDisplay({
-                      city: quote.pickup_city,
-                      barangay: quote.pickup_barangay,
-                      detail: quote.pickup_location_text,
-                    })}{' '}
-                    →{' '}
-                    {formatLocationDisplay({
-                      city: quote.delivery_city,
-                      barangay: quote.delivery_barangay,
-                      detail: quote.delivery_location_text,
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
+        <TableCard
+          pager={pendingPaged.pager}
+          summary={`${plural(visiblePending.length, 'quotation')} waiting for review`}
+          head={
+            <>
+              <th className={TH}>Quote</th>
+              <th className={TH}>Client</th>
+              <th className={TH}>Pickup → Delivery</th>
+              <th className={TH}>Cargo type</th>
+              <th className={TH}>Pickup date</th>
+              <th className={TH}>Deliveries</th>
+              <th className={TH}>
+                <span className="sr-only">Action</span>
+              </th>
+            </>
+          }
+        >
+          {loading ? (
+            <MessageRow colSpan={7}>Loading quote requests...</MessageRow>
+          ) : error ? (
+            <MessageRow colSpan={7} tone="text-red-700">
+              {error}
+            </MessageRow>
+          ) : visiblePending.length === 0 ? (
+            <MessageRow colSpan={7}>
+              {search ? 'No pending quotes match your search.' : 'No pending quote requests.'}
+            </MessageRow>
+          ) : (
+            pendingPaged.rows.map((quote) => (
+              <tr key={quote.quote_request_id} className="border-b border-slate-200 hover:bg-slate-50">
+                <QuoteCell q={quote} showDate={false} />
+                <td className={`${TD} font-semibold text-slate-900`}>{quote.client_name}</td>
+                <RouteCell q={quote} />
+                <td className={`${TD} text-slate-900`}>{quote.cargo_type}</td>
+                <td className={`${TD} text-slate-900`}>
+                  <span className="whitespace-nowrap">
                     {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
-                    {quote.is_last_day_of_port_storage && (
-                      <span className="mt-0.5 block w-fit bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                        Urgent · last free storage day
+                    {quote.preferred_pickup_date === today && (
+                      <span className="ml-2 bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                        Today
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {quote.delivery_order_count ?? '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setSelectedQuote(quote)}
-                      className="btn-secondary px-3 py-1.5 text-xs font-medium"
-                    >
-                      Review
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {tab === 'pending' && (
-        <Pager page={pendingSlice.page} pageCount={pendingSlice.pageCount} onChange={setPendingPage} />
+                  </span>
+                  {quote.is_last_day_of_port_storage && (
+                    <span className="mt-1 block w-fit bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                      Urgent · last free storage day
+                    </span>
+                  )}
+                </td>
+                <td className={`${TD} text-slate-900`}>{quote.delivery_order_count ?? '—'}</td>
+                <td className={`${TD} text-right`}>
+                  <button
+                    onClick={() => setSelectedQuote(quote)}
+                    className="btn-primary px-5 py-2 text-sm font-semibold"
+                  >
+                    Review
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </TableCard>
       )}
 
       {selectedQuote && (
@@ -356,7 +531,7 @@ async function fetchQuoteHistory(status: 'Approved' | 'Rejected'): Promise<Histo
   }
 }
 
-function QuoteHistory({ status }: { status: 'Approved' | 'Rejected' }) {
+function QuoteHistory({ status, search }: { status: 'Approved' | 'Rejected'; search: string }) {
   const [result, setResult] = useState<HistoryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const loading = !result && !error
@@ -371,125 +546,128 @@ function QuoteHistory({ status }: { status: 'Approved' | 'Rejected' }) {
     }
   }, [status])
 
-  const rows = result?.rows ?? []
-  const [page, setPage] = useState(0)
-  const pageRows = pageSlice(rows, page, QUOTES_PER_PAGE)
   const bookingByQuote = result?.bookingByQuote ?? new Map<number, LinkedBooking>()
-
-  if (loading) return <p className="mt-4 text-slate-500">Loading {status.toLowerCase()} quotes...</p>
-  if (error) return <p className="mt-4 text-red-700">{error}</p>
-  if (rows.length === 0) {
-    return <EmptyState message={`No ${status.toLowerCase()} quote requests.`} className="mt-4" />
-  }
+  // Search the name staff see: the booking's client when there is one.
+  const rows = (result?.rows ?? []).filter((q) =>
+    matchesSearch({ ...q, client_name: bookingByQuote.get(q.quote_request_id)?.client_name ?? q.client_name }, search),
+  )
+  const paged = usePaged(rows, search, QUOTES_PER_PAGE)
 
   const approved = status === 'Approved'
+  const cols = approved ? 7 : 6
 
   return (
-    <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-slate-500">
-          <tr>
-            <th className="px-4 py-3 font-medium">Quote</th>
-            <th className="px-4 py-3 font-medium">Client</th>
-            <th className="px-4 py-3 font-medium">Pickup → Delivery</th>
-            <th className="px-4 py-3 font-medium">Rate</th>
-            {approved ? (
-              <>
-                <th className="px-4 py-3 font-medium">Booking</th>
-                <th className="px-4 py-3 font-medium">Booking status</th>
-              </>
-            ) : (
-              <th className="px-4 py-3 font-medium">Reason</th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {pageRows.rows.map((q) => {
-            const booking = bookingByQuote.get(q.quote_request_id)
-            const tag =
-              q.rejection_tag && q.rejection_tag in REJECTION_TAGS
-                ? REJECTION_TAGS[q.rejection_tag as RejectionTag].label
-                : null
-            return (
-              <tr key={q.quote_request_id} className="border-b border-slate-100 align-top last:border-0">
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-slate-900">
-                    {q.reference_code ?? `#${q.quote_request_id}`}
-                  </span>
-                  <span className="block text-xs text-slate-500">Requested {formatDate(q.created_at)}</span>
-                  {q.resubmit_count > 0 && (
-                    <span className="mt-1 inline-block bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                      Resubmitted{q.resubmit_count > 1 ? ` ×${q.resubmit_count}` : ''}
+    <TableCard
+      pager={paged.pager}
+      summary={`${plural(rows.length, `${status.toLowerCase()} quotation`)}`}
+      head={
+        <>
+          <th className={TH}>Quote</th>
+          <th className={TH}>Client</th>
+          <th className={TH}>Pickup → Delivery</th>
+          <th className={TH}>Rate</th>
+          {approved ? (
+            <>
+              <th className={TH}>Booking</th>
+              <th className={TH}>Booking status</th>
+            </>
+          ) : (
+            <th className={TH}>Reason</th>
+          )}
+          {approved && (
+            <th className="w-12 px-2 py-3">
+              <span className="sr-only">Open</span>
+            </th>
+          )}
+        </>
+      }
+    >
+      {loading ? (
+        <MessageRow colSpan={cols}>Loading {status.toLowerCase()} quotes...</MessageRow>
+      ) : error ? (
+        <MessageRow colSpan={cols} tone="text-red-700">
+          {error}
+        </MessageRow>
+      ) : rows.length === 0 ? (
+        <MessageRow colSpan={cols}>
+          {search
+            ? `No ${status.toLowerCase()} quotes match your search.`
+            : `No ${status.toLowerCase()} quote requests.`}
+        </MessageRow>
+      ) : (
+        paged.rows.map((q) => {
+          const booking = bookingByQuote.get(q.quote_request_id)
+          const tag =
+            q.rejection_tag && q.rejection_tag in REJECTION_TAGS
+              ? REJECTION_TAGS[q.rejection_tag as RejectionTag].label
+              : null
+          return (
+            <tr key={q.quote_request_id} className="border-b border-slate-200 hover:bg-slate-50">
+              <QuoteCell q={q} />
+              <td className={`${TD} font-semibold text-slate-900`}>
+                {/* The booking's client record when there is one (that's
+                    who is billed), else the name on the quote. */}
+                {booking?.client_name ?? q.client_name}
+              </td>
+              <RouteCell q={q} />
+              <td className={`${TD} whitespace-nowrap`}>
+                <span className="font-semibold text-slate-900">
+                  {q.proposed_rate !== null ? formatMoney(q.proposed_rate) : '—'}
+                </span>
+                {(q.delivery_order_count ?? 1) > 1 && (
+                  <span className="block text-slate-500">× {q.delivery_order_count} trips</span>
+                )}
+              </td>
+              {approved ? (
+                booking ? (
+                  <>
+                    <td className={`${TD} whitespace-nowrap`}>
+                      <Link
+                        to={`/dashboard/bookings?booking=${booking.booking_id}`}
+                        className="font-semibold text-primary hover:underline"
+                      >
+                        Booking #{booking.booking_id}
+                      </Link>
+                      {booking.booking_date && (
+                        <span className="block text-slate-500">{formatDate(booking.booking_date)}</span>
+                      )}
+                    </td>
+                    <td className={TD}>
+                      <StatusBadge status={booking.booking_status} />
+                    </td>
+                    <td className="px-2 py-3 text-slate-500">
+                      <Link
+                        to={`/dashboard/bookings?booking=${booking.booking_id}`}
+                        aria-label={`Open booking #${booking.booking_id}`}
+                        className="hover:text-primary"
+                      >
+                        <Icon name="chevron" />
+                      </Link>
+                    </td>
+                  </>
+                ) : (
+                  // Approve marks the quote Approved and creates the
+                  // booking in separate steps -- a failure in between
+                  // leaves an approved quote with no booking.
+                  <td colSpan={3} className={`${TD} text-red-700`}>
+                    No booking found — needs manual review
+                  </td>
+                )
+              ) : (
+                <td className={`${TD} max-w-xs text-slate-900`}>
+                  {tag && (
+                    <span className="mb-1 inline-block bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
+                      {tag}
                     </span>
                   )}
+                  <span className="block">{q.rejection_reason ?? '—'}</span>
                 </td>
-                <td className="px-4 py-3 font-medium text-slate-900">
-                  {/* The booking's client record when there is one (that's
-                      who is billed), else the name on the quote. */}
-                  {booking?.client_name ?? q.client_name}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {formatLocationDisplay({
-                    city: q.pickup_city,
-                    barangay: q.pickup_barangay,
-                    detail: q.pickup_location_text,
-                  })}{' '}
-                  →{' '}
-                  {formatLocationDisplay({
-                    city: q.delivery_city,
-                    barangay: q.delivery_barangay,
-                    detail: q.delivery_location_text,
-                  })}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                  {q.proposed_rate !== null ? formatMoney(q.proposed_rate) : '—'}
-                  {(q.delivery_order_count ?? 1) > 1 && (
-                    <span className="block text-xs text-slate-500">× {q.delivery_order_count} trips</span>
-                  )}
-                </td>
-                {approved ? (
-                  booking ? (
-                    <>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <Link
-                          to={`/dashboard/bookings?booking=${booking.booking_id}`}
-                          className="font-semibold text-slate-900 underline-offset-2 hover:underline"
-                        >
-                          Booking #{booking.booking_id}
-                        </Link>
-                        {booking.booking_date && (
-                          <span className="block text-xs text-slate-500">{formatDate(booking.booking_date)}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={booking.booking_status} />
-                      </td>
-                    </>
-                  ) : (
-                    // Approve marks the quote Approved and creates the
-                    // booking in separate steps -- a failure in between
-                    // leaves an approved quote with no booking.
-                    <td colSpan={2} className="px-4 py-3 text-sm text-red-700">
-                      No booking found — needs manual review
-                    </td>
-                  )
-                ) : (
-                  <td className="max-w-xs px-4 py-3 text-slate-700">
-                    {tag && (
-                      <span className="mb-1 inline-block bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
-                        {tag}
-                      </span>
-                    )}
-                    <span className="block">{q.rejection_reason ?? '—'}</span>
-                  </td>
-                )}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      <Pager page={pageRows.page} pageCount={pageRows.pageCount} onChange={setPage} className="border-t border-slate-200 px-4 py-2" />
-    </div>
+              )}
+            </tr>
+          )
+        })
+      )}
+    </TableCard>
   )
 }
 
