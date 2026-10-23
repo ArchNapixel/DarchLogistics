@@ -66,6 +66,8 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
 import { formatMoney, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { toManilaDate } from '../../../lib/payslip'
 import {
   MAX_DELIVERY_ORDERS,
   PAYMENT_TERMS_LABELS,
@@ -244,6 +246,10 @@ function QuoteReviewModal({
   const proposedRate = quote.proposed_rate?.toString() ?? ''
   const paymentTerms = quote.payment_terms
   const tripDateFrom = quote.preferred_pickup_date ?? ''
+  // Last free storage day: every trip must be Picked Up by 11:59 PM on the
+  // pickup date, so the trips all start together (one truck each) instead
+  // of back to back. Saved as bookings.storage_deadline on Approve.
+  const urgent = quote.is_last_day_of_port_storage === true
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
   // Length of each trip's time slot (bookings.hours_per_trip).
   const [hoursPerTrip, setHoursPerTrip] = useState('')
@@ -451,6 +457,20 @@ function QuoteReviewModal({
 
     if (!tripDateFrom) {
       setError('This quote has no pickup date. Reject it ("Schedule unavailable") so the client can add one.')
+      return
+    }
+
+    // The storage day already passed: the free storage is gone, so ask first.
+    if (
+      urgent &&
+      tripDateFrom < toManilaDate(new Date()) &&
+      !(await confirmDialog({
+        title: 'Storage day already passed',
+        message: `The last free storage day (${formatDate(tripDateFrom)}) is already over. Approve anyway?`,
+        confirmLabel: 'Approve anyway',
+        danger: true,
+      }))
+    ) {
       return
     }
 
@@ -682,6 +702,7 @@ function QuoteReviewModal({
         rate_of_delivery_service: rateValue,
         hours_per_trip: hoursValue,
         cost_per_trip: costPerTrip,
+        storage_deadline: urgent ? tripDateFrom : null,
       })
       .select('booking_id')
       .single()
@@ -703,10 +724,15 @@ function QuoteReviewModal({
     const deliveryCount = quote.delivery_order_count ?? 1
     // Back-to-back slots: trip 1 at the default start on the pickup date,
     // each next trip when the one before ends. Dispatch can move them.
-    const slots = chainSlots(
-      new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime(),
-      Array.from({ length: deliveryCount }, () => hoursValue * 3_600_000),
-    )
+    // Urgent (last free storage day): every trip starts at the default time
+    // together, so all can be picked up that day.
+    const firstStart = new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime()
+    const slots = urgent
+      ? Array.from({ length: deliveryCount }, () => ({ start: firstStart, end: firstStart + hoursValue * 3_600_000 }))
+      : chainSlots(
+          firstStart,
+          Array.from({ length: deliveryCount }, () => hoursValue * 3_600_000),
+        )
     const itineraryRows = slots.map((slot) => ({
       booking_id: newBooking.booking_id,
       place_of_pickup_id: pickupPlace.place_id,
@@ -896,6 +922,18 @@ function QuoteReviewModal({
                 )}
               </div>
             )}
+            {urgent && (
+              <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-semibold">Urgent · last free storage day</p>
+                <p className="mt-1">
+                  Every trip must be picked up from the port by 11:59 PM on{' '}
+                  {tripDateFrom ? formatDate(tripDateFrom) : '—'}. Approving starts all trips at the same time.
+                  {tripDateFrom && tripDateFrom < toManilaDate(new Date()) && (
+                    <span className="block font-semibold text-red-700">That day has already passed.</span>
+                  )}
+                </p>
+              </div>
+            )}
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <InfoRow label="Client name" value={quote.client_name} />
               <InfoRow
@@ -933,8 +971,12 @@ function QuoteReviewModal({
                 value={String(quote.delivery_order_count ?? 1)}
               />
               <InfoRow
-                label="Preferred pickup date"
+                label={urgent ? 'Last free storage day (pick up by)' : 'Preferred pickup date'}
                 value={quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
+              />
+              <InfoRow
+                label="Deadline date"
+                value={quote.preferred_delivery_date ? formatDate(quote.preferred_delivery_date) : 'Not given'}
               />
               <InfoRow
                 label="Cargo description"
@@ -1014,7 +1056,7 @@ function QuoteReviewModal({
                           new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime() +
                             Number(hoursPerTrip) * 3_600_000,
                         ),
-                      )}${(quote.delivery_order_count ?? 1) > 1 ? ', the rest follow back to back' : ''} (dispatch can move them)`
+                      )}${(quote.delivery_order_count ?? 1) > 1 ? (urgent ? ', all trips at the same time' : ', the rest follow back to back') : ''} (dispatch can move them)`
                     : 'How long one trip takes. Sets each driver\'s time slot.'}
                 </span>
               </label>

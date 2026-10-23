@@ -174,15 +174,17 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
   } else if (form.preferredPickupDate < todayDateString()) {
     errors.preferredPickupDate = 'Date is in the past.'
   }
-  if (form.isLastDayOfPortStorage === 'No') {
-    if (!form.preferredDeliveryDate) {
-      errors.preferredDeliveryDate = 'Select a date.'
-    } else if (
-      form.preferredPickupDate &&
-      form.preferredDeliveryDate < form.preferredPickupDate
-    ) {
-      errors.preferredDeliveryDate = 'Before pickup date.'
-    }
+  // "Deadline date" on screen (column: preferred_delivery_date) -- the
+  // latest day the client needs the cargo. Required for every quote, also
+  // a last-free-storage-day one: that only adds a pickup deadline (picked
+  // up by 11:59 PM on the pickup date), the cargo can arrive later.
+  if (!form.preferredDeliveryDate) {
+    errors.preferredDeliveryDate = 'Select a date.'
+  } else if (
+    form.preferredPickupDate &&
+    form.preferredDeliveryDate < form.preferredPickupDate
+  ) {
+    errors.preferredDeliveryDate = 'Before pickup date.'
   }
 
   const proposedRate = Number(form.proposedRate)
@@ -237,8 +239,8 @@ export function buildQuoteRow(form: ShipmentForm) {
       payment_terms: form.paymentTerms,
       proposed_rate: Number(form.proposedRate),
       is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
-      preferred_delivery_date:
-        form.isLastDayOfPortStorage === 'Yes' ? null : form.preferredDeliveryDate,
+      // Shown as "Deadline date".
+      preferred_delivery_date: form.preferredDeliveryDate,
       delivery_order_count: Number(form.deliveryOrderCount),
       request_status: 'Pending',
     },

@@ -59,6 +59,12 @@ export type QuoteRequest = {
   payment_terms: string
   proposed_rate: number | null
   preferred_pickup_date: string | null
+  // "Deadline date" on screen: the latest day the client needs the cargo.
+  // Null on urgent quotes from before 2026-10-23 (it wasn't asked then).
+  preferred_delivery_date: string | null
+  // Last free port-storage day: every trip must be Picked Up by 11:59 PM on
+  // preferred_pickup_date (lib/storageDeadline.ts).
+  is_last_day_of_port_storage: boolean | null
   delivery_order_count: number | null
   // How many times the client edited and resent it after a Reject, and
   // the reason staff gave the last time (resubmit_quote_request).
@@ -220,6 +226,11 @@ function QuoteRequestsSection() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
+                    {quote.is_last_day_of_port_storage && (
+                      <span className="mt-0.5 block w-fit bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                        Urgent · last free storage day
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {quote.delivery_order_count ?? '—'}

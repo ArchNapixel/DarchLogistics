@@ -27,16 +27,13 @@
 // done yet (unless staff has overridden the total, in which case it
 // stays fixed at that override until changed again).
 //
-// Due date rule: once at least one itinerary is Delivered, the date
-// used is the latest moment one of them was marked Delivered
-// (dispatch_status_logs, new_status 'Delivered' -- itineraries.trip_date_to
-// is just the original plan and never gets updated when a trip actually
-// finishes). Before any itinerary is delivered, there's nothing
-// billable yet, so the due date shown is just an estimate based on the
-// quote's preferred date (preferred_delivery_date normally, or
-// preferred_pickup_date if the quote was flagged
-// is_last_day_of_port_storage, since preferred_delivery_date was never
-// collected in that case) -- a reminder to plan around, not a real bill.
+// Due date rule: the countdown starts when a trip is DELIVERED. The date
+// used is the latest moment one of the booking's trips was marked
+// Delivered (dispatch_status_logs, new_status 'Delivered', Manila date --
+// itineraries.trip_date_to is just the original plan). One due date per
+// booking. Before any trip is delivered there is NO due date (screens say
+// "Starts when delivered") -- the quote's dates are never used, so a
+// booking can't show as overdue before anything was delivered.
 // Cash terms are due on the base date itself; 7/14/30-day terms are due
 // that many days after it.
 //
@@ -58,7 +55,6 @@ type DueBookingRow = {
   booking_id: number
   booking_date: string
   client_id: number
-  quote_request_id: number | null
   booking_status: string | null
   cancelled_at: string | null
   payment_terms: string
@@ -67,12 +63,6 @@ type DueBookingRow = {
   amount_paid: number | null
   place_of_pickup_id: number
   place_of_delivery_id: number
-}
-type DueQuoteRow = {
-  quote_request_id: number
-  preferred_pickup_date: string | null
-  preferred_delivery_date: string | null
-  is_last_day_of_port_storage: boolean | null
 }
 
 // What a booking's DELIVERY amount is (damage is added on top elsewhere).
@@ -111,7 +101,7 @@ export type PaymentDueRow = {
   balance_due: number
   payment_terms: string
   base_date: string | null
-  base_date_source: 'actual' | 'preferred' | 'unknown'
+  base_date_source: 'actual' | 'none' // 'none' = nothing delivered yet
   due_date: string | null
   days_until_due: number | null
 }
@@ -156,7 +146,7 @@ export async function loadPaymentDueReport(
     let query = supabase
       .from('bookings')
       .select(
-        'booking_id, booking_date, client_id, quote_request_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_date, client_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
       )
       .order('booking_id', { ascending: true })
     if (clientId !== undefined) query = query.eq('client_id', clientId)
@@ -171,13 +161,6 @@ export async function loadPaymentDueReport(
   }
 
   const clientIds = Array.from(new Set(bookingRows.map((b) => b.client_id)))
-  const quoteIds = Array.from(
-    new Set(
-      bookingRows
-        .map((b) => b.quote_request_id)
-        .filter((id): id is number => id !== null),
-    ),
-  )
   const placeIds = Array.from(
     new Set(
       bookingRows.flatMap((b) => [
@@ -190,19 +173,10 @@ export async function loadPaymentDueReport(
 
   // Damage charges only need the booking ids, so they load alongside the
   // rest instead of as a separate round afterwards.
-  const [clientsResult, quotesResult, placesResult, itinerariesResult, damageResult] =
+  const [clientsResult, placesResult, itinerariesResult, damageResult] =
     await Promise.all([
       fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
         supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
-      ),
-      fetchIn<DueQuoteRow>(quoteIds, (chunk, from, to) =>
-        supabase
-          .from('quote_requests')
-          .select(
-            'quote_request_id, preferred_pickup_date, preferred_delivery_date, is_last_day_of_port_storage',
-          )
-          .in('quote_request_id', chunk)
-          .range(from, to),
       ),
       fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
         supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
@@ -225,9 +199,6 @@ export async function loadPaymentDueReport(
 
   if (clientsResult.error) {
     return { rows: [], error: clientsResult.error }
-  }
-  if (quotesResult.error) {
-    return { rows: [], error: quotesResult.error }
   }
   if (placesResult.error) {
     return { rows: [], error: placesResult.error }
@@ -268,9 +239,6 @@ export async function loadPaymentDueReport(
   const clientNameById = new Map(
     clientsResult.rows.map((c) => [c.client_id, c.client_name]),
   )
-  const quoteById = new Map(
-    quotesResult.rows.map((q) => [q.quote_request_id, q]),
-  )
   const placeNameById = new Map(
     placesResult.rows.map((p) => [p.place_id, p.place_name]),
   )
@@ -290,17 +258,6 @@ export async function loadPaymentDueReport(
 
   const rows: PaymentDueRow[] = bookingRows
     .map((booking) => {
-      const quote =
-        booking.quote_request_id !== null
-          ? quoteById.get(booking.quote_request_id)
-          : undefined
-
-      const preferredDate = quote
-        ? quote.is_last_day_of_port_storage
-          ? quote.preferred_pickup_date
-          : quote.preferred_delivery_date
-        : null
-
       const itineraries = itinerariesByBooking.get(booking.booking_id) ?? []
       const deliveredItineraries = itineraries.filter(
         (itinerary) => itinerary.itinerary_status === 'Delivered',
@@ -323,7 +280,7 @@ export async function loadPaymentDueReport(
       const balanceDue = billableAmount - amountPaid
 
       let baseDate: string | null = null
-      let baseDateSource: PaymentDueRow['base_date_source'] = 'unknown'
+      let baseDateSource: PaymentDueRow['base_date_source'] = 'none'
 
       if (completedTrips > 0) {
         const receiptDates = deliveredItineraries
@@ -339,11 +296,6 @@ export async function loadPaymentDueReport(
           )
           baseDateSource = 'actual'
         }
-      }
-
-      if (baseDate === null && preferredDate) {
-        baseDate = preferredDate
-        baseDateSource = 'preferred'
       }
 
       const daysToAdd = PAYMENT_TERM_DAYS[booking.payment_terms] ?? 0
@@ -376,7 +328,7 @@ export async function loadPaymentDueReport(
     })
     // Drop bookings that are fully delivered AND fully settled -- there's
     // nothing left to track. Anything else stays, including bookings with
-    // nothing billable yet (shown as an estimate) and partially-paid ones.
+    // nothing delivered yet (no due date) and partially-paid ones.
     .filter(
       (row) =>
         options?.includeSettled ||
@@ -417,8 +369,9 @@ export function formatDaysUntilDue(
   if (balanceDue !== undefined && balanceDue <= 0) {
     return { label: 'Nothing due', tone: 'normal' }
   }
+  // No due date = nothing delivered yet; the countdown starts at delivery.
   if (days === null) {
-    return { label: 'Unknown', tone: 'unknown' }
+    return { label: 'Starts when delivered', tone: 'unknown' }
   }
   if (days < 0) {
     return { label: `Overdue by ${Math.abs(days)}d`, tone: 'overdue' }

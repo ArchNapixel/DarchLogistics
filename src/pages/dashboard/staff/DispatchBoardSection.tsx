@@ -72,6 +72,7 @@ import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
+import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import {
   SUGGESTED_COUNT,
   isOverdue,
@@ -113,6 +114,7 @@ type BoardBookingRow = {
   cost_per_trip: number | null
   amount_paid: number | null
   downpayment_waived_at: string | null
+  storage_deadline: string | null
 }
 
 type DispatchRow = {
@@ -138,6 +140,17 @@ type DispatchRow = {
   trailer_id: number | null
   // From the booking (Flatbed/Skeletal). null = booking has no requirement (older ones).
   required_trailer_type: string | null
+  // Last free storage day (bookings.storage_deadline): must be Picked Up by
+  // 11:59 PM that day. null = not an urgent booking.
+  storage_deadline: string | null
+}
+
+// Not picked up yet on a storage-deadline booking: 'pending' (still time)
+// or 'missed' (day over). null otherwise -- the board only flags trips
+// still at the port; met/late shows in the booking's details.
+function storagePending(row: DispatchRow, now: number) {
+  const state = storageState({ deadline: row.storage_deadline, status: row.status, pickedUpAt: null, now })
+  return state === 'pending' || state === 'missed' ? state : null
 }
 
 // A trip is "Assigned" (vs "Needs Assignment") once it has a driver,
@@ -555,10 +568,22 @@ function DispatchTable({
                       <span className="text-[11px] font-medium text-amber-700">No time set</span>
                     </>
                   )}
-                  {isOverdue(row, now) && (
-                    <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
-                      Overdue
+                  {/* Storage-deadline trip still at the port: that deadline is what
+                      matters until pickup, so it replaces "Overdue". */}
+                  {storagePending(row, now) ? (
+                    <span
+                      className={`px-1.5 py-0.5 text-[11px] font-semibold ${STORAGE_BADGE[storagePending(row, now)!].className}`}
+                    >
+                      {storagePending(row, now) === 'missed'
+                        ? STORAGE_BADGE.missed.label
+                        : `Pick up by ${formatDate(row.storage_deadline!)} 11:59 PM`}
                     </span>
+                  ) : (
+                    isOverdue(row, now) && (
+                      <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
+                        Overdue
+                      </span>
+                    )
                   )}
                   {!readOnly && canEditStatus && (
                     <button
@@ -914,7 +939,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at')
+          .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -935,6 +960,9 @@ function DispatchBoardSection() {
     const bookingTypeRows = bookingTypeResult.rows
     const trailerTypeByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.trailer_type as string | null]),
+    )
+    const storageDeadlineByBooking = new Map(
+      bookingTypeRows.map((b) => [b.booking_id as number, b.storage_deadline]),
     )
     const hoursPerTripByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.hours_per_trip as number | null]),
@@ -1150,6 +1178,7 @@ function DispatchBoardSection() {
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
           required_trailer_type: trailerTypeByBooking.get(it.booking_id) ?? null,
+          storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
         }
       }),
     )
@@ -1525,7 +1554,11 @@ function DispatchBoardSection() {
           r.trailer_id !== null ? trailerPlateById.get(r.trailer_id) : null,
         ].some((text) => text?.toLowerCase().includes(query)),
       )
-  const activeRows = visibleRows.filter((r) => r.status !== 'Delivered')
+  // Trips that must still leave the port by the storage deadline go first
+  // (stable sort -- everything else keeps its order).
+  const activeRows = visibleRows
+    .filter((r) => r.status !== 'Delivered')
+    .sort((a, b) => Number(storagePending(b, now) !== null) - Number(storagePending(a, now) !== null))
   const completedRows = visibleRows.filter((r) => r.status === 'Delivered')
   const hasFullCrew = isFullyAssigned
   const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
@@ -1742,15 +1775,21 @@ function DispatchBoardSection() {
           fallbackDate={editTimeRow.trip_date_from}
           defaultStartMinutes={defaultStartMinutes}
           hoursPerTrip={editTimeRow.hours_per_trip}
-          // Same booking, later in trip order, not started yet.
-          laterTrips={rows
-            .filter(
-              (r) =>
-                r.booking_id === editTimeRow.booking_id &&
-                r.itinerary_id > editTimeRow.itinerary_id &&
-                r.status === 'Awaiting',
-            )
-            .sort((a, b) => a.itinerary_id - b.itinerary_id)}
+          storageDeadline={editTimeRow.storage_deadline}
+          // Same booking, later in trip order, not started yet. None for a
+          // storage-deadline booking -- its trips run side by side.
+          laterTrips={
+            editTimeRow.storage_deadline
+              ? []
+              : rows
+                  .filter(
+                    (r) =>
+                      r.booking_id === editTimeRow.booking_id &&
+                      r.itinerary_id > editTimeRow.itinerary_id &&
+                      r.status === 'Awaiting',
+                  )
+                  .sort((a, b) => a.itinerary_id - b.itinerary_id)
+          }
           onClose={() => setEditTimeRow(null)}
           onSaved={(warning) => {
             const itineraryId = editTimeRow.itinerary_id

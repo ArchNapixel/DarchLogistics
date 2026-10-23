@@ -110,7 +110,7 @@ function ClientPaymentsSection({
                 )}
               </span>
               <span>
-                {row.due_date ? `Due ${formatDate(row.due_date)}` : 'Due date TBD'}
+                {row.due_date ? `Due ${formatDate(row.due_date)}` : 'Due date starts when delivered'}
               </span>
             </div>
           </div>

@@ -30,6 +30,7 @@ import { formatLocationDisplay } from '../../../lib/locationReference'
 import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
+import TripsView from './TripsView'
 import BookingDetailModal from './BookingDetailModal'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
@@ -162,6 +163,8 @@ function BookingsSection() {
   }
   const linkedBookingId = Number(searchParams.get('booking')) || null
   const linkedTripId = Number(searchParams.get('trip')) || null
+  // Page tab: Bookings (default) or Trips (?view=trips, TripsView.tsx).
+  const pageView = searchParams.get('view') === 'trips' ? 'trips' : 'bookings'
 
   useEffect(() => {
     loadBookings()
@@ -205,7 +208,8 @@ function BookingsSection() {
     }
     setTripError(null)
     setSelectedBooking(null)
-    setSearchParams({ booking: String(data.booking_id), trip: String(tripId) })
+    // Opens the trip itself in the Trips tab (status timeline, documents...).
+    setSearchParams({ view: 'trips', trip: String(tripId) })
   }
 
   async function loadBookings() {
@@ -425,6 +429,28 @@ function BookingsSection() {
     <div>
       <PageHeader title="Bookings & Trips" subtitle="Every client booking and its trips." />
 
+      <div className="mb-5 flex gap-2 border-b border-slate-200">
+        {(['bookings', 'trips'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setSearchParams(v === 'trips' ? { view: 'trips' } : {})}
+            className={`px-4 py-2 text-sm font-medium ${
+              pageView === v ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {v === 'trips' ? 'Trips' : 'Bookings'}
+          </button>
+        ))}
+      </div>
+
+      {pageView === 'trips' ? (
+        <TripsView
+          focusTripId={linkedTripId}
+          // Back to the Bookings tab with that booking open.
+          onOpenBooking={(bookingId) => setSearchParams({ booking: String(bookingId) })}
+        />
+      ) : (
       <div>
         <div className="min-w-0">
           <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -669,6 +695,7 @@ function BookingsSection() {
           {viewMode === 'compact' && <Pager {...paged.pager} />}
         </div>
       </div>
+      )}
 
       {/* Pop-up for the table view and phones; the split view uses its pane. */}
       {shownBooking && !split && (

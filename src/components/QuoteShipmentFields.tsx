@@ -230,8 +230,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
     <>
       <DateRangePicker
         which="start"
-        single={form.isLastDayOfPortStorage === 'Yes'}
-        label="Pickup date"
+        label={form.isLastDayOfPortStorage === 'Yes' ? 'Last free storage day (pick up by)' : 'Pickup date'}
         start={form.preferredPickupDate}
         end={form.preferredDeliveryDate}
         min={todayDateString()}
@@ -260,29 +259,31 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         </div>
       </div>
 
-      {form.isLastDayOfPortStorage === 'Yes' ? (
+      {form.isLastDayOfPortStorage === 'Yes' && (
         <div className="col-span-full flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-3">
           <span className="mt-0.5 shrink-0 border border-amber-700 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-800 uppercase">
             Urgent
           </span>
           <p className="text-sm text-slate-700">
-            Same-day dispatch. We'll call.
+            We pick the cargo up from the port by 11:59 PM on that day. Delivery can be any day up to your deadline.
           </p>
         </div>
-      ) : (
-        <DateRangePicker
-          which="end"
-          label="Delivery date"
-          start={form.preferredPickupDate}
-          end={form.preferredDeliveryDate}
-          min={todayDateString()}
-          onChange={(start, end) => {
-            setField('preferredPickupDate', start)
-            setField('preferredDeliveryDate', end)
-          }}
-          error={errors.preferredDeliveryDate}
-        />
       )}
+
+      {/* "Deadline date" = preferred_delivery_date: the latest day the
+          client needs the cargo (we usually deliver before it). */}
+      <DateRangePicker
+        which="end"
+        label="Deadline date"
+        start={form.preferredPickupDate}
+        end={form.preferredDeliveryDate}
+        min={todayDateString()}
+        onChange={(start, end) => {
+          setField('preferredPickupDate', start)
+          setField('preferredDeliveryDate', end)
+        }}
+        error={errors.preferredDeliveryDate}
+      />
 
       <Field label="Rate per delivery" hint="(PHP)" error={errors.proposedRate}>
         <input

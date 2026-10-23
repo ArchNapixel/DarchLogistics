@@ -9,6 +9,9 @@
 // including ones with no time yet): each starts when the one before it
 // ends, keeping its own length (or the booking's hours per trip if it has
 // none). Trips already on the road or delivered never move.
+// Exception: a last-free-storage-day booking (storageDeadline set) runs its
+// trips side by side, so the Dispatch Board passes no laterTrips for it.
+// Starting such a trip after 11:59 PM of the storage day asks first.
 //
 // The database re-checks the trip's driver/helper on save
 // (itineraries_after_reschedule trigger): if the new time overlaps
@@ -19,6 +22,9 @@ import { supabase } from '../../../lib/supabaseClient'
 import TimeInput12 from '../../../components/TimeInput12'
 import { formatSlot, manilaTimestamp, splitManila } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
+import { storageDeadlineEnd } from '../../../lib/storageDeadline'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { formatDate } from '../../../lib/format'
 
 const HOUR_MS = 3_600_000
 const fieldClasses =
@@ -32,9 +38,12 @@ function EditTripTimeModal({
   defaultStartMinutes,
   hoursPerTrip,
   laterTrips,
+  storageDeadline = null,
   onClose,
   onSaved,
 }: {
+  // bookings.storage_deadline -- the trip must be picked up by 11:59 PM that day.
+  storageDeadline?: string | null
   // Later Awaiting trips of the same booking, in trip order -- re-chained after this one.
   laterTrips: { itinerary_id: number; trip_start_at: string | null; trip_end_at: string | null }[]
   itineraryId: number
@@ -74,6 +83,18 @@ function EditTripTimeModal({
   async function save() {
     if (endMs <= startMs) {
       setError('The trip has to end after it starts.')
+      return
+    }
+    if (
+      storageDeadline &&
+      startMs > storageDeadlineEnd(storageDeadline) &&
+      !(await confirmDialog({
+        title: 'After the storage deadline',
+        message: `This trip must be picked up from the port by 11:59 PM on ${formatDate(storageDeadline)} (last free storage day). The new time starts after that. Save anyway?`,
+        confirmLabel: 'Save anyway',
+        danger: true,
+      }))
+    ) {
       return
     }
     setSaving(true)

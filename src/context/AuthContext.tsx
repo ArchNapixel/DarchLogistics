@@ -20,6 +20,18 @@ import { showToast } from '../components/Toast'
 // "Deactivated". Runs on every login/session-restore, not just once, so
 // a deactivated employee is signed back out even if they still have a
 // valid cached session from before they were deactivated.
+// A deactivated client (Clients page) is signed out here too. Their login
+// is also banned in Supabase Auth, so this only catches a session that was
+// already open when they were deactivated.
+async function isClientDeactivated(clientId: number): Promise<boolean> {
+  const { data } = await supabase
+    .from('clients')
+    .select('deactivated_at')
+    .eq('client_id', clientId)
+    .maybeSingle()
+  return !!data?.deactivated_at
+}
+
 async function isEmployeeDeactivated(employeeId: number): Promise<boolean> {
   const { data: employee } = await supabase
     .from('employees')
@@ -101,7 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single()
 
         if (data) {
-          if (data.employee_id !== null && (await isEmployeeDeactivated(data.employee_id))) {
+          if (
+            (data.employee_id !== null && (await isEmployeeDeactivated(data.employee_id))) ||
+            (data.client_id !== null && (await isClientDeactivated(data.client_id)))
+          ) {
             await supabase.auth.signOut()
             setState({
               session: null,

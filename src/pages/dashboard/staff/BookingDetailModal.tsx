@@ -34,6 +34,7 @@ import TripDocuments from './TripDocuments'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentStatus } from '../../../lib/downpayment'
+import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { promptDialog } from '../../../components/ConfirmDialog'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
@@ -65,6 +66,9 @@ type Trip = {
   expenses: { amount: number; description: string }[]
   // How many files are attached in itinerary_documents (DO photos/PDFs).
   document_count: number
+  // First time it was logged Picked Up (dispatch_status_logs) -- judges the
+  // storage deadline (lib/storageDeadline.ts).
+  picked_up_at: string | null
 }
 
 type Details = {
@@ -87,8 +91,11 @@ type Details = {
   cost_per_trip: number | null
   downpayment_waived_at: string | null
   downpayment_waive_reason: string | null
+  // Shown as "Deadline date" (the latest day the client needs the cargo).
   preferred_delivery_date: string | null
-  is_priority: boolean
+  // Last free storage day (bookings.storage_deadline): every trip must be
+  // Picked Up by 11:59 PM that day. Null = not an urgent booking.
+  storage_deadline: string | null
   cancellation_reason: string | null
   cancelled_at: string | null
   trips: Trip[]
@@ -142,7 +149,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -156,7 +163,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     b.quote_request_id !== null
       ? supabase
           .from('quote_requests')
-          .select('reference_code, preferred_delivery_date, is_last_day_of_port_storage')
+          .select('reference_code, preferred_delivery_date')
           .eq('quote_request_id', b.quote_request_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -173,7 +180,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const tripIds = trips.map((t) => t.itinerary_id)
   const trailerIds = trips.map((t) => t.trailer_id).filter((id): id is number => id !== null)
 
-  const [crewsResult, trailersResult, expensesResult, documentsResult] = await Promise.all([
+  const [crewsResult, trailersResult, expensesResult, documentsResult, pickupLogsResult] = await Promise.all([
     tripIds.length > 0
       ? supabase
           .from('itinerary_crews')
@@ -200,9 +207,22 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     tripIds.length > 0
       ? supabase.from('itinerary_documents').select('itinerary_id').in('itinerary_id', tripIds)
       : Promise.resolve({ data: [] as { itinerary_id: number }[], error: null }),
+    // When each trip was picked up -- only needed for the storage deadline.
+    tripIds.length > 0 && b.storage_deadline
+      ? supabase
+          .from('dispatch_status_logs')
+          .select('itinerary_id, status_changed_at')
+          .in('itinerary_id', tripIds)
+          .eq('new_status', 'PickedUp')
+          .order('status_changed_at', { ascending: true })
+      : Promise.resolve({ data: [] as { itinerary_id: number; status_changed_at: string }[], error: null }),
   ])
   const extraError =
-    crewsResult.error ?? trailersResult.error ?? expensesResult.error ?? documentsResult.error
+    crewsResult.error ??
+    trailersResult.error ??
+    expensesResult.error ??
+    documentsResult.error ??
+    pickupLogsResult.error
   if (extraError) {
     return { error: extraError.message }
   }
@@ -216,6 +236,11 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   if (employeesError) return { error: employeesError.message }
 
   const nameById = new Map((employees ?? []).map((e) => [e.employee_id, e.full_name]))
+  // Oldest first, so the first pickup time per trip wins.
+  const pickedUpAt = new Map<number, string>()
+  for (const log of pickupLogsResult.data ?? []) {
+    if (!pickedUpAt.has(log.itinerary_id)) pickedUpAt.set(log.itinerary_id, log.status_changed_at)
+  }
   const trailerPlateById = new Map((trailersResult.data ?? []).map((t) => [t.trailer_id, t.plate_number]))
   const crewName = (tripId: number, role: string) => {
     const crew = crews.find((c) => c.itinerary_id === tripId && c.crew_role === role)
@@ -252,7 +277,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       downpayment_waived_at: b.downpayment_waived_at,
       downpayment_waive_reason: b.downpayment_waive_reason,
       preferred_delivery_date: quoteResult.data?.preferred_delivery_date ?? null,
-      is_priority: quoteResult.data?.is_last_day_of_port_storage === true,
+      storage_deadline: b.storage_deadline,
       cancellation_reason: b.cancellation_reason,
       cancelled_at: b.cancelled_at,
       trips: trips.map((t) => ({
@@ -268,6 +293,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         helper: crewName(t.itinerary_id, 'Helper'),
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === t.itinerary_id),
         document_count: (documentsResult.data ?? []).filter((d) => d.itinerary_id === t.itinerary_id).length,
+        picked_up_at: pickedUpAt.get(t.itinerary_id) ?? null,
       })),
     },
   }
@@ -375,10 +401,17 @@ function BookingDetailModal({
     const firstTimed = awaiting.findIndex((t) => t.trip_start_at !== null)
     if (firstTimed !== -1) {
       const toChain = awaiting.slice(firstTimed)
-      const slots = chainSlots(
-        new Date(toChain[0].trip_start_at!).getTime(),
-        toChain.map(() => hours * 3_600_000),
-      )
+      // Storage-deadline bookings run their trips side by side: each keeps
+      // its own start, only the length changes. Others stay back to back.
+      const slots = details?.storage_deadline
+        ? toChain.map((t) => {
+            const start = new Date(t.trip_start_at ?? toChain[0].trip_start_at!).getTime()
+            return { start, end: start + hours * 3_600_000 }
+          })
+        : chainSlots(
+            new Date(toChain[0].trip_start_at!).getTime(),
+            toChain.map(() => hours * 3_600_000),
+          )
       for (let i = 0; i < toChain.length; i++) {
         // Only while the trip is STILL Awaiting (the list above is from
         // when this opened -- a trip dispatched since keeps its slot), and
@@ -764,15 +797,16 @@ function BookingDetailModal({
             {hoursError && <p className="mt-1 text-xs text-red-700">{hoursError}</p>}
           </div>
           <InfoRow
-            label="Delivery date"
-            value={
-              details?.is_priority
-                ? 'Priority (last day of free port storage)'
-                : details?.preferred_delivery_date
-                  ? formatDate(details.preferred_delivery_date)
-                  : '—'
-            }
+            label="Deadline date"
+            value={details?.preferred_delivery_date ? formatDate(details.preferred_delivery_date) : '—'}
           />
+          {details?.storage_deadline && (
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Storage deadline</p>
+              <p className="text-slate-900">{formatDate(details.storage_deadline)}, 11:59 PM</p>
+              <p className="text-xs text-slate-500">Last free storage day -- every trip picked up by then.</p>
+            </div>
+          )}
 
           {details && (
             <>
@@ -914,6 +948,19 @@ function BookingDetailModal({
                       </td>
                       <td className="px-3 py-2">
                         <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} />
+                        {(() => {
+                          const state = storageState({
+                            deadline: details.storage_deadline,
+                            status: trip.status,
+                            pickedUpAt: trip.picked_up_at,
+                            now: Date.now(),
+                          })
+                          return state ? (
+                            <span className={`mt-1 block w-fit px-1.5 py-0.5 text-xs font-medium ${STORAGE_BADGE[state].className}`}>
+                              {STORAGE_BADGE[state].label}
+                            </span>
+                          ) : null
+                        })()}
                       </td>
                       <td className="px-3 py-2 text-slate-600">
                         {trip.trip_start_at ? (

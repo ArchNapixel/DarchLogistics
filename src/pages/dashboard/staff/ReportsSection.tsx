@@ -14,7 +14,6 @@ import {
   loadPaymentDueReport,
   formatDaysUntilDue,
   DUE_TONE_STYLES,
-  type PaymentDueRow,
 } from '../../../lib/paymentDue'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadPendingStatusRequests } from '../../../lib/clientStatusRequests'
@@ -40,12 +39,6 @@ import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 // ---------- Layout: groups and their chips ----------
-
-const BASE_DATE_SOURCE_LABELS: Record<PaymentDueRow['base_date_source'], string> = {
-  actual: 'Actual delivery',
-  preferred: 'Estimated (preferred date)',
-  unknown: 'Unknown',
-}
 
 // Payments Due: 8 columns; the rest of the detail opens under the row.
 function PaymentsDueTab() {
@@ -135,9 +128,9 @@ function PaymentsDueTab() {
                             <dd className="text-slate-900">{row.payment_terms}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs text-slate-500">Base date</dt>
+                            <dt className="text-xs text-slate-500">Countdown from</dt>
                             <dd className="text-slate-900">
-                              {formatDate(row.base_date)} ({BASE_DATE_SOURCE_LABELS[row.base_date_source]})
+                              {row.base_date ? `${formatDate(row.base_date)} (last delivery)` : 'Nothing delivered yet'}
                             </dd>
                           </div>
                         </dl>

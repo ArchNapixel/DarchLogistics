@@ -21,6 +21,7 @@ import { formatClock, formatDate, formatSlot, formatTime, manilaTimestamp } from
 import { loadApprovedLeave, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import { busyUntil, isOverdue, manilaWeek } from '../../../lib/tripSchedule'
+import { storageState } from '../../../lib/storageDeadline'
 
 type CrewRole = 'Driver' | 'Helper'
 type View = 'day' | 'week'
@@ -32,6 +33,8 @@ type Bar = {
   trip_start_at: string
   trip_end_at: string
   route: string
+  // Last free storage day of its booking (must be Picked Up by 11:59 PM).
+  storage_deadline: string | null
 }
 
 type PersonRow = {
@@ -108,7 +111,8 @@ async function fetchSchedule(role: CrewRole, from: number, to: number): Promise<
 
   const tripIds = trips.map((t) => t.itinerary_id)
   const placeIds = Array.from(new Set(trips.flatMap((t) => [t.place_of_pickup_id, t.place_of_delivery_id])))
-  const [crewResult, placesResult] = await Promise.all([
+  const bookingIds = Array.from(new Set(trips.map((t) => t.booking_id)))
+  const [crewResult, placesResult, bookingsResult] = await Promise.all([
     tripIds.length
       ? supabase
           .from('itinerary_crews')
@@ -120,8 +124,13 @@ async function fetchSchedule(role: CrewRole, from: number, to: number): Promise<
     placeIds.length
       ? supabase.from('places').select('place_id, place_name').in('place_id', placeIds)
       : Promise.resolve({ data: [] as { place_id: number; place_name: string }[], error: null }),
+    bookingIds.length
+      ? supabase.from('bookings').select('booking_id, storage_deadline').in('booking_id', bookingIds)
+      : Promise.resolve({ data: [] as { booking_id: number; storage_deadline: string | null }[], error: null }),
   ])
   if (crewResult.error) throw new Error(crewResult.error.message)
+  if (bookingsResult.error) throw new Error(bookingsResult.error.message)
+  const storageByBooking = new Map((bookingsResult.data ?? []).map((b) => [b.booking_id, b.storage_deadline]))
   const placeName = new Map((placesResult.data ?? []).map((p) => [p.place_id, p.place_name]))
   const tripById = new Map(trips.map((t) => [t.itinerary_id, t]))
 
@@ -140,6 +149,7 @@ async function fetchSchedule(role: CrewRole, from: number, to: number): Promise<
         trip_start_at: t.trip_start_at as string,
         trip_end_at: t.trip_end_at as string,
         route: `${placeName.get(t.place_of_pickup_id) ?? '—'} → ${placeName.get(t.place_of_delivery_id) ?? '—'}`,
+        storage_deadline: storageByBooking.get(t.booking_id) ?? null,
       })),
   }))
 }
@@ -315,16 +325,21 @@ function DriverScheduleSection() {
                     const start = new Date(bar.trip_start_at).getTime()
                     const end = busyUntil(bar, now) ?? new Date(bar.trip_end_at).getTime()
                     if (end <= from || start >= to) return null
-                    const overdue = isOverdue(bar, now)
+                    // Still at the port on a storage-deadline booking: that
+                    // deadline replaces "overdue" until pickup.
+                    const storage = storageState({ deadline: bar.storage_deadline, status: bar.status, pickedUpAt: null, now })
+                    const storageNote =
+                      storage === 'pending' ? ' · PICK UP BY 11:59 PM' : storage === 'missed' ? ' · STORAGE MISSED' : ''
+                    const overdue = !storageNote && isOverdue(bar, now)
                     return (
                       <button
                         key={bar.itinerary_id}
                         type="button"
                         onClick={() => navigate(`/dashboard/bookings?booking=${bar.booking_id}&trip=${bar.itinerary_id}`)}
-                        title={`Trip #${bar.itinerary_id} · ${bar.route}\n${formatSlot(bar.trip_start_at, bar.trip_end_at)}${overdue ? ' · OVERDUE' : ''}`}
+                        title={`Trip #${bar.itinerary_id} · ${bar.route}\n${formatSlot(bar.trip_start_at, bar.trip_end_at)}${overdue ? ' · OVERDUE' : ''}${storageNote}`}
                         // 2px gap each side so back-to-back trips read as separate blocks.
                         className={`absolute inset-y-2 flex flex-col justify-center overflow-hidden border-l-4 border-y border-r px-2 text-left leading-tight whitespace-nowrap shadow-sm hover:brightness-95 ${
-                          overdue ? OVERDUE_STYLE : (BAR_STYLES[bar.status] ?? BAR_STYLES.Awaiting)
+                          overdue || storage === 'missed' ? OVERDUE_STYLE : (BAR_STYLES[bar.status] ?? BAR_STYLES.Awaiting)
                         }`}
                         style={{
                           left: `calc(${pct(start)}% + 2px)`,
@@ -334,6 +349,7 @@ function DriverScheduleSection() {
                         <span className="truncate text-[11px] font-bold">
                           #{bar.itinerary_id} · {formatTime(bar.trip_start_at)} – {formatTime(bar.trip_end_at)}
                           {overdue ? ' · OVERDUE' : ''}
+                          {storageNote}
                         </span>
                         <span className="truncate text-[11px] opacity-90">{bar.route}</span>
                       </button>

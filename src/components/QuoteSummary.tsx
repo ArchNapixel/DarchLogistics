@@ -111,12 +111,13 @@ export function QuoteSummary({
         <span>
           Pickup:{' '}
           {form.preferredPickupDate ? formatDate(form.preferredPickupDate) : <Muted>—</Muted>}
+          {form.isLastDayOfPortStorage === 'Yes' && (
+            <span className="font-medium text-amber-700"> · Urgent, last free storage day</span>
+          )}
         </span>
         <span>
-          Delivery:{' '}
-          {form.isLastDayOfPortStorage === 'Yes' ? (
-            <span className="font-medium text-amber-700">Urgent</span>
-          ) : form.preferredDeliveryDate ? (
+          Deadline:{' '}
+          {form.preferredDeliveryDate ? (
             formatDate(form.preferredDeliveryDate)
           ) : (
             <Muted>—</Muted>

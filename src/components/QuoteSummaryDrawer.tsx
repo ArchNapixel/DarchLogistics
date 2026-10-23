@@ -148,19 +148,18 @@ export default function QuoteSummaryDrawer({
           <Block title="Schedule">
             <div className="flex justify-between">
               <span className="text-slate-500">Pickup</span>
-              <span className="font-semibold text-slate-900">
+              <span className="text-right font-semibold text-slate-900">
                 {formatDate(form.preferredPickupDate)}
+                {urgent && (
+                  <span className="block text-xs text-amber-700">Urgent · last free storage day, by 11:59 PM</span>
+                )}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Delivery</span>
-              {urgent ? (
-                <span className="font-semibold text-amber-700">Urgent · last free storage day</span>
-              ) : (
-                <span className="font-semibold text-slate-900">
-                  {formatDate(form.preferredDeliveryDate)}
-                </span>
-              )}
+              <span className="text-slate-500">Deadline</span>
+              <span className="font-semibold text-slate-900">
+                {formatDate(form.preferredDeliveryDate)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Payment</span>

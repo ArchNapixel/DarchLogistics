@@ -154,12 +154,14 @@ function ClientLoginPage() {
     setSubmitting(false)
     if (signInError) {
       // Right password, but the sign-up email link hasn't been clicked yet.
-      const notConfirmed =
-        typeof signInError === 'object' && signInError.code === 'email_not_confirmed'
+      const code = typeof signInError === 'object' ? signInError.code : null
       return setError(
-        notConfirmed
+        code === 'email_not_confirmed'
           ? 'Please confirm your email first — check your inbox for the link.'
-          : 'Invalid username or password.',
+          : // Banned by set_client_active() when staff deactivate the client.
+            code === 'user_banned'
+            ? 'This account has been deactivated. Please contact Darch Logistics.'
+            : 'Invalid username or password.',
       )
     }
     navigate(next)
