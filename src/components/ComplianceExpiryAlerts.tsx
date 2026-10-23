@@ -20,12 +20,14 @@ type ComplianceRow = {
   full_name: string
   driver_license_expiry_date: string | null
   medical_exam_expiry_date: string | null
+  employment_status_id: number | null
 }
 
 type ExpiryAlert = {
   employeeName: string
   kind: 'Driver license' | 'Medical exam'
-  date: string
+  // null = no licence on record at all (shown as "not on record").
+  date: string | null
   daysRemaining: number
 }
 
@@ -59,7 +61,7 @@ function ComplianceExpiryAlerts() {
 
     let query = supabase
       .from('employees')
-      .select('employee_id, full_name, driver_license_expiry_date, medical_exam_expiry_date')
+      .select('employee_id, full_name, driver_license_expiry_date, medical_exam_expiry_date, employment_status_id')
       .eq('position', 'Driver')
 
     if (role === 'Driver') {
@@ -70,14 +72,33 @@ function ComplianceExpiryAlerts() {
       query = query.eq('employee_id', employeeId)
     }
 
-    const { data, error } = await query
+    const [{ data, error }, statuses] = await Promise.all([
+      query,
+      supabase.from('employment_status').select('status_id, status_name'),
+    ])
     if (error || !data) {
       setAlerts([])
       return
     }
+    // Deactivated / Terminated drivers don't drive any more -- no alerts.
+    const inactiveIds = new Set(
+      (statuses.data ?? [])
+        .filter((s) => s.status_name === 'Deactivated' || s.status_name === 'Terminated')
+        .map((s) => s.status_id),
+    )
 
     const nextAlerts: ExpiryAlert[] = []
     data.forEach((row: ComplianceRow) => {
+      if (row.employment_status_id !== null && inactiveIds.has(row.employment_status_id)) return
+      // No licence on record at all is worse than one expiring soon.
+      if (!row.driver_license_expiry_date) {
+        nextAlerts.push({
+          employeeName: row.full_name,
+          kind: 'Driver license',
+          date: null,
+          daysRemaining: -Infinity,
+        })
+      }
       if (row.driver_license_expiry_date) {
         const daysRemaining = daysUntil(row.driver_license_expiry_date)
         if (daysRemaining <= 30) {
@@ -102,7 +123,9 @@ function ComplianceExpiryAlerts() {
       }
     })
 
-    setAlerts(nextAlerts.sort((a, b) => a.daysRemaining - b.daysRemaining))
+    // Missing first (-Infinity), then soonest; a plain subtraction of two
+    // -Infinity values would be NaN.
+    setAlerts(nextAlerts.sort((a, b) => (a.daysRemaining === b.daysRemaining ? 0 : a.daysRemaining - b.daysRemaining)))
   }, [employeeId, role])
 
   useEffect(() => {
@@ -188,11 +211,17 @@ function ComplianceExpiryAlerts() {
                         {alert.employeeName}
                       </p>
                       <p className="text-orange-800">
-                        {alert.kind}{' '}
-                        {alert.daysRemaining < 0 ? 'expired' : 'expires'} on{' '}
-                        {formatDate(alert.date)}
-                        {alert.daysRemaining >= 0 &&
-                          ` (${alert.daysRemaining} day${alert.daysRemaining === 1 ? '' : 's'} remaining)`}
+                        {alert.date === null ? (
+                          <>{alert.kind} not on record -- add it on the Employees page</>
+                        ) : (
+                          <>
+                            {alert.kind}{' '}
+                            {alert.daysRemaining < 0 ? 'expired' : 'expires'} on{' '}
+                            {formatDate(alert.date)}
+                            {alert.daysRemaining >= 0 &&
+                              ` (${alert.daysRemaining} day${alert.daysRemaining === 1 ? '' : 's'} remaining)`}
+                          </>
+                        )}
                       </p>
                     </div>
                     <button

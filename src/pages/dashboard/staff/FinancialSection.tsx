@@ -48,6 +48,25 @@ import { formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpayment'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
+import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
+
+// One row of the bookings query in loadBookings().
+type ReceivableBookingRow = {
+  booking_id: number
+  client_id: number
+  place_of_pickup_id: number
+  place_of_delivery_id: number
+  booking_date: string
+  booking_status: string | null
+  rate_of_delivery_service: number | null
+  amount_to_pay: number | null
+  amount_paid: number | null
+  invoice_number: string | null
+  cost_per_trip: number | null
+  downpayment_waived_at: string | null
+  created_at: string
+  cancelled_at: string | null
+}
 
 // PaymentDetailsFields: method / date received / reference / OR number /
 // note / optional proof file, shown under the amount in every payment form.
@@ -460,15 +479,18 @@ function FinancialActionModal({
     setSaving(true)
     setError(null)
 
-    const { error: updateError } = await supabase
+    // .select() so a blocked update (RLS) shows as an error, not success.
+    const { data: updated, error: updateError } = await supabase
       .from('bookings')
       .update(databaseValues)
       .eq('booking_id', booking.booking_id)
+      .select('booking_id')
+      .maybeSingle()
 
     setSaving(false)
 
-    if (updateError) {
-      setError(updateError.message)
+    if (updateError || !updated) {
+      setError(updateError?.message ?? 'The booking was not updated (no permission, or it no longer exists).')
       return
     }
 
@@ -537,6 +559,23 @@ function FinancialActionModal({
   // a negative payment (method Refund) so it shows in the payment history
   // and brings amount_paid down to what's actually owed.
   async function refundOverpayment() {
+    // The balance on screen is from when the page loaded. If anyone
+    // recorded a payment or refund since, this one would be wrong (or a
+    // second refund) -- re-read the amount paid first.
+    const { data: fresh, error: freshError } = await supabase
+      .from('bookings')
+      .select('amount_paid')
+      .eq('booking_id', booking.booking_id)
+      .maybeSingle()
+    if (freshError || !fresh) {
+      setError(freshError?.message ?? 'Could not re-check this booking.')
+      return
+    }
+    if (cents(Number(fresh.amount_paid ?? 0)) !== cents(booking.amount_paid)) {
+      setError('Payments on this booking changed since this page loaded. Close this and reload Bills Receivable before refunding.')
+      return
+    }
+
     const refund = -booking.balance_due
     if (
       !(await confirmDialog({
@@ -553,8 +592,13 @@ function FinancialActionModal({
   function saveOverride() {
     const total = Number(overrideAmount)
 
-    if (!Number.isFinite(total) || total < 0) {
+    if (overrideAmount.trim() === '' || !Number.isFinite(total) || total < 0) {
       setError('Amount to pay must be zero or greater.')
+      return
+    }
+    // Same 2-decimal rule as every other amount box (lib/amountInput.ts).
+    if (cents(total) !== total) {
+      setError('Amount to pay can have at most 2 decimal places.')
       return
     }
     if (total + booking.damage_charges < booking.amount_paid) {
@@ -785,15 +829,21 @@ function FinancialSection() {
   async function loadBookings() {
     setLoading(true)
 
-    const { data: bookingRows, error: bookingsError } = await supabase
-      .from('bookings')
-      .select(
-        'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
-      )
-      .order('created_at', { ascending: false })
+    // Every page / id chunk (fetchAll, fetchIn) -- Supabase stops at 1000
+    // rows, and one long id list makes the request URL too big.
+    const { rows: bookingRows, error: bookingsError } = await fetchAll<ReceivableBookingRow>((from, to) =>
+      supabase
+        .from('bookings')
+        .select(
+          'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
+        )
+        .order('created_at', { ascending: false })
+        .order('booking_id', { ascending: false })
+        .range(from, to),
+    )
 
     if (bookingsError) {
-      setError(bookingsError.message)
+      setError(bookingsError)
       setLoading(false)
       return
     }
@@ -814,26 +864,33 @@ function FinancialSection() {
     const bookingIds = bookingRows.map((b) => b.booking_id)
 
     const [clientsResult, placesResult, itinerariesResult] = await Promise.all([
-      supabase.from('clients').select('client_id, client_name').in('client_id', clientIds),
-      supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
-      supabase
-        .from('itineraries')
-        .select('booking_id, itinerary_status')
-        .in('booking_id', bookingIds),
+      fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
+        supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
+      ),
+      fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
+        supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
+      ),
+      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+        supabase
+          .from('itineraries')
+          .select('booking_id, itinerary_status')
+          .in('booking_id', chunk)
+          .range(from, to),
+      ),
     ])
 
     if (clientsResult.error) {
-      setError(clientsResult.error.message)
+      setError(clientsResult.error)
       setLoading(false)
       return
     }
     if (placesResult.error) {
-      setError(placesResult.error.message)
+      setError(placesResult.error)
       setLoading(false)
       return
     }
     if (itinerariesResult.error) {
-      setError(itinerariesResult.error.message)
+      setError(itinerariesResult.error)
       setLoading(false)
       return
     }
@@ -849,16 +906,16 @@ function FinancialSection() {
     }
 
     const clientNameById = new Map(
-      clientsResult.data.map((c) => [c.client_id, c.client_name]),
+      clientsResult.rows.map((c) => [c.client_id, c.client_name]),
     )
     const placeNameById = new Map(
-      placesResult.data.map((p) => [p.place_id, p.place_name]),
+      placesResult.rows.map((p) => [p.place_id, p.place_name]),
     )
 
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
     const cancelledTripsByBooking = new Map<number, number>()
-    itinerariesResult.data.forEach((itinerary) => {
+    itinerariesResult.rows.forEach((itinerary) => {
       // Cancelled trips aren't part of the booking any more (counted separately).
       if (itinerary.itinerary_status === 'Cancelled') {
         cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
@@ -878,7 +935,7 @@ function FinancialSection() {
 
     // Downpayment counts only non-cancelled trips.
     const liveTripsByBooking = new Map<number, number>()
-    itinerariesResult.data.forEach((it) => {
+    itinerariesResult.rows.forEach((it) => {
       if (it.itinerary_status !== 'Cancelled') {
         liveTripsByBooking.set(it.booking_id, (liveTripsByBooking.get(it.booking_id) ?? 0) + 1)
       }

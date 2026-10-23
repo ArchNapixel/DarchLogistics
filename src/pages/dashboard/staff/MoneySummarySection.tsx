@@ -23,10 +23,25 @@ import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
 import { gapByReason } from '../../../lib/revenueReconTotals'
 import { buildMoneySummary, monthLabel, shiftMonth, type MoneySummary } from '../../../lib/moneySummary'
 
-async function fetchMoneySummary(month: string): Promise<MoneySummary> {
+// The summary plus short notes on the Expenses figure -- what in it is an
+// estimate or not final yet, so the profit isn't read as exact.
+type SummaryWithNotes = MoneySummary & { expenseNotes: string[] }
+
+async function fetchMoneySummary(month: string): Promise<SummaryWithNotes> {
   const { data, error } = await loadProfitLoss(month)
   if (error || !data) throw new Error(error ?? 'Could not load this month.')
-  return buildMoneySummary({
+  const expenseNotes: string[] = []
+  if (data.parts.dieselEstimatedTrips > 0) {
+    expenseNotes.push(
+      `Diesel includes ${formatMoney(data.parts.dieselEstimated)} estimated for ${data.parts.dieselEstimatedTrips} trip${
+        data.parts.dieselEstimatedTrips === 1 ? '' : 's'
+      } with no fuel logged.`,
+    )
+  }
+  if (data.memo.draftPayroll > 0) {
+    expenseNotes.push(`Salaries include ${formatMoney(data.memo.draftPayroll)} from draft payslips (not final yet).`)
+  }
+  const summary = buildMoneySummary({
     earned: data.totalRevenue,
     revenueRows: data.revenueRows,
     collected: data.memo.collected,
@@ -37,6 +52,7 @@ async function fetchMoneySummary(month: string): Promise<MoneySummary> {
     repairs: data.parts.maintenanceParts,
     damage: data.parts.companyDamage,
   })
+  return { ...summary, expenseNotes }
 }
 
 function BigNumber({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: string }) {
@@ -179,7 +195,7 @@ function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | nul
 
 function MoneySummarySection() {
   const [month, setMonth] = useState(() => toManilaDate(new Date()).slice(0, 7))
-  const [summary, setSummary] = useState<MoneySummary | null>(null)
+  const [summary, setSummary] = useState<SummaryWithNotes | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [gap, setGap] = useState<Gap | null>(null)
   const [gapError, setGapError] = useState<string | null>(null)
@@ -244,7 +260,11 @@ function MoneySummarySection() {
               value={formatMoney(summary.earned)}
               note={`from ${summary.tripCount} delivered trip${summary.tripCount === 1 ? '' : 's'}`}
             />
-            <BigNumber label="Expenses" value={formatMoney(summary.spent)} />
+            <BigNumber
+              label="Expenses"
+              value={formatMoney(summary.spent)}
+              note={summary.expenseNotes.length > 0 ? summary.expenseNotes.join(' ') : undefined}
+            />
             <BigNumber
               label={summary.left < 0 ? 'Net loss' : 'Net profit'}
               value={formatMoney(summary.left)}

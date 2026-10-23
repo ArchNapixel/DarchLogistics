@@ -7,8 +7,10 @@ import { useEffect, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
-import { promptDialog } from '../../../components/ConfirmDialog'
+import { confirmDialog, promptDialog } from '../../../components/ConfirmDialog'
 import {
+  ANNUAL_PAID_LEAVE_DAYS,
+  paidLeaveSplit,
   decideLeaveRequest,
   leaveDayCount,
   loadPendingLeaveRequests,
@@ -53,6 +55,29 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
       })
       if (input === null) return
       rejectionReason = input.trim()
+    }
+
+    // Days past the yearly paid balance become Unpaid Leave -- say so
+    // before approving (drivers are paid per trip, so it doesn't apply).
+    if (approve && !request.is_driver) {
+      const split = await paidLeaveSplit(request)
+      if (split.error) {
+        setActionError(split.error)
+        return
+      }
+      if (
+        split.unpaid > 0 &&
+        !(await confirmDialog({
+          title: `Approve ${request.employee_name}'s leave?`,
+          message:
+            `${split.unpaid} of these ${split.paid + split.unpaid} working days go past the ` +
+            `${ANNUAL_PAID_LEAVE_DAYS} paid leave days for the year, so they'll be marked Unpaid Leave ` +
+            `(not paid)${split.paid > 0 ? `; the other ${split.paid} are paid` : ''}.`,
+          confirmLabel: 'Approve',
+        }))
+      ) {
+        return
+      }
     }
 
     setDecidingId(request.leave_id)

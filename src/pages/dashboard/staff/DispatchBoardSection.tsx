@@ -28,9 +28,10 @@
 // assigning a new driver deactivates the previous active "Driver" crew row
 // (is_active: false, completed_at set) instead of deleting it, so there's
 // a history of who was assigned when. Driver names come from `employees`
-// (full_name) -- the employee_id list of who counts as a "driver" comes
-// from `users` where user_role = 'Driver', since that's the same role
-// value already used everywhere else in the app (isEmployee(), RoleBadge).
+// (full_name), and who counts as a driver / helper is the employee's
+// position (employees.position) -- so someone added on the Employees page
+// can be assigned before they have a login (changed 2026-10-23; it used
+// to be users.user_role, which left login-less drivers out).
 //
 // Time slots (#5/#6): every trip has a slot (itineraries.trip_start_at ->
 // trip_end_at, set on quote approval, edited here via EditTripTimeModal).
@@ -171,6 +172,9 @@ function toastIfNowAssigned(before: DispatchRow | undefined, change: Partial<Dis
 type DriverOption = {
   employee_id: number
   full_name: string
+  // Drivers only: licence expiry (YYYY-MM-DD) -- an expired one can't be
+  // picked for a trip on/after that date.
+  license_expiry?: string | null
 }
 
 type TruckOption = {
@@ -234,7 +238,8 @@ function CrewSelect({
     tripsOf,
     now,
     (clash) => ` — busy ${formatSlot(clash.trip_start_at, clash.trip_end_at)} (trip #${clash.itinerary_id})`,
-    (employeeId) => leaveHint(row, employeeId, false, leaveByEmployee),
+    (employeeId) =>
+      leaveHint(row, employeeId, false, leaveByEmployee) ?? licenceHint(row, people, employeeId),
   )
   const free = ranked.filter((p) => p.blockedBy === null)
   const suggested = free.slice(0, SUGGESTED_COUNT)
@@ -300,6 +305,15 @@ function CrewSelect({
       )}
     </div>
   )
+}
+
+// A driver whose licence has expired by this trip's date can't be picked
+// (the header bell warns ahead of time; this stops the actual assignment).
+// Returns the " — licence expired Oct 14" label, or null.
+function licenceHint(row: DispatchRow, people: DriverOption[], employeeId: number): string | null {
+  const expiry = people.find((p) => p.employee_id === employeeId)?.license_expiry
+  if (!expiry || expiry >= row.trip_date_from) return null
+  return ` — licence expired ${formatDate(expiry)}`
 }
 
 // A driver/helper on approved leave during this trip's dates can't be
@@ -983,16 +997,10 @@ function DispatchBoardSection() {
             .in('itinerary_id', chunk)
             .range(from, to),
       ),
-      supabase
-        .from('users')
-        .select('employee_id')
-        .eq('user_role', 'Driver')
-        .not('employee_id', 'is', null),
-      supabase
-        .from('users')
-        .select('employee_id')
-        .eq('user_role', 'Helper')
-        .not('employee_id', 'is', null),
+      // Who can be picked: everyone whose Employees-page position is
+      // Driver / Helper -- with or without a login yet.
+      supabase.from('employees').select('employee_id').eq('position', 'Driver'),
+      supabase.from('employees').select('employee_id').eq('position', 'Helper'),
       loadApprovedLeave(toManilaDate(new Date())),
     ])
 
@@ -1047,12 +1055,17 @@ function DispatchBoardSection() {
     crewResult.rows.forEach((c) => employeeIds.add(c.employee_id as number))
 
     const [employeesResult, statusesResult] = await Promise.all([
-      fetchIn<{ employee_id: number; full_name: string; employment_status_id: number | null }>(
+      fetchIn<{
+        employee_id: number
+        full_name: string
+        employment_status_id: number | null
+        driver_license_expiry_date: string | null
+      }>(
         Array.from(employeeIds),
         (chunk, from, to) =>
           supabase
             .from('employees')
-            .select('employee_id, full_name, employment_status_id')
+            .select('employee_id, full_name, employment_status_id, driver_license_expiry_date')
             .in('employee_id', chunk)
             .range(from, to),
       ),
@@ -1091,7 +1104,11 @@ function DispatchBoardSection() {
     setDrivers(
       employeeRows
         .filter((e) => driverEmployeeIds.has(e.employee_id) && isActiveEmployee(e))
-        .map((e) => ({ employee_id: e.employee_id, full_name: e.full_name }))
+        .map((e) => ({
+          employee_id: e.employee_id,
+          full_name: e.full_name,
+          license_expiry: e.driver_license_expiry_date,
+        }))
         .sort((a, b) => a.full_name.localeCompare(b.full_name)),
     )
     setHelpers(

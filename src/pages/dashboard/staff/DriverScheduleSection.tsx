@@ -61,41 +61,50 @@ const BAR_STYLES: Record<string, string> = {
 const OVERDUE_STYLE = 'border-red-800 bg-red-600 text-white'
 
 async function fetchSchedule(role: CrewRole, from: number, to: number): Promise<PersonRow[]> {
-  const [usersResult, statusesResult, leaveResult] = await Promise.all([
-    supabase.from('users').select('employee_id').eq('user_role', role).not('employee_id', 'is', null),
+  // Everyone whose Employees-page position is Driver (or Helper) -- with
+  // or without a login yet (an employee is added before Set Up Account).
+  const [employeesResult, statusesResult, leaveResult] = await Promise.all([
+    supabase.from('employees').select('employee_id, full_name, employment_status_id').eq('position', role),
     supabase.from('employment_status').select('status_id, status_name'),
     loadApprovedLeave(toManilaDate(new Date(from))),
   ])
-  if (usersResult.error) throw new Error(usersResult.error.message)
+  if (employeesResult.error) throw new Error(employeesResult.error.message)
   if (statusesResult.error) throw new Error(statusesResult.error.message)
   if (leaveResult.error) throw new Error(leaveResult.error)
 
-  const ids = usersResult.data.map((u) => u.employee_id as number)
-  if (ids.length === 0) return []
   const inactive = new Set(
     statusesResult.data
       .filter((st) => st.status_name === 'Deactivated' || st.status_name === 'Terminated')
       .map((st) => st.status_id),
   )
-  const { data: employees, error: employeesError } = await supabase
-    .from('employees')
-    .select('employee_id, full_name, employment_status_id')
-    .in('employee_id', ids)
-  if (employeesError) throw new Error(employeesError.message)
-  const people = employees
+  const people = employeesResult.data
     .filter((e) => e.employment_status_id === null || !inactive.has(e.employment_status_id))
     .sort((a, b) => a.full_name.localeCompare(b.full_name))
 
   // Trips starting before the window ends; the 3-day look-back catches
-  // long or late-running trips that began earlier and spill into it.
-  const { data: trips, error: tripsError } = await supabase
-    .from('itineraries')
-    .select('itinerary_id, booking_id, itinerary_status, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id')
-    .neq('itinerary_status', 'Cancelled')
-    .not('trip_start_at', 'is', null)
-    .lt('trip_start_at', new Date(to).toISOString())
-    .gte('trip_start_at', new Date(from - 3 * DAY_MS).toISOString())
-  if (tripsError) throw new Error(tripsError.message)
+  // long trips that began earlier and spill into it. Trips still ON THE
+  // ROAD are added whenever they started -- an overdue trip from a week
+  // ago still keeps its driver busy now.
+  const columns = 'itinerary_id, booking_id, itinerary_status, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id'
+  const [windowResult, onRoadResult] = await Promise.all([
+    supabase
+      .from('itineraries')
+      .select(columns)
+      .neq('itinerary_status', 'Cancelled')
+      .not('trip_start_at', 'is', null)
+      .lt('trip_start_at', new Date(to).toISOString())
+      .gte('trip_start_at', new Date(from - 3 * DAY_MS).toISOString()),
+    supabase
+      .from('itineraries')
+      .select(columns)
+      .in('itinerary_status', ['Dispatched', 'PickedUp', 'InTransit'])
+      .not('trip_start_at', 'is', null)
+      .lt('trip_start_at', new Date(to).toISOString()),
+  ])
+  if (windowResult.error) throw new Error(windowResult.error.message)
+  if (onRoadResult.error) throw new Error(onRoadResult.error.message)
+  // Same trip can come back from both queries -- keep it once.
+  const trips = [...new Map([...windowResult.data, ...onRoadResult.data].map((t) => [t.itinerary_id, t])).values()]
 
   const tripIds = trips.map((t) => t.itinerary_id)
   const placeIds = Array.from(new Set(trips.flatMap((t) => [t.place_of_pickup_id, t.place_of_delivery_id])))
@@ -144,6 +153,10 @@ function DriverScheduleSection() {
   const [rows, setRows] = useState<PersonRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  // Bumped by every button that clears the timeline, so it always loads
+  // again -- clicking Today (or the tab already shown) changes nothing
+  // else, and used to leave it on "Loading" forever.
+  const [reloadKey, setReloadKey] = useState(0)
 
   const dayStart = new Date(manilaTimestamp(day, DAY_START_HOUR * 60)).getTime()
   const from = view === 'day' ? dayStart : manilaWeek(dayStart).from + DAY_START_HOUR * HOUR_MS
@@ -161,7 +174,7 @@ function DriverScheduleSection() {
     return () => {
       cancelled = true
     }
-  }, [role, from, to])
+  }, [role, from, to, reloadKey])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000)
@@ -171,6 +184,7 @@ function DriverScheduleSection() {
   // Move one day or one week; the loading text shows until the new window arrives.
   function shift(direction: -1 | 1) {
     setRows(null)
+    setReloadKey((k) => k + 1)
     setDay(toManilaDate(new Date(dayStart + direction * (view === 'day' ? 1 : 7) * DAY_MS + 12 * HOUR_MS)))
   }
 
@@ -209,14 +223,14 @@ function DriverScheduleSection() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1">
           {(['Driver', 'Helper'] as CrewRole[]).map((r) => (
-            <button key={r} type="button" className={toggle(role === r)} onClick={() => { setRows(null); setRole(r) }}>
+            <button key={r} type="button" className={toggle(role === r)} onClick={() => { setRows(null); setReloadKey((k) => k + 1); setRole(r) }}>
               {r}s
             </button>
           ))}
         </div>
         <div className="flex gap-1">
           {(['day', 'week'] as View[]).map((v) => (
-            <button key={v} type="button" className={toggle(view === v)} onClick={() => { setRows(null); setView(v) }}>
+            <button key={v} type="button" className={toggle(view === v)} onClick={() => { setRows(null); setReloadKey((k) => k + 1); setView(v) }}>
               {v === 'day' ? 'Day' : 'Week'}
             </button>
           ))}
@@ -231,7 +245,7 @@ function DriverScheduleSection() {
           </button>
           <button
             type="button"
-            onClick={() => { setRows(null); setDay(scheduleDay(Date.now())) }}
+            onClick={() => { setRows(null); setReloadKey((k) => k + 1); setDay(scheduleDay(Date.now())) }}
             className="text-sm text-slate-600 underline hover:text-slate-900"
           >
             Today

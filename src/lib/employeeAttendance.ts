@@ -1,6 +1,9 @@
 import { supabase } from './supabaseClient'
 
-export type AttendanceStatus = 'Present' | 'Absent' | 'Leave'
+// 'Leave' = PAID leave (payroll pays it like Present). 'Unpaid Leave' =
+// approved leave beyond the yearly paid balance (lib/leaveRequests.ts) --
+// shown as leave, but payroll doesn't pay it (only Present/Leave count).
+export type AttendanceStatus = 'Present' | 'Absent' | 'Leave' | 'Unpaid Leave'
 
 export type AttendanceRecord = {
   attendance_id: number

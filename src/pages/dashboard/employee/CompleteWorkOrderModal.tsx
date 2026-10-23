@@ -48,6 +48,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
+import { releaseVehicleFromShop } from '../../../lib/fleetStatus'
 import {
   decrementStock,
   loadWorkOrderPartsLog,
@@ -574,43 +575,42 @@ function CompleteWorkOrderModal({
       }
     }
 
-    // 6. Reset the vehicle's fleet status, and for a truck job also sync
-    // odometer / service dates. .select() catches a silent no-op here too.
+    // 6. For a truck job, sync odometer / service dates. .select() catches
+    // a silent no-op here too.
     if (plateNumber) {
-      const truckUpdates: Record<string, string | number> = {
-        current_status: 'Available',
-      }
+      const truckUpdates: Record<string, string | number> = {}
       if (odometerValue !== null) truckUpdates.current_odometer = odometerValue
       if (nextServiceDate) {
         truckUpdates.next_service_date = nextServiceDate
         truckUpdates.last_service_date = new Date().toISOString().slice(0, 10)
       }
 
-      const { data: truckRow, error: truckError } = await supabase
-        .from('truck_profiles')
-        .update(truckUpdates)
-        .eq('plate_number', plateNumber)
-        .select('plate_number')
-        .maybeSingle()
+      if (Object.keys(truckUpdates).length > 0) {
+        const { data: truckRow, error: truckError } = await supabase
+          .from('truck_profiles')
+          .update(truckUpdates)
+          .eq('plate_number', plateNumber)
+          .select('plate_number')
+          .maybeSingle()
 
-      if (truckError || !truckRow) {
-        setFormError(
-          `Work order was marked Completed, but the truck profile could not be updated (${truckError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
-        )
-        setSubmitting(false)
-        return
+        if (truckError || !truckRow) {
+          setFormError(
+            `Work order was marked Completed, but the truck profile could not be updated (${truckError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
+          )
+          setSubmitting(false)
+          return
+        }
       }
-    } else if (trailerId !== null) {
-      const { data: trailerRow, error: trailerError } = await supabase
-        .from('trailers')
-        .update({ current_status: 'Available' })
-        .eq('trailer_id', trailerId)
-        .select('trailer_id')
-        .maybeSingle()
+    }
 
-      if (trailerError || !trailerRow) {
+    // 7. Fleet status back to Available -- only if the vehicle is still
+    // "Under Maintenance" and no OTHER open work order keeps it in the
+    // shop (an Out of Service vehicle stays Out of Service).
+    if (plateNumber || trailerId !== null) {
+      const releaseError = await releaseVehicleFromShop(plateNumber, trailerId, workOrderId)
+      if (releaseError) {
         setFormError(
-          `Work order was marked Completed, but the trailer's status could not be updated (${trailerError?.message ?? 'no row was updated'}). Click Mark Complete again to retry.`,
+          `Work order was marked Completed, but the vehicle's status could not be updated (${releaseError}). Click Mark Complete again to retry.`,
         )
         setSubmitting(false)
         return

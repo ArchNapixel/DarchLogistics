@@ -23,6 +23,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import LeaveRequestsSection from './LeaveRequestsSection'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
@@ -118,7 +119,21 @@ function AttendanceSection() {
     setBusy(false)
   }
 
-  function handleMark(employeeId: number, date: string, status: AttendanceStatus) {
+  async function handleMark(employeeId: number, date: string, status: AttendanceStatus) {
+    // A day already counted on a payslip: changing it here does NOT change
+    // that payslip, so make sure that's understood first.
+    if (records.get(`${employeeId}|${date}`)?.paid_payroll_id != null) {
+      const ok = await confirmDialog({
+        title: 'This day is already on a payslip',
+        message:
+          `Changing it to ${status} won't change the payslip that already paid it. ` +
+          'If that payslip is still a draft, use Regenerate on the Payroll page afterwards; ' +
+          'if it is finalized, correct the pay by hand.',
+        confirmLabel: 'Change anyway',
+        danger: true,
+      })
+      if (!ok) return
+    }
     return runSaves(recorderId ? [save(employeeId, date, status)] : [])
   }
 
@@ -200,7 +215,11 @@ function AttendanceSection() {
                 {days.map((date, i) => (
                   <th key={date} className="px-2 py-3 text-center font-medium">
                     <div className={date === today ? 'text-slate-900' : ''}>{DAY_NAMES[i]} {formatShort(date).split(' ')[1]}</div>
-                    {date <= today && (
+                    {/* Not on Sundays: weekly salary pays (salary / 6) per
+                        day present, so a whole-staff Sunday click would pay
+                        everyone 7/6 of a week. A real Sunday shift can still
+                        be marked per person. */}
+                    {date <= today && i !== 0 && (
                       <button onClick={() => void handleAllPresent(date)} disabled={busy} className="mt-1 text-xs font-normal text-slate-600 underline disabled:opacity-50">All present</button>
                     )}
                   </th>
@@ -232,7 +251,8 @@ function AttendanceSection() {
                           >
                             {shown === '' && <option value="">—</option>}
                             <option>Present</option>
-                            <option>Leave</option>
+                            <option value="Leave">Leave (paid)</option>
+                            <option>Unpaid Leave</option>
                             <option>Absent</option>
                           </select>
                         </td>

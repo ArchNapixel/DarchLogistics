@@ -50,6 +50,29 @@
 // become billable as remaining trips complete.
 import { supabase } from './supabaseClient'
 import { loadClientDamageChargesByBooking } from './damageCharges'
+import { fetchAll, fetchIn } from './dashboardExpenses'
+
+// One row of the bookings / quote queries in loadPaymentDueReport().
+type DueBookingRow = {
+  booking_id: number
+  booking_date: string
+  client_id: number
+  quote_request_id: number | null
+  booking_status: string | null
+  cancelled_at: string | null
+  payment_terms: string
+  rate_of_delivery_service: number | null
+  amount_to_pay: number | null
+  amount_paid: number | null
+  place_of_pickup_id: number
+  place_of_delivery_id: number
+}
+type DueQuoteRow = {
+  quote_request_id: number
+  preferred_pickup_date: string | null
+  preferred_delivery_date: string | null
+  is_last_day_of_port_storage: boolean | null
+}
 
 // What a booking's DELIVERY amount is (damage is added on top elsewhere).
 // Normally staff's locked/overridden amount_to_pay, else rate x delivered
@@ -123,25 +146,24 @@ export async function loadPaymentDueReport(
   clientId?: number,
   options?: { includeSettled?: boolean },
 ): Promise<{ rows: PaymentDueRow[]; error: string | null }> {
-  let bookingsQuery = supabase
-    .from('bookings')
-    .select(
-      'booking_id, booking_date, client_id, quote_request_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
-    )
   // Cancelled bookings stay in: they still owe for trips delivered before
   // the cancellation (billed below, same cap as FinancialSection). Ones with
   // nothing delivered owe 0 and drop off at the filter at the bottom.
-
-  if (clientId !== undefined) {
-    bookingsQuery = bookingsQuery.eq('client_id', clientId)
-  }
-
-  // ponytail: Supabase returns at most 1000 rows per request, so past 1000
-  // open bookings the oldest would silently drop -- page with .range() then.
-  const { data: bookingRows, error: bookingError } = await bookingsQuery
+  // fetchAll / fetchIn below: every page (Supabase stops at 1000 rows) and
+  // ids in chunks (one long id list makes the request URL too big).
+  const { rows: bookingRows, error: bookingError } = await fetchAll<DueBookingRow>((from, to) => {
+    let query = supabase
+      .from('bookings')
+      .select(
+        'booking_id, booking_date, client_id, quote_request_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
+      )
+      .order('booking_id', { ascending: true })
+    if (clientId !== undefined) query = query.eq('client_id', clientId)
+    return query.range(from, to)
+  })
 
   if (bookingError) {
-    return { rows: [], error: bookingError.message }
+    return { rows: [], error: bookingError }
   }
   if (bookingRows.length === 0) {
     return { rows: [], error: null }
@@ -169,44 +191,48 @@ export async function loadPaymentDueReport(
   // rest instead of as a separate round afterwards.
   const [clientsResult, quotesResult, placesResult, itinerariesResult, damageResult] =
     await Promise.all([
-      supabase
-        .from('clients')
-        .select('client_id, client_name')
-        .in('client_id', clientIds),
-      quoteIds.length > 0
-        ? supabase
-            .from('quote_requests')
-            .select(
-              'quote_request_id, preferred_pickup_date, preferred_delivery_date, is_last_day_of_port_storage',
-            )
-            .in('quote_request_id', quoteIds)
-        : Promise.resolve({ data: [], error: null }),
-      supabase
-        .from('places')
-        .select('place_id, place_name')
-        .in('place_id', placeIds),
-      supabase
-        .from('itineraries')
-        .select('itinerary_id, booking_id, itinerary_status')
-        .in('booking_id', bookingIds)
-        // Cancelled trips aren't billed and don't count toward the
-        // contract -- otherwise a partly cancelled booking could never
-        // reach "all trips done" and would stay on the report forever.
-        .neq('itinerary_status', 'Cancelled'),
+      fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
+        supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
+      ),
+      fetchIn<DueQuoteRow>(quoteIds, (chunk, from, to) =>
+        supabase
+          .from('quote_requests')
+          .select(
+            'quote_request_id, preferred_pickup_date, preferred_delivery_date, is_last_day_of_port_storage',
+          )
+          .in('quote_request_id', chunk)
+          .range(from, to),
+      ),
+      fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
+        supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
+      ),
+      fetchIn<{ itinerary_id: number; booking_id: number; itinerary_status: string }>(
+        bookingIds,
+        (chunk, from, to) =>
+          supabase
+            .from('itineraries')
+            .select('itinerary_id, booking_id, itinerary_status')
+            .in('booking_id', chunk)
+            // Cancelled trips aren't billed and don't count toward the
+            // contract -- otherwise a partly cancelled booking could never
+            // reach "all trips done" and would stay on the report forever.
+            .neq('itinerary_status', 'Cancelled')
+            .range(from, to),
+      ),
       loadClientDamageChargesByBooking(bookingIds),
     ])
 
   if (clientsResult.error) {
-    return { rows: [], error: clientsResult.error.message }
+    return { rows: [], error: clientsResult.error }
   }
   if (quotesResult.error) {
-    return { rows: [], error: quotesResult.error.message }
+    return { rows: [], error: quotesResult.error }
   }
   if (placesResult.error) {
-    return { rows: [], error: placesResult.error.message }
+    return { rows: [], error: placesResult.error }
   }
   if (itinerariesResult.error) {
-    return { rows: [], error: itinerariesResult.error.message }
+    return { rows: [], error: itinerariesResult.error }
   }
 
   const { byBooking: damageByBooking, error: damageError } = damageResult
@@ -214,34 +240,38 @@ export async function loadPaymentDueReport(
     return { rows: [], error: damageError }
   }
 
-  const deliveredItineraryIds = itinerariesResult.data
+  const deliveredItineraryIds = itinerariesResult.rows
     .filter((i) => i.itinerary_status === 'Delivered')
     .map((i) => i.itinerary_id)
 
   // When each trip was marked Delivered on the Dispatch Board. Oldest
   // first, so the Map below keeps the latest one per trip.
-  const { data: deliveredLogRows, error: deliveredLogError } =
-    deliveredItineraryIds.length > 0
-      ? await supabase
-          .from('dispatch_status_logs')
-          .select('itinerary_id, status_changed_at')
-          .in('itinerary_id', deliveredItineraryIds)
-          .eq('new_status', 'Delivered')
-          .order('status_changed_at', { ascending: true })
-      : { data: [], error: null }
+  const { rows: deliveredLogRows, error: deliveredLogError } = await fetchIn<{
+    itinerary_id: number
+    status_changed_at: string
+  }>(deliveredItineraryIds, (chunk, from, to) =>
+    supabase
+      .from('dispatch_status_logs')
+      .select('itinerary_id, status_changed_at')
+      .in('itinerary_id', chunk)
+      .eq('new_status', 'Delivered')
+      .order('status_changed_at', { ascending: true })
+      .order('itinerary_id', { ascending: true })
+      .range(from, to),
+  )
 
   if (deliveredLogError) {
-    return { rows: [], error: deliveredLogError.message }
+    return { rows: [], error: deliveredLogError }
   }
 
   const clientNameById = new Map(
-    clientsResult.data.map((c) => [c.client_id, c.client_name]),
+    clientsResult.rows.map((c) => [c.client_id, c.client_name]),
   )
   const quoteById = new Map(
-    quotesResult.data.map((q) => [q.quote_request_id, q]),
+    quotesResult.rows.map((q) => [q.quote_request_id, q]),
   )
   const placeNameById = new Map(
-    placesResult.data.map((p) => [p.place_id, p.place_name]),
+    placesResult.rows.map((p) => [p.place_id, p.place_name]),
   )
   const receivedAtByItinerary = new Map(
     (deliveredLogRows ?? []).map((r) => [r.itinerary_id, r.status_changed_at as string]),
@@ -251,7 +281,7 @@ export async function loadPaymentDueReport(
     number,
     { itinerary_id: number; itinerary_status: string }[]
   >()
-  itinerariesResult.data.forEach((itinerary) => {
+  itinerariesResult.rows.forEach((itinerary) => {
     const list = itinerariesByBooking.get(itinerary.booking_id) ?? []
     list.push(itinerary)
     itinerariesByBooking.set(itinerary.booking_id, list)

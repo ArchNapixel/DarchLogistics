@@ -73,18 +73,39 @@ function AddInventoryItemModal({
       unit_cost: unitCostValue,
     }
 
-    const { error: saveError } = isEditing
-      ? await supabase
-          .from('inventory_items')
-          .update(values)
-          .eq('item_id', item.item_id)
-      : await supabase.from('inventory_items').insert(values)
+    if (isEditing) {
+      // Mechanics take stock off as they use parts. If the quantity wasn't
+      // touched here, don't send it at all (a stale number would undo
+      // their use). If it WAS changed, only save it while stock is still
+      // what this form loaded -- otherwise ask to reopen.
+      const quantityChanged = quantityValue !== Number(item.quantity)
+      let query = supabase
+        .from('inventory_items')
+        .update(quantityChanged ? values : { ...values, quantity: undefined })
+        .eq('item_id', item.item_id)
+      if (quantityChanged) query = query.eq('quantity', item.quantity)
+      const { data: updated, error: saveError } = await query.select('item_id').maybeSingle()
 
-    setSubmitting(false)
-
-    if (saveError) {
-      setError(saveError.message)
-      return
+      setSubmitting(false)
+      if (saveError) {
+        setError(saveError.message)
+        return
+      }
+      if (!updated) {
+        setError(
+          quantityChanged
+            ? 'The stock of this item changed since you opened it (a part was used or someone else edited it). Close and reopen it to see the current quantity.'
+            : 'The item was not updated (no permission, or it was deleted).',
+        )
+        return
+      }
+    } else {
+      const { error: saveError } = await supabase.from('inventory_items').insert(values)
+      setSubmitting(false)
+      if (saveError) {
+        setError(saveError.message)
+        return
+      }
     }
 
     onSaved()

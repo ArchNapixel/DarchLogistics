@@ -96,9 +96,34 @@ function EmployeesSection() {
       return
     }
 
+    // Deactivating someone still crewed on unfinished trips leaves those
+    // trips with an inactive driver/helper -- list them so they get
+    // reassigned on the Dispatch Board.
+    let tripWarning = ''
+    if (statusName === 'Deactivated' && DETAIL_VIEW_POSITIONS.has(employee.position)) {
+      const { data: crewRows } = await supabase
+        .from('itinerary_crews')
+        .select('itinerary_id')
+        .eq('employee_id', employee.employee_id)
+        .eq('is_active', true)
+      const tripIds = (crewRows ?? []).map((c) => c.itinerary_id)
+      if (tripIds.length > 0) {
+        const { data: openTrips } = await supabase
+          .from('itineraries')
+          .select('itinerary_id')
+          .in('itinerary_id', tripIds)
+          .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+        if (openTrips && openTrips.length > 0) {
+          tripWarning =
+            ` They are still assigned to trip ${openTrips.map((t) => `#${t.itinerary_id}`).join(', ')} -- ` +
+            'reassign those on the Dispatch Board.'
+        }
+      }
+    }
+
     const confirmMessage =
       statusName === 'Deactivated'
-        ? `Deactivate ${employee.name}? They'll be removed from the active roster and, if they have a login, signed out and blocked from logging back in. Their records (payslips, history, etc.) stay fully intact.`
+        ? `Deactivate ${employee.name}? They'll be removed from the active roster and, if they have a login, signed out and blocked from logging back in. Their records (payslips, history, etc.) stay fully intact.${tripWarning}`
         : `Reactivate ${employee.name}? They'll return to the active roster and be able to log in again.`
 
     if (
@@ -112,14 +137,16 @@ function EmployeesSection() {
 
     setActionError(null)
 
-    const { error: updateError } = await supabase
+    // .select() so a blocked update (RLS) shows as an error, not success.
+    const { data: updated, error: updateError } = await supabase
       .from('employees')
       .update({ employment_status_id: statusId })
       .eq('employee_id', employee.employee_id)
+      .select('employee_id')
+      .maybeSingle()
 
-
-    if (updateError) {
-      setActionError(updateError.message)
+    if (updateError || !updated) {
+      setActionError(updateError?.message ?? `${employee.name} was not updated (no permission, or the record is gone).`)
       return
     }
 
@@ -127,6 +154,16 @@ function EmployeesSection() {
   }
 
   async function handleDelete(employee: Employee) {
+    // Someone with a login can't be deleted: their users row (the login)
+    // would be left pointing at a missing employee, and their trips would
+    // lose their name. Deactivate keeps everything and blocks the login.
+    if (linkedEmployeeIds.has(employee.employee_id)) {
+      setActionError(
+        `${employee.name} has a login account, so they can't be deleted. Use Deactivate instead -- it blocks the login and keeps their records.`,
+      )
+      return
+    }
+
     if (
       !(await confirmDialog({
         title: `Delete ${employee.name}?`,
@@ -140,10 +177,11 @@ function EmployeesSection() {
 
     setActionError(null)
 
-    const { error: deleteError } = await supabase
+    const { data: deleted, error: deleteError } = await supabase
       .from('employees')
       .delete()
       .eq('employee_id', employee.employee_id)
+      .select('employee_id')
 
 
     if (deleteError) {
@@ -160,6 +198,10 @@ function EmployeesSection() {
       } else {
         setActionError(deleteError.message)
       }
+      return
+    }
+    if (!deleted || deleted.length === 0) {
+      setActionError(`${employee.name} was not deleted (no permission, or already gone).`)
       return
     }
 
@@ -257,9 +299,10 @@ function EmployeesSection() {
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const tabEmployees = employees.filter((employee) =>
+    // Terminated people belong with the Deactivated ones, not the roster.
     activeTab === 'Deactivated'
-      ? employee.status === 'Deactivated'
-      : employee.status !== 'Deactivated',
+      ? employee.status === 'Deactivated' || employee.status === 'Terminated'
+      : employee.status !== 'Deactivated' && employee.status !== 'Terminated',
   )
   const positions = Array.from(
     new Set(['Dispatcher', ...tabEmployees.map((employee) => employee.position)]),

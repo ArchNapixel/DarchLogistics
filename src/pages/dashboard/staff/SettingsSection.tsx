@@ -61,19 +61,40 @@ function SettingsSection() {
     setLoading(false)
   }
 
+  // What's wrong with one setting's typed value, or null. Every setting is
+  // money, a rate or a time, so none can be negative; a percentage
+  // (unit '%' or a *_rate key) can't go past 100; a time of day is
+  // 0..1439 minutes after midnight.
+  function settingError(setting: Setting, rawValue: string): string | null {
+    const value = Number(rawValue)
+    if (rawValue.trim() === '' || !Number.isFinite(value)) return `Enter a valid number for "${setting.label}".`
+    if (value < 0) return `"${setting.label}" can't be negative.`
+    const isPercent = setting.unit?.includes('%') || setting.setting_key.endsWith('_rate')
+    if (isPercent && value > 100) return `"${setting.label}" is a percentage -- 100 at most.`
+    if (setting.unit === 'time' && value >= 24 * 60) return `"${setting.label}" must be a time within the day.`
+    return null
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaveError(null)
 
+    // Check EVERY value before writing any, so one bad box can't leave the
+    // earlier settings saved and the rest not.
     for (const setting of settings) {
-      const rawValue = values[setting.setting_key]
-      const numericValue = Number(rawValue)
-
-      if (rawValue === '' || Number.isNaN(numericValue)) {
-        setSaveError(`Enter a valid number for "${setting.label}".`)
+      const problem = settingError(setting, values[setting.setting_key])
+      if (problem) {
+        setSaveError(problem)
         setSaving(false)
         return
       }
+    }
+
+    // Only the settings actually changed here -- re-saving untouched ones
+    // would overwrite a change someone else made since this page loaded.
+    for (const setting of settings) {
+      const numericValue = Number(values[setting.setting_key])
+      if (numericValue === Number(setting.setting_value)) continue
 
       const { error: updateError } = await supabase
         .from('app_settings')

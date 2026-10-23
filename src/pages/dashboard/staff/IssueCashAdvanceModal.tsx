@@ -1,10 +1,11 @@
-// IssueCashAdvanceModal: records a cash advance given to an employee.
-// This never auto-deducts anything -- it's just the log of what was
-// issued. Deducting it happens later, optionally and by however much
-// admin chooses, when issuing that employee's payslip (see
-// EditDraftPayslipModal.tsx / src/lib/payslip.ts).
+// IssueCashAdvanceModal: records a cash advance given to an employee --
+// just the log of what was issued. Paying it back happens on their
+// payslips: each draft automatically deducts cash_advance_deduction_rate %
+// of gross pay (capped at what's still owed), and the admin can change
+// that amount in EditDraftPayslipModal (see src/lib/payslip.ts).
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 
 type EmployeeOption = {
   employee_id: number
@@ -52,16 +53,19 @@ function IssueCashAdvanceModal({
   }
 
   async function handleSubmit() {
-    const amountValue = Number(amount)
+    // Same amount rules as the payment forms (lib/amountInput.ts):
+    // digits + 2 decimals, greater than zero.
+    const parsed = parseAmount(amount)
 
     if (!employeeId) {
       setError('Select an employee.')
       return
     }
-    if (!amount || Number.isNaN(amountValue) || amountValue <= 0) {
-      setError('Enter a valid amount.')
+    if (parsed.value === null) {
+      setError(parsed.error ?? 'Enter a valid amount.')
       return
     }
+    const amountValue = parsed.value
 
     setSubmitting(true)
     setError(null)
@@ -120,11 +124,11 @@ function IssueCashAdvanceModal({
             <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
               Amount
               <input
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => setAmount(filterAmountInput(e.target.value))}
+                placeholder="0.00"
                 className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
               />
             </label>

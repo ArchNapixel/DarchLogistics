@@ -3,6 +3,7 @@ import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import {
   createMaintenanceSchedule,
@@ -203,37 +204,69 @@ function OdometerUpdatesSection() {
     setLoading(true)
     setError(null)
 
+    // Every page (fetchAll) -- past Supabase's 1000-row cap a truck's
+    // latest delivered trip could otherwise be missing. Logs oldest first,
+    // so the Map below ends up holding each trip's LATEST Delivered time.
     const [trucksResult, itinerariesResult, logsResult] = await Promise.all([
       supabase.from('truck_profiles').select('plate_number, current_odometer, updated_at'),
-      supabase.from('itineraries').select('itinerary_id, booking_id, trip_date_from, plate_number').eq('itinerary_status', 'Delivered').not('plate_number', 'is', null),
-      supabase.from('dispatch_status_logs').select('itinerary_id, status_changed_at').eq('new_status', 'Delivered').order('status_changed_at', { ascending: false }),
+      fetchAll<{ itinerary_id: number; booking_id: number; trip_date_from: string; plate_number: string }>(
+        (from, to) =>
+          supabase
+            .from('itineraries')
+            .select('itinerary_id, booking_id, trip_date_from, plate_number')
+            .eq('itinerary_status', 'Delivered')
+            .not('plate_number', 'is', null)
+            .order('itinerary_id', { ascending: true })
+            .range(from, to),
+      ),
+      fetchAll<{ itinerary_id: number; status_changed_at: string }>((from, to) =>
+        supabase
+          .from('dispatch_status_logs')
+          .select('itinerary_id, status_changed_at')
+          .eq('new_status', 'Delivered')
+          .order('status_changed_at', { ascending: true })
+          .order('itinerary_id', { ascending: true })
+          .range(from, to),
+      ),
     ])
 
-    const firstError = trucksResult.error ?? itinerariesResult.error ?? logsResult.error
+    const firstError = trucksResult.error?.message ?? itinerariesResult.error ?? logsResult.error
     if (firstError) {
-      setError(firstError.message)
+      setError(firstError)
       setLoading(false)
       return
     }
 
-    const deliveredItineraries = itinerariesResult.data ?? []
+    const deliveredItineraries = itinerariesResult.rows
     const bookingIds = Array.from(new Set(deliveredItineraries.map((row) => row.booking_id)))
-    const { data: bookingRows, error: bookingsError } = await supabase
-      .from('bookings')
-      .select(
-        'booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng',
-      )
-      .in('booking_id', bookingIds)
+    const { rows: bookingRows, error: bookingsError } = await fetchIn<{
+      booking_id: number
+      estimated_distance_km: number | null
+      place_of_pickup_id: number | null
+      pickup_lat: number | null
+      pickup_lng: number | null
+      place_of_delivery_id: number | null
+      delivery_lat: number | null
+      delivery_lng: number | null
+    }>(bookingIds, (chunk, from, to) =>
+      supabase
+        .from('bookings')
+        .select(
+          'booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng',
+        )
+        .in('booking_id', chunk)
+        .range(from, to),
+    )
 
     if (bookingsError) {
-      setError(bookingsError.message)
+      setError(bookingsError)
       setLoading(false)
       return
     }
 
     const truckByPlate = new Map((trucksResult.data ?? []).map((truck) => [truck.plate_number, truck]))
-    const bookingById = new Map((bookingRows ?? []).map((booking) => [booking.booking_id, booking]))
-    const deliveredAtByItinerary = new Map((logsResult.data ?? []).map((log) => [log.itinerary_id, log.status_changed_at]))
+    const bookingById = new Map(bookingRows.map((booking) => [booking.booking_id, booking]))
+    const deliveredAtByItinerary = new Map(logsResult.rows.map((log) => [log.itinerary_id, log.status_changed_at]))
     const latestByTruck = new Map<string, (typeof deliveredItineraries)[number]>()
 
     deliveredItineraries.forEach((itinerary) => {

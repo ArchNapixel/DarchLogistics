@@ -29,6 +29,30 @@ export async function setVehicleStatus(
   return error?.message ?? null
 }
 
+// Call AFTER a work order is closed (Completed / Cancelled): sets the
+// vehicle back to "Available" -- but only if it's still "Under
+// Maintenance" (never touches Out of Service, or a vehicle out on a trip)
+// and has no OTHER open work order still keeping it in the shop.
+export async function releaseVehicleFromShop(
+  plateNumber: string | null,
+  trailerId: number | null,
+  closedWorkOrderId: number,
+) {
+  let query = supabase
+    .from('work_orders')
+    .select('work_order_id')
+    .not('work_order_status', 'in', '("Completed","Cancelled")')
+    .neq('work_order_id', closedWorkOrderId)
+    .limit(1)
+  query = plateNumber ? query.eq('plate_number', plateNumber) : query.eq('trailer_id', trailerId)
+
+  const { data: otherOpen, error } = await query
+  if (error) return error.message
+  if (otherOpen.length > 0) return null
+
+  return setVehicleStatus(plateNumber, trailerId, 'Under Maintenance', 'Available')
+}
+
 // Call AFTER a vehicle was taken off a trip (unassigned, swapped, or the
 // trip cancelled): sets it back to "Available" -- but only if it's
 // "In Transit" and isn't still on some other active trip.

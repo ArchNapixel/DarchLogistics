@@ -3,7 +3,7 @@
 // and CompleteWorkOrderModal.tsx), mirroring how dispatch_status_logs
 // tracks itinerary status changes.
 import { supabase } from './supabaseClient'
-import { setVehicleStatus } from './fleetStatus'
+import { releaseVehicleFromShop, setVehicleStatus } from './fleetStatus'
 
 export async function logWorkOrderStatusChange({
   workOrderId,
@@ -87,7 +87,8 @@ export async function changeWorkOrderStatus({
   let vehicleError: string | null = null
 
   if (!wasClosed && isClosed) {
-    vehicleError = await setVehicleStatus(plateNumber, trailerId, 'Under Maintenance', 'Available')
+    // Not if another open work order still has it in the shop.
+    vehicleError = await releaseVehicleFromShop(plateNumber, trailerId, workOrderId)
   } else if (wasClosed && !isClosed) {
     vehicleError = await setVehicleStatus(plateNumber, trailerId, 'Available', 'Under Maintenance')
   }

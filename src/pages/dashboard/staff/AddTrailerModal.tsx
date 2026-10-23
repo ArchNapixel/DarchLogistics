@@ -40,12 +40,29 @@ function AddTrailerModal({
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit() {
+    // One spelling per plate (uppercase, single spaces); blank = no plate.
+    const plate = plateNumber.trim().toUpperCase().replace(/\s+/g, ' ') || null
     setSubmitting(true)
     setError(null)
 
+    // Same plate on another trailer (any spelling) = duplicate.
+    if (plate) {
+      const { data: existing } = await supabase.from('trailers').select('trailer_id, plate_number')
+      const clash = (existing ?? []).find(
+        (t) =>
+          t.trailer_id !== trailer?.trailer_id &&
+          (t.plate_number ?? '').toUpperCase().replace(/\s+/g, ' ') === plate,
+      )
+      if (clash) {
+        setSubmitting(false)
+        setError(`Trailer #${clash.trailer_id} already has plate ${plate}.`)
+        return
+      }
+    }
+
     const values = {
       trailer_type: trailerType,
-      plate_number: plateNumber.trim() || null,
+      plate_number: plate,
     }
 
     const { error: saveError } = isEditing

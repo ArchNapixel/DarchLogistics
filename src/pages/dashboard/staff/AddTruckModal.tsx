@@ -39,13 +39,31 @@ function AddTruckModal({
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit() {
-    if (!plateNumber.trim()) {
+    // One spelling per plate: "abc  123" and "ABC 123" are the same truck.
+    const plate = plateNumber.trim().toUpperCase().replace(/\s+/g, ' ')
+    if (!plate) {
       setError('Enter a plate number.')
+      return
+    }
+    const thisYear = new Date().getFullYear()
+    if (year && (!Number.isInteger(Number(year)) || Number(year) < 1950 || Number(year) > thisYear + 1)) {
+      setError(`Enter a year between 1950 and ${thisYear + 1}.`)
       return
     }
 
     setSubmitting(true)
     setError(null)
+
+    // Plates already saved in other spellings (lowercase, extra spaces)
+    // count as the same plate.
+    if (!isEditing) {
+      const { data: existing } = await supabase.from('truck_profiles').select('plate_number')
+      if ((existing ?? []).some((t) => t.plate_number.toUpperCase().replace(/\s+/g, ' ') === plate)) {
+        setSubmitting(false)
+        setError(`A truck with plate ${plate} already exists.`)
+        return
+      }
+    }
 
     const values = {
       model: model.trim() || null,
@@ -59,12 +77,13 @@ function AddTruckModal({
           .eq('plate_number', truck.plate_number)
       : await supabase
           .from('truck_profiles')
-          .insert({ ...values, plate_number: plateNumber.trim() })
+          .insert({ ...values, plate_number: plate })
 
     setSubmitting(false)
 
     if (saveError) {
-      setError(saveError.message)
+      // 23505 = unique violation: someone added the same plate meanwhile.
+      setError(saveError.code === '23505' ? `A truck with plate ${plate} already exists.` : saveError.message)
       return
     }
 

@@ -13,7 +13,7 @@
 // be released by accident) -- then Finalizes it, which releases it to
 // the employee's own payslip page. "Mark Paid" (finalized only) is the
 // separate step once money has actually changed hands.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
@@ -37,6 +37,27 @@ import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { fetchAll } from '../../../lib/dashboardExpenses'
+
+// One row of the payslip query in loadPayroll().
+type PayrollRow = {
+  payroll_id: number
+  payroll_period_start: string
+  payroll_period_end: string
+  gross_pay: number
+  cash_advance_deducted: number
+  sss_ee: number
+  philhealth_ee: number
+  pagibig_ee: number
+  withholding_tax: number
+  deductions_note: string | null
+  net_pay: number
+  payslip_status: string
+  finalized_at: string | null
+  on_hold: boolean
+  employee_id: number
+  employees: unknown
+}
 
 type PayrollEntry = {
   payroll_id: number
@@ -88,19 +109,19 @@ function PayrollSection() {
   // What each employee still owes (cash advances), by employee id
   const [owedByEmployee, setOwedByEmployee] = useState<Record<number, number>>({})
 
-  // React StrictMode runs the open-effect twice in dev -- only regenerate
-  // all drafts once per page open.
-  const askedRegenerateAll = useRef(false)
 
   useEffect(() => {
     generateThenLoad()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Create any missing drafts for last completed week, then show the list.
-  // Last week (catches attendance recorded late) and the current week
-  // (its drafts fill up as trips are delivered / attendance recorded).
-  // Then regenerates every unfinalized draft from scratch.
+  // Create any missing drafts and TOP UP existing ones, for last week
+  // (catches attendance recorded late) and the current week (its drafts
+  // fill up as trips are delivered / attendance recorded). Top-up only
+  // adds what's new, so admin edits on a draft survive. Something REMOVED
+  // since (an un-delivered trip, a day changed to Absent) needs the
+  // payslip's own Regenerate button. (This used to rebuild every draft
+  // from scratch on each page open, silently wiping admin edits.)
   async function generateThenLoad() {
     setGenerating(true)
     const allWarnings: string[] = []
@@ -109,10 +130,6 @@ function PayrollSection() {
       const { warnings, error: generateError } = await generateDraftPayslips(period.start, period.end)
       allWarnings.push(...warnings)
       if (generateError) setActionError(`Couldn't update the draft payslips: ${generateError}`)
-    }
-    if (!askedRegenerateAll.current) {
-      askedRegenerateAll.current = true
-      allWarnings.push(...(await regenerateAllDrafts(periods.map((p) => p.start))))
     }
     setGenerating(false)
     // Same employee can be flagged for both weeks -- show it once
@@ -150,47 +167,24 @@ function PayrollSection() {
     )
   }
 
-  // On page open: rebuild every unfinalized draft of last week and this
-  // week from scratch, no confirmation. Admin edits on them are lost.
-  // Returns warnings to show on the page.
-  async function regenerateAllDrafts(periodStarts: string[]): Promise<string[]> {
-    const { data, error: draftsError } = await supabase
-      .from('payroll_payslips')
-      .select('payroll_id, employee_id, payroll_period_start, payroll_period_end, on_hold, employees(full_name)')
-      .is('finalized_at', null)
-      .in('payroll_period_start', periodStarts)
-    if (draftsError) return [`Couldn't check drafts to regenerate: ${draftsError.message}`]
-
-    const drafts = data.map((d) => ({
-      payroll_id: d.payroll_id,
-      employee_id: d.employee_id,
-      employee_name: (d.employees as unknown as { full_name: string } | null)?.full_name ?? '—',
-      period: formatPeriod(d.payroll_period_start, d.payroll_period_end),
-      period_start: d.payroll_period_start,
-      period_end: d.payroll_period_end,
-      on_hold: d.on_hold,
-    }))
-
-    const problems: string[] = []
-    for (const draft of drafts) {
-      const problem = await regenerateDraft(draft)
-      if (problem) problems.push(`${draft.employee_name}: ${problem}`)
-    }
-    return problems
-  }
-
   async function loadPayroll() {
     setLoading(true)
 
-    const { data, error } = await supabase
-      .from('payroll_payslips')
-      .select(
-        'payroll_id, payroll_period_start, payroll_period_end, gross_pay, cash_advance_deducted, sss_ee, philhealth_ee, pagibig_ee, withholding_tax, deductions_note, net_pay, payslip_status, finalized_at, on_hold, employee_id, employees(full_name, position)',
-      )
-      .order('payroll_period_start', { ascending: false })
+    // Every page -- Supabase stops at 1000 rows, which would silently drop
+    // the oldest payslips (about a year in with ~20 staff).
+    const { rows: data, error } = await fetchAll<PayrollRow>((from, to) =>
+      supabase
+        .from('payroll_payslips')
+        .select(
+          'payroll_id, payroll_period_start, payroll_period_end, gross_pay, cash_advance_deducted, sss_ee, philhealth_ee, pagibig_ee, withholding_tax, deductions_note, net_pay, payslip_status, finalized_at, on_hold, employee_id, employees(full_name, position)',
+        )
+        .order('payroll_period_start', { ascending: false })
+        .order('payroll_id', { ascending: false })
+        .range(from, to),
+    )
 
     if (error) {
-      setError(error.message)
+      setError(error)
       setLoading(false)
       return
     }

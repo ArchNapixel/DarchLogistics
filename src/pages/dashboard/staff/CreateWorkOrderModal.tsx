@@ -157,19 +157,21 @@ function CreateWorkOrderModal({
     // Reflect the open work order on the Fleet page -- reverted back to
     // "Available" when the mechanic marks this work order Completed
     // (CompleteWorkOrderModal.tsx).
-    // Skipped for a vehicle currently out on a trip ("In Transit") --
-    // it shouldn't show as in the shop mid-delivery.
+    // Only from Available (or no status yet): a vehicle out on a trip
+    // ("In Transit") shouldn't show as in the shop mid-delivery, and an
+    // "Out of Service" one must stay Out of Service -- otherwise completing
+    // this work order would later turn it "Available".
     const { error: statusError } = selectedVehicle.plateNumber
       ? await supabase
           .from('truck_profiles')
           .update({ current_status: 'Under Maintenance' })
           .eq('plate_number', selectedVehicle.plateNumber)
-          .or('current_status.is.null,current_status.neq."In Transit"')
+          .or('current_status.is.null,current_status.eq.Available')
       : await supabase
           .from('trailers')
           .update({ current_status: 'Under Maintenance' })
           .eq('trailer_id', selectedVehicle.trailerId)
-          .or('current_status.is.null,current_status.neq."In Transit"')
+          .or('current_status.is.null,current_status.eq.Available')
 
     setSubmitting(false)
 

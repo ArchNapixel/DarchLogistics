@@ -239,18 +239,19 @@ export async function approveMaintenanceRequest({
     }
   }
 
-  // Skipped for a vehicle currently out on a trip ("In Transit").
+  // Only from Available: skipped for a vehicle out on a trip ("In Transit")
+  // or "Out of Service" (completing the work order would make it Available).
   const { error: statusError } = request.plate_number
     ? await supabase
         .from('truck_profiles')
         .update({ current_status: 'Under Maintenance' })
         .eq('plate_number', request.plate_number)
-        .or('current_status.is.null,current_status.neq."In Transit"')
+        .or('current_status.is.null,current_status.eq.Available')
     : await supabase
         .from('trailers')
         .update({ current_status: 'Under Maintenance' })
         .eq('trailer_id', request.trailer_id)
-        .or('current_status.is.null,current_status.neq."In Transit"')
+        .or('current_status.is.null,current_status.eq.Available')
 
   if (statusError) {
     return {

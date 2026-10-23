@@ -1092,6 +1092,38 @@ before creating it.
     header (Driver/Helper; polls every minute, opening marks read). It is
     separate from `ComplianceExpiryAlerts` (licence/medical bell).
 
+## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
+- **Payroll** no longer rebuilds every draft on page open (that wiped
+  admin edits) — opening Payroll only creates/tops up drafts; Regenerate
+  is the manual button. `discardDraftPayslip()` now calls RPC
+  `discard_draft_payslip(p_payroll_id)` (one transaction, checks "still a
+  draft" first) — Regenerate fails until that SQL is run. Payroll list,
+  cash-advance ledger (finalized deductions only), Bills Receivable,
+  `paymentDue.ts`, Truck Monitoring odometer data all page past 1000 rows.
+- **Leave:** `paidLeaveSplit()` in `lib/leaveRequests.ts` — approving
+  leave writes `Leave` (paid) only up to ANNUAL_PAID_LEAVE_DAYS for the
+  year, the rest as new attendance status **`Unpaid Leave`** (not paid;
+  needs the SQL that allows that value). Admin confirms first.
+  Attendance: no "All present" on Sundays; changing a day already on a
+  payslip asks first.
+- **Crew lists come from `employees.position`** (Driver / Helper), not
+  `users.user_role` — Dispatch Board dropdowns and Driver Schedule show
+  drivers without a login. Expired-licence drivers are Unavailable in the
+  board's driver dropdown. Driver Schedule shows on-road trips whenever
+  they started; its Today/tab buttons no longer stick on "Loading".
+- **Fleet status:** new work orders only flip Available → Under
+  Maintenance (never Out of Service); closing one uses
+  `releaseVehicleFromShop()` (`lib/fleetStatus.ts`) — back to Available
+  only if still Under Maintenance with no other open work order (also
+  used by CompleteWorkOrderModal).
+- Smaller: Employees (deactivate warns about open trips, no delete for
+  someone with a login, Terminated in the Deactivated tab), Settings
+  (validated first, no negatives, % ≤ 100, saves only changed rows),
+  inventory edit won't overwrite stock used meanwhile, Mark refunded
+  re-reads the booking, plates uppercase/single-spaced + duplicate check,
+  Money Summary notes estimated diesel / draft salaries, expiry bell skips
+  inactive drivers and flags missing licences.
+
 ## Currently in progress
 Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
 now), awaiting user testing (6a SQL has been run). Not built: payment history in the client

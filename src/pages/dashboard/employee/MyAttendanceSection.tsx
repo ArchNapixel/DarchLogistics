@@ -66,6 +66,7 @@ function MyAttendanceSection() {
   const statusOf = (date: string) => records.get(date)?.attendance_status ?? (date < today ? 'Absent' : null)
   const presentDays = days.filter((date) => statusOf(date) === 'Present').length
   const leaveDays = days.filter((date) => statusOf(date) === 'Leave').length
+  const unpaidLeaveDays = days.filter((date) => statusOf(date) === 'Unpaid Leave').length
   const absentDays = days.filter((date) => statusOf(date) === 'Absent').length
 
   return (
@@ -87,7 +88,13 @@ function MyAttendanceSection() {
         <>
           <p className="mt-4 text-sm text-slate-600">
             Present: <span className="font-semibold text-slate-900">{presentDays}</span> · Leave:{' '}
-            <span className="font-semibold text-slate-900">{leaveDays}</span> · Absent:{' '}
+            <span className="font-semibold text-slate-900">{leaveDays}</span>
+            {unpaidLeaveDays > 0 && (
+              <>
+                {' '}· Unpaid leave: <span className="font-semibold text-slate-900">{unpaidLeaveDays}</span>
+              </>
+            )}{' '}
+            · Absent:{' '}
             <span className="font-semibold text-slate-900">{absentDays}</span>
           </p>
           <div className="mt-4 grid items-start gap-6 lg:grid-cols-2">

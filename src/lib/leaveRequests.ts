@@ -241,6 +241,16 @@ export async function decideLeaveRequest({
   decidedByEmployeeId: number
   rejectionReason?: string
 }): Promise<{ error: string | null; alreadyDecided: boolean }> {
+  // How many of these days are still covered by the paid balance -- worked
+  // out BEFORE this request counts as Approved (getLeaveDaysUsed counts
+  // approved requests, so afterwards it would include this one).
+  let paidDays = 0
+  if (approve && !request.is_driver) {
+    const split = await paidLeaveSplit(request)
+    if (split.error) return { error: split.error, alreadyDecided: false }
+    paidDays = split.paid
+  }
+
   const { data, error } = await supabase
     .from('leave_requests')
     .update({
@@ -258,7 +268,7 @@ export async function decideLeaveRequest({
   if (!data) return { error: null, alreadyDecided: true }
 
   if (approve && !request.is_driver) {
-    const { error: attendanceError } = await writeLeaveAttendance(request, decidedByEmployeeId)
+    const { error: attendanceError } = await writeLeaveAttendance(request, decidedByEmployeeId, paidDays)
     if (attendanceError) {
       return {
         error: `Leave was approved, but marking the attendance days failed (${attendanceError}). Mark those days as Leave on the Attendance page by hand.`,
@@ -269,27 +279,48 @@ export async function decideLeaveRequest({
   return { error: null, alreadyDecided: false }
 }
 
-// One 'Leave' row per Mon-Sat day. Days already Present, already Leave, or
+// How many of a request's Mon-Sat days the yearly paid balance
+// (ANNUAL_PAID_LEAVE_DAYS) still covers, and how many go past it (those
+// become 'Unpaid Leave'). Call it BEFORE the request is Approved --
+// getLeaveDaysUsed counts approved requests. Balance is per calendar year
+// of the start date.
+// ponytail: a request spanning New Year uses the start year's balance only.
+export async function paidLeaveSplit(
+  request: LeaveRequest,
+): Promise<{ paid: number; unpaid: number; error: string | null }> {
+  const days = leaveDayCount(request.start_date, request.end_date)
+  const { used, error } = await getLeaveDaysUsed(request.employee_id, Number(request.start_date.slice(0, 4)))
+  if (error) return { paid: 0, unpaid: 0, error }
+  const paid = Math.min(days, Math.max(0, ANNUAL_PAID_LEAVE_DAYS - used))
+  return { paid, unpaid: days - paid, error: null }
+}
+
+// One row per Mon-Sat day: the first `paidDays` written are 'Leave' (paid),
+// the rest 'Unpaid Leave'. Days already Present, already on leave, or
 // already paid on a payslip are left alone.
 async function writeLeaveAttendance(
   request: LeaveRequest,
   recordedBy: number,
+  paidDays: number,
 ): Promise<{ error: string | null }> {
   const { records, error } = await loadAttendanceRecords(request.start_date, request.end_date, request.employee_id)
   if (error) return { error }
   const existing = new Map(records.map((r) => [r.attendance_date, r]))
 
+  let paidLeft = paidDays
   for (const date of datesBetween(request.start_date, request.end_date)) {
     if (isSunday(date)) continue
     const row = existing.get(date)
     if (row && (row.paid_payroll_id !== null || row.attendance_status !== 'Absent')) continue
 
+    const paid = paidLeft > 0
+    if (paid) paidLeft -= 1
     const { error: saveError } = await saveAttendanceRecord({
       employeeId: request.employee_id,
       attendanceDate: date,
-      status: 'Leave',
-      hoursWorked: LEAVE_HOURS,
-      notes: `Approved leave (${request.leave_type})`,
+      status: paid ? 'Leave' : 'Unpaid Leave',
+      hoursWorked: paid ? LEAVE_HOURS : null,
+      notes: `Approved leave (${request.leave_type})${paid ? '' : ' -- unpaid, beyond the yearly paid days'}`,
       recordedBy,
     })
     if (saveError) return { error: saveError }

@@ -40,6 +40,7 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   'In Transit': 'active',
   'Under Maintenance': 'active',
   'On Leave': 'active',
+  'Unpaid Leave': 'hold',
   Unpaid: 'active',
   OnHold: 'hold',
   'On Hold': 'hold',

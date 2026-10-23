@@ -195,19 +195,19 @@ function ConvertIssueToWorkOrderModal({
     // 2. Reflect the open work order on the Fleet page -- best-effort,
     // doesn't block marking the report handled since the work order
     // itself (the actual thing the mechanic needs) already exists.
-    // Skipped for a vehicle currently out on a trip ("In Transit") --
+    // Only from Available (also leaves "Out of Service" alone). Skipped for a vehicle out on a trip ("In Transit") --
     // it shouldn't show as in the shop mid-delivery.
     const { error: statusError } = selectedVehicle.plateNumber
       ? await supabase
           .from('truck_profiles')
           .update({ current_status: 'Under Maintenance' })
           .eq('plate_number', selectedVehicle.plateNumber)
-          .or('current_status.is.null,current_status.neq."In Transit"')
+          .or('current_status.is.null,current_status.eq.Available')
       : await supabase
           .from('trailers')
           .update({ current_status: 'Under Maintenance' })
           .eq('trailer_id', selectedVehicle.trailerId)
-          .or('current_status.is.null,current_status.neq."In Transit"')
+          .or('current_status.is.null,current_status.eq.Available')
 
     // 3. Mark the issue report handled.
     // .select().maybeSingle() so a blocked UPDATE (no matching RLS

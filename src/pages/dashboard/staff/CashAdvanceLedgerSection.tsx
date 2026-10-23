@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
+import { fetchAll } from '../../../lib/dashboardExpenses'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
@@ -33,28 +34,48 @@ function CashAdvanceLedgerSection() {
 
   const loadLedger = useCallback(async () => {
     setLoading(true)
-    const { data: advanceRows, error: advanceError } = await supabase
-      .from('cash_advances')
-      .select('cash_advance_id, employee_id, amount, note, status, created_at')
-      .order('created_at', { ascending: false })
+    // Every page -- Supabase stops at 1000 rows.
+    const { rows: advanceRows, error: advanceError } = await fetchAll<{
+      cash_advance_id: number
+      employee_id: number
+      amount: number
+      note: string | null
+      status: string
+      created_at: string
+    }>((from, to) =>
+      supabase
+        .from('cash_advances')
+        .select('cash_advance_id, employee_id, amount, note, status, created_at')
+        .order('created_at', { ascending: false })
+        .order('cash_advance_id', { ascending: false })
+        .range(from, to),
+    )
 
     if (advanceError) {
-      setError(advanceError.message)
+      setError(advanceError)
       setLoading(false)
       return
     }
 
-    const employeeIds = Array.from(new Set((advanceRows ?? []).map((row) => row.employee_id)))
+    const employeeIds = Array.from(new Set(advanceRows.map((row) => row.employee_id)))
     const [employeesResult, payslipsResult] = await Promise.all([
       employeeIds.length > 0
         ? supabase.from('employees').select('employee_id, full_name').in('employee_id', employeeIds)
         : Promise.resolve({ data: [], error: null }),
-      supabase.from('payroll_payslips').select('employee_id, cash_advance_deducted'),
+      // Only FINALIZED payslips: a draft's deduction hasn't been taken
+      // from anyone yet and can still be edited or regenerated.
+      fetchAll<{ employee_id: number; cash_advance_deducted: number | null }>((from, to) =>
+        supabase
+          .from('payroll_payslips')
+          .select('employee_id, cash_advance_deducted')
+          .not('finalized_at', 'is', null)
+          .range(from, to),
+      ),
     ])
 
-    const lookupError = employeesResult.error ?? payslipsResult.error
+    const lookupError = employeesResult.error?.message ?? payslipsResult.error
     if (lookupError) {
-      setError(lookupError.message)
+      setError(lookupError)
       setLoading(false)
       return
     }
@@ -63,14 +84,14 @@ function CashAdvanceLedgerSection() {
     // Pool each employee's deductions, then hand them to their Approved
     // advances oldest-first.
     const leftToAllocate = new Map<number, number>()
-    for (const p of payslipsResult.data ?? []) {
+    for (const p of payslipsResult.rows) {
       leftToAllocate.set(
         p.employee_id,
         (leftToAllocate.get(p.employee_id) ?? 0) + Number(p.cash_advance_deducted ?? 0),
       )
     }
     const repaidById = new Map<number, number>()
-    ;[...(advanceRows ?? [])]
+    ;[...advanceRows]
       .filter((row) => row.status === 'Approved')
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .forEach((row) => {
@@ -80,7 +101,7 @@ function CashAdvanceLedgerSection() {
         leftToAllocate.set(row.employee_id, left - part)
       })
 
-    const ledgerRows = (advanceRows ?? []).map((row) => ({
+    const ledgerRows = advanceRows.map((row) => ({
       ...row,
       employee_name: names.get(row.employee_id) ?? `Employee #${row.employee_id}`,
       repaid: repaidById.get(row.cash_advance_id) ?? 0,
@@ -91,7 +112,7 @@ function CashAdvanceLedgerSection() {
     const issued = ledgerRows
       .filter((row) => row.status === 'Approved')
       .reduce((sum, row) => sum + Number(row.amount), 0)
-    const deducted = (payslipsResult.data ?? []).reduce(
+    const deducted = payslipsResult.rows.reduce(
       (sum, row) => sum + Number(row.cash_advance_deducted ?? 0),
       0,
     )

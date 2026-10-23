@@ -24,7 +24,9 @@ export type ProfitLoss = ReturnType<typeof buildProfitLoss> & {
   revenueRows: { client_name: string; amount: number }[]
   parts: {
     payroll: number // gross + employer shares
-    diesel: number
+    diesel: number // logged + estimated
+    dieselEstimated: number // part of diesel that is the calculator's estimate
+    dieselEstimatedTrips: number // trips with no fuel logged
     tripExpenses: number
     companyDamage: number
     maintenanceParts: number
@@ -76,11 +78,14 @@ export async function loadProfitLoss(
 
   let dieselLogged = 0
   let dieselEstimated = 0
+  let dieselEstimatedTrips = 0
   let otherTripExpenses = 0
   let companyDamage = 0
   trips.rows.forEach((t) => {
-    if (t.dieselEstimated) dieselEstimated += t.diesel
-    else dieselLogged += t.diesel
+    if (t.dieselEstimated) {
+      dieselEstimated += t.diesel
+      dieselEstimatedTrips += 1
+    } else dieselLogged += t.diesel
     otherTripExpenses += t.otherExpenses
     companyDamage += t.companyDamage
   })
@@ -116,6 +121,10 @@ export async function loadProfitLoss(
       parts: {
         payroll: payrollGross + employerShares,
         diesel: dieselLogged + dieselEstimated,
+        // The part of diesel that is the calculator's estimate (trips with
+        // no fuel logged), and how many trips -- Money Summary notes it.
+        dieselEstimated,
+        dieselEstimatedTrips,
         tripExpenses: otherTripExpenses,
         companyDamage,
         maintenanceParts,

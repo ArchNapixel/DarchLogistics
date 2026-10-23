@@ -1081,47 +1081,17 @@ export async function finalizePayslips(
 
 // Throws away a DRAFT payslip so it can be re-issued correctly: frees
 // its attendance days, deletes its line items (which frees its trips to
-// be paid again), then the payslip itself. Finalized payslips can't be
-// discarded. Not a DB transaction (same limitation as issuePayslip) --
-// a failure partway names what's left over.
+// be paid again), then the payslip itself. Done by the database function
+// discard_draft_payslip (SQL given in chat, 2026-10-23) in ONE
+// transaction that first locks the payslip and checks it's still a
+// draft -- the old browser version freed the days and deleted the lines
+// BEFORE that check, so a payslip finalized at the same moment lost its
+// lines and its days became payable again.
 export async function discardDraftPayslip(
   payrollId: number,
 ): Promise<{ error: string | null }> {
-  const { error: attendanceError } = await supabase
-    .from('employee_attendance')
-    .update({ paid_payroll_id: null })
-    .eq('paid_payroll_id', payrollId)
-
-  if (attendanceError) {
-    return { error: attendanceError.message }
-  }
-
-  const { error: lineItemsError } = await supabase
-    .from('payslip_line_items')
-    .delete()
-    .eq('payroll_id', payrollId)
-
-  if (lineItemsError) {
-    return { error: lineItemsError.message }
-  }
-
-  const { data, error: payslipError } = await supabase
-    .from('payroll_payslips')
-    .delete()
-    .eq('payroll_id', payrollId)
-    .is('finalized_at', null)
-    .select('payroll_id')
-    .maybeSingle()
-
-  if (payslipError || !data) {
-    return {
-      error:
-        `Draft payslip #${payrollId}'s line items were removed, but the payslip itself ` +
-        `could not be deleted (${payslipError?.message ?? 'already finalized, or not permitted'}). ` +
-        `This needs manual review.`,
-    }
-  }
-  return { error: null }
+  const { error } = await supabase.rpc('discard_draft_payslip', { p_payroll_id: payrollId })
+  return { error: error?.message ?? null }
 }
 
 // Only a finalized payslip can be marked Paid.
