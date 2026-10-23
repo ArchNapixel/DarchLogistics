@@ -7,6 +7,7 @@
 import { supabase } from './supabaseClient'
 import { loadLedgerInputs } from './statement'
 import { buildStatement } from './statementTotals'
+import { groupTripCargo } from './quoteRequest'
 
 export type Billing = {
   booking_id: number
@@ -36,22 +37,29 @@ export async function loadBilling(
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'booking_id, client_id, booking_date, invoice_number, cargo_type, cargo_description, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail',
+      'booking_id, client_id, booking_date, invoice_number, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail',
     )
     .eq('booking_id', bookingId)
     .maybeSingle()
   if (bookingError) return { billing: null, error: bookingError.message }
   if (!booking) return { billing: null, error: `Booking #${bookingId} not found.` }
 
-  const [ledger, places] = await Promise.all([
+  const [ledger, places, tripCargo] = await Promise.all([
     loadLedgerInputs(booking.client_id),
     supabase
       .from('places')
       .select('place_id, place_name, city, barangay')
       .in('place_id', [booking.place_of_pickup_id, booking.place_of_delivery_id]),
+    // Cargo is per trip (itineraries.cargo_*) -- cancelled trips left out.
+    supabase
+      .from('itineraries')
+      .select('cargo_type, container_type, trailer_type, weight')
+      .eq('booking_id', bookingId)
+      .or('itinerary_status.is.null,itinerary_status.neq.Cancelled'),
   ])
   if (ledger.error) return { billing: null, error: ledger.error }
   if (places.error) return { billing: null, error: places.error.message }
+  if (tripCargo.error) return { billing: null, error: tripCargo.error.message }
 
   const row = ledger.rows.find((r) => r.booking_id === bookingId)
   if (!row) return { billing: null, error: `Booking #${bookingId} has no billing data.` }
@@ -85,7 +93,7 @@ export async function loadBilling(
       client_name: row.client_name,
       pickup: location(booking.place_of_pickup_id, booking.pickup_address_detail),
       delivery: location(booking.place_of_delivery_id, booking.delivery_address_detail),
-      cargo: [booking.cargo_type, booking.cargo_description].filter(Boolean).join(' — '),
+      cargo: groupTripCargo(tripCargo.data),
       payment_terms: booking.payment_terms,
       due_date: row.due_date,
       trips_delivered: row.completed_trips,

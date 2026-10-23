@@ -11,6 +11,11 @@
 // A Rejected quote has "Edit & resubmit": it loads the quote's shipment
 // fields, opens the same quote form pre-filled (NewQuoteModal), and
 // sending puts the same quote back to Pending for staff.
+//
+// Clients don't set a rate: staff send an offer (lib/quoteOffers.ts). An
+// Offered quote shows QuoteOfferCard -- Accept (booking created at once),
+// Counter-offer (own rate and/or dates) or Decline (with a reason).
+// Offers waiting for an answer are listed first.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -18,6 +23,9 @@ import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import NewQuoteModal from './NewQuoteModal'
+import QuoteOfferCard from './QuoteOfferCard'
+import { formatMoney } from '../../../lib/format'
+import { showToast } from '../../../components/Toast'
 import type { ResubmitTarget } from './ClientQuoteForm'
 import {
   REJECTION_TAGS,
@@ -43,7 +51,23 @@ type QuoteRow = {
   // jsonb list of cargo lines (lib/quoteRequest.ts CargoLineRow).
   cargo_lines: unknown
   preferred_pickup_date: string
+  preferred_delivery_date: string | null
+  // The rate on the table: our offer (Offered) or the client's counter.
+  proposed_rate: number | null
+  delivery_order_count: number | null
+  // Saved with our offer; the downpayment shown on it comes from this.
+  cost_per_trip: number | null
+  decline_reason: string | null
   created_at: string
+}
+
+// What the client sees for each status.
+const CLIENT_STATUS_LABELS: Record<string, string> = {
+  Pending: 'Waiting for our price',
+  Offered: 'Offer received',
+  Countered: 'Your counter-offer sent',
+  Rejected: 'Rejected',
+  Declined: 'Declined',
 }
 
 function MyQuoteRequestsSection() {
@@ -68,7 +92,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, decline_reason, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -80,7 +104,8 @@ function MyQuoteRequestsSection() {
       return
     }
 
-    setQuotes(data)
+    // Offers waiting for the client's answer first (stable: newest first after).
+    setQuotes([...data].sort((a, b) => Number(b.request_status === 'Offered') - Number(a.request_status === 'Offered')))
     setError(null)
     setLoading(false)
   }
@@ -122,8 +147,15 @@ function MyQuoteRequestsSection() {
     )
   }
 
+  const offersWaiting = quotes.filter((q) => q.request_status === 'Offered').length
+
   return (
     <div className="grid gap-3">
+      {offersWaiting > 0 && (
+        <p className="bg-slate-900 px-4 py-2.5 text-sm font-medium text-white">
+          You have {offersWaiting} {offersWaiting === 1 ? 'offer' : 'offers'} to answer.
+        </p>
+      )}
       {quotes.map((quote) => (
         <div
           key={quote.quote_request_id}
@@ -145,14 +177,29 @@ function MyQuoteRequestsSection() {
             <StatusBadge
               status={quote.request_status}
               label={
-                quote.request_status === 'Pending'
-                  ? quote.resubmit_count > 0
-                    ? 'Resubmitted'
-                    : 'Under review'
-                  : undefined
+                quote.request_status === 'Pending' && quote.resubmit_count > 0
+                  ? 'Resubmitted'
+                  : CLIENT_STATUS_LABELS[quote.request_status]
               }
             />
           </div>
+          {quote.request_status === 'Offered' && clientId && (
+            <QuoteOfferCard
+              quote={quote}
+              onAnswered={(message) => {
+                showToast(message)
+                load(clientId)
+              }}
+            />
+          )}
+          {quote.request_status === 'Countered' && (
+            <p className="mt-2 bg-slate-50 p-3 text-sm text-slate-700">
+              You asked for {formatMoney(quote.proposed_rate ?? 0)} per trip. We'll reply here with a decision or a new offer.
+            </p>
+          )}
+          {quote.request_status === 'Declined' && quote.decline_reason && (
+            <p className="mt-2 bg-slate-50 p-3 text-sm text-slate-700">You declined: {quote.decline_reason}</p>
+          )}
           {quote.request_status === 'Rejected' && quote.rejection_reason && (
             <div className="mt-2 bg-slate-50 p-3">
               <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">

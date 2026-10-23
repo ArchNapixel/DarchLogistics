@@ -24,7 +24,6 @@ import {
   type ShipmentField,
   type ShipmentForm,
 } from '../lib/quoteRequest'
-import { formatMoney } from '../lib/format'
 
 export type SectionProps = {
   form: ShipmentForm
@@ -256,7 +255,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
               />
             </Field>
 
-            <Field label="Trips" hint="(of this cargo)" error={lineErrors.quantity}>
+            <Field label="Number of cargos" error={lineErrors.quantity}>
               <input
                 type="text"
                 inputMode="numeric"
@@ -345,9 +344,6 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
     setField(e.target.name as ShipmentField, e.target.value as never)
   }
 
-  const deliveryCount = totalTrips(form.cargoLines)
-  const rate = Number(form.proposedRate)
-  const showTotal = Number.isInteger(deliveryCount) && deliveryCount > 1 && rate > 0
 
   return (
     <>
@@ -407,26 +403,6 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
         }}
         error={errors.preferredDeliveryDate}
       />
-
-      <Field label="Rate per delivery" hint="(PHP)" error={errors.proposedRate}>
-        <input
-          type="number"
-          name="proposedRate"
-          inputMode="decimal"
-          value={form.proposedRate}
-          onChange={handleChange}
-          min="0"
-          step="0.01"
-          placeholder="e.g. 15000"
-          aria-invalid={errors.proposedRate ? true : undefined}
-          className={inputClasses(!!errors.proposedRate)}
-        />
-        {showTotal && (
-          <span className="text-xs font-normal text-slate-500">
-            {formatMoney((rate * deliveryCount))} total
-          </span>
-        )}
-      </Field>
 
       {/* Never invalid on its own -- only red when staff rejected the
           quote over its terms (REJECTION_TAGS). */}

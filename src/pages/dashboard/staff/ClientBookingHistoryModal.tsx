@@ -3,9 +3,9 @@
 // (from BookingsSection.tsx) for the row click-through instead of
 // duplicating that display -- so each row here is built into the exact
 // same `Booking` shape that modal expects, just filtered to one
-// client_id and with an extra cargo_type field for the list itself
-// (BookingDetailModal doesn't show cargo_type, so it isn't part of the
-// shared Booking type).
+// client_id and with an extra `cargo` label for the list itself -- the
+// booking's trips counted by cargo type ("3 container · 1 loose"), since
+// cargo is per trip (itineraries.cargo_type).
 //
 // clients has no payment_terms column (confirmed via the REST API) --
 // that's a per-booking field, not a client-level one, so it isn't shown
@@ -21,7 +21,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
-type ClientBooking = Booking & { cargo_type: string | null }
+type ClientBooking = Booking & { cargo: string }
 
 const ONGOING_STATUSES = new Set(['Draft', 'Confirmed', 'InProgress'])
 
@@ -52,7 +52,7 @@ function ClientBookingHistoryModal({
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, cargo_type',
+        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid',
       )
       .eq('client_id', client.client_id)
       .order('created_at', { ascending: false })
@@ -81,7 +81,7 @@ function ClientBookingHistoryModal({
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
       supabase
         .from('itineraries')
-        .select('booking_id, itinerary_status')
+        .select('booking_id, itinerary_status, cargo_type')
         .in('booking_id', bookingIds),
     ])
 
@@ -113,12 +113,18 @@ function ClientBookingHistoryModal({
     const totalTripsByBooking = new Map<number, number>()
     const completedTripsByBooking = new Map<number, number>()
     const cancelledTripsByBooking = new Map<number, number>()
+    // "Container"/"Loose" -> trip count, per booking (non-cancelled trips).
+    const cargoCountsByBooking = new Map<number, Map<string, number>>()
     itinerariesResult.data.forEach((itinerary) => {
       // Cancelled trips aren't part of the booking any more (counted separately).
       if (itinerary.itinerary_status === 'Cancelled') {
         cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
         return
       }
+      const counts = cargoCountsByBooking.get(itinerary.booking_id) ?? new Map<string, number>()
+      const type = itinerary.cargo_type === 'Loose' ? 'loose' : itinerary.cargo_type ? 'container' : 'no cargo'
+      counts.set(type, (counts.get(type) ?? 0) + 1)
+      cargoCountsByBooking.set(itinerary.booking_id, counts)
       totalTripsByBooking.set(
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
@@ -163,7 +169,8 @@ function ClientBookingHistoryModal({
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
-          cargo_type: b.cargo_type,
+          cargo:
+            [...(cargoCountsByBooking.get(b.booking_id) ?? [])].map(([type, n]) => `${n} ${type}`).join(' · ') || '—',
           cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
           cancelled_at: b.cancelled_at,
         }
@@ -203,7 +210,7 @@ function ClientBookingHistoryModal({
                   {booking.pickup_location} → {booking.delivery_location}
                 </td>
                 <td className="px-4 py-3 text-slate-600">
-                  {booking.cargo_type ?? '—'}
+                  {booking.cargo}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={booking.status} />

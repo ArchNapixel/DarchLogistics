@@ -21,6 +21,7 @@ import TripStorageBanner from './TripStorageBanner'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 
 type Trip = {
   itinerary_id: number
@@ -35,6 +36,8 @@ type Trip = {
   plate_number: string | null
   trailer_label: string | null
   expenses: { amount: number; description: string }[]
+  // What this trip carries (itineraries.cargo_*).
+  cargo: TripCargo
 }
 
 function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
@@ -73,7 +76,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
     const { data: itineraries, error: itineraryError } = await supabase
       .from('itineraries')
       .select(
-        'itinerary_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
+        'itinerary_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description',
       )
       .in('itinerary_id', itineraryIds)
       .not('itinerary_status', 'in', '(Delivered,Cancelled)')
@@ -151,6 +154,13 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             ? (trailerPlateById.get(trip.trailer_id) ?? `Trailer #${trip.trailer_id}`)
             : null,
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === trip.itinerary_id),
+        cargo: {
+          cargo_type: trip.cargo_type,
+          container_type: trip.container_type,
+          trailer_type: trip.trailer_type,
+          weight: trip.weight,
+          cargo_description: trip.cargo_description,
+        },
       })),
     )
     setError(null)
@@ -231,6 +241,12 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           {trip.plate_number ?? <span className="text-slate-400">not assigned yet</span>}
           {' · '}Trailer:{' '}
           {trip.trailer_label ?? <span className="text-slate-400">none</span>}
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Cargo: {tripCargoLabel(trip.cargo)}
+          {trip.cargo.cargo_description && (
+            <span className="block text-slate-500">{trip.cargo.cargo_description}</span>
+          )}
         </p>
         {/* Still at the port: last-free-storage-day deadline, if any (#15). */}
         {(trip.itinerary_status === 'Awaiting' || trip.itinerary_status === 'Dispatched') && (

@@ -67,9 +67,9 @@ function NewQuoteModal({
           clientId={clientId}
           resubmit={resubmit}
           nextSteps={[
-            'We review your route, cargo and rate.',
-            "We'll contact you if anything changes.",
-            'Once approved, it appears in My Bookings.',
+            'We review your route and cargo, then send you our rate per trip.',
+            'You accept it, suggest your own rate or dates, or decline -- under My Quote Requests.',
+            'Once you accept, it appears in My Bookings.',
           ]}
           actionLabel="Done"
           onDone={onCreated}

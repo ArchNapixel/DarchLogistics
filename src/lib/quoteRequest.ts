@@ -84,7 +84,6 @@ export type ShipmentForm = {
   cargoLines: CargoLine[]
   preferredPickupDate: string
   paymentTerms: 'Cash' | '7Days' | '14Days' | '30Days'
-  proposedRate: string
   isLastDayOfPortStorage: 'No' | 'Yes'
   preferredDeliveryDate: string
 }
@@ -100,7 +99,6 @@ export const emptyShipment: ShipmentForm = {
   cargoLines: [emptyCargoLine],
   preferredPickupDate: '',
   paymentTerms: 'Cash',
-  proposedRate: '',
   isLastDayOfPortStorage: 'No',
   preferredDeliveryDate: '',
 }
@@ -257,13 +255,6 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
     errors.preferredDeliveryDate = 'Before pickup date.'
   }
 
-  const proposedRate = Number(form.proposedRate)
-  if (!form.proposedRate || Number.isNaN(proposedRate) || proposedRate <= 0) {
-    errors.proposedRate = 'Enter a rate.'
-  } else if (!/^\d+(\.\d{1,2})?$/.test(form.proposedRate)) {
-    errors.proposedRate = 'Max 2 decimals.'
-  }
-
   return errors
 }
 
@@ -315,7 +306,9 @@ export function buildQuoteRow(form: ShipmentForm) {
       ),
       preferred_pickup_date: form.preferredPickupDate,
       payment_terms: form.paymentTerms,
-      proposed_rate: Number(form.proposedRate),
+      // No rate from the client: staff price the quote and send an offer
+      // (send_quote_offer), the client accepts / counters / declines.
+      proposed_rate: null,
       is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
       // Shown as "Deadline date".
       preferred_delivery_date: form.preferredDeliveryDate,
@@ -329,7 +322,7 @@ export function buildQuoteRow(form: ShipmentForm) {
 // The quote_requests columns buildQuoteRow writes -- what quoteToForm
 // needs to read a saved quote back into the form.
 export const SHIPMENT_COLUMNS =
-  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_lines, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
+  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_lines, preferred_pickup_date, payment_terms, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
 
 // The reverse of buildQuoteRow: a saved quote (SHIPMENT_COLUMNS) back
 // into form state, so a rejected quote can be edited and resubmitted.
@@ -357,7 +350,6 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
     cargoLines: rowsToCargoLines(q.cargo_lines),
     preferredPickupDate: text(q.preferred_pickup_date),
     paymentTerms: q.payment_terms in PAYMENT_TERMS_LABELS ? q.payment_terms : 'Cash',
-    proposedRate: text(q.proposed_rate),
     isLastDayOfPortStorage: q.is_last_day_of_port_storage ? 'Yes' : 'No',
     preferredDeliveryDate: text(q.preferred_delivery_date),
   }
@@ -395,6 +387,51 @@ function lineDescriptions(line: any): string[] {
   return Array.from({ length: quantity }, (_, i) => saved[i] ?? '')
 }
 
+// The cargo one trip carries -- the itineraries.cargo_* columns.
+export type TripCargo = {
+  cargo_type: string | null
+  container_type: string | null
+  trailer_type: string | null
+  weight: number | null
+  cargo_description: string | null
+}
+
+// Cargo lines -> one cargo per trip, in line order (line 1's trips first).
+// Approve creates one itinerary per entry.
+export function expandCargoLines(rows: CargoLineRow[]): TripCargo[] {
+  return rows.flatMap((line) =>
+    Array.from({ length: line.quantity }, (_, i) => ({
+      cargo_type: line.cargo_type,
+      container_type: line.container_type,
+      trailer_type: line.trailer_type,
+      weight: line.weight,
+      cargo_description: line.cargo_descriptions[i] ?? '',
+    })),
+  )
+}
+
+// "Container · 40ft skeletal · 25 t" for one trip ('—' if none recorded).
+export function tripCargoLabel(cargo: Partial<TripCargo>): string {
+  const parts = [
+    cargo.cargo_type === 'Loose' ? 'Loose cargo' : cargo.cargo_type,
+    [cargo.container_type, cargo.trailer_type?.toLowerCase()].filter(Boolean).join(' ') || null,
+    cargo.weight != null && cargo.weight > 0 ? `${cargo.weight} t` : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
+// A booking's trips counted by cargo: "2 × Container · 40ft skeletal · 25 t;
+// 1 × Loose cargo · 20ft flatbed · 18 t" ('—' for none). Callers leave out
+// cancelled trips.
+export function groupTripCargo(trips: Partial<TripCargo>[]): string {
+  const counts = new Map<string, number>()
+  for (const trip of trips) {
+    const label = tripCargoLabel(trip)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  return [...counts].map(([label, n]) => `${n} × ${label}`).join('; ') || '—'
+}
+
 // One-line summary of saved cargo lines by trip count, e.g.
 // "8 container · 2 loose" ('—' when there are none).
 export function cargoSummary(rows: CargoLineRow[]): string {
@@ -430,7 +467,9 @@ function rowsToCargoLines(value: any): CargoLine[] {
 // `fields` are the ones the client is sent back to fix on resubmit:
 // they open highlighted in red, on the step that holds them.
 export const REJECTION_TAGS = {
-  Rate: { label: 'Trip rate too low', fields: ['proposedRate'] },
+  // Old quotes only: clients no longer enter a rate (staff offer one), so
+  // this isn't a Reject preset any more -- kept so old tags still read.
+  Rate: { label: 'Trip rate too low', fields: [] },
   Weight: { label: 'Too heavy', fields: ['cargoLines'] },
   Schedule: { label: 'Schedule unavailable', fields: ['preferredPickupDate', 'preferredDeliveryDate'] },
   Terms: { label: 'Payment terms not accepted', fields: ['paymentTerms'] },

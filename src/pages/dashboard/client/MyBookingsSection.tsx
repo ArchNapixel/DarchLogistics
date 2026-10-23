@@ -25,21 +25,21 @@ import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { downpaymentStatus } from '../../../lib/downpayment'
+import { groupTripCargo, tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 
 type Itinerary = {
   itinerary_id: number
   itinerary_status: string
   trip_date_from: string
   trip_date_to: string | null
+  // This trip's own cargo (itineraries.cargo_*).
+  cargo: TripCargo
 }
 
 export type Booking = {
   booking_id: number
   booking_status: string
   booking_date: string
-  cargo_type: string
-  container_type: string
-  trailer_type: string | null
   rate_of_delivery_service: number | null
   // Downpayment inputs (lib/downpayment.ts): trips can't start until it's paid.
   cost_per_trip: number | null
@@ -123,7 +123,7 @@ function MyBookingsSection({
     const { data: bookingRows, error: bookingError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, booking_status, booking_date, cargo_type, container_type, trailer_type, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_status, booking_date, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, place_of_pickup_id, place_of_delivery_id',
       )
       .eq('client_id', id)
       .order('booking_date', { ascending: false })
@@ -157,7 +157,7 @@ function MyBookingsSection({
         ? supabase
             .from('itineraries')
             .select(
-              'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_date_to',
+              'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_date_to, cargo_type, container_type, trailer_type, weight, cargo_description',
             )
             .in('booking_id', bookingIds)
             .order('itinerary_id', { ascending: true })
@@ -189,6 +189,13 @@ function MyBookingsSection({
         itinerary_status: row.itinerary_status,
         trip_date_from: row.trip_date_from,
         trip_date_to: row.trip_date_to,
+        cargo: {
+          cargo_type: row.cargo_type,
+          container_type: row.container_type,
+          trailer_type: row.trailer_type,
+          weight: row.weight,
+          cargo_description: row.cargo_description,
+        },
       })
       itinerariesByBookingId.set(row.booking_id, list)
     })
@@ -197,9 +204,6 @@ function MyBookingsSection({
         booking_id: b.booking_id,
         booking_status: b.booking_status,
         booking_date: b.booking_date,
-        cargo_type: b.cargo_type,
-        container_type: b.container_type,
-        trailer_type: b.trailer_type,
         rate_of_delivery_service: b.rate_of_delivery_service,
         cost_per_trip: b.cost_per_trip,
         amount_paid: b.amount_paid,
@@ -318,11 +322,15 @@ function MyBookingsSection({
             )}
 
             <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-              <Field label="Cargo" value={booking.cargo_type} />
-              <Field
-                label="Trailer"
-                value={`${booking.container_type}${booking.trailer_type ? ` ${booking.trailer_type}` : ''}`}
-              />
+              {/* Cargo is per trip -- counted here, each trip's own below. */}
+              <div className="col-span-2">
+                <Field
+                  label="Cargo"
+                  value={groupTripCargo(
+                    booking.itineraries.filter((i) => i.itinerary_status !== 'Cancelled').map((i) => i.cargo),
+                  )}
+                />
+              </div>
               <Field
                 label="Rate/Trip"
                 value={
@@ -397,6 +405,12 @@ function MyBookingsSection({
                       </p>
                       <StatusBadge status={itinerary.itinerary_status} />
                     </div>
+                    <p className="mt-1 text-sm text-slate-700">
+                      {tripCargoLabel(itinerary.cargo)}
+                      {itinerary.cargo.cargo_description && (
+                        <span className="block text-xs text-slate-500">{itinerary.cargo.cargo_description}</span>
+                      )}
+                    </p>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <Field
                         label="Pickup"

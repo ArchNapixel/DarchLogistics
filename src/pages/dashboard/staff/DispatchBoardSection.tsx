@@ -73,6 +73,7 @@ import EmptyState from '../../../components/EmptyState'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
+import { tripCargoLabel } from '../../../lib/quoteRequest'
 import {
   SUGGESTED_COUNT,
   isOverdue,
@@ -89,7 +90,7 @@ const COMPLETED_DAYS = 30
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
 
 const ITINERARY_COLUMNS =
-  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id'
+  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description'
 
 // One row of ITINERARY_COLUMNS.
 type BoardItineraryRow = {
@@ -104,11 +105,16 @@ type BoardItineraryRow = {
   itinerary_status: string | null
   plate_number: string | null
   trailer_id: number | null
+  // This trip's own cargo (cargo per trip since 2026-10-23).
+  cargo_type: string | null
+  container_type: string | null
+  trailer_type: string | null
+  weight: number | null
+  cargo_description: string | null
 }
 
 type BoardBookingRow = {
   booking_id: number
-  trailer_type: string | null
   hours_per_trip: number | null
   rate_of_delivery_service: number | null
   cost_per_trip: number | null
@@ -138,8 +144,12 @@ type DispatchRow = {
   assigned_helper_name: string | null
   plate_number: string | null
   trailer_id: number | null
-  // From the booking (Flatbed/Skeletal). null = booking has no requirement (older ones).
+  // This trip's trailer type (Flatbed/Skeletal) -- the trailer dropdown only
+  // offers that type. null = no requirement (very old trips).
   required_trailer_type: string | null
+  // This trip's cargo, shown under the route ("Loose cargo · 20ft flatbed · 18 t").
+  cargo_label: string
+  cargo_description: string | null
   // Last free storage day (bookings.storage_deadline): must be Picked Up by
   // 11:59 PM that day. null = not an urgent booking.
   storage_deadline: string | null
@@ -557,6 +567,14 @@ function DispatchTable({
               </td>
               <td className="px-4 py-3 text-neutral-600">
                 {row.pickup_location} → {row.delivery_location}
+                <span className="mt-1 block text-[11px] font-medium text-reports-ink" title={row.cargo_description ?? undefined}>
+                  {row.cargo_label}
+                </span>
+                {row.cargo_description && (
+                  <span className="block max-w-56 truncate text-[11px]" title={row.cargo_description}>
+                    {row.cargo_description}
+                  </span>
+                )}
               </td>
               <td className="px-4 py-3 text-neutral-600">
                 <div className="flex flex-col items-start gap-1">
@@ -751,7 +769,7 @@ function DispatchTable({
                     className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Unassigned</option>
-                    {/* Only trailers of the type the booking asked for (when it asked for one) */}
+                    {/* Only trailers of the type this trip's cargo needs (when set) */}
                     {trailers
                       .filter((t) => !row.required_trailer_type || t.trailer_type === row.required_trailer_type)
                       .map((trailer) => {
@@ -939,7 +957,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, trailer_type, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -958,9 +976,6 @@ function DispatchBoardSection() {
       return
     }
     const bookingTypeRows = bookingTypeResult.rows
-    const trailerTypeByBooking = new Map(
-      bookingTypeRows.map((b) => [b.booking_id as number, b.trailer_type as string | null]),
-    )
     const storageDeadlineByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.storage_deadline]),
     )
@@ -1177,7 +1192,9 @@ function DispatchBoardSection() {
               : null,
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
-          required_trailer_type: trailerTypeByBooking.get(it.booking_id) ?? null,
+          required_trailer_type: it.trailer_type,
+          cargo_label: tripCargoLabel(it),
+          cargo_description: it.cargo_description,
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
         }
       }),
@@ -1506,11 +1523,11 @@ function DispatchBoardSection() {
     previousTrailerId: number | null,
     trailerId: number | null,
   ) {
-    // Guard the dropdown filter: the trailer must match what the booking asked for.
+    // Guard the dropdown filter: the trailer must match this trip's cargo.
     const row = rows.find((r) => r.itinerary_id === itineraryId)
     const picked = trailers.find((t) => t.trailer_id === trailerId)
     if (row?.required_trailer_type && picked && picked.trailer_type !== row.required_trailer_type) {
-      setError(`This booking needs a ${row.required_trailer_type} trailer.`)
+      setError(`This trip needs a ${row.required_trailer_type} trailer.`)
       return
     }
 

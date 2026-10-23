@@ -12,7 +12,7 @@ import {
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
-import { formatMoney, formatDate } from '../lib/format'
+import { formatDate } from '../lib/format'
 
 const SLIDE_MS = 300
 
@@ -92,8 +92,6 @@ export default function QuoteSummaryDrawer({
   if (!mounted) return null
 
   const count = totalTrips(form.cargoLines)
-  const rate = Number(form.proposedRate)
-  const total = rate * count
   const urgent = form.isLastDayOfPortStorage === 'Yes'
 
   return (
@@ -179,13 +177,10 @@ export default function QuoteSummaryDrawer({
             </div>
           </Block>
 
-          {/* The number people care about most */}
+          {/* No rate on the request: staff price it on Review and send an offer. */}
           <div className="bg-brand-navy p-4 text-white">
-            <p className="text-xs font-semibold tracking-wide uppercase opacity-70">Proposed total</p>
-            <p className="mt-1 text-3xl font-semibold">{formatMoney(total)}</p>
-            <p className="mt-1 text-sm opacity-80">
-              {formatMoney(rate)} × {count} {count === 1 ? 'delivery' : 'deliveries'}
-            </p>
+            <p className="text-xs font-semibold tracking-wide uppercase opacity-70">Rate</p>
+            <p className="mt-1 text-sm opacity-90">Priced by staff on Review, then sent to the client as an offer.</p>
           </div>
         </div>
 

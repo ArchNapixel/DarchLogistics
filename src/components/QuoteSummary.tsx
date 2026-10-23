@@ -10,7 +10,7 @@ import {
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
-import { formatMoney, formatDate } from '../lib/format'
+import { formatDate } from '../lib/format'
 
 function Muted({ children }: { children: ReactNode }) {
   return <span className="text-slate-400">{children}</span>
@@ -83,9 +83,7 @@ export function QuoteSummary({
   onEditStep?: (step: 'route' | 'cargo' | 'schedule') => void
 }) {
   const count = totalTrips(form.cargoLines)
-  const rate = Number(form.proposedRate)
   const hasCount = Number.isInteger(count) && count > 0
-  const hasRate = rate > 0
 
   return (
     <div>
@@ -134,16 +132,10 @@ export function QuoteSummary({
           )}
         </span>
         <span>Payment: {PAYMENT_TERMS_LABELS[form.paymentTerms]}</span>
-        {hasRate && (
-          <span className="mt-1 flex items-baseline justify-between border-t border-dashed border-slate-200 pt-2">
-            <span className="text-slate-600">
-              {formatMoney(rate)} × {hasCount ? count : 1}
-            </span>
-            <span className="text-base font-semibold text-slate-900">
-              {formatMoney((rate * (hasCount ? count : 1)))}
-            </span>
-          </span>
-        )}
+        {/* No price here: Darch Logistics sends the rate as an offer. */}
+        <span className="mt-1 border-t border-dashed border-slate-200 pt-2 text-slate-600">
+          Rate: we'll send you our offer
+        </span>
       </Section>
     </div>
   )

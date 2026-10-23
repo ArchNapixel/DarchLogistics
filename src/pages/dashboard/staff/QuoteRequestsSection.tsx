@@ -1,11 +1,16 @@
-// QuoteRequestsSection: the Quotations page. Three tabs:
-// - Pending: quote requests waiting for review. Clicking "Review" opens
-//   QuoteReviewModal, which handles the actual Approve/Reject logic.
+// QuoteRequestsSection: the Quotations page. Clients don't set a rate --
+// staff price each quote and send an offer the client accepts, counters or
+// declines (lib/quoteOffers.ts). Four tabs:
+// - Needs pricing: Pending (new) + Countered (the client answered with
+//   their own rate/dates). "Review" opens QuoteReviewModal to send an
+//   offer, accept a counter, or reject.
+// - Waiting on client: Offered -- read-only there, staff can withdraw it
+//   or record a phone/walk-in client's reply.
 // - Approved: every approved quote with the booking it became
 //   (bookings.quote_request_id) and the client, linking to that booking.
-// - Rejected: rejected quotes with the preset tag + reason staff gave
-//   (a quote the client resubmitted is back under Pending).
-// Approved/Rejected are read-only and load when their tab is opened.
+// - Rejected / Declined: rejected by us (preset tag + reason) or declined
+//   by the client (their reason).
+// Approved and Rejected / Declined are read-only and load when opened.
 // One search box (client name or quote reference) filters whichever tab is open.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -21,7 +26,7 @@ import { usePaged } from '../../../lib/usePaged'
 
 // Rows per page on every tab (Pending, Approved, Rejected).
 const QUOTES_PER_PAGE = 10
-import { REJECTION_TAGS, type RejectionTag } from '../../../lib/quoteRequest'
+import { REJECTION_TAGS, cargoSummary, parseCargoLines, type RejectionTag } from '../../../lib/quoteRequest'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -54,10 +59,14 @@ export type QuoteRequest = {
   pickup_lng: number | null
   delivery_lat: number | null
   delivery_lng: number | null
-  cargo_type: string
-  cargo_description: string
-  weight: number
-  container_type: string
+  // Cargo per trip, as lines (jsonb, lib/quoteRequest.ts CargoLineRow --
+  // read with parseCargoLines). The single-cargo columns below are from
+  // before 2026-10-23 and no longer written.
+  cargo_lines: unknown
+  cargo_type: string | null
+  cargo_description: string | null
+  weight: number | null
+  container_type: string | null
   trailer_type: string | null
   payment_terms: string
   proposed_rate: number | null
@@ -69,6 +78,15 @@ export type QuoteRequest = {
   // preferred_pickup_date (lib/storageDeadline.ts).
   is_last_day_of_port_storage: boolean | null
   delivery_order_count: number | null
+  // Where the price negotiation is (lib/quoteOffers.ts): Pending, Offered,
+  // Countered, Approved, Rejected, Declined.
+  request_status: string
+  // Saved with staff's offer (send_quote_offer) and copied to the booking.
+  estimated_distance_km: number | null
+  hours_per_trip: number | null
+  cost_per_trip: number | null
+  // The client's reason when they declined an offer.
+  decline_reason: string | null
   // How many times the client edited and resent it after a Reject, and
   // the reason staff gave the last time (resubmit_quote_request).
   resubmit_count: number
@@ -76,7 +94,7 @@ export type QuoteRequest = {
   created_at: string
 }
 
-type Tab = 'pending' | 'approved' | 'rejected'
+type Tab = 'pricing' | 'waiting' | 'approved' | 'closed'
 
 // ---- Shared table pieces (same look on all three tabs) -------------
 
@@ -243,7 +261,7 @@ function matchesSearch(q: { client_name: string; reference_code: string | null; 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function QuoteRequestsSection() {
-  const [tab, setTab] = useState<Tab>('pending')
+  const [tab, setTab] = useState<Tab>('pricing')
   const [search, setSearch] = useState('')
   const [quotes, setQuotes] = useState<QuoteRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -264,7 +282,8 @@ function QuoteRequestsSection() {
     const { data, error } = await supabase
       .from('quote_requests')
       .select('*')
-      .eq('request_status', 'Pending')
+      // The open ones: staff's turn (Pending, Countered) or the client's (Offered).
+      .in('request_status', ['Pending', 'Countered', 'Offered'])
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -278,24 +297,28 @@ function QuoteRequestsSection() {
     setLoading(false)
   }
 
-  const visiblePending = quotes.filter((q) => matchesSearch(q, search))
-  const pendingPaged = usePaged(visiblePending, search, QUOTES_PER_PAGE)
+  const pricingQuotes = quotes.filter((q) => q.request_status !== 'Offered')
+  const waitingQuotes = quotes.filter((q) => q.request_status === 'Offered')
+  const visiblePending = (tab === 'waiting' ? waitingQuotes : pricingQuotes).filter((q) => matchesSearch(q, search))
+  const pendingPaged = usePaged(visiblePending, `${tab}|${search}`, QUOTES_PER_PAGE)
   const today = toManilaDate(new Date())
 
-  // Called by the modal after a successful approve/reject -- the quote is
-  // no longer Pending, so just remove it from this list.
+  // Called by the modal after an offer / accept / withdraw / reject -- the
+  // quote moved tab, so reload the open ones.
   function handleResolved(quoteRequestId: number) {
     setQuotes((prev) =>
       prev.filter((q) => q.quote_request_id !== quoteRequestId),
     )
     setSelectedQuote(null)
+    loadQuotes()
+    setRefreshKey((k) => k + 1)
   }
 
   return (
     <div>
       <PageHeader
         title="Quotations"
-        subtitle="Quote requests: waiting for review, approved into bookings, and rejected."
+        subtitle="Price each request and send the client an offer; it becomes a booking once a rate is accepted."
         actions={
           <div className="flex gap-2">
             {/* The list doesn't update by itself -- quotes other admins
@@ -323,9 +346,10 @@ function QuoteRequestsSection() {
 
       <div className="flex flex-wrap items-center gap-2">
         {([
-          ['pending', 'Pending'],
+          ['pricing', 'Needs pricing'],
+          ['waiting', 'Waiting on client'],
           ['approved', 'Approved'],
-          ['rejected', 'Rejected'],
+          ['closed', 'Rejected / Declined'],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
@@ -338,11 +362,11 @@ function QuoteRequestsSection() {
             }`}
           >
             {label}
-            {key === 'pending' && !loading && (
+            {(key === 'pricing' || key === 'waiting') && !loading && (
               <span
                 className={`px-1.5 text-xs ${tab === key ? 'bg-white text-primary' : 'bg-primary text-white'}`}
               >
-                {quotes.length}
+                {key === 'pricing' ? pricingQuotes.length : waitingQuotes.length}
               </span>
             )}
           </button>
@@ -359,17 +383,17 @@ function QuoteRequestsSection() {
         </label>
       </div>
 
-      {tab !== 'pending' ? (
+      {tab === 'approved' || tab === 'closed' ? (
         // key: reload when switching between the two history tabs or on Refresh
         <QuoteHistory
           key={`${tab}-${refreshKey}`}
-          status={tab === 'approved' ? 'Approved' : 'Rejected'}
+          status={tab === 'approved' ? 'Approved' : 'Closed'}
           search={search}
         />
       ) : (
         <TableCard
           pager={pendingPaged.pager}
-          summary={`${plural(visiblePending.length, 'quotation')} waiting for review`}
+          summary={`${plural(visiblePending.length, 'quotation')} ${tab === 'waiting' ? 'waiting on the client' : 'to price'}`}
           head={
             <>
               <th className={TH}>Quote</th>
@@ -378,6 +402,7 @@ function QuoteRequestsSection() {
               <th className={TH}>Cargo type</th>
               <th className={TH}>Pickup date</th>
               <th className={TH}>Deliveries</th>
+              <th className={TH}>Rate</th>
               <th className={TH}>
                 <span className="sr-only">Action</span>
               </th>
@@ -385,14 +410,18 @@ function QuoteRequestsSection() {
           }
         >
           {loading ? (
-            <MessageRow colSpan={7}>Loading quote requests...</MessageRow>
+            <MessageRow colSpan={8}>Loading quote requests...</MessageRow>
           ) : error ? (
-            <MessageRow colSpan={7} tone="text-red-700">
+            <MessageRow colSpan={8} tone="text-red-700">
               {error}
             </MessageRow>
           ) : visiblePending.length === 0 ? (
-            <MessageRow colSpan={7}>
-              {search ? 'No pending quotes match your search.' : 'No pending quote requests.'}
+            <MessageRow colSpan={8}>
+              {search
+                ? 'No quotes match your search.'
+                : tab === 'waiting'
+                  ? 'No offers waiting on a client.'
+                  : 'Nothing to price right now.'}
             </MessageRow>
           ) : (
             pendingPaged.rows.map((quote) => (
@@ -400,7 +429,7 @@ function QuoteRequestsSection() {
                 <QuoteCell q={quote} showDate={false} />
                 <td className={`${TD} font-semibold text-slate-900`}>{quote.client_name}</td>
                 <RouteCell q={quote} />
-                <td className={`${TD} text-slate-900`}>{quote.cargo_type}</td>
+                <td className={`${TD} text-slate-900`}>{cargoSummary(parseCargoLines(quote.cargo_lines))}</td>
                 <td className={`${TD} text-slate-900`}>
                   <span className="whitespace-nowrap">
                     {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
@@ -417,12 +446,28 @@ function QuoteRequestsSection() {
                   )}
                 </td>
                 <td className={`${TD} text-slate-900`}>{quote.delivery_order_count ?? '—'}</td>
+                <td className={`${TD} whitespace-nowrap`}>
+                  {quote.request_status === 'Pending' ? (
+                    <span className="text-slate-500">Not priced</span>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-slate-900">{formatMoney(quote.proposed_rate ?? 0)}</span>
+                      <span
+                        className={`mt-1 block w-fit px-1.5 py-0.5 text-xs font-medium ${
+                          quote.request_status === 'Countered' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {quote.request_status === 'Countered' ? "Client's counter" : 'Our offer'}
+                      </span>
+                    </>
+                  )}
+                </td>
                 <td className={`${TD} text-right`}>
                   <button
                     onClick={() => setSelectedQuote(quote)}
                     className="btn-primary px-5 py-2 text-sm font-semibold"
                   >
-                    Review
+                    {tab === 'waiting' ? 'View' : 'Review'}
                   </button>
                 </td>
               </tr>
@@ -468,6 +513,8 @@ type HistoryRow = {
   delivery_order_count: number | null
   rejection_tag: string | null
   rejection_reason: string | null
+  request_status: string
+  decline_reason: string | null
   resubmit_count: number
   created_at: string
 }
@@ -490,13 +537,14 @@ type HistoryResult = {
 }
 
 // Loads one history tab. Throws the Supabase message on failure.
-async function fetchQuoteHistory(status: 'Approved' | 'Rejected'): Promise<HistoryResult> {
+async function fetchQuoteHistory(status: 'Approved' | 'Closed'): Promise<HistoryResult> {
   const { data, error: quotesError } = await supabase
     .from('quote_requests')
     .select(
-      'quote_request_id, reference_code, client_name, pickup_city, pickup_barangay, pickup_location_text, delivery_city, delivery_barangay, delivery_location_text, proposed_rate, delivery_order_count, rejection_tag, rejection_reason, resubmit_count, created_at',
+      'quote_request_id, reference_code, client_name, pickup_city, pickup_barangay, pickup_location_text, delivery_city, delivery_barangay, delivery_location_text, proposed_rate, delivery_order_count, rejection_tag, rejection_reason, request_status, decline_reason, resubmit_count, created_at',
     )
-    .eq('request_status', status)
+    // Closed = rejected by us or declined by the client.
+    .in('request_status', status === 'Approved' ? ['Approved'] : ['Rejected', 'Declined'])
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT)
 
@@ -534,7 +582,7 @@ async function fetchQuoteHistory(status: 'Approved' | 'Rejected'): Promise<Histo
   }
 }
 
-function QuoteHistory({ status, search }: { status: 'Approved' | 'Rejected'; search: string }) {
+function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; search: string }) {
   const [result, setResult] = useState<HistoryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const loading = !result && !error
@@ -663,7 +711,16 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Rejected'; sea
                       {tag}
                     </span>
                   )}
-                  <span className="block">{q.rejection_reason ?? '—'}</span>
+                  {q.request_status === 'Declined' ? (
+                    <>
+                      <span className="mb-1 inline-block bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
+                        Declined by client
+                      </span>
+                      <span className="block">{q.decline_reason ?? '—'}</span>
+                    </>
+                  ) : (
+                    <span className="block">{q.rejection_reason ?? '—'}</span>
+                  )}
                 </td>
               )}
             </tr>

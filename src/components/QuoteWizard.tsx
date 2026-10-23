@@ -35,7 +35,6 @@ const STEPS = [
       'preferredPickupDate',
       'isLastDayOfPortStorage',
       'preferredDeliveryDate',
-      'proposedRate',
       'paymentTerms',
     ],
   },

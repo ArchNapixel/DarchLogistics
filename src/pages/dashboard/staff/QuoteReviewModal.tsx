@@ -1,63 +1,40 @@
-// QuoteReviewModal: full detail view for one quote request, with an
-// editable estimated trip distance (bookings.estimated_distance_km is
-// required), plus Approve/Reject actions. The proposed rate, payment
-// terms and trip start date (= preferred pickup date) are the client's
-// and read-only -- to change them, Reject with a preset reason.
-// Staff also enter the booking's hours per trip (bookings.hours_per_trip).
-// The trips run one after another: trip 1 starts on the pickup date at
-// Settings' default trip start time (default_trip_start_time, 6 AM if
-// unset), trip 2 starts when trip 1 ends, and so on (chainSlots).
-// Approve also saves the estimated cost per trip (bookings.cost_per_trip,
-// the profitability panel's diesel + commission + per-trip fee at today's
-// Settings) -- the client's downpayment is worked out from it
-// (lib/downpayment.ts), and no trip can start until it's paid.
+// QuoteReviewModal: staff side of a quote's price negotiation.
+//
+// Clients don't enter a rate any more. Staff price the quote here and SEND
+// AN OFFER; the client accepts it, counters (their own rate and/or dates),
+// or declines with a reason -- see lib/quoteOffers.ts and the database
+// functions send_quote_offer / respond_to_quote_offer / accept_quote_counter
+// (SQL given in chat 2026-10-23). By request_status:
+//   Pending   -> staff enter rate per trip, distance, hours per trip and
+//                the dates, check the profitability panel, then Send offer
+//                (or Reject, as before -- the client may edit & resubmit).
+//   Countered -> the client's rate/dates are shown next to our last offer;
+//                staff Accept the client's rate (booking created), send a
+//                new offer, or Reject.
+//   Offered   -> waiting on the client: staff can Withdraw the offer (back
+//                to Pending), or record a phone / walk-in client's reply
+//                for them (accept / counter / decline).
+// No expiry and no limit on rounds; every offer/counter/answer is kept in
+// quote_rate_offers.
+//
+// The booking is created INSIDE the database when the offer is accepted
+// (create_booking_from_quote: client, places, route_cache, booking, one
+// itinerary per cargo with chained time slots), all in one transaction --
+// the old step-by-step JS Approve with "needs manual review" is gone.
 //
 // Distance, most precise source first (the field stays editable either
 // way):
-//   1. Both ends have an exact map pin (quote_requests.*_lat/*_lng, set
-//      by LocationPicker) -> OSRM driving distance between the two pins.
-//   2. `route_cache` has a distance for this barangay pair (one row per
-//      unique place pair, place_id_a always the lower id, so direction
-//      doesn't matter) from a previous approval.
-//   3. Best-effort estimate between the two barangays' centres
-//      (Nominatim geocode of the city/barangay text + OSRM).
-// Approve saves whatever value is showing to route_cache so a later
-// quote on that same barangay pair *without* pins reuses it.
+//   1. Both ends have an exact map pin -> OSRM driving distance.
+//   2. `route_cache` has a distance for this barangay pair.
+//   3. Best-effort estimate between the two barangays' centres.
+// A distance/hours saved with an earlier offer is used as-is.
 //
-// Profitability estimate: a side panel that appears once a distance is
-// entered, using `app_settings` (diesel_price_per_liter,
-// driver_commission_rate, driver_per_trip_fee) to estimate diesel cost
-// (price/liter * km), driver commission cost (commission% * proposed
-// rate), and a flat driver per-trip fee. If the three combined reach
-// 50% of the rate, a warning is shown -- this never blocks or
-// auto-rejects anything, it's just information for staff to weigh
-// before clicking Approve.
-//
-// Approve first CLAIMS the quote (Pending -> Approved, only if still
-// Pending, checked with .select().maybeSingle()) so two admins can never
-// both approve it; if a step fails before the booking exists, the claim
-// is released back to Pending. Reject has the same "still Pending" guard.
-// Then it does 5 steps in order: resolve the client -- the `client_id`
-// staff already linked on the request if there is one, else an existing
-// `clients` row matching by email (clients.email is unique), else a new
-// one created from the quote's free-text client info -- reuse existing `places` rows by
-// city+barangay (trimmed, case-insensitive -- barangay is the routing/
-// cache unit, same idea as the client email check) or create them if
-// this is a new barangay, update the quote_request, create the
-// `bookings` row using those IDs (also copying the quote's free-text
-// landmark detail onto pickup/delivery_address_detail, since bookings
-// only ever had place_id before), then create ONE `itinerary` per
-// delivery order (quote.delivery_order_count) linked to that booking --
-// a booking can cover multiple deliverables (e.g. several containers),
-// each needing its own truck+trailer+driver, so each one gets its own
-// itinerary row (status 'Awaiting', no truck/trailer/driver assigned
-// yet -- that happens later on the Dispatch Board). If a later step
-// fails, earlier ones have already been saved (no rollback) -- fine for
-// now, but worth moving into a single database function later for
-// atomicity. The booking->itinerary step is the one most likely to
-// leave things half-done (quote Approved + booking created, but zero or
-// partial itineraries), so that failure is surfaced with an explicit
-// "needs manual review" message instead of a generic one.
+// Profitability panel: diesel (price/liter x km), driver commission
+// (commission% x rate) and the per-trip fee, against rate x trips, with a
+// warning at 50% (lib/tripCost.ts). Plus a pricing guide: the break-even
+// rate and the rate at the 50% line (lib/quotePricing.ts), and on a
+// counter-offer, our last offer vs the client's rate side by side. The
+// cost per trip saved with an offer is what the downpayment uses.
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
@@ -72,10 +49,24 @@ import {
   MAX_DELIVERY_ORDERS,
   PAYMENT_TERMS_LABELS,
   REJECTION_TAGS,
+  expandCargoLines,
+  parseCargoLines,
+  tripCargoLabel,
   type RejectionTag,
 } from '../../../lib/quoteRequest'
-import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentFor } from '../../../lib/downpayment'
+import { rateForCostShare } from '../../../lib/quotePricing'
+import {
+  QUOTE_STATUS_LABELS,
+  isProposal,
+  loadQuoteOffers,
+  offerActionLabel,
+  offerChanges,
+  previousProposal,
+  type QuoteOfferRow,
+} from '../../../lib/quoteOffers'
+import OfferComparison from '../../../components/OfferComparison'
+import { promptDialog } from '../../../components/ConfirmDialog'
 
 // Used when Settings has no default_trip_start_time row: 6 AM.
 const DEFAULT_TRIP_START_MINUTES = 360
@@ -85,59 +76,9 @@ const MAX_HOURS_PER_TRIP = 72
 const fieldClasses =
   'w-full border-2 border-slate-300 bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary focus:outline-none'
 
-// Looks up an existing place by city+barangay (trimmed, case-insensitive)
-// before creating a new one -- barangay is the routing/cache unit (see
-// route_cache below), not the free-text landmark, so two quotes into the
-// same barangay always resolve to the same place_id no matter how
-// differently their landmark text reads. A database-level unique index
-// on (lower(trim(city)), lower(trim(barangay))) backs this up in case
-// some other code path ever skips this check.
-async function findOrCreatePlace(
-  city: string | null,
-  barangay: string | null,
-): Promise<{ placeId: number } | { error: string }> {
-  if (!city || !barangay) {
-    return { error: 'This quote is missing a city/barangay for one of its locations.' }
-  }
-
-  const trimmedCity = city.trim()
-  const trimmedBarangay = barangay.trim()
-
-  const { data: existingPlace, error: existingPlaceError } = await supabase
-    .from('places')
-    .select('place_id')
-    .ilike('city', trimmedCity)
-    .ilike('barangay', trimmedBarangay)
-    .maybeSingle()
-
-  if (existingPlaceError) {
-    return { error: existingPlaceError.message }
-  }
-
-  if (existingPlace) {
-    return { placeId: existingPlace.place_id }
-  }
-
-  const { data: newPlace, error: insertError } = await supabase
-    .from('places')
-    .insert({
-      place_name: `Brgy. ${trimmedBarangay}, ${trimmedCity}`,
-      city: trimmedCity,
-      barangay: trimmedBarangay,
-    })
-    .select('place_id')
-    .single()
-
-  if (insertError || !newPlace) {
-    return { error: insertError?.message ?? 'Could not create location.' }
-  }
-
-  return { placeId: newPlace.place_id }
-}
-
-// Read-only version of the lookup above -- used just to preview whether
-// a cached distance exists before Approve is clicked. Never creates a
-// place, since the quote might still get Rejected.
+// Looks up a place by city+barangay (trimmed, case-insensitive) -- only to
+// preview whether a cached distance exists. Never creates a place; the
+// database does that when the booking is created.
 async function findPlaceIdByCityBarangay(
   city: string | null,
   barangay: string | null,
@@ -274,20 +215,39 @@ function QuoteReviewModal({
   onClose: () => void
   onResolved: (quoteRequestId: number) => void
 }) {
-  // Rate, payment terms and trip start date are the client's own -- staff
-  // can't change them here. If one is wrong, Reject with the matching
-  // preset (Trip rate too low / Payment terms / Schedule) and the client
-  // fixes it and resubmits. Trip start = the client's preferred pickup date.
-  const proposedRate = quote.proposed_rate?.toString() ?? ''
+  // Payment terms stay the client's; a wrong one is still a Reject preset.
   const paymentTerms = quote.payment_terms
-  const tripDateFrom = quote.preferred_pickup_date ?? ''
+  // Where the negotiation is (header comment): Pending / Countered = staff's
+  // turn to price it, Offered = waiting on the client.
+  const status = quote.request_status
+  const waitingOnClient = status === 'Offered'
+  const countered = status === 'Countered'
+  // What staff offer: rate per trip + dates, prefilled with what's on the
+  // quote now (the client's counter, or an old quote's own rate).
+  const [rateInput, setRateInput] = useState(quote.proposed_rate != null ? String(quote.proposed_rate) : '')
+  const [offerPickupDate, setOfferPickupDate] = useState(quote.preferred_pickup_date ?? '')
+  const [offerDeadline, setOfferDeadline] = useState(quote.preferred_delivery_date ?? '')
+  const [offerNote, setOfferNote] = useState('')
+  // Trip 1 starts on the pickup date being offered.
+  const tripDateFrom = offerPickupDate
+  // Every offer / counter / answer so far (quote_rate_offers), oldest first.
+  const [history, setHistory] = useState<QuoteOfferRow[]>([])
+  const lastOurOffer = [...history].reverse().find((h) => h.party === 'Business' && h.action === 'Offer')
+  const lastClientMove = [...history].reverse().find((h) => h.party === 'Client')
   // Last free storage day: every trip must be Picked Up by 11:59 PM on the
   // pickup date, so the trips all start together (one truck each) instead
   // of back to back. Saved as bookings.storage_deadline on Approve.
   const urgent = quote.is_last_day_of_port_storage === true
-  const [estimatedDistanceKm, setEstimatedDistanceKm] = useState('')
+  // The client's cargo lines, and the cargo of each trip they turn into
+  // (trip 1 = line 1's first trip...). Approve creates one itinerary each.
+  const cargoLines = parseCargoLines(quote.cargo_lines)
+  const tripCargo = expandCargoLines(cargoLines)
+  // A distance / hours saved with an earlier offer are reused as-is.
+  const [estimatedDistanceKm, setEstimatedDistanceKm] = useState(
+    quote.estimated_distance_km != null ? String(quote.estimated_distance_km) : '',
+  )
   // Length of each trip's time slot (bookings.hours_per_trip).
-  const [hoursPerTrip, setHoursPerTrip] = useState('')
+  const [hoursPerTrip, setHoursPerTrip] = useState(quote.hours_per_trip != null ? String(quote.hours_per_trip) : '')
   // Inline error under the hours box (checked on blur and on Approve).
   const [hoursError, setHoursError] = useState<string | null>(null)
   const hoursInputRef = useRef<HTMLInputElement>(null)
@@ -304,10 +264,9 @@ function QuoteReviewModal({
   // Preset picked in the Reject form -- tells the client which field to
   // fix on resubmit (REJECTION_TAGS in lib/quoteRequest.ts).
   const [rejectTag, setRejectTag] = useState<RejectionTag | null>(null)
-  const [approvedBookingId, setApprovedBookingId] = useState<number | null>(
-    null,
-  )
-  const [itinerariesCreated, setItinerariesCreated] = useState(0)
+  // Set after an action (offer sent, booking created...): the message shown
+  // instead of the form. The quote has left its tab, so closing drops it.
+  const [doneMessage, setDoneMessage] = useState<string | null>(null)
   const [dieselPricePerLiter, setDieselPricePerLiter] = useState<number | null>(
     null,
   )
@@ -317,19 +276,23 @@ function QuoteReviewModal({
   const [driverPerTripFee, setDriverPerTripFee] = useState<number | null>(
     null,
   )
-  // True once staff typed in the distance box -- the background estimate
-  // below must never overwrite their number.
-  const distanceTypedRef = useRef(false)
-  // True once this quote is no longer Pending (our own Approve claimed
-  // it), so closing the modal must also drop it from the Pending list.
-  const [claimed, setClaimed] = useState(false)
+  // True once staff typed in the distance box (or it came saved with an
+  // earlier offer) -- the background estimate must never overwrite it.
+  const distanceTypedRef = useRef(quote.estimated_distance_km != null)
 
-  // Close: if the quote already left Pending, tell the list to drop it
-  // (✕ after an approval used to leave it there, ready to approve twice).
+  // Close: if the quote already left its tab, tell the list to drop it.
   function close() {
-    if (claimed) onResolved(quote.quote_request_id)
+    if (doneMessage) onResolved(quote.quote_request_id)
     else onClose()
   }
+
+  // The negotiation history, for the left column and the counter compare.
+  useEffect(() => {
+    loadQuoteOffers(quote.quote_request_id).then(({ rows, error: historyError }) => {
+      if (historyError) setError(`Couldn't load the offer history (${historyError}).`)
+      else setHistory(rows)
+    })
+  }, [quote.quote_request_id])
 
   // Load the settings the profitability panel needs. If any aren't
   // configured yet, that value stays null and the panel shows a note
@@ -480,336 +443,235 @@ function QuoteReviewModal({
     quote.delivery_lng,
   ])
 
-  async function handleApprove() {
-    const rateValue = Number(proposedRate)
-    if (!proposedRate || rateValue <= 0) {
-      setError('This quote has no proposed rate. Reject it ("Trip rate too low") so the client can add one.')
-      return
+  // Checks staff's price before it goes out. Returns the numbers, or null
+  // (the problem is already shown).
+  async function checkOffer(): Promise<{ rate: number; distance: number; hours: number } | null> {
+    const rate = Number(rateInput)
+    if (!rateInput || !(rate > 0)) {
+      setError('Enter the rate per trip to offer.')
+      return null
     }
-
-    const distanceValue = Number(estimatedDistanceKm)
-    if (!estimatedDistanceKm || distanceValue <= 0) {
-      setError('Enter the estimated trip distance before approving.')
-      return
+    if (!/^\d+(\.\d{1,2})?$/.test(rateInput)) {
+      setError('Rate per trip: max 2 decimals.')
+      return null
     }
-
-    // Checked before the storage-day confirm below, so a missing hours
-    // value is fixed first. Shown under the box, not as a top error.
+    const distance = Number(estimatedDistanceKm)
+    if (!estimatedDistanceKm || !(distance > 0)) {
+      setError('Enter the estimated trip distance.')
+      return null
+    }
+    // Shown under the box, not as a top error.
     const hoursMessage = hoursProblem(hoursPerTrip)
+    if (hoursMessage) {
+      setHoursError(hoursMessage)
+      hoursInputRef.current?.focus()
+      return null
+    }
+    if (!offerPickupDate) {
+      setError('Enter the pickup date.')
+      return null
+    }
+    if (offerDeadline && offerDeadline < offerPickupDate) {
+      setError('The deadline is before the pickup date.')
+      return null
+    }
+    // The downpayment is worked out from the trip cost, so it must be known.
+    if (!canCalculateProfitability) {
+      setError(
+        "The trip cost (and so the client's downpayment) can't be worked out -- check that Settings has the diesel price, driver commission rate and per-trip fee.",
+      )
+      return null
+    }
+    if (tripCargo.length === 0) {
+      setError('This quote has no cargo lines. Reject it ("Other") so the client adds the cargo.')
+      return null
+    }
+    if (tripCargo.length > MAX_DELIVERY_ORDERS) {
+      setError(
+        `This quote asks for ${tripCargo.length} trips (max ${MAX_DELIVERY_ORDERS}). Reject it ("Other") so the client splits it into smaller quotes.`,
+      )
+      return null
+    }
+    // The storage day already passed: the free storage is gone, so ask first.
+    if (
+      urgent &&
+      offerPickupDate < toManilaDate(new Date()) &&
+      !(await confirmDialog({
+        title: 'Storage day already passed',
+        message: `The last free storage day (${formatDate(offerPickupDate)}) is already over. Continue anyway?`,
+        confirmLabel: 'Continue anyway',
+        danger: true,
+      }))
+    ) {
+      return null
+    }
+    return { rate, distance, hours: Number(hoursPerTrip) }
+  }
+
+  // Pending / Countered -> Offered. The client then answers it.
+  async function handleSendOffer() {
+    const offer = await checkOffer()
+    if (!offer) return
+    setSubmitting(true)
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('send_quote_offer', {
+      p_quote_id: quote.quote_request_id,
+      p_rate: offer.rate,
+      p_pickup_date: offerPickupDate,
+      p_deadline_date: offerDeadline || null,
+      p_distance_km: offer.distance,
+      p_hours_per_trip: offer.hours,
+      p_cost_per_trip: costPerTrip,
+      p_note: offerNote,
+    })
+    setSubmitting(false)
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+    setDoneMessage(
+      `Offer sent: ${formatMoney(offer.rate)} per trip × ${deliveryCount} = ${formatMoney(offer.rate * deliveryCount)}. ` +
+        'The client can accept it, counter it or decline it from their portal. It is now under "Waiting on client".',
+    )
+  }
+
+  // Countered: take the client's rate and dates -> the booking is created.
+  async function handleAcceptCounter() {
+    const counterRate = quote.proposed_rate ?? 0
+    const distance = Number(estimatedDistanceKm)
+    const hoursMessage = hoursProblem(hoursPerTrip)
+    if (!(distance > 0)) {
+      setError('Enter the estimated trip distance.')
+      return
+    }
     if (hoursMessage) {
       setHoursError(hoursMessage)
       hoursInputRef.current?.focus()
       return
     }
-
-    if (!tripDateFrom) {
-      setError('This quote has no pickup date. Reject it ("Schedule unavailable") so the client can add one.')
+    if (counterAt === null) {
+      setError("The trip cost can't be worked out -- check the Settings (diesel price, commission, per-trip fee).")
       return
     }
+    const ok = await confirmDialog({
+      title: `Accept ${formatMoney(counterRate)} per trip?`,
+      message: `This creates the booking now: ${deliveryCount} trips, contract ${formatMoney(counterRate * deliveryCount)}, pickup ${
+        quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'
+      }.`,
+      confirmLabel: 'Accept and create booking',
+    })
+    if (!ok) return
+    setSubmitting(true)
+    setError(null)
+    const { data: bookingId, error: rpcError } = await supabase.rpc('accept_quote_counter', {
+      p_quote_id: quote.quote_request_id,
+      p_distance_km: distance,
+      p_hours_per_trip: Number(hoursPerTrip),
+      p_cost_per_trip: counterAt.costPerTrip,
+    })
+    setSubmitting(false)
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+    setDoneMessage(
+      `Client's rate accepted. Booking #${bookingId} was created with ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} ` +
+        '(status "Awaiting"). Assign a truck, trailer and driver to each from the Dispatch Board.',
+    )
+  }
 
-    // The storage day already passed: the free storage is gone, so ask first.
-    if (
-      urgent &&
-      tripDateFrom < toManilaDate(new Date()) &&
-      !(await confirmDialog({
-        title: 'Storage day already passed',
-        message: `The last free storage day (${formatDate(tripDateFrom)}) is already over. Approve anyway?`,
-        confirmLabel: 'Approve anyway',
+  // Offered -> back to Pending (e.g. a wrong rate went out).
+  async function handleWithdraw() {
+    const ok = await confirmDialog({
+      title: 'Withdraw this offer?',
+      message: 'The client can no longer accept it. The quote goes back to "Needs pricing" so you can send a new one.',
+      confirmLabel: 'Withdraw offer',
+      danger: true,
+    })
+    if (!ok) return
+    setSubmitting(true)
+    setError(null)
+    const { data: withdrawn, error: withdrawError } = await supabase
+      .from('quote_requests')
+      .update({ request_status: 'Pending' })
+      .eq('quote_request_id', quote.quote_request_id)
+      .eq('request_status', 'Offered')
+      .select('quote_request_id')
+      .maybeSingle()
+    setSubmitting(false)
+    if (withdrawError) {
+      setError(withdrawError.message)
+      return
+    }
+    if (!withdrawn) {
+      setError('The client already answered this offer. Close and refresh to see their reply.')
+      return
+    }
+    setDoneMessage('Offer withdrawn. The quote is back under "Needs pricing".')
+  }
+
+  // Offered: a phone / walk-in client answered -- staff enter it for them
+  // (same database function the client portal uses; logged as by staff).
+  async function handleRecordReply(action: 'accept' | 'counter' | 'decline') {
+    let rate: number | null = null
+    let note: string | null = null
+    if (action === 'counter') {
+      const typed = await promptDialog({
+        title: "Client's rate per trip",
+        message: 'What rate per trip did the client ask for? (Dates: change them below the offer if they asked for other dates.)',
+        confirmLabel: 'Record counter-offer',
+      })
+      if (typed === null) return
+      rate = Number(typed.replace(/[^\d.]/g, ''))
+      if (!(rate > 0)) {
+        setError('Enter the rate the client asked for.')
+        return
+      }
+    } else if (action === 'decline') {
+      note = await promptDialog({
+        title: 'Client declined',
+        message: 'Why did the client decline?',
+        confirmLabel: 'Record decline',
         danger: true,
+      })
+      if (note === null) return
+      if (!note.trim()) {
+        setError('A reason is required.')
+        return
+      }
+    } else if (
+      !(await confirmDialog({
+        title: 'Client accepted?',
+        message: `Record that the client accepted ${formatMoney(quote.proposed_rate ?? 0)} per trip. This creates the booking now.`,
+        confirmLabel: 'Client accepted -- create booking',
       }))
     ) {
       return
     }
 
-    // The downpayment is worked out from the trip cost, so the cost must be known.
-    if (!canCalculateProfitability) {
-      setError(
-        'The trip cost (and so the client\'s downpayment) can\'t be worked out -- check that Settings has the diesel price, driver commission rate and per-trip fee.',
-      )
-      return
-    }
-
-    const hoursValue = Number(hoursPerTrip) // validated above (hoursProblem)
-
-    // Older quotes can predate the delivery cap in lib/quoteRequest.ts.
-    const requestedTrips = quote.delivery_order_count ?? 1
-    if (requestedTrips > MAX_DELIVERY_ORDERS) {
-      setError(
-        `This quote asks for ${requestedTrips} trips (max ${MAX_DELIVERY_ORDERS}). Reject it ("Other") so the client splits it into smaller quotes.`,
-      )
-      return
-    }
-
     setSubmitting(true)
     setError(null)
-
-    // 0. Claim the quote FIRST: mark it Approved only if it's still
-    // Pending, and check a row really changed (.select().maybeSingle() --
-    // a blocked or already-handled update reports no error but changes
-    // nothing). Nothing else is written until this succeeds, so two
-    // admins / two tabs can never both create a booking for one quote.
-    const { data: claimedRow, error: claimError } = await supabase
-      .from('quote_requests')
-      .update({ request_status: 'Approved' })
-      .eq('quote_request_id', quote.quote_request_id)
-      .eq('request_status', 'Pending')
-      .select('quote_request_id')
-      .maybeSingle()
-
-    if (claimError) {
-      setError(claimError.message)
-      setSubmitting(false)
-      return
-    }
-    if (!claimedRow) {
-      setSubmitting(false)
-      showToast('Another admin already handled this quote -- it is no longer pending.', 'error')
-      onResolved(quote.quote_request_id)
-      return
-    }
-    setClaimed(true)
-
-    // A step before the booking failed: put the quote back to Pending so
-    // it can simply be approved again (no booking exists yet). Guarded on
-    // 'Approved' so it never undoes anything else.
-    async function releaseClaim(message: string) {
-      const { data: released } = await supabase
-        .from('quote_requests')
-        .update({ request_status: 'Pending' })
-        .eq('quote_request_id', quote.quote_request_id)
-        .eq('request_status', 'Approved')
-        .select('quote_request_id')
-        .maybeSingle()
-      if (released) setClaimed(false)
-      setError(
-        released
-          ? `${message} Nothing was created; the quote is back to Pending.`
-          : `${message} The quote could not be set back to Pending -- check the Approved tab (it will show "No booking found").`,
-      )
-      setSubmitting(false)
-    }
-
-    // 1. Resolve the client, in order of how certain we are: a client
-    // staff already linked on the request itself, else an existing one
-    // matching this email (clients.email is unique -- inserting a
-    // duplicate would fail), else a new one from the quote's free-text
-    // client info.
-    let clientId: number
-
-    if (quote.client_id) {
-      // Staff already picked a real client when logging this request
-      // (NewQuoteRequestModal's "Existing client" tab), so there's
-      // nothing to match or create -- and matching by email instead
-      // would duplicate the client whenever they have no email on file.
-      clientId = quote.client_id
-    } else if (quote.contact_email) {
-      // Case-insensitive (Juan@x.com = juan@x.com). ilike treats % and _ as
-      // wildcards, so they're escaped to match literally.
-      const email = quote.contact_email.trim().toLowerCase()
-      const { data: existingClients, error: existingClientError } =
-        await supabase
-          .from('clients')
-          .select('client_id')
-          .ilike('email', email.replace(/[\\%_]/g, '\\$&'))
-          .order('client_id')
-          .limit(1)
-
-      if (existingClientError) {
-        await releaseClaim(existingClientError.message)
-        return
-      }
-
-      if (existingClients.length > 0) {
-        clientId = existingClients[0].client_id
-      } else {
-        const { data: newClient, error: clientError } = await supabase
-          .from('clients')
-          .insert({
-            client_name: quote.client_name,
-            email,
-            phone_number: quote.contact_number,
-          })
-          .select('client_id')
-          .single()
-
-        if (clientError || !newClient) {
-          await releaseClaim(clientError?.message ?? 'Could not create client record.')
-          return
-        }
-
-        clientId = newClient.client_id
-      }
-    } else {
-      // No email on this quote -- can't match an existing client, so
-      // always create a new one.
-      const { data: newClient, error: clientError } = await supabase
-        .from('clients')
-        .insert({
-          client_name: quote.client_name,
-          phone_number: quote.contact_number,
-        })
-        .select('client_id')
-        .single()
-
-      if (clientError || !newClient) {
-        await releaseClaim(clientError?.message ?? 'Could not create client record.')
-        return
-      }
-
-      clientId = newClient.client_id
-    }
-
-    // 2. Reuse an existing place by city+barangay if one matches
-    // (trimmed, case-insensitive), otherwise create it. Barangay is the
-    // routing/cache unit, not the landmark text, so two quotes into the
-    // same barangay always resolve to the same place_id even if their
-    // free-text landmark reads completely differently.
-    const pickupResult = await findOrCreatePlace(quote.pickup_city, quote.pickup_barangay)
-    if ('error' in pickupResult) {
-      await releaseClaim(pickupResult.error)
-      return
-    }
-    const pickupPlace = { place_id: pickupResult.placeId }
-
-    const deliveryResult = await findOrCreatePlace(quote.delivery_city, quote.delivery_barangay)
-    if ('error' in deliveryResult) {
-      await releaseClaim(deliveryResult.error)
-      return
-    }
-    const deliveryPlace = { place_id: deliveryResult.placeId }
-
-    // 2.5. Save this route's distance for reuse next time (upsert so it
-    // also corrects a previously cached value if staff edited it). Best
-    // effort -- the cache is a convenience, not core data, so a failure
-    // here shouldn't block the approval itself.
-    const [lowPlaceId, highPlaceId] = orderPlacePair(
-      pickupPlace.place_id,
-      deliveryPlace.place_id,
-    )
-    await supabase
-      .from('route_cache')
-      .upsert(
-        { place_id_a: lowPlaceId, place_id_b: highPlaceId, distance_km: distanceValue },
-        { onConflict: 'place_id_a,place_id_b' },
-      )
-
-    // 3. Link the (already Approved, step 0) quote to the client/place
-    // records just resolved, with the final rate/terms.
-    const { data: linkedRow, error: updateError } = await supabase
-      .from('quote_requests')
-      .update({
-        proposed_rate: rateValue,
-        payment_terms: paymentTerms,
-        client_id: clientId,
-        place_of_pickup_id: pickupPlace.place_id,
-        place_of_delivery_id: deliveryPlace.place_id,
-      })
-      .eq('quote_request_id', quote.quote_request_id)
-      .select('quote_request_id')
-      .maybeSingle()
-
-    if (updateError || !linkedRow) {
-      await releaseClaim(updateError?.message ?? 'Could not update the quote.')
-      return
-    }
-
-    // 4. Create the booking itself. .select().single() so we get the new
-    // booking_id back -- the itinerary in step 5 needs it.
-    const { data: newBooking, error: bookingError } = await supabase
-      .from('bookings')
-      .insert({
-        quote_request_id: quote.quote_request_id,
-        client_id: clientId,
-        place_of_pickup_id: pickupPlace.place_id,
-        place_of_delivery_id: deliveryPlace.place_id,
-        pickup_address_detail: quote.pickup_location_text || null,
-        delivery_address_detail: quote.delivery_location_text || null,
-        // Display-only, for the driver -- not used for distance or cost.
-        pickup_landmark: quote.pickup_landmark?.trim() || null,
-        delivery_landmark: quote.delivery_landmark?.trim() || null,
-        // Exact spots, so dispatch/drivers aren't left with only a
-        // barangay (places rows are one per barangay, not per address).
-        pickup_lat: quote.pickup_lat,
-        pickup_lng: quote.pickup_lng,
-        delivery_lat: quote.delivery_lat,
-        delivery_lng: quote.delivery_lng,
-        cargo_type: quote.cargo_type,
-        cargo_description: quote.cargo_description,
-        weight: quote.weight,
-        container_type: quote.container_type,
-        trailer_type: quote.trailer_type,
-        payment_terms: paymentTerms,
-        // Approving IS the confirmation. From here the booking's status
-        // follows its itineraries automatically (sync_booking_status
-        // trigger): InProgress once a trip moves, Delivered once all are.
-        booking_status: 'Confirmed',
-        booking_date: quote.preferred_pickup_date,
-        estimated_distance_km: distanceValue,
-        rate_of_delivery_service: rateValue,
-        hours_per_trip: hoursValue,
-        cost_per_trip: costPerTrip,
-        storage_deadline: urgent ? tripDateFrom : null,
-      })
-      .select('booking_id')
-      .single()
-
-    if (bookingError || !newBooking) {
-      // No booking exists yet, so the quote can safely go back to Pending.
-      await releaseClaim(bookingError?.message ?? 'Could not create booking.')
-      return
-    }
-
-    // 5. Create one itinerary per delivery order (a booking can cover
-    // multiple deliverables -- e.g. several containers -- each needing
-    // its own truck+trailer+driver later). By this point the quote is
-    // already Approved and the booking already exists -- if this insert
-    // fails, don't fail silently. The error message below says exactly
-    // that, so staff know there's a booking with no itineraries that
-    // needs manual follow-up instead of just retrying "Approve" (which
-    // would create a duplicate booking).
-    const deliveryCount = quote.delivery_order_count ?? 1
-    // Back-to-back slots: trip 1 at the default start on the pickup date,
-    // each next trip when the one before ends. Dispatch can move them.
-    // Urgent (last free storage day): every trip starts at the default time
-    // together, so all can be picked up that day.
-    const firstStart = new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime()
-    const slots = urgent
-      ? Array.from({ length: deliveryCount }, () => ({ start: firstStart, end: firstStart + hoursValue * 3_600_000 }))
-      : chainSlots(
-          firstStart,
-          Array.from({ length: deliveryCount }, () => hoursValue * 3_600_000),
-        )
-    const itineraryRows = slots.map((slot) => ({
-      booking_id: newBooking.booking_id,
-      place_of_pickup_id: pickupPlace.place_id,
-      place_of_delivery_id: deliveryPlace.place_id,
-      trip_date_from: tripDateFrom,
-      trip_start_at: new Date(slot.start).toISOString(),
-      trip_end_at: new Date(slot.end).toISOString(),
-      itinerary_status: 'Awaiting',
-    }))
-
-    const { error: itineraryError } = await supabase
-      .from('itineraries')
-      .insert(itineraryRows)
-
+    const { data: bookingId, error: rpcError } = await supabase.rpc('respond_to_quote_offer', {
+      p_quote_id: quote.quote_request_id,
+      p_action: action,
+      p_rate: rate,
+      // A counter can also move the dates (the date boxes below the offer).
+      p_pickup_date: action === 'counter' ? offerPickupDate || null : null,
+      p_deadline_date: action === 'counter' ? offerDeadline || null : null,
+      p_note: note,
+    })
     setSubmitting(false)
-
-    if (itineraryError) {
-      setError(
-        `Booking #${newBooking.booking_id} was created, but its ` +
-          `${deliveryCount} itinerary row(s) could not be created ` +
-          `(${itineraryError.message}). The quote is already marked ` +
-          `Approved and the booking already exists, so this needs manual ` +
-          `review. Don't click Approve again: it would create a ` +
-          `duplicate booking.`,
-      )
+    if (rpcError) {
+      setError(rpcError.message)
       return
     }
-
-    setItinerariesCreated(deliveryCount)
-
-    setApprovedBookingId(newBooking.booking_id)
+    setDoneMessage(
+      action === 'accept'
+        ? `Recorded. Booking #${bookingId} was created with ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} (status "Awaiting").`
+        : action === 'counter'
+          ? `Counter-offer recorded (${formatMoney(rate ?? 0)} per trip). It is back under "Needs pricing".`
+          : 'Decline recorded. The quote is closed.',
+    )
   }
 
   // Picking a preset fills the reason with its label (staff can add
@@ -836,8 +698,8 @@ function QuoteReviewModal({
     setSubmitting(true)
     setError(null)
 
-    // Only while still Pending -- never overwrite a quote another admin
-    // already approved (its booking would stay, labelled Rejected).
+    // Only while it's staff's turn (Pending / Countered) -- never overwrite
+    // an offer the client may be accepting, or a quote already booked.
     const { data: rejectedRow, error: rejectError } = await supabase
       .from('quote_requests')
       .update({
@@ -846,7 +708,7 @@ function QuoteReviewModal({
         rejection_tag: rejectTag,
       })
       .eq('quote_request_id', quote.quote_request_id)
-      .eq('request_status', 'Pending')
+      .in('request_status', ['Pending', 'Countered'])
       .select('quote_request_id')
       .maybeSingle()
 
@@ -857,13 +719,13 @@ function QuoteReviewModal({
       return
     }
     if (!rejectedRow) {
-      showToast('Another admin already handled this quote -- it is no longer pending.', 'error')
+      showToast('Another admin already handled this quote -- it is no longer waiting on us.', 'error')
     }
 
     onResolved(quote.quote_request_id)
   }
 
-  // proposedRate/estimatedDistanceKm are PER TRIP -- a booking with
+  // rateInput/estimatedDistanceKm are PER TRIP -- a booking with
   // delivery_order_count deliveries runs that many separate truck trips,
   // each with its own diesel burn, driver commission, and per-trip fee.
   // The estimate below is for the whole contract (all deliveries), not
@@ -871,8 +733,8 @@ function QuoteReviewModal({
   // revenue side (rateForCalc x deliveryCount) -- otherwise the % of
   // rate would compare a full-contract revenue against only one trip's
   // costs and look far more profitable than it really is.
-  const deliveryCount = quote.delivery_order_count ?? 1
-  const rateForCalc = Number(proposedRate)
+  const deliveryCount = tripCargo.length > 0 ? tripCargo.length : (quote.delivery_order_count ?? 1)
+  const rateForCalc = Number(rateInput)
   const distanceForCalc = Number(estimatedDistanceKm)
   const settingsLoaded =
     dieselPricePerLiter !== null &&
@@ -903,9 +765,42 @@ function QuoteReviewModal({
     ? totalCost / totalContractValue
     : 0
   const isLowMargin = canCalculateProfitability && costRatio >= 0.5
-  // Saved on the booking at Approve; the downpayment comes from it.
+  // Sent with the offer (quote_requests.cost_per_trip) and copied to the
+  // booking; the client's downpayment comes from it.
   const costPerTrip = Math.round((totalCost / deliveryCount) * 100) / 100
   const downpayment = canCalculateProfitability ? downpaymentFor(rateForCalc, costPerTrip, deliveryCount) : null
+
+  // Pricing guide (lib/quotePricing.ts) and "what if" at any rate -- same
+  // cost formula as the panel. Null until Settings + distance are known.
+  const costSettings = settingsLoaded
+    ? {
+        dieselPricePerLiter: dieselPricePerLiter!,
+        driverCommissionRate: driverCommissionRate!,
+        driverPerTripFee: driverPerTripFee!,
+      }
+    : null
+  const breakEvenRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 1) : null
+  const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 0.5) : null
+  function profitAt(rate: number) {
+    if (!costSettings || !(distanceForCalc > 0) || !(rate > 0)) return null
+    const costs = estimateTripCosts(costSettings, rate, distanceForCalc, deliveryCount)
+    const contract = rate * deliveryCount
+    return {
+      contract,
+      total: costs.total,
+      profit: contract - costs.total,
+      ratio: costs.total / contract,
+      costPerTrip: Math.round((costs.total / deliveryCount) * 100) / 100,
+    }
+  }
+  // On a counter: our last offer vs the client's rate (quote.proposed_rate).
+  const ourOfferAt = countered && lastOurOffer?.rate ? profitAt(lastOurOffer.rate) : null
+  const counterAt = countered ? profitAt(quote.proposed_rate ?? 0) : null
+  // The offer the client is looking at (Offered): its downpayment.
+  const offeredDownpayment =
+    waitingOnClient && quote.cost_per_trip != null
+      ? downpaymentFor(quote.proposed_rate, quote.cost_per_trip, deliveryCount)
+      : null
 
   const estimatedProfit = totalContractValue - totalCost
   const pickupToday = tripDateFrom !== '' && tripDateFrom === toManilaDate(new Date())
@@ -982,7 +877,7 @@ function QuoteReviewModal({
               <span className="font-mono text-xs font-semibold text-slate-600">{quote.reference_code}</span>
             )}
             <span className="bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-              {approvedBookingId !== null ? 'Approved' : 'Pending'}
+              {QUOTE_STATUS_LABELS[status] ?? status}
             </span>
             {pickupToday && (
               <span className="flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
@@ -1003,18 +898,42 @@ function QuoteReviewModal({
 
         {/* Body: fits a 1080p screen; scrolls only on smaller windows. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {approvedBookingId !== null ? (
+          {doneMessage !== null ? (
             <div className="px-7 py-6">
               <p className="border-2 border-green-200 bg-green-50 px-4 py-3 text-[15px] text-green-900">
-                Quote approved. Booking #{approvedBookingId} was created with {itinerariesCreated}{' '}
-                {itinerariesCreated === 1 ? 'itinerary' : 'itineraries'} (status "Awaiting"). Assign a truck,
-                trailer, and driver to each from the Dispatch Board.
+                {doneMessage}
               </p>
             </div>
           ) : (
             <div className="grid gap-8 px-7 py-6 lg:grid-cols-[minmax(0,1fr)_436px]">
               {/* LEFT: the request, read-only */}
               <div className="flex flex-col gap-6">
+                {countered && (
+                  <div className="border-2 border-sky-300 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+                    <p className="font-semibold">
+                      Client countered: {formatMoney(quote.proposed_rate ?? 0)} per trip
+                    </p>
+                    {/* What they changed from our last offer, highlighted. */}
+                    {lastOurOffer && lastClientMove ? (
+                      <div className="mt-2 bg-white px-3 py-2">
+                        <OfferComparison
+                          before={lastOurOffer}
+                          now={lastClientMove}
+                          beforeLabel="Our last offer"
+                          nowLabel="Client's counter"
+                        />
+                      </div>
+                    ) : (
+                      lastClientMove && (
+                        <p className="mt-0.5">
+                          Pickup {lastClientMove.pickup_date ? formatDate(lastClientMove.pickup_date) : '—'} · Deadline{' '}
+                          {lastClientMove.deadline_date ? formatDate(lastClientMove.deadline_date) : '—'}
+                        </p>
+                      )
+                    )}
+                    {lastClientMove?.note && <p className="mt-1">"{lastClientMove.note}"</p>}
+                  </div>
+                )}
                 {quote.resubmit_count > 0 && (
                   <div className="border-2 border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
                     <p className="font-semibold">
@@ -1102,15 +1021,24 @@ function QuoteReviewModal({
 
                 <section>
                   <GroupHeading>Cargo</GroupHeading>
-                  <dl className="grid grid-cols-4 gap-4">
-                    <Field label="Cargo type">{quote.cargo_type}</Field>
-                    <Field label="Trailer size">{quote.container_type}</Field>
-                    <Field label="Trailer type">{quote.trailer_type ?? '—'}</Field>
-                    <Field label="Weight (tons)">{String(quote.weight)}</Field>
-                    <Field label="Cargo description" className="col-span-4">
-                      {quote.cargo_description || '—'}
-                    </Field>
-                  </dl>
+                  {cargoLines.length === 0 ? (
+                    <p className="text-[15px] text-slate-500">No cargo lines on this quote.</p>
+                  ) : (
+                    <ol className="flex flex-col gap-3">
+                      {cargoLines.map((line, index) => (
+                        <li key={index} className="border border-slate-200 px-4 py-3">
+                          <p className="text-[15px] font-semibold text-slate-900">
+                            {line.quantity} × {tripCargoLabel(line)}
+                          </p>
+                          <ol className="mt-1 list-inside list-decimal text-[14px] text-slate-700">
+                            {line.cargo_descriptions.map((d, i) => (
+                              <li key={i}>{d || '—'}</li>
+                            ))}
+                          </ol>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </section>
 
                 <section>
@@ -1123,21 +1051,20 @@ function QuoteReviewModal({
                     <Field label="Deadline date">
                       {quote.preferred_delivery_date ? formatDate(quote.preferred_delivery_date) : 'Not given'}
                     </Field>
-                    <Field label="Trip start date">{tripDateFrom ? formatDate(tripDateFrom) : '—'}</Field>
                   </dl>
                 </section>
 
                 <section>
                   <GroupHeading>Terms</GroupHeading>
                   <dl className="grid grid-cols-2 gap-4">
-                    <Field label="Proposed rate">
-                      {quote.proposed_rate !== null ? (
+                    <Field label={countered ? "Client's counter-offer" : waitingOnClient ? 'Our offer' : 'Rate'}>
+                      {quote.proposed_rate !== null && status !== 'Pending' ? (
                         <>
                           <span className="text-2xl font-bold tabular-nums">{formatMoney(quote.proposed_rate)}</span>{' '}
                           <span className="text-[13px] text-slate-500">per trip</span>
                         </>
                       ) : (
-                        '—'
+                        'Not priced yet'
                       )}
                     </Field>
                     <Field label="Payment terms">
@@ -1145,6 +1072,47 @@ function QuoteReviewModal({
                     </Field>
                   </dl>
                 </section>
+
+                {history.length > 0 && (
+                  <section>
+                    <GroupHeading>Offers so far</GroupHeading>
+                    <ol className="flex flex-col gap-2 text-[14px]">
+                      {history.map((h, index) => {
+                        // Highlight what this offer/counter changed from the one before it.
+                        const changed = isProposal(h) ? offerChanges(previousProposal(history, index), h) : null
+                        const mark = (isChanged: boolean | undefined) =>
+                          isChanged ? 'bg-amber-200 px-1 font-semibold' : ''
+                        return (
+                          <li key={h.offer_id} className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-slate-100 pb-2">
+                            <span className="text-slate-900">
+                              <span className="font-semibold">{offerActionLabel(h)}</span>
+                              {h.rate != null && (
+                                <>
+                                  {' · '}
+                                  <span className={mark(changed?.rate)}>{formatMoney(h.rate)}</span> per trip
+                                </>
+                              )}
+                              {h.pickup_date && (
+                                <>
+                                  {' · pickup '}
+                                  <span className={mark(changed?.pickup)}>{formatDate(h.pickup_date)}</span>
+                                </>
+                              )}
+                              {h.deadline_date && (
+                                <>
+                                  {' · deadline '}
+                                  <span className={mark(changed?.deadline)}>{formatDate(h.deadline_date)}</span>
+                                </>
+                              )}
+                              {h.note && <span className="block text-slate-600">"{h.note}"</span>}
+                            </span>
+                            <span className="text-[13px] text-slate-500">{formatDate(h.created_at)}</span>
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  </section>
+                )}
               </div>
 
               {/* RIGHT: what the admin decides, then the result */}
@@ -1157,7 +1125,7 @@ function QuoteReviewModal({
                   <fieldset className="mt-4">
                     <legend className="text-sm font-semibold text-slate-900">Why is it rejected?</legend>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {(Object.keys(REJECTION_TAGS) as RejectionTag[]).map((tag) => (
+                      {(Object.keys(REJECTION_TAGS) as RejectionTag[]).filter((tag) => tag !== 'Rate').map((tag) => (
                         <button
                           key={tag}
                           type="button"
@@ -1186,10 +1154,58 @@ function QuoteReviewModal({
                     className={`${fieldClasses} mt-1.5`}
                   />
                 </section>
+              ) : waitingOnClient ? (
+                <div className="flex flex-col gap-4 self-start">
+                  <section className="border-2 border-slate-300 px-5 py-5">
+                    <h3 className="text-[17px] font-semibold text-slate-900">Waiting on the client</h3>
+                    <p className="mt-1 text-[13px] text-slate-500">
+                      They can accept, counter (rate or dates) or decline from their portal.
+                    </p>
+                    <div className="mt-3 text-[15px]">
+                      <CostRow
+                        label="Our offer"
+                        hint={`${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${formatMoney(quote.proposed_rate ?? 0)}`}
+                        value={formatMoney((quote.proposed_rate ?? 0) * deliveryCount)}
+                        strong
+                      />
+                      {offeredDownpayment !== null && (
+                        <CostRow label="Client downpayment" value={formatMoney(offeredDownpayment)} />
+                      )}
+                      {lastOurOffer?.note && <p className="mt-1 text-[13px] text-slate-600">Note sent: "{lastOurOffer.note}"</p>}
+                    </div>
+                  </section>
+                  <section className="border-2 border-slate-300 px-5 py-5">
+                    <h3 className="text-[15px] font-semibold text-slate-900">Client answered by phone or in person?</h3>
+                    <p className="mt-1 text-[13px] text-slate-500">
+                      For clients without a portal login. Recorded as entered by staff.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => handleRecordReply('accept')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
+                        Client accepted
+                      </button>
+                      <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="border-2 border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Client countered…
+                      </button>
+                      <button type="button" onClick={() => handleRecordReply('decline')} disabled={submitting} className="border-2 border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                        Client declined…
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1 text-[13px] font-medium text-slate-600">
+                        Counter: pickup date
+                        <input type="date" value={offerPickupDate} onChange={(e) => setOfferPickupDate(e.target.value)} className={fieldClasses} />
+                      </label>
+                      <label className="flex flex-col gap-1 text-[13px] font-medium text-slate-600">
+                        Counter: deadline
+                        <input type="date" value={offerDeadline} min={offerPickupDate || undefined} onChange={(e) => setOfferDeadline(e.target.value)} className={fieldClasses} />
+                      </label>
+                    </div>
+                  </section>
+                </div>
               ) : (
                 <div className="flex flex-col gap-4 self-start">
                   <section className="border-2 border-slate-300 px-5 py-5">
-                    <h3 className="text-[17px] font-semibold text-slate-900">Confirm Trip Details</h3>
+                    <h3 className="text-[17px] font-semibold text-slate-900">Price this quote</h3>
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div>
                         <label htmlFor="review-distance" className="block text-sm font-semibold text-slate-900">
@@ -1266,13 +1282,118 @@ function QuoteReviewModal({
                               : "How long one trip takes. Sets each driver's time slot.")}
                         </p>
                       </div>
+                      <div className="col-span-2">
+                        <label htmlFor="offer-rate" className="block text-sm font-semibold text-slate-900">
+                          Rate per trip to offer (PHP)
+                        </label>
+                        <input
+                          id="offer-rate"
+                          type="text"
+                          inputMode="decimal"
+                          value={rateInput}
+                          onChange={(e) => setRateInput(e.target.value.replace(/[^\d.]/g, ''))}
+                          placeholder={fiftyLineRate ? `e.g. ${fiftyLineRate}` : 'e.g. 15000'}
+                          className={`${fieldClasses} mt-1.5 tabular-nums`}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="offer-pickup" className="block text-sm font-semibold text-slate-900">
+                          {urgent ? 'Last free storage day' : 'Pickup date'}
+                        </label>
+                        <input
+                          id="offer-pickup"
+                          type="date"
+                          value={offerPickupDate}
+                          onChange={(e) => setOfferPickupDate(e.target.value)}
+                          className={`${fieldClasses} mt-1.5`}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="offer-deadline" className="block text-sm font-semibold text-slate-900">
+                          Deadline date
+                        </label>
+                        <input
+                          id="offer-deadline"
+                          type="date"
+                          value={offerDeadline}
+                          min={offerPickupDate || undefined}
+                          onChange={(e) => setOfferDeadline(e.target.value)}
+                          className={`${fieldClasses} mt-1.5`}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label htmlFor="offer-note" className="block text-sm font-semibold text-slate-900">
+                          Note to the client <span className="font-normal text-slate-500">(optional)</span>
+                        </label>
+                        <input
+                          id="offer-note"
+                          type="text"
+                          value={offerNote}
+                          maxLength={300}
+                          onChange={(e) => setOfferNote(e.target.value)}
+                          placeholder="e.g. Includes the return trip of the empty container"
+                          className={`${fieldClasses} mt-1.5`}
+                        />
+                      </div>
                     </div>
                   </section>
+
+                  {(breakEvenRate !== null || fiftyLineRate !== null) && (
+                    <section className="border-2 border-slate-300 px-5 py-5">
+                      <h3 className="text-[17px] font-semibold text-slate-900">Pricing guide</h3>
+                      <div className="mt-2 text-[15px]">
+                        <CostRow
+                          label="Break-even rate"
+                          hint="Per trip, where costs equal the rate"
+                          value={breakEvenRate !== null ? formatMoney(breakEvenRate) : '—'}
+                        />
+                        <CostRow
+                          label="Rate at the 50% line"
+                          hint="Lowest rate where costs stay at half the rate"
+                          value={fiftyLineRate !== null ? formatMoney(fiftyLineRate) : '—'}
+                        />
+                        {fiftyLineRate !== null && (
+                          <button
+                            type="button"
+                            onClick={() => setRateInput(String(fiftyLineRate))}
+                            className="mt-1 text-sm font-medium text-primary underline"
+                          >
+                            Use {formatMoney(fiftyLineRate)} as the rate
+                          </button>
+                        )}
+                      </div>
+                      {ourOfferAt && counterAt && (
+                        <table className="mt-4 w-full text-[14px] tabular-nums">
+                          <thead className="text-left text-[13px] text-slate-500">
+                            <tr>
+                              <th className="py-1 font-medium" />
+                              <th className="py-1 text-right font-medium">Our offer {formatMoney(lastOurOffer!.rate!)}</th>
+                              <th className="py-1 text-right font-medium">Client's {formatMoney(quote.proposed_rate ?? 0)}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {([
+                              ['Contract value', (x: NonNullable<typeof counterAt>) => formatMoney(x.contract)],
+                              ['Total cost', (x: NonNullable<typeof counterAt>) => formatMoney(x.total)],
+                              ['Est. profit', (x: NonNullable<typeof counterAt>) => formatMoney(x.profit)],
+                              ['Cost vs. rate', (x: NonNullable<typeof counterAt>) => `${(x.ratio * 100).toFixed(1)}%${x.ratio >= 0.5 ? ' ⚠' : ''}`],
+                            ] as const).map(([label, show]) => (
+                              <tr key={label} className="border-t border-slate-100">
+                                <td className="py-1 text-slate-700">{label}</td>
+                                <td className="py-1 text-right text-slate-900">{show(ourOfferAt)}</td>
+                                <td className="py-1 text-right font-semibold text-slate-900">{show(counterAt)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </section>
+                  )}
 
                   <section className="border-2 border-slate-300 px-5 py-5" aria-live="polite">
                     <div className="flex items-baseline justify-between gap-3">
                       <h3 className="text-[17px] font-semibold text-slate-900">Profitability Estimate</h3>
-                      <span className="text-[13px] text-slate-500">Updates with distance</span>
+                      <span className="text-[13px] text-slate-500">Updates as you type</span>
                     </div>
 
                     {!settingsLoaded ? (
@@ -1280,7 +1401,7 @@ function QuoteReviewModal({
                         Set diesel price and driver commission rate under Settings to see this estimate.
                       </p>
                     ) : rateForCalc <= 0 ? (
-                      <p className="mt-3 text-sm text-slate-600">This quote has no proposed rate to calculate with.</p>
+                      <p className="mt-3 text-sm text-slate-600">Enter a rate per trip to see the profit.</p>
                     ) : distanceForCalc <= 0 ? (
                       <p className="mt-3 text-sm text-slate-600">Enter the estimated distance to see the costs.</p>
                     ) : (
@@ -1316,7 +1437,7 @@ function QuoteReviewModal({
                           </div>
                           {isLowMargin && (
                             <p className="mt-2 text-[13px] font-medium text-red-700">
-                              Costs are at or above 50% of the rate. Informational only; Approve is still your call.
+                              Costs are at or above 50% of the rate. Informational only; the offer is still your call.
                             </p>
                           )}
                         </div>
@@ -1358,9 +1479,9 @@ function QuoteReviewModal({
           )}
         </div>
 
-        {/* Footer: Reject far left, Approve far right */}
+        {/* Footer: Reject / Withdraw far left, Send offer / Accept far right */}
         <div className="flex shrink-0 items-center justify-between gap-4 border-t-2 border-slate-200 px-7 py-4">
-          {approvedBookingId !== null ? (
+          {doneMessage !== null ? (
             <>
               <span />
               <button onClick={() => onResolved(quote.quote_request_id)} className={`btn-primary ${footerButton}`}>
@@ -1394,6 +1515,22 @@ function QuoteReviewModal({
                 {submitting ? 'Rejecting...' : `Reject quote ${quoteLabel}`}
               </button>
             </>
+          ) : waitingOnClient ? (
+            <>
+              <button
+                onClick={handleWithdraw}
+                disabled={submitting}
+                className={`border-2 border-red-700 text-red-700 hover:bg-red-50 ${footerButton}`}
+              >
+                Withdraw offer
+              </button>
+              <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
+                {error}
+              </p>
+              <button onClick={close} className={`border-2 border-slate-300 text-slate-700 hover:bg-slate-50 ${footerButton}`}>
+                Close
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -1410,9 +1547,19 @@ function QuoteReviewModal({
               <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
                 {error}
               </p>
-              <button onClick={handleApprove} disabled={submitting} className={`btn-primary ${footerButton}`}>
+              {countered && (
+                <button
+                  onClick={handleAcceptCounter}
+                  disabled={submitting}
+                  className={`border-2 border-primary text-primary hover:bg-slate-50 ${footerButton}`}
+                >
+                  <Icon name="check" />
+                  Accept client's {formatMoney(quote.proposed_rate ?? 0)}
+                </button>
+              )}
+              <button onClick={handleSendOffer} disabled={submitting} className={`btn-primary ${footerButton}`}>
                 <Icon name="check" />
-                {submitting ? 'Approving...' : 'Approve Quote'}
+                {submitting ? 'Sending...' : countered ? 'Send new offer' : 'Send offer to client'}
               </button>
             </>
           )}

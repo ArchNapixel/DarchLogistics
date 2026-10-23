@@ -31,6 +31,8 @@ import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
+import EditTripCargo from './EditTripCargo'
+import { groupTripCargo, tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentStatus } from '../../../lib/downpayment'
@@ -66,6 +68,8 @@ type Trip = {
   expenses: { amount: number; description: string }[]
   // How many files are attached in itinerary_documents (DO photos/PDFs).
   document_count: number
+  // This trip's own cargo (itineraries.cargo_*, per trip since 2026-10-23).
+  cargo: TripCargo
   // First time it was logged Picked Up (dispatch_status_logs) -- judges the
   // storage deadline (lib/storageDeadline.ts).
   picked_up_at: string | null
@@ -74,11 +78,6 @@ type Trip = {
 type Details = {
   reference_code: string | null
   invoice_number: string | null
-  cargo_type: string | null
-  cargo_description: string | null
-  weight: number | null
-  container_type: string | null
-  trailer_type: string | null
   payment_terms: string | null
   pickup: string
   delivery: string
@@ -152,7 +151,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -172,7 +171,9 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       : Promise.resolve({ data: null, error: null }),
     supabase
       .from('itineraries')
-      .select('itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id')
+      .select(
+        'itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description',
+      )
       .eq('booking_id', bookingId)
       .order('itinerary_id', { ascending: true }),
   ])
@@ -264,11 +265,6 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     details: {
       reference_code: quoteResult.data?.reference_code ?? null,
       invoice_number: b.invoice_number,
-      cargo_type: b.cargo_type,
-      cargo_description: b.cargo_description,
-      weight: b.weight,
-      container_type: b.container_type,
-      trailer_type: b.trailer_type,
       payment_terms: b.payment_terms,
       pickup: location(b.place_of_pickup_id, b.pickup_address_detail),
       delivery: location(b.place_of_delivery_id, b.delivery_address_detail),
@@ -299,6 +295,13 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === t.itinerary_id),
         document_count: (documentsResult.data ?? []).filter((d) => d.itinerary_id === t.itinerary_id).length,
         picked_up_at: pickedUpAt.get(t.itinerary_id) ?? null,
+        cargo: {
+          cargo_type: t.cargo_type,
+          container_type: t.container_type,
+          trailer_type: t.trailer_type,
+          weight: t.weight,
+          cargo_description: t.cargo_description,
+        },
       })),
     },
   }
@@ -345,6 +348,8 @@ function BookingDetailModal({
   const [cancelError, setCancelError] = useState<string | null>(null)
   // Which trip's documents panel is open under the trips table (null = none).
   const [docsTripId, setDocsTripId] = useState<number | null>(null)
+  // Which trip's cargo is being edited under the trips table (null = none).
+  const [cargoTripId, setCargoTripId] = useState<number | null>(null)
 
   // Once the trips have loaded, bring the highlighted trip's row into view.
   useEffect(() => {
@@ -819,17 +824,11 @@ function BookingDetailModal({
             <>
               <SectionTitle>Cargo</SectionTitle>
               <InfoRow
-                label="Type"
-                value={[
-                  details.cargo_type === 'Loose' ? 'Loose cargo' : details.cargo_type,
-                  details.container_type &&
-                    `${details.container_type}${details.trailer_type ? ` ${details.trailer_type.toLowerCase()}` : ''} trailer`,
-                  details.weight != null && `${details.weight} t`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || '—'}
+                label="Per trip"
+                wide
+                // Each trip's own cargo and details are in the trips table below.
+                value={groupTripCargo(details.trips.filter((t) => t.status !== 'Cancelled').map((t) => t.cargo))}
               />
-              <InfoRow label="Description" value={details.cargo_description || '—'} />
             </>
           )}
 
@@ -932,6 +931,7 @@ function BookingDetailModal({
                     <th className="px-3 py-2 font-medium">Trip</th>
                     <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium">Time slot</th>
+                    <th className="px-3 py-2 font-medium">Cargo</th>
                     <th className="px-3 py-2 font-medium">Driver</th>
                     <th className="px-3 py-2 font-medium">Truck / trailer</th>
                     <th className="px-3 py-2 font-medium">Expenses</th>
@@ -977,6 +977,22 @@ function BookingDetailModal({
                             {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
                             <span className="block text-xs text-amber-700">No time set</span>
                           </>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        <span className="text-slate-900">{tripCargoLabel(trip.cargo)}</span>
+                        {trip.cargo.cargo_description && (
+                          <span className="block max-w-48 text-xs text-slate-500">{trip.cargo.cargo_description}</span>
+                        )}
+                        {/* Staff can change a trip's cargo until it's delivered. */}
+                        {onChanged && trip.status !== 'Delivered' && trip.status !== 'Cancelled' && (
+                          <button
+                            type="button"
+                            onClick={() => setCargoTripId(cargoTripId === trip.itinerary_id ? null : trip.itinerary_id)}
+                            className="mt-1 block text-xs font-medium text-slate-600 underline hover:text-slate-900"
+                          >
+                            Edit cargo
+                          </button>
                         )}
                       </td>
                       <td className="px-3 py-2 text-slate-600">
@@ -1037,6 +1053,23 @@ function BookingDetailModal({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {cargoTripId !== null && trips.some((t) => t.itinerary_id === cargoTripId) && (
+            <div className="mt-3 border border-slate-200 p-4">
+              <h5 className="mb-3 text-sm font-semibold text-slate-900">Trip #{cargoTripId} cargo</h5>
+              <EditTripCargo
+                key={cargoTripId}
+                itineraryId={cargoTripId}
+                cargo={trips.find((t) => t.itinerary_id === cargoTripId)!.cargo}
+                onCancel={() => setCargoTripId(null)}
+                onSaved={() => {
+                  setCargoTripId(null)
+                  showToast(`Trip #${cargoTripId} cargo saved.`)
+                  reload()
+                }}
+              />
             </div>
           )}
 

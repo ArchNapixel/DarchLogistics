@@ -14,7 +14,7 @@ import { logOut, useAuth } from '../context/AuthContext'
 const steps = [
   'We check your load against our trailers.',
   'We confirm escort and permit needs.',
-  'You get a rate and pickup slot the same day.',
+  'We send you our rate -- accept it, counter it, or decline in your dashboard.',
 ]
 
 // Where the login page sends people back to after signing in.

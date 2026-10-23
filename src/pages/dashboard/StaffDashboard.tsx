@@ -254,7 +254,8 @@ function StaffDashboard() {
             supabase
               .from('quote_requests')
               .select('quote_request_id', { count: 'exact', head: true })
-              .eq('request_status', 'Pending'),
+              // Staff's turn: new requests to price + client counter-offers.
+              .in('request_status', ['Pending', 'Countered']),
             supabase
               .from('bookings')
               .select('booking_id', { count: 'exact', head: true })
