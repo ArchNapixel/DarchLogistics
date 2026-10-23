@@ -6,7 +6,9 @@ import {
   formatClock,
   formatMinutesOfDay,
   formatSlot,
+  formatSlotShort,
   formatTime,
+  slotLines,
   manilaTimestamp,
   splitManila,
 } from '../src/lib/format.ts'
@@ -41,5 +43,17 @@ assert.equal(
 // A UTC timestamp is shown in Manila time (UTC 22:00 = Manila 6 AM next day).
 assert.equal(formatSlot('2026-10-21T22:00:00Z', null), 'Oct 22, 2026, 6 AM')
 assert.equal(formatSlot(null, null), 'No start time')
+
+// Two-line and short slot text (Bookings & Trips).
+assert.deepEqual(slotLines('2026-10-24T06:00:00+08:00', '2026-10-24T12:00:00+08:00'), {
+  date: 'Oct 24, 2026',
+  time: '6 AM – 12 NN',
+})
+assert.deepEqual(slotLines('2026-10-24T18:00:00+08:00', '2026-10-25T00:00:00+08:00'), {
+  date: 'Oct 24, 2026',
+  time: '6 PM – Oct 25, 12 MN',
+})
+assert.equal(formatSlotShort('2026-10-24T06:00:00+08:00', '2026-10-24T12:00:00+08:00'), 'Oct 24, 6 AM – 12 NN')
+assert.equal(formatSlotShort('2026-10-24T18:00:00+08:00', '2026-10-25T00:00:00+08:00'), 'Oct 24, 6 PM – Oct 25, 12 MN')
 
 console.log('ok')

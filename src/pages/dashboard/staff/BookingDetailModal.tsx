@@ -4,7 +4,10 @@
 // pinned spots), the source quote's reference, and the booking's trips
 // (each itinerary with its status, driver, truck, trailer, documents).
 // With `inline` it renders as a card in the page instead of a pop-up
-// (the Bookings page's "full details" view).
+// (the Bookings page's right pane). Layout: header (status, Cancel Booking),
+// cancelled / downpayment-due banners, Cargo Per Trip + Money cards, a
+// "Show Booking Details" toggle (route, schedule, hours per trip), then the
+// trips table (cargo, crew, vehicles, expenses, documents). Finished bookings keep cargo + money inside the toggle.
 //
 // Also where a booking is cancelled (only when `onChanged` is passed --
 // the Bookings page does, the read-only ClientBookingHistoryModal
@@ -19,7 +22,7 @@
 //     billed -- a Cancelled booking is left out of Payments Due/revenue.
 // Steps aren't in one DB transaction (same known limitation as
 // QuoteReviewModal) -- a failure partway says exactly what was saved.
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { isAdmin } from '../../../lib/roles'
@@ -31,9 +34,8 @@ import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
-import EditTripCargo from './EditTripCargo'
-import { groupTripCargo, tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
-import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
+import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
+import { formatMoney, formatDate, slotLines } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentStatus } from '../../../lib/downpayment'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -121,10 +123,8 @@ function InfoRow({
 }) {
   return (
     <div className={wide ? 'sm:col-span-2' : ''}>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-      </p>
-      <p className="text-slate-900">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-[15px] text-slate-900">{value}</p>
       {pin && (
         <a
           href={pin}
@@ -140,10 +140,29 @@ function InfoRow({
 }
 
 function SectionTitle({ children }: { children: string }) {
+  return <h4 className="col-span-full text-sm font-semibold text-slate-900">{children}</h4>
+}
+
+// One figure in the Money card: small label, big amount, optional note.
+function Figure({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <h4 className="col-span-full mt-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-      {children}
-    </h4>
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-xl font-bold tabular-nums text-slate-900">
+        {value}
+        {note && <span className="ml-1.5 text-xs font-normal text-slate-500">{note}</span>}
+      </p>
+    </div>
+  )
+}
+
+// Small outline icons for the trips table buttons (24x24 paths).
+const UPLOAD = 'M12 16V4M7 9l5-5 5 5M4 20h16'
+function Icon({ path }: { path: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={path} />
+    </svg>
   )
 }
 
@@ -312,18 +331,10 @@ function BookingDetailModal({
   onClose = () => {},
   onChanged,
   inline = false,
-  onMinimize,
-  startDetailsHidden,
   highlightTripId = null,
 }: {
-  // Inline only: when set, route/schedule/cargo/money are behind a
-  // "Show details" toggle (header + trips always show). true = start hidden.
-  // Bookings uses it for finished (Delivered/Cancelled) bookings.
-  startDetailsHidden?: boolean
-  // Trip to highlight + scroll to in the trips table (Bookings' "Find trip").
+  // Trip to highlight + scroll to in the trips table (a trip # link/search).
   highlightTripId?: number | null
-  // Inline only: shows a "Minimize" button that collapses the card.
-  onMinimize?: () => void
   booking: Booking
   // Not needed when inline (there's nothing to close).
   onClose?: () => void
@@ -336,7 +347,8 @@ function BookingDetailModal({
 }) {
   const { employeeId, role } = useAuth()
   const [details, setDetails] = useState<Details | null>(null)
-  const [showDetails, setShowDetails] = useState(!startDetailsHidden)
+  // "Show Booking Details" toggle: route, schedule (+ cargo/money when finished).
+  const [showDetails, setShowDetails] = useState(false)
   // Hours-per-trip editor (staff Bookings only): null = not editing.
   const [hoursDraft, setHoursDraft] = useState<string | null>(null)
   const [hoursSaving, setHoursSaving] = useState(false)
@@ -348,8 +360,8 @@ function BookingDetailModal({
   const [cancelError, setCancelError] = useState<string | null>(null)
   // Which trip's documents panel is open under the trips table (null = none).
   const [docsTripId, setDocsTripId] = useState<number | null>(null)
-  // Which trip's cargo is being edited under the trips table (null = none).
-  const [cargoTripId, setCargoTripId] = useState<number | null>(null)
+  // Time the card opened -- enough for the storage badges (render must stay pure).
+  const [now] = useState(() => Date.now())
 
   // Once the trips have loaded, bring the highlighted trip's row into view.
   useEffect(() => {
@@ -667,6 +679,175 @@ function BookingDetailModal({
     onChanged?.()
   }
 
+  // ---- Pieces of the card ------------------------------------------------
+  const tripsAlive = trips.filter((t) => t.status !== 'Cancelled')
+  const cancelledCount = trips.length - tripsAlive.length
+  const tripsTitle =
+    trips.length > 0 && tripsAlive.length === 0
+      ? `${cancelledCount} cancelled`
+      : `${booking.completed_trips} of ${booking.total_trips} delivered${cancelledCount ? ` · ${cancelledCount} cancelled` : ''}`
+  // "3 × Container · 20ft flatbed · 15 t" per kind of cargo (cancelled left out).
+  const cargoCounts = new Map<string, number>()
+  for (const t of tripsAlive) {
+    const label = tripCargoLabel(t.cargo)
+    cargoCounts.set(label, (cargoCounts.get(label) ?? 0) + 1)
+  }
+  const showDownpaymentDue = !!downpayment && !downpayment.met && !downpayment.waived && !isClosed
+  const billingLink = isAdmin(role) ? `/dashboard/billing/${booking.booking_id}` : null
+
+  const cargoCard = (
+    <section className="border-2 border-slate-300 bg-white px-5 py-4">
+      <h4 className="text-base font-semibold text-slate-900">Cargo Per Trip</h4>
+      {!details ? (
+        <p className="mt-3 text-sm text-slate-500">Loading…</p>
+      ) : cargoCounts.size === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">No cargo recorded.</p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-2 text-[15px] text-slate-900">
+          {[...cargoCounts].map(([label, n]) => (
+            <li key={label}>
+              <span className="mr-2 font-semibold">{n} ×</span>
+              {label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+
+  const moneyCard = (
+    <section className="border-2 border-slate-300 bg-white px-5 py-4">
+      <h4 className="text-base font-semibold text-slate-900">Money</h4>
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+        <Figure label="Rate Per Trip" value={formatMoney(booking.rate)} />
+        <Figure
+          label="Total Contract Value"
+          value={formatMoney(booking.total_contract_value)}
+          note={`${booking.total_trips} ${booking.total_trips === 1 ? 'trip' : 'trips'}`}
+        />
+        <Figure
+          label="Billable So Far"
+          value={formatMoney(booking.billable_amount)}
+          note={booking.amount_to_pay !== null ? 'manually set' : undefined}
+        />
+        <Figure label="Amount Paid" value={formatMoney(booking.amount_paid)} />
+        <Figure label="Balance Due" value={formatMoney(booking.balance_due)} />
+        {booking.damage_charges > 0 && <Figure label="Incl. Damage Charges" value={formatMoney(booking.damage_charges)} />}
+      </div>
+      <p className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+        <span>
+          Payment Terms{' '}
+          <span className="font-semibold text-slate-900">
+            {details?.payment_terms
+              ? (PAYMENT_TERMS_LABELS[details.payment_terms as keyof typeof PAYMENT_TERMS_LABELS] ?? details.payment_terms)
+              : '—'}
+          </span>
+        </span>
+        <span>
+          Invoice No. <span className="font-semibold text-slate-900">{details?.invoice_number || '—'}</span>
+        </span>
+        {/* Billing lives in the banner while a downpayment is due. */}
+        {billingLink && !showDownpaymentDue && (
+          <Link to={billingLink} className="font-semibold text-primary underline">
+            Open Billing
+          </Link>
+        )}
+      </p>
+      {downpayment && !showDownpaymentDue && (downpayment.met || downpayment.waived) && (
+        <p className={`mt-3 px-3 py-2 text-sm ${downpayment.met ? 'bg-green-50 text-green-800' : 'bg-slate-50 text-slate-700'}`}>
+          Downpayment {formatMoney(downpayment.required)}
+          {downpayment.met
+            ? ' · ✓ received'
+            : ` · waived by Admin${details?.downpayment_waive_reason ? ` -- ${details.downpayment_waive_reason}` : ''}`}
+        </p>
+      )}
+    </section>
+  )
+
+  const detailsSection = (
+    <div className="grid gap-4 border-x-2 border-b-2 border-slate-300 bg-white px-5 py-4 sm:grid-cols-2">
+      <SectionTitle>Route</SectionTitle>
+      <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
+      <InfoRow label="Delivery" value={details?.delivery ?? booking.delivery_location} pin={details?.delivery_pin} />
+      {details?.pickup_landmark && <InfoRow label="Pickup landmark" value={details.pickup_landmark} />}
+      {details?.delivery_landmark && <InfoRow label="Delivery landmark" value={details.delivery_landmark} />}
+      {details?.estimated_distance_km != null && (
+        <InfoRow label="Estimated distance" value={`${details.estimated_distance_km.toLocaleString()} km`} />
+      )}
+
+      <SectionTitle>Schedule</SectionTitle>
+      <InfoRow label="Pickup date" value={booking.date ? formatDate(booking.date) : '—'} />
+      <div>
+        <p className="text-xs text-slate-500">Hours per trip</p>
+        {hoursDraft === null ? (
+          <p className="text-[15px] text-slate-900">
+            {details?.hours_per_trip != null ? `${details.hours_per_trip} h` : '—'}
+            {onChanged && details && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHoursDraft(details.hours_per_trip != null ? String(details.hours_per_trip) : '')
+                  setHoursError(null)
+                }}
+                className="ml-2 text-xs font-medium text-slate-600 underline hover:text-slate-900"
+              >
+                Edit
+              </button>
+            )}
+          </p>
+        ) : (
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="number"
+              min="0.5"
+              max="72"
+              step="0.5"
+              aria-label="Hours per trip"
+              value={hoursDraft}
+              onChange={(e) => setHoursDraft(e.target.value)}
+              className="w-20 border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={saveHoursPerTrip}
+              disabled={hoursSaving}
+              className="btn-primary px-3 py-1 text-xs font-medium"
+            >
+              {hoursSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setHoursDraft(null)}
+              className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {hoursError && <p className="mt-1 text-xs text-red-700">{hoursError}</p>}
+      </div>
+      <InfoRow
+        label="Deadline date"
+        value={details?.preferred_delivery_date ? formatDate(details.preferred_delivery_date) : '—'}
+      />
+      {details?.storage_deadline && (
+        <div>
+          <p className="text-xs text-slate-500">Storage deadline</p>
+          <p className="text-[15px] text-slate-900">{formatDate(details.storage_deadline)}, 11:59 PM</p>
+          <p className="text-xs text-slate-500">Last free storage day -- every trip picked up by then.</p>
+        </div>
+      )}
+
+      {/* Finished bookings keep cargo + money in here (active ones show them as cards). */}
+      {isClosed && (
+        <div className="col-span-full grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          {cargoCard}
+          {moneyCard}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div
       className={
@@ -675,428 +856,37 @@ function BookingDetailModal({
           : 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center'
       }
     >
-      <div
-        className={
-          inline
-            ? 'border border-slate-200 bg-white p-5 shadow-sm'
-            : 'max-h-[92vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg'
-        }
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Booking #{booking.booking_id}
-              {details?.reference_code && (
-                <span className="ml-2 font-mono text-sm font-medium text-slate-500">
-                  {details.reference_code}
-                </span>
-              )}
-            </h3>
-            <p className="mt-0.5 text-sm text-slate-600">{booking.client_name}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <StatusBadge status={booking.status} />
-            {inline && startDetailsHidden !== undefined && (
-              <button
-                type="button"
-                onClick={() => setShowDetails((v) => !v)}
-                aria-expanded={showDetails}
-                className="text-xs font-medium text-slate-500 hover:text-slate-900"
-              >
-                {showDetails ? 'Hide details ▴' : 'Show details ▾'}
-              </button>
+      <div className={inline ? 'flex flex-col gap-4' : 'flex max-h-[92vh] w-full max-w-5xl flex-col gap-4 overflow-y-auto bg-white p-6 shadow-lg'}>
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 className="text-xl font-bold text-slate-900">Booking #{booking.booking_id}</h3>
+            {details?.reference_code && (
+              <span className="font-mono text-xs font-semibold text-slate-600">{details.reference_code}</span>
             )}
-            {inline && onMinimize && (
+            <span className="text-[15px] font-medium text-slate-900">{booking.client_name}</span>
+            <StatusBadge status={booking.status} icon />
+          </div>
+          <div className="flex items-center gap-2">
+            {canCancel && !showCancel && (
               <button
                 type="button"
-                onClick={onMinimize}
-                aria-expanded={true}
-                className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                onClick={() => setShowCancel(true)}
+                className="flex items-center gap-2 border-2 border-red-700 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
               >
-                Minimize ▴
+                <span aria-hidden="true">✕</span> {anyDelivered ? 'Cancel Remaining Trips…' : 'Cancel Booking…'}
               </button>
             )}
             {!inline && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="p-1 text-slate-400 hover:text-slate-700"
-              >
+              <button type="button" onClick={onClose} aria-label="Close" className="p-1 text-slate-400 hover:text-slate-700">
                 ✕
               </button>
             )}
           </div>
         </div>
 
-        {details?.cancellation_reason && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-800">
-            <span className="font-semibold">
-              {booking.status === 'Cancelled' ? 'Cancelled' : 'Remaining trips cancelled'}
-              {details.cancelled_at && ` on ${formatDate(details.cancelled_at)}`}:
-            </span>{' '}
-            {details.cancellation_reason}
-          </p>
-        )}
-
-        {loadError && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            Couldn't load the full details ({loadError}).
-          </p>
-        )}
-
-        {showDetails && (
-        <>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <SectionTitle>Route</SectionTitle>
-          <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
-          <InfoRow label="Delivery" value={details?.delivery ?? booking.delivery_location} pin={details?.delivery_pin} />
-          {details?.pickup_landmark && <InfoRow label="Pickup landmark" value={details.pickup_landmark} />}
-          {details?.delivery_landmark && <InfoRow label="Delivery landmark" value={details.delivery_landmark} />}
-          {details?.estimated_distance_km != null && (
-            <InfoRow label="Estimated distance" value={`${details.estimated_distance_km.toLocaleString()} km`} />
-          )}
-
-          <SectionTitle>Schedule</SectionTitle>
-          <InfoRow label="Pickup date" value={booking.date ? formatDate(booking.date) : '—'} />
-          <div>
-            <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">Hours per trip</p>
-            {hoursDraft === null ? (
-              <p className="mt-1 text-sm text-slate-900">
-                {details?.hours_per_trip != null ? `${details.hours_per_trip} h` : '—'}
-                {onChanged && details && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHoursDraft(details.hours_per_trip != null ? String(details.hours_per_trip) : '')
-                      setHoursError(null)
-                    }}
-                    className="ml-2 text-xs font-medium text-slate-600 underline hover:text-slate-900"
-                  >
-                    Edit
-                  </button>
-                )}
-              </p>
-            ) : (
-              <div className="mt-1 flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0.5"
-                  max="72"
-                  step="0.5"
-                  aria-label="Hours per trip"
-                  value={hoursDraft}
-                  onChange={(e) => setHoursDraft(e.target.value)}
-                  className="w-20 border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={saveHoursPerTrip}
-                  disabled={hoursSaving}
-                  className="btn-primary px-3 py-1 text-xs font-medium"
-                >
-                  {hoursSaving ? 'Saving…' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHoursDraft(null)}
-                  className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-            {hoursError && <p className="mt-1 text-xs text-red-700">{hoursError}</p>}
-          </div>
-          <InfoRow
-            label="Deadline date"
-            value={details?.preferred_delivery_date ? formatDate(details.preferred_delivery_date) : '—'}
-          />
-          {details?.storage_deadline && (
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Storage deadline</p>
-              <p className="text-slate-900">{formatDate(details.storage_deadline)}, 11:59 PM</p>
-              <p className="text-xs text-slate-500">Last free storage day -- every trip picked up by then.</p>
-            </div>
-          )}
-
-          {details && (
-            <>
-              <SectionTitle>Cargo</SectionTitle>
-              <InfoRow
-                label="Per trip"
-                wide
-                // Each trip's own cargo and details are in the trips table below.
-                value={groupTripCargo(details.trips.filter((t) => t.status !== 'Cancelled').map((t) => t.cargo))}
-              />
-            </>
-          )}
-
-          <SectionTitle>Money</SectionTitle>
-          <InfoRow label="Rate per trip" value={formatMoney(booking.rate)} />
-          <InfoRow
-            label="Payment terms"
-            value={
-              details?.payment_terms
-                ? (PAYMENT_TERMS_LABELS[details.payment_terms as keyof typeof PAYMENT_TERMS_LABELS] ??
-                  details.payment_terms)
-                : '—'
-            }
-          />
-          <InfoRow
-            label="Total contract value"
-            value={`${formatMoney(booking.total_contract_value)} (${booking.total_trips} ${
-              booking.total_trips === 1 ? 'trip' : 'trips'
-            })`}
-          />
-          <InfoRow
-            label="Billable so far"
-            value={
-              formatMoney(booking.billable_amount) +
-              (booking.amount_to_pay !== null ? ' (manually set)' : '')
-            }
-          />
-          {booking.damage_charges > 0 && (
-            <InfoRow
-              label="Incl. damage charges"
-              value={formatMoney(booking.damage_charges)}
-            />
-          )}
-          <InfoRow label="Amount paid" value={formatMoney(booking.amount_paid)} />
-          <InfoRow label="Balance due" value={formatMoney(booking.balance_due)} />
-          <InfoRow label="Invoice no." value={details?.invoice_number || '—'} />
-        </div>
-        {downpayment && (
-          <div
-            className={`mt-3 px-4 py-3 text-sm ${
-              downpayment.met ? 'bg-green-50 text-green-800' : downpayment.waived ? 'bg-slate-50 text-slate-700' : 'bg-amber-50 text-amber-900'
-            }`}
-          >
-            <p className="font-semibold">
-              Downpayment {formatMoney(downpayment.required)}
-              {downpayment.met
-                ? ' · ✓ received'
-                : downpayment.waived
-                  ? ' · waived by Admin'
-                  : ` · ${formatMoney(downpayment.paid)} paid, ${formatMoney(downpayment.missing)} to go`}
-            </p>
-            <p className="mt-0.5 text-xs">
-              {downpayment.met
-                ? 'All trips can go. The rest is due under the payment terms after delivery.'
-                : downpayment.waived
-                  ? `Trips may start without it${details?.downpayment_waive_reason ? ` -- reason: ${details.downpayment_waive_reason}` : ''}.`
-                  : 'Trip cost + 25% of the rest of the contract. No trip can start until it is paid.'}
-            </p>
-            {isAdmin(role) && onChanged && !downpayment.met && !downpayment.waived && (
-              <button
-                type="button"
-                onClick={waiveDownpayment}
-                className="mt-2 text-xs font-medium underline hover:no-underline"
-              >
-                Allow trips without downpayment
-              </button>
-            )}
-          </div>
-        )}
-        {/* Admin only: the Billing page exists only in the Admin routes */}
-        {isAdmin(role) && (
-          <Link
-            to={`/dashboard/billing/${booking.booking_id}`}
-            className="mt-3 inline-block text-sm font-medium text-slate-700 underline hover:text-slate-900"
-          >
-            Billing
-          </Link>
-        )}
-        </>
-        )}
-
-        <div className="mt-6">
-          <h4 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            Trips ({booking.completed_trips}/{booking.total_trips} delivered
-            {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''})
-          </h4>
-          {loadError ? (
-            <p className="mt-2 text-sm text-slate-500">Trips couldn't be loaded.</p>
-          ) : !details ? (
-            <p className="mt-2 text-sm text-slate-500">Loading trips…</p>
-          ) : trips.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">
-              This booking has no trips. It may need manual review.
-            </p>
-          ) : (
-            <div className="mt-2 overflow-x-auto border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Trip</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Time slot</th>
-                    <th className="px-3 py-2 font-medium">Cargo</th>
-                    <th className="px-3 py-2 font-medium">Driver</th>
-                    <th className="px-3 py-2 font-medium">Truck / trailer</th>
-                    <th className="px-3 py-2 font-medium">Expenses</th>
-                    <th className="px-3 py-2 font-medium">Documents</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trips.map((trip) => (
-                    <tr
-                      key={trip.itinerary_id}
-                      id={`trip-row-${trip.itinerary_id}`}
-                      className={`border-b border-slate-100 last:border-0 ${
-                        trip.itinerary_id === highlightTripId ? 'bg-amber-50 outline-2 -outline-offset-2 outline-amber-400' : ''
-                      }`}
-                    >
-                      <td className="px-3 py-2 text-slate-900">
-                        #{trip.itinerary_id}
-                        {trip.itinerary_id === highlightTripId && (
-                          <span className="block text-xs font-medium text-amber-700">Found</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} />
-                        {(() => {
-                          const state = storageState({
-                            deadline: details.storage_deadline,
-                            status: trip.status,
-                            pickedUpAt: trip.picked_up_at,
-                            now: Date.now(),
-                          })
-                          return state ? (
-                            <span className={`mt-1 block w-fit px-1.5 py-0.5 text-xs font-medium ${STORAGE_BADGE[state].className}`}>
-                              {STORAGE_BADGE[state].label}
-                            </span>
-                          ) : null
-                        })()}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {trip.trip_start_at ? (
-                          formatSlot(trip.trip_start_at, trip.trip_end_at)
-                        ) : (
-                          <>
-                            {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
-                            <span className="block text-xs text-amber-700">No time set</span>
-                          </>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        <span className="text-slate-900">{tripCargoLabel(trip.cargo)}</span>
-                        {trip.cargo.cargo_description && (
-                          <span className="block max-w-48 text-xs text-slate-500">{trip.cargo.cargo_description}</span>
-                        )}
-                        {/* Staff can change a trip's cargo until it's delivered. */}
-                        {onChanged && trip.status !== 'Delivered' && trip.status !== 'Cancelled' && (
-                          <button
-                            type="button"
-                            onClick={() => setCargoTripId(cargoTripId === trip.itinerary_id ? null : trip.itinerary_id)}
-                            className="mt-1 block text-xs font-medium text-slate-600 underline hover:text-slate-900"
-                          >
-                            Edit cargo
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {trip.driver ?? <span className="text-slate-400">Not assigned</span>}
-                        {trip.helper && (
-                          <span className="block text-xs text-slate-500">Helper: {trip.helper}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {trip.plate_number ?? <span className="text-slate-400">No truck</span>}
-                        {' / '}
-                        {trip.trailer_id !== null
-                          ? (trip.trailer_plate ?? `Trailer #${trip.trailer_id}`)
-                          : <span className="text-slate-400">no trailer</span>}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {trip.expenses.length === 0 ? (
-                          <span className="text-slate-400">None</span>
-                        ) : (
-                          <>
-                            <span className="font-medium text-slate-900">
-                              {formatMoney(trip.expenses.reduce((sum, e) => sum + Number(e.amount), 0))}
-                            </span>
-                            {trip.expenses.map((e, i) => (
-                              <span key={i} className="block text-xs text-slate-500">
-                                {formatMoney(Number(e.amount))} · {e.description}
-                              </span>
-                            ))}
-                          </>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {/* Opens this trip's documents panel below the table. Upload
-                            only where staff can act (the Bookings page); the
-                            read-only client-history view can just look. */}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDocsTripId(docsTripId === trip.itinerary_id ? null : trip.itinerary_id)
-                          }
-                          className={`whitespace-nowrap border px-3 py-1 text-xs font-medium ${
-                            docsTripId === trip.itinerary_id
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          {onChanged ? 'Upload Document' : 'View Documents'}
-                        </button>
-                        {trip.document_count > 0 ? (
-                          <span className="mt-1 block text-xs text-slate-500">
-                            {trip.document_count} {trip.document_count === 1 ? 'file' : 'files'}
-                          </span>
-                        ) : trip.status === 'Delivered' ? (
-                          <span className="mt-1 block text-xs font-medium text-amber-700">No DO yet</span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {cargoTripId !== null && trips.some((t) => t.itinerary_id === cargoTripId) && (
-            <div className="mt-3 border border-slate-200 p-4">
-              <h5 className="mb-3 text-sm font-semibold text-slate-900">Trip #{cargoTripId} cargo</h5>
-              <EditTripCargo
-                key={cargoTripId}
-                itineraryId={cargoTripId}
-                cargo={trips.find((t) => t.itinerary_id === cargoTripId)!.cargo}
-                onCancel={() => setCargoTripId(null)}
-                onSaved={() => {
-                  setCargoTripId(null)
-                  showToast(`Trip #${cargoTripId} cargo saved.`)
-                  reload()
-                }}
-              />
-            </div>
-          )}
-
-          {docsTripId !== null && trips.some((t) => t.itinerary_id === docsTripId) && (
-            <div className="mt-3 border border-slate-200 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h5 className="text-sm font-semibold text-slate-900">Trip #{docsTripId} documents</h5>
-                <button
-                  type="button"
-                  onClick={() => setDocsTripId(null)}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-900"
-                >
-                  Close
-                </button>
-              </div>
-              <TripDocuments
-                key={docsTripId}
-                itineraryId={docsTripId}
-                canEdit={!!onChanged}
-                onCountChange={updateDocumentCount}
-              />
-            </div>
-          )}
-        </div>
-
         {showCancel && (
-          <div className="mt-6 border border-red-200 bg-red-50/50 p-4">
+          <div className="border-2 border-red-200 bg-red-50/50 p-4">
             <p className="text-sm font-semibold text-slate-900">
               {anyDelivered
                 ? `Cancel the ${awaitingTrips.length} trip(s) that haven't started?`
@@ -1105,7 +895,7 @@ function BookingDetailModal({
             <p className="mt-1 text-sm text-slate-600">
               {anyDelivered
                 ? 'Delivered trips stay on the booking and are still billed.'
-                : 'Its trips are cancelled too and any assigned truck or trailer is freed. This can\'t be undone from the app.'}
+                : "Its trips are cancelled too and any assigned truck or trailer is freed. This can't be undone from the app."}
             </p>
             <label className="mt-3 flex flex-col gap-1 text-sm font-medium text-slate-700">
               Reason
@@ -1149,29 +939,266 @@ function BookingDetailModal({
           </div>
         )}
 
-        {/* Inline cards only need this footer when there's a cancel button. */}
-        {(!inline || (canCancel && !showCancel)) && (
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
-            {canCancel && !showCancel ? (
-              <button
-                type="button"
-                onClick={() => setShowCancel(true)}
-                className="border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-              >
-                {cancelLabel}…
-              </button>
-            ) : (
-              <span />
+        {details?.cancellation_reason && (
+          <p className="flex items-start gap-2 bg-red-100 px-4 py-3 text-sm text-red-800">
+            <span aria-hidden="true" className="font-bold">ⓘ</span>
+            <span>
+              <span className="font-semibold">
+                {booking.status === 'Cancelled' ? 'Cancelled' : 'Remaining trips cancelled'}
+                {details.cancelled_at && ` on ${formatDate(details.cancelled_at)}`}.
+              </span>{' '}
+              Reason: {details.cancellation_reason}
+            </span>
+          </p>
+        )}
+
+        {loadError && (
+          <p className="bg-red-50 px-4 py-3 text-sm text-red-700">Couldn't load the full details ({loadError}).</p>
+        )}
+
+        {showDownpaymentDue && downpayment && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span aria-hidden="true" className="text-xl leading-none text-amber-800">⚠</span>
+              <div>
+                <p className="font-semibold text-amber-900">
+                  Downpayment due: {formatMoney(downpayment.required)} · {formatMoney(downpayment.paid)} paid ·{' '}
+                  {formatMoney(downpayment.missing)} to go
+                </p>
+                <p className="text-sm text-amber-900">
+                  Trip cost + 25% of the rest of the contract. No trip can start until it is paid.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {billingLink && (
+                <Link to={billingLink} className="text-sm font-semibold text-amber-900 underline">
+                  Open Billing
+                </Link>
+              )}
+              {isAdmin(role) && onChanged && (
+                <button
+                  type="button"
+                  onClick={waiveDownpayment}
+                  className="border-2 border-amber-700 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Allow Trips Without Downpayment…
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Active bookings: cargo + money up front. */}
+        {!isClosed && (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+            {cargoCard}
+            {moneyCard}
+          </div>
+        )}
+
+        {/* Route, schedule (and, when finished, cargo + money) behind a toggle. */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowDetails((v) => !v)}
+            aria-expanded={showDetails}
+            className="flex w-full items-center justify-between border-2 border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+          >
+            {showDetails ? 'Hide Booking Details' : 'Show Booking Details'}
+            <span aria-hidden="true">{showDetails ? '▴' : '▾'}</span>
+          </button>
+          {showDetails && detailsSection}
+        </div>
+
+        {/* Trips */}
+        <section className="border-2 border-slate-300 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+            <h4 className="text-base font-semibold text-slate-900">Trips · {tripsTitle}</h4>
+            {!isClosed && onChanged && (
+              <Link to="/dashboard/dispatch" className="text-sm font-semibold text-primary hover:underline">
+                Assign in Dispatch Board →
+              </Link>
             )}
-            {!inline && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-secondary px-4 py-2 text-sm font-medium"
-              >
-                Close
-              </button>
-            )}
+          </div>
+          {loadError ? (
+            <p className="px-4 pb-4 text-sm text-slate-500">Trips couldn't be loaded.</p>
+          ) : !details ? (
+            <p className="px-4 pb-4 text-sm text-slate-500">Loading trips…</p>
+          ) : trips.length === 0 ? (
+            <p className="px-4 pb-4 text-sm text-slate-500">This booking has no trips. It may need manual review.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-semibold tracking-wider text-slate-600 uppercase">
+                  <tr>
+                    <th className="px-4 py-3">Trip</th>
+                    <th className="px-3 py-3">Status</th>
+                    <th className="px-3 py-3">Time Slot</th>
+                    <th className="px-3 py-3">Cargo</th>
+                    <th className="px-3 py-3">Driver</th>
+                    <th className="px-3 py-3">Truck / Trailer</th>
+                    <th className="px-3 py-3">Exp.</th>
+                    <th className="px-3 py-3">Documents</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trips.map((trip) => {
+                    const cancelled = trip.status === 'Cancelled'
+                    const toRun = !cancelled && trip.status !== 'Delivered'
+                    // "Not assigned" only needs attention on a trip still to run.
+                    const notAssigned = toRun ? 'font-medium text-orange-700' : 'text-slate-500'
+                    const storage = storageState({
+                      deadline: details.storage_deadline,
+                      status: trip.status,
+                      pickedUpAt: trip.picked_up_at,
+                      now,
+                    })
+                    const slot = trip.trip_start_at ? slotLines(trip.trip_start_at, trip.trip_end_at) : null
+                    const expenseTotal = trip.expenses.reduce((sum, e) => sum + Number(e.amount), 0)
+                    return (
+                      <Fragment key={trip.itinerary_id}>
+                      <tr
+                        id={`trip-row-${trip.itinerary_id}`}
+                        className={`border-t border-slate-200 align-middle ${
+                          trip.itinerary_id === highlightTripId ? 'bg-amber-50 outline-2 -outline-offset-2 outline-amber-400' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          #{trip.itinerary_id}
+                          {trip.itinerary_id === highlightTripId && (
+                            <span className="block text-xs font-medium text-amber-700">Found</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          <StatusBadge status={trip.status} label={TRIP_STATUS_LABELS[trip.status]} icon />
+                          {storage && (
+                            <span className={`mt-1 block w-fit px-1.5 py-0.5 text-xs font-medium ${STORAGE_BADGE[storage].className}`}>
+                              {STORAGE_BADGE[storage].label}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-900">
+                          {slot ? (
+                            <>
+                              {slot.date}
+                              <span className="block text-slate-500">{slot.time}</span>
+                            </>
+                          ) : (
+                            <>
+                              {trip.trip_date_from ? formatDate(trip.trip_date_from) : '—'}
+                              <span className="block text-xs text-amber-700">No time set</span>
+                            </>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-900">
+                          {tripCargoLabel(trip.cargo)}
+                          {trip.cargo.cargo_description && (
+                            <span className="block max-w-56 text-primary">{trip.cargo.cargo_description}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          {trip.driver ?? <span className={notAssigned}>Not assigned</span>}
+                          {trip.helper && <span className="block text-xs text-slate-500">Helper: {trip.helper}</span>}
+                        </td>
+                        <td className="px-3 py-3 text-slate-900">
+                          {trip.plate_number || trip.trailer_id !== null ? (
+                            <>
+                              {trip.plate_number ?? <span className={notAssigned}>No truck</span>}
+                              {' / '}
+                              {trip.trailer_id !== null
+                                ? (trip.trailer_plate ?? `Trailer #${trip.trailer_id}`)
+                                : <span className={notAssigned}>no trailer</span>}
+                            </>
+                          ) : (
+                            <span className={notAssigned}>Not assigned</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600">
+                          {trip.expenses.length === 0 ? (
+                            'None'
+                          ) : (
+                            <span title={trip.expenses.map((e) => `${formatMoney(Number(e.amount))} · ${e.description}`).join('\n')}>
+                              {formatMoney(expenseTotal)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          {cancelled ? (
+                            <span className="text-slate-500">—</span>
+                          ) : (
+                            <>
+                              {/* Opens the upload box right under this row. Upload
+                                  only where staff can act (the Bookings page); the
+                                  read-only client-history view can just look. */}
+                              <button
+                                type="button"
+                                onClick={() => setDocsTripId(docsTripId === trip.itinerary_id ? null : trip.itinerary_id)}
+                                aria-label={`${onChanged ? 'Upload or view' : 'View'} trip #${trip.itinerary_id} documents`}
+                                title={onChanged ? 'Documents' : 'View documents'}
+                                className={`flex h-10 w-10 items-center justify-center border-2 ${
+                                  docsTripId === trip.itinerary_id
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                <Icon path={UPLOAD} />
+                              </button>
+                              {trip.document_count > 0 ? (
+                                <span className="mt-1 block text-xs text-slate-500">
+                                  {trip.document_count} {trip.document_count === 1 ? 'file' : 'files'}
+                                </span>
+                              ) : trip.status === 'Delivered' ? (
+                                <span className="mt-1 inline-block bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900">
+                                  No DO yet
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                      {/* The trip's documents, right under its row -- the same box as the
+                          DO upload in Mark Delivered. It closes by itself once an upload
+                          has gone through (TripDocuments onUploaded). */}
+                      {docsTripId === trip.itinerary_id && (
+                        <tr className="bg-slate-50">
+                          <td colSpan={8} className="px-4 pt-2 pb-4">
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-sm font-semibold text-slate-900">
+                                Trip #{trip.itinerary_id} · {onChanged ? 'Attach DO / documents' : 'Documents'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setDocsTripId(null)}
+                                className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <TripDocuments
+                              itineraryId={trip.itinerary_id}
+                              canEdit={!!onChanged}
+                              onCountChange={updateDocumentCount}
+                              onUploaded={() => setDocsTripId(null)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+        </section>
+
+        {!inline && (
+          <div className="flex justify-end">
+            <button type="button" onClick={onClose} className="btn-secondary px-4 py-2 text-sm font-medium">
+              Close
+            </button>
           </div>
         )}
       </div>

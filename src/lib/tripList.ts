@@ -5,6 +5,7 @@
 // Every query pages past Supabase's 1000-row cap (fetchAll / fetchIn).
 import { supabase } from './supabaseClient'
 import { fetchAll, fetchIn } from './dashboardExpenses'
+import type { TripCargo } from './quoteRequest'
 
 export const TRIP_STATUS_LABELS: Record<string, string> = {
   Awaiting: 'Awaiting',
@@ -33,6 +34,8 @@ export type TripListRow = {
   document_count: number
   // bookings.storage_deadline -- picked up by 11:59 PM that day (lib/storageDeadline.ts).
   storage_deadline: string | null
+  // What this trip carries (itineraries.cargo_*).
+  cargo: TripCargo
 }
 
 type TripRow = {
@@ -46,6 +49,11 @@ type TripRow = {
   trailer_id: number | null
   place_of_pickup_id: number
   place_of_delivery_id: number
+  cargo_type: string | null
+  container_type: string | null
+  trailer_type: string | null
+  weight: number | null
+  cargo_description: string | null
 }
 
 export async function loadTripList(): Promise<{ rows: TripListRow[]; error: string | null }> {
@@ -53,7 +61,7 @@ export async function loadTripList(): Promise<{ rows: TripListRow[]; error: stri
     supabase
       .from('itineraries')
       .select(
-        'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, place_of_pickup_id, place_of_delivery_id',
+        'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, place_of_pickup_id, place_of_delivery_id, cargo_type, container_type, trailer_type, weight, cargo_description',
       )
       .order('itinerary_id', { ascending: false })
       .range(from, to),
@@ -145,6 +153,13 @@ export async function loadTripList(): Promise<{ rows: TripListRow[]; error: stri
         helper: crewName(t.itinerary_id, 'Helper'),
         document_count: docCount.get(t.itinerary_id) ?? 0,
         storage_deadline: booking?.storage_deadline ?? null,
+        cargo: {
+          cargo_type: t.cargo_type,
+          container_type: t.container_type,
+          trailer_type: t.trailer_type,
+          weight: t.weight,
+          cargo_description: t.cargo_description,
+        },
       }
     }),
     error: null,

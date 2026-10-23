@@ -75,10 +75,38 @@ const STATUS_LABEL: Record<string, string> = {
   OnHold: 'On Hold',
 }
 
-export default function StatusBadge({ status, label }: { status: string; label?: ReactNode }) {
-  const tone = TONES[STATUS_TONE[status] ?? 'neutral']
+// Small outline icon before the label (opt-in, `icon`): a check for done /
+// confirmed, an x for rejected / cancelled, a clock for everything else.
+const ICON_PATHS = {
+  check: 'M20 6L9 17l-5-5',
+  cross: 'M18 6L6 18M6 6l12 12',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+}
+
+export default function StatusBadge({
+  status,
+  label,
+  icon = false,
+}: {
+  status: string
+  label?: ReactNode
+  icon?: boolean
+}) {
+  const toneKey = STATUS_TONE[status] ?? 'neutral'
+  const tone = TONES[toneKey]
+  const path =
+    toneKey === 'good' || toneKey === 'info'
+      ? ICON_PATHS.check
+      : toneKey === 'bad'
+        ? ICON_PATHS.cross
+        : ICON_PATHS.clock
   return (
-    <span className={`inline-block whitespace-nowrap px-2.5 py-1 text-xs font-semibold ${tone}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 text-xs font-semibold ${tone}`}>
+      {icon && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d={path} />
+        </svg>
+      )}
       {label ?? STATUS_LABEL[status] ?? status}
     </span>
   )

@@ -4,8 +4,8 @@
 // in `itinerary_documents`. Staff pass canEdit to upload/delete; drivers
 // and clients get the same list read-only (RLS decides who can see what).
 //
-// Built for phones: "Take photo" opens the back camera directly, several
-// files can be picked at once (or dragged in on a computer), and photos
+// "Upload Photo" picks an image (JPG/PNG/WebP), "Choose Files" any allowed
+// file; several files can be picked at once (or dragged in), and photos
 // are shrunk in the browser before upload (a 6 MB phone photo becomes
 // ~500 KB -- fast on mobile data, never near the 10 MB limit). PDFs are
 // uploaded as-is. Private bucket -> thumbnails and "open" use signed links.
@@ -105,12 +105,16 @@ export default function TripDocuments({
   itineraryId,
   canEdit = false,
   onCountChange,
+  onUploaded,
 }: {
   itineraryId: number
   canEdit?: boolean
   // Told the new number of documents after every load (for count labels
   // elsewhere). Pass a stable function (useCallback) -- it reloads if it changes.
   onCountChange?: (itineraryId: number, count: number) => void
+  // Called after a batch of uploads all went through (not when one failed --
+  // the box stays so it can be retried). The booking card closes the box.
+  onUploaded?: () => void
 }) {
   const [docs, setDocs] = useState<Doc[] | null>(null)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
@@ -138,7 +142,7 @@ export default function TripDocuments({
   async function uploadMany(files: File[]) {
     const batch = files.map((file) => ({ key: uniqueKey(), file, failed: null }))
     setPending((p) => [...p, ...batch])
-    await Promise.all(
+    const errors = await Promise.all(
       batch.map(async (item) => {
         const error = await uploadOne(itineraryId, item.file)
         setPending((p) =>
@@ -146,9 +150,14 @@ export default function TripDocuments({
             ? p.map((x) => (x.key === item.key ? { ...x, failed: error } : x))
             : p.filter((x) => x.key !== item.key),
         )
+        return error
       }),
     )
     load()
+    if (errors.every((error) => error === null)) {
+      showToast(batch.length === 1 ? 'Document uploaded.' : `${batch.length} documents uploaded.`)
+      onUploaded?.()
+    }
   }
 
   function retry(item: Pending) {
@@ -223,17 +232,21 @@ export default function TripDocuments({
             const files = Array.from(e.dataTransfer.files)
             if (files.length > 0) uploadMany(files)
           }}
-          className={`border-2 border-dashed p-4 text-center ${
-            dragOver ? 'border-slate-500 bg-slate-100' : 'border-slate-300 bg-slate-50'
+          className={`border border-dashed px-4 py-5 text-center ${
+            dragOver ? 'border-slate-500 bg-slate-100' : 'border-slate-400 bg-white'
           }`}
         >
           <div className="flex flex-wrap justify-center gap-2">
-            <label className="btn-primary cursor-pointer px-4 py-2 font-medium">
-              Take photo
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />
+            <label className="btn-primary inline-flex cursor-pointer items-center gap-2 px-5 py-2.5 font-semibold">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
+              </svg>
+              Upload Photo
+              {/* Just an image picker (no camera mode). */}
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={onPick} />
             </label>
-            <label className="cursor-pointer border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 hover:bg-slate-100">
-              Choose files
+            <label className="cursor-pointer border border-slate-400 bg-white px-5 py-2.5 font-semibold text-slate-800 hover:bg-slate-50">
+              Choose Files
               <input
                 type="file"
                 accept="application/pdf,image/jpeg,image/png,image/webp"
@@ -243,9 +256,12 @@ export default function TripDocuments({
               />
             </label>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-slate-500">
             or drag files here · PDF, JPG, PNG or WebP · up to 10 MB each
           </p>
+          {docs !== null && docs.length === 0 && pending.length === 0 && (
+            <p className="mt-3 text-sm font-medium text-slate-700">No documents yet.</p>
+          )}
         </div>
       )}
 
@@ -279,7 +295,8 @@ export default function TripDocuments({
       {docs === null ? (
         <p className="mt-3 text-slate-500">Loading documents…</p>
       ) : docs.length === 0 ? (
-        <EmptyState message="No documents yet." className="mt-3" />
+        // With upload rights the empty note sits inside the drop box above.
+        !canEdit && <EmptyState message="No documents yet." className="mt-3" />
       ) : (
         <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4">
           {docs.map((doc) => (

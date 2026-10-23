@@ -115,6 +115,38 @@ export function formatSlot(
   return e.date === s.date ? `${startText} – ${endClock}` : `${startText} – ${formatDate(e.date)}, ${endClock}`
 }
 
+// A Manila date (YYYY-MM-DD) -> "Oct 24" (no year), for short lists.
+function shortDate(date: string): string {
+  return formatDate(date).replace(/, \d{4}$/, '')
+}
+
+// A trip's slot on two lines: { date: "Oct 24, 2026", time: "6 AM – 12 NN" },
+// or "6 PM – Oct 25, 12 MN" when it crosses midnight.
+export function slotLines(
+  start: string | number | Date,
+  end: string | number | Date | null | undefined,
+): { date: string; time: string } {
+  const s = manilaParts(start)
+  const startClock = formatClock(s.hour, s.minute)
+  if (!end) return { date: formatDate(s.date), time: startClock }
+  const e = manilaParts(end)
+  const endClock = formatClock(e.hour, e.minute)
+  return {
+    date: formatDate(s.date),
+    time: e.date === s.date ? `${startClock} – ${endClock}` : `${startClock} – ${shortDate(e.date)}, ${endClock}`,
+  }
+}
+
+// A trip's slot in one short line, no year: "Oct 24, 6 AM – 12 NN" or
+// "Oct 24, 6 PM – Oct 25, 12 MN".
+export function formatSlotShort(
+  start: string | number | Date,
+  end: string | number | Date | null | undefined,
+): string {
+  const lines = slotLines(start, end)
+  return `${shortDate(manilaParts(start).date)}, ${lines.time}`
+}
+
 // A Manila date (YYYY-MM-DD) + minutes after midnight -> ISO timestamp
 // with the +08:00 offset, ready to save into a timestamptz column.
 export function manilaTimestamp(date: string, minutes: number): string {

@@ -1,28 +1,28 @@
-// BookingsSection: lists real bookings (searchable, filterable by status),
-// either as expanded full-detail cards (default) or a compact table with a
-// click-through detail view per row -- toggle button top right.
+// BookingsSection: the Bookings & Trips page. Two tabs (PageViewSwitch):
+// - Bookings (default): status filter (Active / Delivered / Cancelled /
+//   All, with counts) and one search box -- client, place, booking #, trip #
+//   or Q- reference. The list is on the left; the clicked booking's card
+//   (BookingDetailModal inline: downpayment, cargo, money, trips,
+//   documents, cancel) is on the right. Phones open it as a pop-up.
+// - Trips (?view=trips, TripsView.tsx): every trip with its own detail.
 //
-// Reads from `bookings`, then looks up client/place names and the source
-// quote's reference code separately (same pattern as DriverTasks.tsx)
-// since Supabase doesn't auto-join related tables. Bookings only ever get
-// created via the Quotations Approve flow (QuoteReviewModal) -- staff
-// wanting to log a booking that didn't come through the public form use
-// "New Quote" on the Quotations page instead, so it goes through the
-// same tested approve logic rather than a separate manual-entry path.
+// Reads from `bookings`, then looks up client/place names, the source
+// quote's reference code and the trips separately (same pattern as
+// DriverTasks.tsx) since Supabase doesn't auto-join related tables.
+// Bookings only ever get created when a quote's offer is accepted
+// (lib/quoteOffers.ts).
 //
 // Bookings are never deleted from here (they carry payment history):
-// they're cancelled from the detail view (BookingDetailModal) instead.
-// Status moves on its own -- Confirmed on Approve, then InProgress /
+// they're cancelled from the booking card (BookingDetailModal) instead.
+// Status moves on its own -- Confirmed on acceptance, then InProgress /
 // Delivered as the trips move (sync_booking_status trigger in the DB).
 //
-// /dashboard/bookings?booking=12 opens booking #12's detail straight
-// away -- the Dispatch Board links its booking numbers here. Adding
-// &trip=57 also highlights trip #57's row in it; the "Find trip #" box
-// looks up which booking a trip number belongs to and opens that link.
-// Trip numbers are itineraries.itinerary_id -- one running number
-// across all bookings, not "trip 1 of booking 12".
-import { useEffect, useState, type FormEvent } from 'react'
-import Pager from '../../../components/Pager'
+// /dashboard/bookings?booking=12 opens booking #12 straight away -- the
+// Dispatch Board links its booking numbers here. Adding &trip=57 also
+// highlights trip #57's row in it; so does typing a trip number in search.
+// Trip numbers are itineraries.itinerary_id -- one running number across
+// all bookings, not "trip 1 of booking 12".
+import { useEffect, useState } from 'react'
 import { usePaged } from '../../../lib/usePaged'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
@@ -34,8 +34,9 @@ import TripsView from './TripsView'
 import BookingDetailModal from './BookingDetailModal'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { DetailPane, FilterButtons, ListBox, PageViewSwitch, SearchBox } from './BookingsTripsControls'
 
 export type Booking = {
   booking_id: number
@@ -76,6 +77,9 @@ export type Booking = {
   // Set when the booking was cancelled (fully or partway): it's then only
   // billed for delivered trips (deliveryAmountFor in lib/paymentDue.ts).
   cancelled_at?: string | null
+  // Its trip numbers (itineraries.itinerary_id) -- the search box finds a
+  // booking by any of them. Optional for the same reason as reference_code.
+  trip_ids?: number[]
 }
 
 // One row of the bookings query in loadBookings().
@@ -105,23 +109,9 @@ const STATUS_FILTERS = [
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
 
-// Two ways to show the list: "split" = one-line bookings on the left, the
-// clicked one's card (BookingDetailModal inline -- trips, documents, money)
-// on the right, so the page doesn't need scrolling; "compact" = the
-// one-row-per-booking table that opens a pop-up. Remembered in this
-// browser only. Phones get the split list but open the pop-up (no room
-// for two panes).
-type ViewMode = 'split' | 'compact'
-const VIEW_KEY = 'bookings-view'
+// Wide screens show the list and the booking side by side; phones open
+// the booking as a pop-up (no room for two panes).
 const WIDE = '(min-width: 1024px)' // Tailwind's lg
-
-function readViewMode(): ViewMode {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'compact' ? 'compact' : 'split'
-  } catch {
-    return 'split'
-  }
-}
 
 function matchesStatus(status: string, filter: StatusFilter) {
   if (filter === 'All') return true
@@ -135,12 +125,8 @@ function BookingsSection() {
   const [error, setError] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [search, setSearch] = useState('')
-  const [tripQuery, setTripQuery] = useState('')
-  const [tripError, setTripError] = useState<string | null>(null)
-  const [findingTrip, setFindingTrip] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Active')
-  const [viewMode, setViewMode] = useState<ViewMode>(readViewMode)
-  // Split view: the booking shown in the right pane (null = first on the page).
+  // The booking shown in the right pane (null = first on the page).
   const [paneId, setPaneId] = useState<number | null>(null)
   const [isWide, setIsWide] = useState(() => window.matchMedia(WIDE).matches)
   useEffect(() => {
@@ -149,18 +135,9 @@ function BookingsSection() {
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
   }, [])
-  const split = viewMode === 'split' && isWide
+  const split = isWide
   const [searchParams, setSearchParams] = useSearchParams()
 
-  function toggleViewMode() {
-    const next = viewMode === 'split' ? 'compact' : 'split'
-    setViewMode(next)
-    try {
-      localStorage.setItem(VIEW_KEY, next)
-    } catch {
-      // Storage blocked (private window) -- the toggle still works, just isn't remembered.
-    }
-  }
   const linkedBookingId = Number(searchParams.get('booking')) || null
   const linkedTripId = Number(searchParams.get('trip')) || null
   // Page tab: Bookings (default) or Trips (?view=trips, TripsView.tsx).
@@ -179,37 +156,6 @@ function BookingsSection() {
   function closeDetail() {
     setSelectedBooking(null)
     if (linkedBookingId) setSearchParams({}, { replace: true })
-  }
-
-  // "Find trip #": which booking is this trip on? Then open that booking
-  // with the trip highlighted (same ?booking= link the Dispatch Board uses).
-  async function findTrip(e: FormEvent) {
-    e.preventDefault()
-    const tripId = Number(tripQuery.replace(/[^\d]/g, ''))
-    if (!tripId) {
-      setTripError('Enter a trip number.')
-      return
-    }
-    setFindingTrip(true)
-    const { data, error: tripLookupError } = await supabase
-      .from('itineraries')
-      .select('booking_id')
-      .eq('itinerary_id', tripId)
-      .maybeSingle()
-    setFindingTrip(false)
-
-    if (tripLookupError) {
-      setTripError(tripLookupError.message)
-      return
-    }
-    if (!data) {
-      setTripError(`No trip #${tripId} found.`)
-      return
-    }
-    setTripError(null)
-    setSelectedBooking(null)
-    // Opens the trip itself in the Trips tab (status timeline, documents...).
-    setSearchParams({ view: 'trips', trip: String(tripId) })
   }
 
   async function loadBookings() {
@@ -280,10 +226,10 @@ function BookingsSection() {
           .in('quote_request_id', chunk)
           .range(from, to),
       ),
-      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+      fetchIn<{ booking_id: number; itinerary_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
         supabase
           .from('itineraries')
-          .select('booking_id, itinerary_status')
+          .select('booking_id, itinerary_id, itinerary_status')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -328,7 +274,9 @@ function BookingsSection() {
     const completedTripsByBooking = new Map<number, number>()
     const itineraryRows = itinerariesResult.rows
     const cancelledTripsByBooking = new Map<number, number>()
+    const tripIdsByBooking = new Map<number, number[]>()
     itineraryRows.forEach((itinerary) => {
+      tripIdsByBooking.set(itinerary.booking_id, [...(tripIdsByBooking.get(itinerary.booking_id) ?? []), itinerary.itinerary_id])
       // Cancelled trips aren't part of the contract any more (counted separately).
       if (itinerary.itinerary_status === 'Cancelled') {
         cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
@@ -383,6 +331,7 @@ function BookingsSection() {
           invoice_number: b.invoice_number,
           cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
           cancelled_at: b.cancelled_at,
+          trip_ids: tripIdsByBooking.get(b.booking_id) ?? [],
         }
       }),
     )
@@ -391,10 +340,13 @@ function BookingsSection() {
   }
 
   const query = search.trim().toLowerCase()
+  // A number (with or without "#") also finds the booking a trip # is on.
+  const queryNumber = /^#?\d+$/.test(query) ? Number(query.replace('#', '')) : null
   const visibleBookings = bookings.filter(
     (booking) =>
       matchesStatus(booking.status, statusFilter) &&
       (!query ||
+        (queryNumber !== null && (booking.trip_ids ?? []).includes(queryNumber)) ||
         [
           `#${booking.booking_id}`,
           String(booking.booking_id),
@@ -405,16 +357,26 @@ function BookingsSection() {
           booking.invoice_number ?? '',
         ].some((text) => text.toLowerCase().includes(query))),
   )
-  const countFor = (filter: StatusFilter) =>
-    bookings.filter((booking) => matchesStatus(booking.status, filter)).length
+  const counts = loading
+    ? null
+    : Object.fromEntries(
+        STATUS_FILTERS.map((f) => [f.value, bookings.filter((b) => matchesStatus(b.status, f.value)).length]),
+      )
 
   // One page at a time (back to page 1 when the filters change).
-  const paged = usePaged(visibleBookings, `${statusFilter}|${search}|${viewMode}`)
+  const paged = usePaged(visibleBookings, `${statusFilter}|${search}`)
 
-  // Split view's right pane: a ?booking= link (Find trip, Dispatch Board)
-  // wins, else the clicked row, else the first booking on this page.
+  // Right pane: a ?booking= link (Dispatch Board, Quotations) wins, else
+  // the clicked row, else the first booking on this page.
   const paneBooking =
     linkedBooking ?? paged.rows.find((b) => b.booking_id === paneId) ?? paged.rows[0] ?? null
+  // Trip to highlight in it: from the link, or a trip # typed in search.
+  const paneHighlightTrip =
+    linkedBooking && linkedTripId
+      ? linkedTripId
+      : queryNumber !== null && paneBooking?.trip_ids?.includes(queryNumber)
+        ? queryNumber
+        : null
 
   function openBooking(booking: Booking) {
     if (split) {
@@ -425,112 +387,45 @@ function BookingsSection() {
     }
   }
 
+  const switcher = (
+    <PageViewSwitch
+      view={pageView}
+      onChange={(v) => setSearchParams(v === 'trips' ? { view: 'trips' } : {})}
+    />
+  )
+  const filterWord = statusFilter === 'All' ? '' : `${statusFilter.toLowerCase()} `
+
   return (
     <div>
       <PageHeader title="Bookings & Trips" subtitle="Every client booking and its trips." />
 
-      <div className="mb-5 flex gap-2 border-b border-slate-200">
-        {(['bookings', 'trips'] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setSearchParams(v === 'trips' ? { view: 'trips' } : {})}
-            className={`px-4 py-2 text-sm font-medium ${
-              pageView === v ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {v === 'trips' ? 'Trips' : 'Bookings'}
-          </button>
-        ))}
-      </div>
-
       {pageView === 'trips' ? (
         <TripsView
+          switcher={switcher}
           focusTripId={linkedTripId}
           // Back to the Bookings tab with that booking open.
           onOpenBooking={(bookingId) => setSearchParams({ booking: String(bookingId) })}
         />
       ) : (
-      <div>
-        <div className="min-w-0">
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <div role="group" aria-label="Filter by status" className="flex">
-              {STATUS_FILTERS.map((filter) => (
-                <button
-                  key={filter.value}
-                  type="button"
-                  onClick={() => setStatusFilter(filter.value)}
-                  aria-pressed={statusFilter === filter.value}
-                  className={`border px-3 py-1.5 text-sm font-medium [&:not(:first-child)]:-ml-px ${
-                    statusFilter === filter.value
-                      ? 'relative border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {filter.label}
-                  {!loading && (
-                    <span className="ml-1.5 text-xs opacity-70">{countFor(filter.value)}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search client, place, booking # or Q- reference"
-              aria-label="Search bookings"
-              className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none sm:max-w-sm"
+        <div>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            {switcher}
+            <FilterButtons
+              label="Filter by status"
+              options={STATUS_FILTERS}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              counts={counts}
             />
-            <form onSubmit={findTrip} className="flex">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={tripQuery}
-                onChange={(e) => {
-                  setTripQuery(e.target.value.replace(/[^\d#]/g, ''))
-                  setTripError(null)
-                }}
-                placeholder="Trip #"
-                aria-label="Find a trip by number"
-                maxLength={10}
-                className="w-24 border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={findingTrip}
-                className="-ml-px border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-              >
-                {findingTrip ? 'Finding…' : 'Find trip'}
-              </button>
-            </form>
-            {tripError && <p className="w-full text-sm text-red-700">{tripError}</p>}
-            {/* View toggle -- shows the icon of the view you'd switch TO. */}
-            <button
-              type="button"
-              onClick={toggleViewMode}
-              title={viewMode === 'split' ? 'Switch to table' : 'Switch to list + details'}
-              aria-label={viewMode === 'split' ? 'Switch to table' : 'Switch to list + details'}
-              className="border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-slate-500"
-            >
-              {viewMode === 'split' ? (
-                // Table: stacked rows
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              ) : (
-                // List + details: two panes
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="3" width="7" height="18" rx="1.5" />
-                  <rect x="12" y="3" width="9" height="18" rx="1.5" />
-                </svg>
-              )}
-            </button>
+            <SearchBox
+              value={search}
+              onChange={setSearch}
+              placeholder="Client, place, booking #, trip # or Q- reference"
+            />
           </div>
 
-          {/* A ?booking= link (Dispatch Board, Quotations, Find trip)
-              pointing at a booking that isn't there -- say so instead of
-              silently opening nothing. */}
+          {/* A ?booking= link pointing at a booking that isn't there -- say
+              so instead of silently opening nothing. */}
           {!loading && !error && linkedBookingId && !linkedBooking && !selectedBooking && (
             <p className="mb-4 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               Booking #{linkedBookingId} was not found.{' '}
@@ -549,7 +444,7 @@ function BookingsSection() {
           ) : error ? (
             <p className="text-red-700">{error}</p>
           ) : bookings.length === 0 ? (
-            <EmptyState message="No bookings yet." hint="Bookings are created when a quote is approved on the Quotations page." />
+            <EmptyState message="No bookings yet." hint="Bookings are created when a client accepts a quote offer." />
           ) : visibleBookings.length === 0 ? (
             <p className="text-slate-500">
               No bookings match.{' '}
@@ -564,144 +459,68 @@ function BookingsSection() {
                 Clear filters
               </button>
             </p>
-          ) : viewMode === 'split' ? (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
-              <div>
-                <ul className="border border-slate-200 bg-white shadow-sm">
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-start">
+              <ListBox
+                pager={paged.pager}
+                summary={`${visibleBookings.length} ${filterWord}${visibleBookings.length === 1 ? 'booking' : 'bookings'}`}
+              >
+                <ul>
                   {paged.rows.map((booking) => {
                     const active = split && paneBooking?.booking_id === booking.booking_id
                     return (
-                      <li key={booking.booking_id} className="border-b border-slate-100 last:border-0">
+                      <li key={booking.booking_id} className="border-b border-slate-200">
                         <button
                           type="button"
                           onClick={() => openBooking(booking)}
                           aria-current={active || undefined}
-                          className={`block w-full px-4 py-2.5 text-left text-sm ${
-                            active ? 'bg-slate-100 shadow-[inset_3px_0_0_var(--color-slate-900)]' : 'hover:bg-slate-50'
+                          className={`block w-full px-4 py-3 text-left text-sm ${
+                            active ? 'bg-slate-100' : 'hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center justify-between gap-2">
+                          <span className="flex items-start justify-between gap-2">
                             <span className="truncate">
-                              <span className="font-semibold text-slate-900">#{booking.booking_id}</span>{' '}
-                              <span className="text-slate-700">{booking.client_name}</span>
+                              <span className="font-semibold text-slate-900">
+                                #{booking.booking_id} {booking.client_name}
+                              </span>
+                              {booking.date && <span className="text-primary"> · {formatDate(booking.date)}</span>}
                             </span>
                             <StatusBadge status={booking.status} />
                           </span>
-                          <span
-                            className="mt-0.5 block truncate text-xs text-slate-500"
-                            title={`${booking.pickup_location} → ${booking.delivery_location}`}
-                          >
-                            {booking.date ? `${formatDate(booking.date)} · ` : ''}
-                            {booking.pickup_location} → {booking.delivery_location}
+                          <span className="mt-0.5 block truncate text-slate-800" title={booking.pickup_location}>
+                            {booking.pickup_location}
+                          </span>
+                          <span className="block truncate text-slate-500" title={booking.delivery_location}>
+                            → {booking.delivery_location}
                           </span>
                         </button>
                       </li>
                     )
                   })}
                 </ul>
-                <Pager {...paged.pager} />
-              </div>
-              {/* Right pane: scrolls on its own if a booking is long, so the
-                  list stays in place. key = fresh card per booking. */}
+              </ListBox>
               {split && paneBooking && (
-                <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+                <DetailPane>
+                  {/* key = a fresh card per booking */}
                   <BookingDetailModal
                     key={paneBooking.booking_id}
                     booking={paneBooking}
                     inline
                     onChanged={loadBookings}
-                    highlightTripId={linkedBooking ? linkedTripId : null}
-                    startDetailsHidden={
-                      paneBooking.status === 'Delivered' || paneBooking.status === 'Cancelled' || undefined
-                    }
+                    highlightTripId={paneHighlightTrip}
                   />
-                </div>
+                </DetailPane>
               )}
             </div>
-          ) : (
-            <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Booking</th>
-                    <th className="px-4 py-3 font-medium">Client</th>
-                    <th className="px-4 py-3 font-medium">Pickup → Delivery</th>
-                    <th className="px-4 py-3 font-medium">Pickup date</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Rate / trip</th>
-                    <th className="px-4 py-3 font-medium">Contract value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.rows.map((booking) => (
-                    <tr
-                      key={booking.booking_id}
-                      onClick={() => openBooking(booking)}
-                      className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-3 text-slate-900">
-                        {/* A real button so keyboard users can open it too. */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openBooking(booking)
-                          }}
-                          className="font-medium underline-offset-2 hover:underline"
-                        >
-                          #{booking.booking_id}
-                        </button>
-                        {booking.reference_code && (
-                          <span className="block font-mono text-xs text-slate-500">
-                            {booking.reference_code}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {booking.client_name}
-                      </td>
-                      <td className="max-w-xs px-4 py-3 text-slate-600">
-                        <span className="block truncate" title={booking.pickup_location}>
-                          {booking.pickup_location}
-                        </span>
-                        <span className="block truncate text-slate-500" title={booking.delivery_location}>
-                          → {booking.delivery_location}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {booking.date ? formatDate(booking.date) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={booking.status} />
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {booking.rate !== null
-                          ? `${formatMoney(booking.rate)}`
-                          : '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {formatMoney(booking.total_contract_value)}
-                        <span className="ml-1 text-xs text-slate-400">
-                          ({booking.completed_trips}/{booking.total_trips} trips
-                          {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''})
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           )}
-          {viewMode === 'compact' && <Pager {...paged.pager} />}
         </div>
-      </div>
       )}
 
-      {/* Pop-up for the table view and phones; the split view uses its pane. */}
+      {/* Pop-up on phones; wide screens use the pane. */}
       {shownBooking && !split && (
         <BookingDetailModal
           booking={shownBooking}
-          // Only when opened from a ?trip= link (Find trip), not a row click.
+          // Only when opened from a ?trip= link, not a row click.
           highlightTripId={selectedBooking ? null : linkedTripId}
           onClose={closeDetail}
           onChanged={() => {
