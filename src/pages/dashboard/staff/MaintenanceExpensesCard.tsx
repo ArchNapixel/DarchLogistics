@@ -66,10 +66,14 @@ function MaintenanceExpensesCard({
   period,
   refreshKey,
   collapsed = false,
+  onTotal,
 }: {
   period: Period
   refreshKey: number
   collapsed?: boolean // true = show only the big number
+  // Reports this card's total to the dashboard (null while loading/failed),
+  // so it can work out the net figure.
+  onTotal?: (total: number | null) => void
 }) {
   const [data, setData] = useState<MaintenanceExpenses | null>(null)
   const [loading, setLoading] = useState(true)
@@ -88,12 +92,14 @@ function MaintenanceExpensesCard({
         setError(null)
         setData(result.data)
       }
+      onTotal?.(result.error ? null : (result.data?.total ?? null))
       setLoading(false)
     }
     load()
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onTotal is a state setter
   }, [period, refreshKey])
 
   return (

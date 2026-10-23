@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { rangeStartManila } from '../../lib/expenseTotals'
@@ -12,16 +13,81 @@ import PayrollExpensesCard from './staff/PayrollExpensesCard'
 import TopCreditorsCard from './staff/TopCreditorsCard'
 import PageHeader from '../../components/PageHeader'
 import StatusBadge from '../../components/StatusBadge'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, formatSlot } from '../../lib/format'
 import EmptyState from '../../components/EmptyState'
 
 // A truck/trailer at one of these statuses (Fleet's current_status) isn't
 // operational.
 const NOT_OPERATIONAL = new Set(['Under Maintenance', 'Out of Service'])
 
-// Trips that still count as "today's deliveries": anything not Cancelled.
-// (A plain .neq() would also drop rows whose status is still null.)
-const NOT_CANCELLED = 'itinerary_status.is.null,itinerary_status.neq.Cancelled'
+// Today's deliveries = trips scheduled today that aren't Cancelled (a plain
+// .neq() would drop rows whose status is still null) OR trips already on the
+// road, even if they started on an earlier day.
+function todaysTripsFilter(today: string) {
+  return (
+    `and(trip_date_from.eq.${today},itinerary_status.is.null),` +
+    `and(trip_date_from.eq.${today},itinerary_status.neq.Cancelled),` +
+    'itinerary_status.in.(Dispatched,PickedUp,InTransit)'
+  )
+}
+
+type DashboardAlert = { label: string; count: number; to: string }
+
+// Counts of things waiting on the admin, each linking to the page that fixes
+// it. Head-only count queries; a failed one counts as 0 so the strip never
+// blocks the page.
+async function loadAlerts(): Promise<DashboardAlert[]> {
+  const nowIso = new Date().toISOString()
+  const in24h = new Date(Date.now() + 24 * 3_600_000).toISOString()
+  const awaiting = 'itinerary_status.is.null,itinerary_status.eq.Awaiting'
+  const count = (q: PromiseLike<{ count: number | null; error: unknown }>) =>
+    q.then((r) => (r.error ? 0 : (r.count ?? 0)))
+
+  const [overdue, noTruck, maintenance, leave, cash] = await Promise.all([
+    count(
+      supabase
+        .from('itineraries')
+        .select('itinerary_id', { count: 'exact', head: true })
+        .or(awaiting)
+        .lt('trip_start_at', nowIso),
+    ),
+    count(
+      supabase
+        .from('itineraries')
+        .select('itinerary_id', { count: 'exact', head: true })
+        .or(awaiting)
+        .gte('trip_start_at', nowIso)
+        .lte('trip_start_at', in24h)
+        .is('plate_number', null),
+    ),
+    count(
+      supabase
+        .from('maintenance_requests')
+        .select('request_id', { count: 'exact', head: true })
+        .eq('status', 'Pending'),
+    ),
+    count(
+      supabase
+        .from('leave_requests')
+        .select('leave_id', { count: 'exact', head: true })
+        .eq('status', 'Pending'),
+    ),
+    count(
+      supabase
+        .from('cash_advances')
+        .select('cash_advance_id', { count: 'exact', head: true })
+        .eq('status', 'Pending'),
+    ),
+  ])
+
+  return [
+    { label: 'trips past their start time and still Awaiting', count: overdue, to: '/dashboard/dispatch' },
+    { label: 'trips starting within 24 hours with no truck', count: noTruck, to: '/dashboard/dispatch' },
+    { label: 'maintenance requests to review', count: maintenance, to: '/dashboard/reports' },
+    { label: 'leave requests to review', count: leave, to: '/dashboard/attendance' },
+    { label: 'cash advance requests to review', count: cash, to: '/dashboard/cash-advance' },
+  ].filter((a) => a.count > 0)
+}
 
 // Cards whose number means "someone needs to act" -- shown in the accent
 // color (see the design system notes in index.css).
@@ -44,6 +110,10 @@ const REVENUE_RANGES = [
 
 type TodayDelivery = {
   itinerary_id: number
+  booking_id: number
+  driver: string | null
+  startAt: string | null
+  endAt: string | null
   from: string
   to: string
   rate: number | null
@@ -73,6 +143,12 @@ function StaffDashboard() {
   // (key of the hovered card, or null).
   const [openCard, setOpenCard] = useState<string | null>(null)
   const rangePeriod = REVENUE_RANGES.find((r) => r.value === revenueRange)!.period
+  // True from a Refresh click until the summary has reloaded.
+  const [refreshing, setRefreshing] = useState(false)
+  // Totals reported by the expense cards, for the net figure.
+  const [opsTotal, setOpsTotal] = useState<number | null>(null)
+  const [maintTotal, setMaintTotal] = useState<number | null>(null)
+  const [alerts, setAlerts] = useState<DashboardAlert[]>([])
   const [revenue, setRevenue] = useState(0)
   const [revenueLoading, setRevenueLoading] = useState(true)
   const [revenueError, setRevenueError] = useState<string | null>(null)
@@ -102,8 +178,7 @@ function StaffDashboard() {
             supabase
               .from('itineraries')
               .select('itinerary_id', { count: 'exact', head: true })
-              .eq('trip_date_from', today)
-              .or(NOT_CANCELLED),
+              .or(todaysTripsFilter(today)),
             supabase.from('truck_profiles').select('current_status'),
             supabase.from('trailers').select('current_status'),
           ])
@@ -152,10 +227,16 @@ function StaffDashboard() {
         )
       } finally {
         setLoading(false)
+        setRefreshing(false)
       }
     }
 
     loadSummary()
+  }, [refreshKey])
+
+  // "Needs attention" strip.
+  useEffect(() => {
+    loadAlerts().then(setAlerts)
   }, [refreshKey])
 
   useEffect(() => {
@@ -286,10 +367,10 @@ function StaffDashboard() {
       const { data: itineraryRows, error: itineraryError } = await supabase
         .from('itineraries')
         .select(
-          'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id',
+          'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, trip_start_at, trip_end_at',
         )
-        .eq('trip_date_from', today)
-        .or(NOT_CANCELLED)
+        .or(todaysTripsFilter(today))
+        .order('trip_start_at', { ascending: true, nullsFirst: false })
 
       if (itineraryError) {
         console.error('Failed to load today\'s deliveries', itineraryError)
@@ -327,7 +408,7 @@ function StaffDashboard() {
         ),
       )
 
-      const [placesResult, bookingsResult, trailersResult] = await Promise.all([
+      const [placesResult, bookingsResult, trailersResult, crewResult] = await Promise.all([
         supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
         supabase
           .from('bookings')
@@ -336,11 +417,34 @@ function StaffDashboard() {
         trailerIds.length > 0
           ? supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
           : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('itinerary_crews')
+          .select('itinerary_id, employee_id')
+          .eq('crew_role', 'Driver')
+          .eq('is_active', true)
+          .in('itinerary_id', itineraryRows.map((row) => row.itinerary_id)),
       ])
 
-      if (placesResult.error || bookingsResult.error || trailersResult.error) {
+      // Driver names are a second hop: crews -> employees.
+      const driverIds = Array.from(new Set((crewResult.data ?? []).map((c) => c.employee_id)))
+      const driversResult =
+        driverIds.length > 0
+          ? await supabase.from('employees').select('employee_id, full_name').in('employee_id', driverIds)
+          : { data: [], error: null }
+
+      if (
+        placesResult.error ||
+        bookingsResult.error ||
+        trailersResult.error ||
+        crewResult.error ||
+        driversResult.error
+      ) {
         const combinedError =
-          placesResult.error ?? bookingsResult.error ?? trailersResult.error!
+          placesResult.error ??
+          bookingsResult.error ??
+          trailersResult.error ??
+          crewResult.error ??
+          driversResult.error!
         console.error('Failed to load today\'s deliveries', combinedError)
         setTodayDeliveriesError(
           `Couldn't load today's deliveries (${combinedError.message}).`,
@@ -361,9 +465,18 @@ function StaffDashboard() {
         trailersResult.data.map((t) => [t.trailer_id, t.plate_number]),
       )
 
+      const driverNameById = new Map((driversResult.data ?? []).map((d) => [d.employee_id, d.full_name]))
+      const driverByTrip = new Map(
+        (crewResult.data ?? []).map((c) => [c.itinerary_id, driverNameById.get(c.employee_id) ?? null]),
+      )
+
       setTodayDeliveryRows(
         itineraryRows.map((row) => ({
           itinerary_id: row.itinerary_id,
+          booking_id: row.booking_id,
+          driver: driverByTrip.get(row.itinerary_id) ?? null,
+          startAt: row.trip_start_at,
+          endAt: row.trip_end_at,
           from: placeNameById.get(row.place_of_pickup_id) ?? '—',
           to: placeNameById.get(row.place_of_delivery_id) ?? '—',
           rate: rateByBookingId.get(row.booking_id) ?? null,
@@ -386,34 +499,34 @@ function StaffDashboard() {
     {
       title: 'Operations',
       cards: [
-        { label: 'Pending Quotes', value: summary.pendingQuotes },
-        { label: 'Active Bookings', value: summary.activeBookings },
-        { label: "Today's Deliveries", value: summary.todayDeliveries },
+        { label: 'Pending Quotes', value: summary.pendingQuotes, to: '/dashboard/quotations' },
+        { label: 'Active Bookings', value: summary.activeBookings, to: '/dashboard/bookings' },
+        { label: "Today's Deliveries", value: summary.todayDeliveries, to: '/dashboard/dispatch' },
       ],
     },
     {
       title: 'Maintenance',
       cards: [
-        { label: 'Trucks Operational', value: `${summary.trucksOperational}/${summary.truckCount}` },
-        { label: 'Trailers Operational', value: `${summary.trailersOperational}/${summary.trailerCount}` },
+        { label: 'Trucks Operational', value: `${summary.trucksOperational}/${summary.truckCount}`, to: '/dashboard/fleet' },
+        { label: 'Trailers Operational', value: `${summary.trailersOperational}/${summary.trailerCount}`, to: '/dashboard/fleet' },
       ],
     },
     {
       title: 'Human Resource',
       error: hrError,
       cards: [
-        { label: 'Total Employees', value: hr?.total ?? '--' },
-        { label: 'Drivers Available', value: hr ? `${hr.available}/${hr.drivers}` : '--' },
+        { label: 'Total Employees', value: hr?.total ?? '--', to: '/dashboard/employees' },
+        { label: 'Drivers Available', value: hr ? `${hr.available}/${hr.drivers}` : '--', to: '/dashboard/driver-schedule' },
       ],
     },
     {
       title: 'Cash Advance',
       error: cashAdvanceError,
       cards: [
-        { label: 'Pending Approval', value: cashAdvance?.[0] ?? '--' },
-        { label: 'Disbursed', value: cashAdvance?.[1] ?? '--' },
-        { label: 'Deducted', value: cashAdvance?.[2] ?? '--' },
-        { label: 'Current Balance', value: cashAdvance?.[3] ?? '--' },
+        { label: 'Pending Approval', value: cashAdvance?.[0] ?? '--', to: '/dashboard/cash-advance' },
+        { label: 'Disbursed', value: cashAdvance?.[1] ?? '--', to: '/dashboard/cash-advance' },
+        { label: 'Deducted', value: cashAdvance?.[2] ?? '--', to: '/dashboard/cash-advance' },
+        { label: 'Current Balance', value: cashAdvance?.[3] ?? '--', to: '/dashboard/cash-advance' },
       ],
     },
   ]
@@ -440,9 +553,10 @@ function StaffDashboard() {
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       >
         {group.cards.map((card) => (
-          <div
+          <Link
             key={card.label}
-            className={`reports-blueprint-card ${
+            to={card.to}
+            className={`reports-blueprint-card block hover:border-accent-500 ${
               large ? 'flex flex-col justify-center px-4 py-2.5' : 'px-3 py-2 sm:px-4'
             }`}
           >
@@ -456,7 +570,7 @@ function StaffDashboard() {
             >
               {loading ? '--' : card.value}
             </p>
-          </div>
+          </Link>
         ))}
       </div>
     </>
@@ -467,6 +581,7 @@ function StaffDashboard() {
       <PageHeader
         title="Dashboard"
         subtitle={`Welcome, ${username} · ${new Date().toLocaleDateString('en-US', {
+          timeZone: 'Asia/Manila',
           weekday: 'long',
           month: 'long',
           day: 'numeric',
@@ -480,16 +595,19 @@ function StaffDashboard() {
         </p>
       )}
 
-      <div className="reports-blueprint-card mt-3 px-5 py-[22px]">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-baseline gap-x-4">
-          <p className="font-ui text-sm font-medium text-neutral-500">
-            Total Revenue <span className="normal-case">(collected)</span>
+      {/* Revenue and Net share one row, each only as wide as its content. */}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="reports-blueprint-card flex min-h-[110px] flex-col justify-center px-5 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          {/* Same row layout and header width as the Net card, so the amounts line up. */}
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+          <p className="font-ui text-[35px] leading-none font-medium text-black md:min-w-[22rem]">
+            Total Revenue <span className="text-sm normal-case">(collected)</span>
           </p>
           {revenueError ? (
             <p className="font-ui text-sm text-red-700">{revenueError}</p>
           ) : (
-            <p className="font-condensed text-[28px] leading-none font-bold text-reports-ink">
+            <p className="font-condensed text-[28px] leading-none font-bold text-black">
               {revenueLoading ? '--' : `${formatMoney(revenue)}`}
             </p>
           )}
@@ -509,28 +627,81 @@ function StaffDashboard() {
               ))}
             </select>
             <button
-              onClick={() => setRefreshKey((k) => k + 1)}
-              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500"
+              onClick={() => {
+                setRefreshing(true)
+                setRefreshKey((k) => k + 1)
+              }}
+              disabled={refreshing}
+              className="border border-reports-hairline px-2 py-1 font-ui text-sm text-reports-ink hover:border-accent-500 disabled:opacity-50"
             >
-              Refresh
+              {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Net = cash collected - (operational + maintenance expenses). Operational
+          already includes payroll, so the payroll card is not added again. */}
+      {(() => {
+        const net =
+          !revenueLoading && !revenueError && opsTotal !== null && maintTotal !== null
+            ? revenue - opsTotal - maintTotal
+            : null
+        return (
+          <div
+            className="reports-blueprint-card flex min-h-[110px] flex-wrap content-center items-baseline gap-x-6 gap-y-1 px-5 py-5"
+            title="Cash received this period vs. costs incurred (incl. estimated diesel and draft payslips). A guide, not an accounting profit."
+          >
+            <p className="font-ui text-[35px] leading-none font-medium text-black md:min-w-[22rem]">
+              {net !== null && net < 0 ? 'Net loss' : 'Net'}{' '}
+              <span className="text-sm normal-case">(collected − expenses)</span>
+            </p>
+            <p
+              className={`font-condensed text-[28px] leading-none font-bold ${
+                net !== null && net < 0 ? 'text-red-700' : 'text-black'
+              }`}
+            >
+              {net === null ? '--' : formatMoney(Math.abs(net))}
+            </p>
+          </div>
+        )
+      })()}
+      </div>
+
+      {alerts.length > 0 && (
+        <div className="mt-3 border border-amber-300 bg-amber-50 px-4 py-3 font-ui text-sm">
+          <p className="font-semibold text-amber-900">Needs attention</p>
+          <ul className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+            {alerts.map((a) => (
+              <li key={a.label}>
+                <Link to={a.to} className="text-amber-900 underline underline-offset-2 hover:no-underline">
+                  {a.count} {a.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Costs for the same period as the revenue dropdown above. */}
       {/* Stacked in a column on the left; hovering a card expands just that one. */}
       <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start">
       <div className="flex flex-col gap-3 lg:w-1/3">
         {[
-          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} />,
+          <OperationalExpensesCard key="op" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'op'} onTotal={setOpsTotal} />,
           <PayrollExpensesCard key="pay" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'pay'} />,
-          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'mt'} />,
+          <MaintenanceExpensesCard key="mt" period={rangePeriod} refreshKey={refreshKey} collapsed={openCard !== 'mt'} onTotal={setMaintTotal} />,
         ].map((card) => (
           <div
             key={card.key}
-            onPointerEnter={() => setOpenCard(card.key as string)}
-            onPointerLeave={() => setOpenCard(null)}
+            // Hover for a mouse; click/tap and keyboard focus for touch and keyboard users.
+            tabIndex={0}
+            aria-expanded={openCard === card.key}
+            onPointerEnter={(e) => e.pointerType === 'mouse' && setOpenCard(card.key as string)}
+            onPointerLeave={(e) => e.pointerType === 'mouse' && setOpenCard(null)}
+            onClick={() => setOpenCard((c) => (c === card.key ? null : (card.key as string)))}
+            onFocus={() => setOpenCard(card.key as string)}
+            onBlur={() => setOpenCard(null)}
           >
             {card}
           </div>
@@ -599,6 +770,17 @@ function StaffDashboard() {
                   <StatusBadge status={row.status} />
                 </div>
                 <p className="mt-2 text-xs text-neutral-600">
+                  Trip #{row.itinerary_id} ·{' '}
+                  <Link
+                    to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`}
+                    className="underline"
+                  >
+                    Booking #{row.booking_id}
+                  </Link>
+                  {row.startAt && <> · {formatSlot(row.startAt, row.endAt)}</>} · Driver{' '}
+                  {row.driver ?? 'Unassigned'}
+                </p>
+                <p className="mt-1 text-xs text-neutral-600">
                   {row.rate != null ? `${formatMoney(row.rate)}` : 'N/A'} · Truck{' '}
                   {row.truckPlateNumber ?? 'Unassigned'} · Trailer{' '}
                   {row.trailerPlateNumber ?? 'Unassigned'}
@@ -611,6 +793,9 @@ function StaffDashboard() {
             <table className="w-full text-left font-ui text-sm">
               <thead className="border-b border-reports-hairline bg-reports-bg text-[11px] tracking-[0.1em] text-neutral-500 uppercase">
                 <tr>
+                  <th className="px-4 py-2 font-medium">Trip / Booking</th>
+                  <th className="px-4 py-2 font-medium">Time slot</th>
+                  <th className="px-4 py-2 font-medium">Driver</th>
                   <th className="px-4 py-2 font-medium">From</th>
                   <th className="px-4 py-2 font-medium">To</th>
                   <th className="px-4 py-2 font-medium">Rate</th>
@@ -625,6 +810,20 @@ function StaffDashboard() {
                     key={row.itinerary_id}
                     className="border-b border-reports-hairline last:border-0"
                   >
+                    <td className="px-4 py-2 whitespace-nowrap text-reports-ink">
+                      <Link
+                        to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        #{row.itinerary_id} / #{row.booking_id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-neutral-600">
+                      {row.startAt ? formatSlot(row.startAt, row.endAt) : '—'}
+                    </td>
+                    <td className={row.driver ? 'px-4 py-2 text-neutral-600' : 'px-4 py-2 text-neutral-400'}>
+                      {row.driver ?? 'Unassigned'}
+                    </td>
                     <td className="px-4 py-2 text-reports-ink">{row.from}</td>
                     <td className="px-4 py-2 text-neutral-600">{row.to}</td>
                     <td className="px-4 py-2 text-neutral-600">
