@@ -1,6 +1,7 @@
 // LocationPicker: one end of a quote's route (pickup or delivery) --
 // City + Barangay dropdowns (from location_reference), an optional
-// landmark/address field, one-click picks (known ports/terminals, plus
+// address field and an optional landmark field (both display-only, for
+// the driver -- never used for distance or cost), one-click picks (known ports/terminals, plus
 // the client's own recent locations in the client portal), and an
 // optional map for the exact spot. Used by all three quote channels.
 // Barangay is what places/route_cache key routing/distance-caching off
@@ -100,6 +101,8 @@ function LocationPicker({
     null,
   )
   const [locating, setLocating] = useState(false)
+  // The spot whose lookup failed (network / rate limit), for "Retry".
+  const [failedPin, setFailedPin] = useState<[number, number] | null>(null)
   // Bumped on every pin, so a slow lookup for an earlier pin can't land
   // after a newer one and overwrite it.
   const latestPin = useRef(0)
@@ -144,6 +147,7 @@ function LocationPicker({
       city: location.city,
       barangay: location.barangay,
       detail: location.detail,
+      landmark: location.landmark,
       lat: location.lat,
       lng: location.lng,
     })
@@ -153,6 +157,7 @@ function LocationPicker({
   async function placePin(lat: number, lng: number) {
     const pinId = ++latestPin.current
     setPendingPin([lat, lng])
+    setFailedPin(null)
     setMapNote('Finding spot…')
 
     const address = await reverseGeocode(lat, lng)
@@ -162,7 +167,8 @@ function LocationPicker({
     // A spot we can't place in a serviced city changes nothing -- the
     // form keeps whatever (consistent) pick it had before.
     if (!address) {
-      setMapNote("Couldn't look up that spot. Try again.")
+      setFailedPin([lat, lng])
+      setMapNote("Couldn't look up that spot.")
       return
     }
     const match = matchLocation(rows, address)
@@ -172,8 +178,8 @@ function LocationPicker({
     }
 
     const barangay = match.barangay ?? ''
-    // The landmark text belonged to the old spot -- keep it only if the
-    // pin is still in the same barangay.
+    // The address/landmark text belonged to the old spot -- keep it only
+    // if the pin is still in the same barangay.
     const sameBarangay =
       match.city === value.city && barangay === value.barangay && barangay !== ''
 
@@ -181,16 +187,20 @@ function LocationPicker({
       city: match.city,
       barangay,
       detail: sameBarangay ? value.detail : '',
+      landmark: sameBarangay ? value.landmark : '',
       lat,
       lng,
     })
 
     setMapNote(
       match.barangay
-        ? `Brgy. ${match.barangay}, ${match.city}`
-        : `${match.city}. Pick the barangay.`,
+        ? `Pinned: Brgy. ${match.barangay}, ${match.city}`
+        : `Pinned in ${match.city}, but we couldn't tell the barangay. Pick it above.`,
     )
   }
+
+  // A pin found the city but not the barangay: highlight the dropdown.
+  const needsBarangay = hasPin && value.city !== '' && value.barangay === ''
 
   function locateMe() {
     if (!navigator.geolocation) {
@@ -232,6 +242,7 @@ function LocationPicker({
     city: named.city,
     barangay: named.barangay,
     detail: named.landmark_detail ?? named.full_name,
+    landmark: '',
     lat: null,
     lng: null,
     label: named.abbreviation,
@@ -322,7 +333,7 @@ function LocationPicker({
         City
         <select
           value={value.city}
-          onChange={(e) =>
+          onChange={(e) => {
             onChange({
               ...value,
               city: e.target.value,
@@ -330,7 +341,9 @@ function LocationPicker({
               // Switching away from a city the pin was in makes the pin wrong.
               ...(value.city ? { lat: null, lng: null } : {}),
             })
-          }
+            setMapNote(null)
+            setFailedPin(null)
+          }}
           className={selectClasses}
         >
           <option value="">Select</option>
@@ -346,9 +359,13 @@ function LocationPicker({
         Barangay
         <select
           value={value.barangay}
-          onChange={(e) => onChange({ ...value, barangay: e.target.value })}
+          onChange={(e) => {
+            onChange({ ...value, barangay: e.target.value })
+            // The pin note ("pick it above") is answered now.
+            if (needsBarangay) setMapNote(null)
+          }}
           disabled={!value.city}
-          className={selectClasses}
+          className={`${selectClasses} ${needsBarangay ? 'border-amber-500 bg-amber-50' : ''}`}
         >
           <option value="">{value.city ? 'Select' : '—'}</option>
           {barangays.map((barangay) => (
@@ -365,7 +382,19 @@ function LocationPicker({
           type="text"
           value={value.detail}
           onChange={(e) => onChange({ ...value, detail: e.target.value })}
-          placeholder="Street, building, landmark (optional)"
+          placeholder="Street, building (optional)"
+          className={selectClasses}
+        />
+      </label>}
+
+      {specific && <label className="col-span-full flex flex-col gap-1 text-sm font-medium text-slate-700">
+        Landmark
+        <input
+          type="text"
+          value={value.landmark}
+          onChange={(e) => onChange({ ...value, landmark: e.target.value })}
+          placeholder="e.g. beside Shell station, blue gate (optional)"
+          maxLength={200}
           className={selectClasses}
         />
       </label>}
@@ -373,6 +402,28 @@ function LocationPicker({
       {error && (
         <p className="col-span-full text-sm text-red-600" role="alert">
           {error}
+        </p>
+      )}
+
+      {/* Pin lookup result, right by the dropdowns it fills (it used to
+          sit under the map, where it was easy to miss). */}
+      {specific && mapNote && (
+        <p
+          className={`col-span-full text-sm ${
+            failedPin || needsBarangay ? 'text-amber-800' : 'text-slate-600'
+          }`}
+          aria-live="polite"
+        >
+          {mapNote}
+          {failedPin && (
+            <button
+              type="button"
+              onClick={() => placePin(failedPin[0], failedPin[1])}
+              className="ml-2 font-medium underline hover:text-slate-900"
+            >
+              Retry
+            </button>
+          )}
         </p>
       )}
 
@@ -439,8 +490,8 @@ function LocationPicker({
               )}
             </MapContainer>
           </div>
-          <p className="mt-1.5 text-xs text-slate-500" aria-live="polite">
-            {mapNote ?? 'Click the map to drop a pin.'}
+          <p className="mt-1.5 text-xs text-slate-500">
+            {pendingPin ? 'Finding spot…' : 'Click the map to drop a pin.'}
           </p>
         </div>
       )}

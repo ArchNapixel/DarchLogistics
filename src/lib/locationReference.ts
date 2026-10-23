@@ -6,12 +6,11 @@
 // places.barangay + route_cache) -- this table is just the list of
 // valid values, scoped to the cities this business currently services.
 import { supabase } from './supabaseClient'
+import type { LocationReferenceRow } from './locationMatch'
 
-export type LocationReferenceRow = {
-  city: string
-  barangay: string
-  province: string | null
-}
+// The map-pin matcher lives in locationMatch.ts (no Supabase import, so its
+// self-check runs in plain Node); re-exported so callers import from here.
+export { matchLocation, type LocationReferenceRow } from './locationMatch'
 
 // Module-level cache: this reference list never changes during a
 // session. The *promise* is cached (not just the result) so the two
@@ -94,73 +93,4 @@ export function formatLocationDisplay({
   if (structured) return structured
   if (detail) return detail
   return '—'
-}
-
-// Lowercase and strip accents, so "Santo Niño" and "Santo Nino" compare equal.
-function normalize(text: string): string {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-}
-
-// Whole-word match only: a plain "contains" check made "Ula" match
-// inside "Mapula"/"Sibulan" and "Bato" inside "Paquibato", and since
-// rows are alphabetical the wrong one often won.
-function containsWord(text: string, phrase: string): boolean {
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(text)
-}
-
-// Nominatim calls these cities "Davao City", "Tagum", "Samal", "Digos"...
-// while location_reference says "Tagum City", "Island Garden City of
-// Samal". Comparing on the bare name ("tagum", "samal") lines them up.
-function cityKey(name: string): string {
-  return normalize(name).replace(/^.*\bcity of /, '').replace(/ city$/, '').trim()
-}
-
-// "Peñaplata (Poblacion)" / "Zone 2 (Pob.)" -> "penaplata" / "zone 2":
-// Nominatim never includes the bracketed part.
-function barangayKey(name: string): string {
-  return normalize(name).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()
-}
-
-// Best-effort match of a Nominatim reverse-geocode result against the
-// known reference list. The city comes from Nominatim's structured
-// `city` field. The barangay is searched for only in the *area* names
-// (suburb/quarter/village/...) -- never in road names, since e.g.
-// "Babak-Samal-Kaputian Road" would otherwise match barangays Babak or
-// Kaputian. Barangay tagging is inconsistent in OSM, so each area name
-// is checked for a whole-word barangay name (a plain "contains" check
-// made "Ula" match inside "Mapula"). Best match wins: the full name
-// incl. brackets beats the bare name, longer beats shorter. If two
-// different barangays tie (e.g. "San Isidro" when there's both "San
-// Isidro (Babak)" and "San Isidro (Kaputian)"), or none match, barangay
-// comes back null -- the user picks it, it's never guessed.
-export function matchLocation(
-  rows: LocationReferenceRow[],
-  address: { city: string | null; areas: string[] },
-): { city: string; barangay: string | null } | null {
-  if (!address.city) return null
-  const key = cityKey(address.city)
-  const cityRows = rows.filter((r) => cityKey(r.city) === key)
-  if (cityRows.length === 0) return null
-
-  const areas = address.areas.map(normalize)
-  const scored = cityRows
-    .map((r) => {
-      const full = normalize(r.barangay)
-      const bare = barangayKey(r.barangay)
-      const score = areas.some((a) => containsWord(a, full))
-        ? 1000 + full.length
-        : areas.some((a) => containsWord(a, bare))
-          ? bare.length
-          : 0
-      return { barangay: r.barangay, score }
-    })
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-
-  const tie = scored.length > 1 && scored[0].score === scored[1].score
-  return {
-    city: cityRows[0].city,
-    barangay: scored.length > 0 && !tie ? scored[0].barangay : null,
-  }
 }

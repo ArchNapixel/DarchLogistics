@@ -40,9 +40,12 @@ export type QuoteRequest = {
   contact_number: string | null
   contact_email: string | null
   pickup_location_text: string
+  // Optional landmark for the driver (display only, not used for cost).
+  pickup_landmark: string | null
   pickup_city: string | null
   pickup_barangay: string | null
   delivery_location_text: string
+  delivery_landmark: string | null
   delivery_city: string | null
   delivery_barangay: string | null
   // Exact map pins, when the submitter dropped one (LocationPicker).

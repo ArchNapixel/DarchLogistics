@@ -62,36 +62,47 @@ export async function fetchDrivingDistanceKm(
 }
 
 // Address fields OSM uses for barangay-level areas in the Philippines
-// (tagging varies by place). Road/building/shop names are left out on
-// purpose -- see matchLocation in locationReference.ts.
+// (tagging varies by place). ORDER MATTERS: most likely to be the barangay
+// first -- matchLocation (locationMatch.ts) takes the first one that names
+// a known barangay. In Davao, `quarter` is the barangay and `suburb` a
+// neighbouring barangay or district (pin in Pampanga: quarter Pampanga,
+// suburb Sasa); in Panabo/Tagum `quarter` is often a purok, which isn't
+// on the list, so `suburb` is used. Road/building/shop names are left
+// out on purpose.
 const AREA_FIELDS = [
   'quarter',
   'suburb',
   'village',
   'neighbourhood',
   'hamlet',
-  'city_district',
   'residential',
+  'city_district',
 ]
 
-// Returns the city plus the area names Nominatim knows for that point,
-// in the shape matchLocation (locationReference.ts) expects.
+// Returns the city plus the area names Nominatim knows for that point
+// (in AREA_FIELDS order), in the shape matchLocation expects. A failed
+// request (rate limit, network) is tried once more before giving up --
+// a single failure used to leave the form unchanged, so users had to
+// click the map again.
 export async function reverseGeocode(
   lat: number,
   lng: number,
 ): Promise<{ city: string | null; areas: string[] } | null> {
-  try {
-    const data = await nominatim(
-      `reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`,
-    )
-    const address = data.address ?? {}
-    return {
-      city: address.city ?? address.town ?? address.municipality ?? null,
-      areas: AREA_FIELDS.map((field) => address[field]).filter(
-        (part): part is string => typeof part === 'string',
-      ),
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const data = await nominatim(
+        `reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`,
+      )
+      const address = data.address ?? {}
+      return {
+        city: address.city ?? address.town ?? address.municipality ?? null,
+        areas: AREA_FIELDS.map((field) => address[field]).filter(
+          (part): part is string => typeof part === 'string',
+        ),
+      }
+    } catch {
+      // Retry once; nominatim() already spaces it a second after the last call.
     }
-  } catch {
-    return null
   }
+  return null
 }

@@ -82,6 +82,9 @@ type Details = {
   payment_terms: string | null
   pickup: string
   delivery: string
+  // Optional landmarks for the driver (display only).
+  pickup_landmark: string | null
+  delivery_landmark: string | null
   pickup_pin: string | null
   delivery_pin: string | null
   estimated_distance_km: number | null
@@ -149,7 +152,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
+      'quote_request_id, cargo_type, cargo_description, weight, container_type, trailer_type, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -269,6 +272,8 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       payment_terms: b.payment_terms,
       pickup: location(b.place_of_pickup_id, b.pickup_address_detail),
       delivery: location(b.place_of_delivery_id, b.delivery_address_detail),
+      pickup_landmark: b.pickup_landmark,
+      delivery_landmark: b.delivery_landmark,
       pickup_pin: pinLink(b.pickup_lat, b.pickup_lng),
       delivery_pin: pinLink(b.delivery_lat, b.delivery_lng),
       estimated_distance_km: b.estimated_distance_km,
@@ -741,6 +746,8 @@ function BookingDetailModal({
           <SectionTitle>Route</SectionTitle>
           <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
           <InfoRow label="Delivery" value={details?.delivery ?? booking.delivery_location} pin={details?.delivery_pin} />
+          {details?.pickup_landmark && <InfoRow label="Pickup landmark" value={details.pickup_landmark} />}
+          {details?.delivery_landmark && <InfoRow label="Delivery landmark" value={details.delivery_landmark} />}
           {details?.estimated_distance_km != null && (
             <InfoRow label="Estimated distance" value={`${details.estimated_distance_km.toLocaleString()} km`} />
           )}

@@ -9,6 +9,7 @@ import type { ChangeEvent, InputHTMLAttributes, ReactNode } from 'react'
 import LocationPicker from './LocationPicker'
 import DateRangePicker from './DateRangePicker'
 import {
+  MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
   todayDateString,
   type FieldErrors,
@@ -140,6 +141,11 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
     setField(e.target.name as ShipmentField, e.target.value as never)
   }
 
+  // Over the limit shows red while typing, not only on submit (submit's
+  // own check in validateShipment still blocks it either way).
+  const weightError =
+    errors.weight ?? (Number(form.weight) > MAX_WEIGHT_TONS ? `Max ${MAX_WEIGHT_TONS} tons.` : undefined)
+
   return (
     <>
       <ToggleGroup
@@ -149,7 +155,12 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
           { value: 'Loose', label: 'Loose cargo' },
         ]}
         value={form.cargoType}
-        onChange={(value) => setField('cargoType', value)}
+        onChange={(value) => {
+          setField('cargoType', value)
+          // Loose cargo can't ride a skeletal trailer (that's a bare frame
+          // for containers) -- it always goes on a flatbed.
+          if (value === 'Loose') setField('trailerType', 'Flatbed')
+        }}
       />
 
       <ToggleGroup
@@ -162,13 +173,18 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         onChange={(value) => setField('containerType', value)}
       />
 
-      <Field label="Trailer type" error={errors.trailerType}>
+      <Field
+        label="Trailer type"
+        hint={form.cargoType === 'Loose' ? '(loose cargo goes on a flatbed)' : undefined}
+        error={errors.trailerType}
+      >
         <select
           name="trailerType"
           value={form.trailerType}
           onChange={(e) => setField('trailerType', e.target.value as ShipmentForm['trailerType'])}
+          disabled={form.cargoType === 'Loose'}
           aria-invalid={errors.trailerType ? true : undefined}
-          className={inputClasses(!!errors.trailerType)}
+          className={`${inputClasses(!!errors.trailerType)} disabled:bg-slate-100 disabled:text-slate-500`}
         >
           <option value="">Select</option>
           <option value="Flatbed">Flatbed</option>
@@ -176,7 +192,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         </select>
       </Field>
 
-      <Field label="Weight" hint="(tons)" error={errors.weight}>
+      <Field label="Weight" hint="(tons)" error={weightError}>
         <input
           type="text"
           name="weight"
@@ -184,8 +200,8 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
           value={form.weight}
           onChange={(e) => setField('weight', e.target.value.replace(/[^\d.]/g, ''))}
           placeholder="e.g. 24.5"
-          aria-invalid={errors.weight ? true : undefined}
-          className={inputClasses(!!errors.weight)}
+          aria-invalid={weightError ? true : undefined}
+          className={inputClasses(!!weightError)}
         />
       </Field>
 

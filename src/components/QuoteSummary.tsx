@@ -62,6 +62,9 @@ function Stop({ letter, location }: { letter: 'A' | 'B'; location: LocationValue
         ) : (
           <Muted>—</Muted>
         )}
+        {chosen && location.landmark.trim() && (
+          <span className="block text-xs text-slate-500">Landmark: {location.landmark.trim()}</span>
+        )}
         {chosen && location.lat !== null && (
           <span className="block text-xs text-green-700">Pinned</span>
         )}

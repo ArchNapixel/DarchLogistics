@@ -724,6 +724,9 @@ function QuoteReviewModal({
         place_of_delivery_id: deliveryPlace.place_id,
         pickup_address_detail: quote.pickup_location_text || null,
         delivery_address_detail: quote.delivery_location_text || null,
+        // Display-only, for the driver -- not used for distance or cost.
+        pickup_landmark: quote.pickup_landmark?.trim() || null,
+        delivery_landmark: quote.delivery_landmark?.trim() || null,
         // Exact spots, so dispatch/drivers aren't left with only a
         // barangay (places rows are one per barangay, not per address).
         pickup_lat: quote.pickup_lat,
@@ -1065,6 +1068,9 @@ function QuoteReviewModal({
                           barangay: quote.pickup_barangay,
                           detail: quote.pickup_location_text,
                         })}
+                        {quote.pickup_landmark && (
+                          <span className="block text-[13px] text-slate-500">Landmark: {quote.pickup_landmark}</span>
+                        )}
                         {pickupPin && (
                           <a href={pickupPin} target="_blank" rel="noreferrer" className="ml-3 text-[13px] text-primary underline">
                             View pinned spot on map
@@ -1081,6 +1087,9 @@ function QuoteReviewModal({
                           barangay: quote.delivery_barangay,
                           detail: quote.delivery_location_text,
                         })}
+                        {quote.delivery_landmark && (
+                          <span className="block text-[13px] text-slate-500">Landmark: {quote.delivery_landmark}</span>
+                        )}
                         {deliveryPin && (
                           <a href={deliveryPin} target="_blank" rel="noreferrer" className="ml-3 text-[13px] text-primary underline">
                             View pinned spot on map

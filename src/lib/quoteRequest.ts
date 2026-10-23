@@ -12,7 +12,11 @@ import { supabase } from './supabaseClient'
 export type LocationValue = {
   city: string
   barangay: string
+  // "Address" on screen: street/building. Saved as *_location_text.
   detail: string
+  // Optional landmark to help the driver find the spot ("beside Shell,
+  // blue gate"). Display only -- never used for distance, places or cost.
+  landmark: string
   // Exact map pin, if one was dropped. Null when picked from the
   // dropdowns/quick-pick only.
   lat: number | null
@@ -23,6 +27,7 @@ export const emptyLocationValue: LocationValue = {
   city: '',
   barangay: '',
   detail: '',
+  landmark: '',
   lat: null,
   lng: null,
 }
@@ -150,6 +155,10 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
 
   if (!form.trailerType) {
     errors.trailerType = 'Select a trailer type.'
+  } else if (form.cargoType === 'Loose' && form.trailerType !== 'Flatbed') {
+    // The form sets Flatbed for loose cargo; this catches an old quote
+    // being edited/resubmitted with Loose + Skeletal.
+    errors.trailerType = 'Loose cargo goes on a flatbed.'
   }
   if (!form.cargoDescription.trim()) {
     errors.cargoDescription = 'Required.'
@@ -221,11 +230,13 @@ export function buildQuoteRow(form: ShipmentForm) {
     row: {
       reference_code: generateReferenceCode(),
       pickup_location_text: pickup.detail.trim(),
+      pickup_landmark: pickup.landmark.trim() || null,
       pickup_city: pickup.city,
       pickup_barangay: pickup.barangay,
       pickup_lat: pickup.lat,
       pickup_lng: pickup.lng,
       delivery_location_text: delivery.detail.trim(),
+      delivery_landmark: delivery.landmark.trim() || null,
       delivery_city: delivery.city,
       delivery_barangay: delivery.barangay,
       delivery_lat: delivery.lat,
@@ -250,7 +261,7 @@ export function buildQuoteRow(form: ShipmentForm) {
 // The quote_requests columns buildQuoteRow writes -- what quoteToForm
 // needs to read a saved quote back into the form.
 export const SHIPMENT_COLUMNS =
-  'pickup_location_text, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_type, cargo_description, weight, container_type, trailer_type, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
+  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_type, cargo_description, weight, container_type, trailer_type, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
 
 // The reverse of buildQuoteRow: a saved quote (SHIPMENT_COLUMNS) back
 // into form state, so a rejected quote can be edited and resubmitted.
@@ -263,6 +274,7 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
       city: text(q.pickup_city),
       barangay: text(q.pickup_barangay),
       detail: text(q.pickup_location_text),
+      landmark: text(q.pickup_landmark),
       lat: q.pickup_lat ?? null,
       lng: q.pickup_lng ?? null,
     },
@@ -270,6 +282,7 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
       city: text(q.delivery_city),
       barangay: text(q.delivery_barangay),
       detail: text(q.delivery_location_text),
+      landmark: text(q.delivery_landmark),
       lat: q.delivery_lat ?? null,
       lng: q.delivery_lng ?? null,
     },
@@ -374,7 +387,7 @@ export async function loadRecentLocations(clientId: number): Promise<RecentLocat
   const { data: bookings } = await supabase
     .from('bookings')
     .select(
-      'booking_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_lat, pickup_lng, delivery_lat, delivery_lng',
+      'booking_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng',
     )
     .eq('client_id', clientId)
     .order('booking_id', { ascending: false })
@@ -397,10 +410,10 @@ export async function loadRecentLocations(clientId: number): Promise<RecentLocat
 
   for (const b of bookings) {
     const ends = [
-      [b.place_of_pickup_id, b.pickup_address_detail, b.pickup_lat, b.pickup_lng],
-      [b.place_of_delivery_id, b.delivery_address_detail, b.delivery_lat, b.delivery_lng],
+      [b.place_of_pickup_id, b.pickup_address_detail, b.pickup_landmark, b.pickup_lat, b.pickup_lng],
+      [b.place_of_delivery_id, b.delivery_address_detail, b.delivery_landmark, b.delivery_lat, b.delivery_lng],
     ] as const
-    for (const [placeId, detail, lat, lng] of ends) {
+    for (const [placeId, detail, landmark, lat, lng] of ends) {
       const place = placeById.get(placeId)
       // Older places rows from before city/barangay existed can't be
       // turned back into a pick -- skip them.
@@ -414,6 +427,7 @@ export async function loadRecentLocations(clientId: number): Promise<RecentLocat
         city: place.city,
         barangay: place.barangay,
         detail: detail ?? '',
+        landmark: landmark ?? '',
         lat: lat ?? null,
         lng: lng ?? null,
         label: detail?.trim() || `Brgy. ${place.barangay}`,
