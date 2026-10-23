@@ -1,9 +1,12 @@
 // DispatchBoardSection: board of itineraries -- every active trip, plus
 // trips delivered in the last COMPLETED_DAYS days -- for staff to advance
-// status and assign a driver, split into 3 tables -- Needs Assignment
-// (missing driver, truck, or trailer), Assigned (fully crewed, just not
-// delivered yet), and Completed (status Delivered). Each table is newest
-// trip date first. Crew/truck/trailer changes re-check that the trip is
+// status and assign crew and vehicles. Three tabs: Needs Assignment
+// (missing time slot, driver, truck or trailer) and Assigned -- In
+// Progress (fully crewed, not delivered yet) show one block per booking
+// (route, Open Booking, "Use Suggested Crew for All N Trips", the
+// downpayment banner), earliest trip first; Completed (Delivered) is one
+// flat read-only table, newest first. Time, logs and corrections are in
+// each row's ⋮ menu. Crew/truck/trailer changes re-check that the trip is
 // still active first (the board can be minutes old), and an Admin moving
 // a trip back out of Delivered is asked to confirm.
 //
@@ -48,7 +51,6 @@
 // the database (require_downpayment trigger) enforces the same rule for
 // drivers' phones too.
 import { useEffect, useState } from 'react'
-import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
@@ -68,8 +70,9 @@ import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
-import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
-import EmptyState from '../../../components/EmptyState'
+import { formatDate, formatMoney, formatSlot, slotLines } from '../../../lib/format'
+import StatusBadge from '../../../components/StatusBadge'
+import { SearchBox } from './BookingsTripsControls'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -212,13 +215,46 @@ type TrailerOption = {
   current_status: string | null
 }
 
-const crewSelectClasses =
-  'w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none'
+// Dropdown look for the crew / truck / trailer pickers. Orange while
+// nothing is picked, so what's still missing stands out.
+function pickerClasses(unassigned: boolean) {
+  return `w-full min-w-40 border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-primary focus:outline-none disabled:opacity-60 ${
+    unassigned ? 'font-medium text-orange-700' : 'text-slate-900'
+  }`
+}
+
+// People for one trip's driver/helper slot, best first: free people (no
+// overlapping trip, not on leave, licence valid), then those blocked with
+// the reason (lib/tripSchedule.ts rankCandidates). Shared by the dropdown
+// and "Use Suggested Crew for All".
+function rankPeople(
+  row: DispatchRow,
+  people: DriverOption[],
+  allRows: DispatchRow[],
+  leaveByEmployee: Map<number, LeaveRange[]>,
+  now: number,
+) {
+  // A person's trips = every trip they're the active driver or helper on.
+  const tripsOf = (employeeId: number): ScheduledTrip[] =>
+    allRows.filter((r) => r.assigned_employee_id === employeeId || r.assigned_helper_employee_id === employeeId)
+  return {
+    tripsOf,
+    ranked: rankCandidates(
+      row,
+      people,
+      tripsOf,
+      now,
+      (clash) => ` — busy ${formatSlot(clash.trip_start_at, clash.trip_end_at)} (trip #${clash.itinerary_id})`,
+      (employeeId) => leaveHint(row, employeeId, false, leaveByEmployee) ?? licenceHint(row, people, employeeId),
+    ),
+  }
+}
 
 // Driver or helper picker for one trip. Locked until the trip has a time
 // slot. Options are grouped: Suggested (the top free people), Other free,
 // and Unavailable (busy on an overlapping trip, or on leave -- disabled,
 // except whoever is already assigned so the dropdown still shows them).
+// Under it: "Use <top suggestion>" while nobody is picked.
 function CrewSelect({
   row,
   crewRole,
@@ -244,26 +280,15 @@ function CrewSelect({
   if (!row.trip_start_at) {
     return (
       <div className="flex flex-col gap-1">
-        <select disabled className={`${crewSelectClasses} opacity-60`} value="">
+        <select disabled className={pickerClasses(currentId === null)} value="">
           <option value="">{currentName ?? 'Unassigned'}</option>
         </select>
-        <span className="text-[11px] text-amber-700">Set the trip time first</span>
+        <span className="text-xs text-amber-700">Set the trip time first (⋮ menu)</span>
       </div>
     )
   }
 
-  // A person's trips = every trip they're the active driver or helper on.
-  const tripsOf = (employeeId: number): ScheduledTrip[] =>
-    allRows.filter((r) => r.assigned_employee_id === employeeId || r.assigned_helper_employee_id === employeeId)
-  const ranked = rankCandidates(
-    row,
-    people,
-    tripsOf,
-    now,
-    (clash) => ` — busy ${formatSlot(clash.trip_start_at, clash.trip_end_at)} (trip #${clash.itinerary_id})`,
-    (employeeId) =>
-      leaveHint(row, employeeId, false, leaveByEmployee) ?? licenceHint(row, people, employeeId),
-  )
+  const { ranked, tripsOf } = rankPeople(row, people, allRows, leaveByEmployee, now)
   const free = ranked.filter((p) => p.blockedBy === null)
   const suggested = free.slice(0, SUGGESTED_COUNT)
   const otherFree = free.slice(SUGGESTED_COUNT)
@@ -279,7 +304,7 @@ function CrewSelect({
         value={currentId ?? ''}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-        className={crewSelectClasses}
+        className={pickerClasses(currentId === null)}
       >
         <option value="">Unassigned</option>
         {suggested.length > 0 && (
@@ -316,13 +341,13 @@ function CrewSelect({
           type="button"
           disabled={disabled}
           onClick={() => onChange(topPick.employee_id)}
-          className="text-left text-[11px] font-semibold text-accent-700 underline hover:text-accent-900 disabled:opacity-50"
+          className="w-fit text-left text-xs font-semibold text-primary underline hover:no-underline disabled:opacity-50"
         >
-          Assign {topPick.full_name}
+          Use {topPick.full_name}
         </button>
       )}
       {late && (
-        <span className="text-[11px] font-medium text-amber-700">
+        <span className="text-xs font-medium text-amber-700">
           ⚠ {currentName ?? 'They'}'s trip #{late.itinerary_id} is running late — reassign?
         </span>
       )}
@@ -398,19 +423,16 @@ const STATUS_SELECT_STYLES: Record<string, string> = {
   Delivered: 'border-accent-900 bg-accent-900 text-white',
 }
 
-// "⋮" button + small popup with the row's actions (View logs, and Request
-// correction for Dispatchers). The popup is position: fixed because the
-// table's overflow-x-auto wrapper would clip an absolutely-positioned one.
-function ActionsMenu({
-  onViewLogs,
-  correction,
-}: {
-  onViewLogs: () => void
-  correction: { pending: boolean; onRequest: () => void } | null
-}) {
+// "⋮" button + small popup with the row's actions. The popup is
+// position: fixed because the table's overflow-x-auto wrapper would clip
+// an absolutely-positioned one. Items left out (null) aren't shown.
+type MenuItem = { label: string; onClick: () => void; disabled?: boolean }
+
+function ActionsMenu({ items }: { items: (MenuItem | null)[] }) {
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const close = () => setPos(null)
-  const itemClass = 'block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent'
+  const itemClass =
+    'block w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent'
 
   return (
     <>
@@ -421,7 +443,7 @@ function ActionsMenu({
           const rect = e.currentTarget.getBoundingClientRect()
           setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
         }}
-        className="px-2 py-1 text-lg leading-none text-slate-600 hover:bg-slate-100"
+        className="flex h-11 w-11 items-center justify-center border border-slate-300 text-lg leading-none text-slate-600 hover:bg-slate-50"
       >
         ⋮
       </button>
@@ -429,33 +451,23 @@ function ActionsMenu({
         <>
           {/* invisible full-screen layer: clicking anywhere else closes the menu */}
           <div className="fixed inset-0 z-40" onClick={close} />
-          <div
-            className="fixed z-50 min-w-40 border border-slate-200 bg-white py-1 shadow-lg"
-            style={{ top: pos.top, right: pos.right }}
-          >
-            <button
-              type="button"
-              className={itemClass}
-              onClick={() => {
-                close()
-                onViewLogs()
-              }}
-            >
-              View logs
-            </button>
-            {correction && (
-              <button
-                type="button"
-                className={itemClass}
-                disabled={correction.pending}
-                onClick={() => {
-                  close()
-                  correction.onRequest()
-                }}
-              >
-                {correction.pending ? 'Correction pending' : 'Request correction'}
-              </button>
-            )}
+          <div className="fixed z-50 min-w-48 border border-slate-200 bg-white py-1 shadow-lg" style={{ top: pos.top, right: pos.right }}>
+            {items
+              .filter((item): item is MenuItem => item !== null)
+              .map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={itemClass}
+                  disabled={item.disabled}
+                  onClick={() => {
+                    close()
+                    item.onClick()
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
           </div>
         </>
       )}
@@ -463,52 +475,25 @@ function ActionsMenu({
   )
 }
 
-// Shared table renderer for all 3 groups below -- same columns/handlers
-// regardless of which bucket a row is in. readOnly (the Completed table)
-// shows crew/truck/trailer as plain text: changing the driver on a
-// delivered trip would move its pay to someone else, and assigning a
-// truck would flip it back to "In Transit". Admin keeps the status
-// dropdown there so a delivered trip can still be moved back.
-function DispatchTable({
-  rows,
-  drivers,
-  helpers,
-  trucks,
-  trailers,
-  canEditStatus,
-  canFreelyEditStatus,
-  savingId,
-  onStatusChange,
-  onRequestCorrection,
-  pendingCorrectionIds,
-  onCrewChange,
-  onTruckChange,
-  onTrailerChange,
-  onViewLogs,
-  readOnly = false,
-  allRows,
-  leaveByEmployee,
-  now,
-  onEditTime,
-}: {
-  rows: DispatchRow[]
-  // Current time (ms), ticking each minute -- drives Overdue / busy checks.
-  now: number
-  onEditTime: (row: DispatchRow) => void
+// Everything the trip tables need from the board.
+type BoardContext = {
   allRows: DispatchRow[]
   leaveByEmployee: Map<number, LeaveRange[]>
   drivers: DriverOption[]
   helpers: DriverOption[]
   trucks: TruckOption[]
   trailers: TrailerOption[]
+  // Dispatcher or Admin.
   canEditStatus: boolean
+  // Admin: any status, any direction.
   canFreelyEditStatus: boolean
   savingId: number | null
+  // Current time (ms), ticking each minute -- drives Overdue / busy checks.
+  now: number
+  // Trips with a Pending correction request from this Dispatcher.
+  pendingCorrectionIds: Set<number>
   onStatusChange: (itineraryId: number, previousStatus: string, newStatus: string) => void
   onRequestCorrection: (row: DispatchRow) => void
-  // Trips with a Pending correction request from this Dispatcher --
-  // shown as "Correction pending" instead of a second request button.
-  pendingCorrectionIds: Set<number>
   onCrewChange: (
     itineraryId: number,
     crewRole: 'Driver' | 'Helper',
@@ -518,296 +503,381 @@ function DispatchTable({
   onTruckChange: (itineraryId: number, previousPlateNumber: string | null, plateNumber: string | null) => void
   onTrailerChange: (itineraryId: number, previousTrailerId: number | null, trailerId: number | null) => void
   onViewLogs: (itineraryId: number) => void
-  readOnly?: boolean
-}) {
+  onEditTime: (row: DispatchRow) => void
+}
+
+const TH = 'px-3 py-3 text-xs font-semibold tracking-wider text-slate-600 uppercase'
+
+// Time slot on two lines, plus Overdue / storage-deadline flags.
+function SlotCell({ row, now }: { row: DispatchRow; now: number }) {
+  const slot = row.trip_start_at ? slotLines(row.trip_start_at, row.trip_end_at) : null
+  const storage = storagePending(row, now)
   return (
-    <div className="reports-blueprint-card overflow-x-auto">
-      <table className="w-full text-left font-ui text-sm">
-        <thead className="border-b border-reports-hairline">
+    <div className="flex flex-col items-start gap-1 text-slate-900">
+      {slot ? (
+        <span>
+          {slot.date}
+          <span className="block text-slate-500">{slot.time}</span>
+        </span>
+      ) : (
+        <span>
+          {formatDate(row.trip_date_from)}
+          <span className="block text-xs font-medium text-amber-700">No time set</span>
+        </span>
+      )}
+      {/* Storage-deadline trip still at the port: that deadline is what
+          matters until pickup, so it replaces "Overdue". */}
+      {storage ? (
+        <span className={`px-1.5 py-0.5 text-[11px] font-semibold ${STORAGE_BADGE[storage].className}`}>
+          {storage === 'missed' ? STORAGE_BADGE.missed.label : `Pick up by ${formatDate(row.storage_deadline!)} 11:59 PM`}
+        </span>
+      ) : (
+        isOverdue(row, now) && (
+          <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
+            Overdue
+          </span>
+        )
+      )}
+    </div>
+  )
+}
+
+function CargoCell({ row }: { row: DispatchRow }) {
+  return (
+    <span className="text-slate-900">
+      {row.cargo_label}
+      {row.cargo_description && (
+        <span className="block max-w-60 truncate text-slate-500" title={row.cargo_description}>
+          {row.cargo_description}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// Status: a badge while the trip still needs crew/vehicles (it can't move
+// yet), otherwise the dropdown -- Admin any status, Dispatcher only the
+// next step. Picking "Delivered" (or "Mark delivered") opens MarkDeliveredModal.
+function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
+  const editable = ctx.canEditStatus && (row.status !== 'Awaiting' || isFullyAssigned(row))
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      {editable ? (
+        <select
+          value={row.status}
+          disabled={ctx.savingId === row.itinerary_id}
+          onChange={(e) => ctx.onStatusChange(row.itinerary_id, row.status, e.target.value)}
+          // Fixed width: the long "(downpayment first)" option text would
+          // otherwise stretch it; the open list still shows it in full.
+          className={`w-40 border px-2 py-1.5 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
+            STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
+          }`}
+        >
+          {(ctx.canFreelyEditStatus
+            ? STATUS_FLOW
+            : // Dispatcher: current status + the very next step only.
+              STATUS_FLOW.slice(STATUS_FLOW.indexOf(row.status), STATUS_FLOW.indexOf(row.status) + 2)
+          ).map((status) => (
+            <option
+              key={status}
+              value={status}
+              // A trip can't leave Awaiting without a time slot, driver, truck
+              // and trailer, nor before the booking's downpayment is paid (or waived).
+              disabled={
+                row.status === 'Awaiting' &&
+                status !== 'Awaiting' &&
+                (!isFullyAssigned(row) || !tripsMayStart(row.downpayment))
+              }
+            >
+              {STATUS_LABELS[status]}
+              {row.status === 'Awaiting' && status !== 'Awaiting' && !tripsMayStart(row.downpayment)
+                ? ' (downpayment first)'
+                : ''}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
+          {/* What it still needs before it can leave Awaiting. */}
+          {row.status === 'Awaiting' && !isFullyAssigned(row) && (
+            <span className="text-xs text-slate-500">Needs {missingForDispatch(row)}</span>
+          )}
+        </>
+      )}
+      {ctx.canEditStatus && row.status === 'InTransit' && (
+        <button
+          type="button"
+          onClick={() => ctx.onStatusChange(row.itinerary_id, row.status, 'Delivered')}
+          disabled={ctx.savingId === row.itinerary_id}
+          className="text-xs font-semibold text-primary underline hover:no-underline"
+        >
+          Mark delivered
+        </button>
+      )}
+    </div>
+  )
+}
+
+function TruckSelect({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
+  return (
+    <select
+      value={row.plate_number ?? ''}
+      disabled={ctx.savingId === row.itinerary_id}
+      onChange={(e) => ctx.onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
+      className={pickerClasses(row.plate_number === null)}
+    >
+      <option value="">Unassigned</option>
+      {ctx.trucks.map((truck) => {
+        const hint = vehicleHint(row, ctx.allRows, truck, (r) => r.plate_number === truck.plate_number)
+        return (
+          <option key={truck.plate_number} value={truck.plate_number} disabled={hint?.blocked ?? false}>
+            {truck.plate_number}
+            {hint ? ` (${hint.label})` : ''}
+          </option>
+        )
+      })}
+    </select>
+  )
+}
+
+function TrailerSelect({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
+  return (
+    <select
+      value={row.trailer_id ?? ''}
+      disabled={ctx.savingId === row.itinerary_id}
+      onChange={(e) => ctx.onTrailerChange(row.itinerary_id, row.trailer_id, e.target.value ? Number(e.target.value) : null)}
+      className={pickerClasses(row.trailer_id === null)}
+    >
+      <option value="">Unassigned</option>
+      {/* Only trailers of the type this trip's cargo needs (when set) */}
+      {ctx.trailers
+        .filter((t) => !row.required_trailer_type || t.trailer_type === row.required_trailer_type)
+        .map((trailer) => {
+          const hint = vehicleHint(row, ctx.allRows, trailer, (r) => r.trailer_id === trailer.trailer_id)
+          return (
+            <option key={trailer.trailer_id} value={trailer.trailer_id} disabled={hint?.blocked ?? false}>
+              {trailer.plate_number ?? `#${trailer.trailer_id}`}
+              {hint ? ` (${hint.label})` : ''}
+            </option>
+          )
+        })}
+    </select>
+  )
+}
+
+// The ⋮ menu items for one trip.
+function rowMenuItems(row: DispatchRow, ctx: BoardContext): (MenuItem | null)[] {
+  const done = row.status === 'Delivered'
+  return [
+    { label: 'View logs', onClick: () => ctx.onViewLogs(row.itinerary_id) },
+    !done && ctx.canEditStatus
+      ? { label: row.trip_start_at ? 'Edit time' : 'Set time', onClick: () => ctx.onEditTime(row) }
+      : null,
+    // Dispatcher: backward moves go through Admin.
+    ctx.canEditStatus && !ctx.canFreelyEditStatus && row.status !== 'Awaiting'
+      ? {
+          label: ctx.pendingCorrectionIds.has(row.itinerary_id) ? 'Correction pending' : 'Request correction',
+          disabled: ctx.pendingCorrectionIds.has(row.itinerary_id),
+          onClick: () => ctx.onRequestCorrection(row),
+        }
+      : null,
+    // Admin: un-deliver a completed trip (asks first).
+    done && ctx.canFreelyEditStatus
+      ? { label: 'Move back to In Transit…', onClick: () => ctx.onStatusChange(row.itinerary_id, 'Delivered', 'InTransit') }
+      : null,
+  ]
+}
+
+// Needs Assignment / Assigned: one booking's trips.
+function ActiveTripTable({ rows, ctx }: { rows: DispatchRow[]; ctx: BoardContext }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="border-y border-slate-200 bg-slate-50">
           <tr>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Booking
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Origin → Destination
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Time Slot
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Status
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Driver
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Helper
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Truck
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Trailer
-            </th>
-            <th className="px-4 py-3 text-[11px] font-medium tracking-[0.1em] text-neutral-500 uppercase">
-              Actions
+            <th className={`${TH} pl-5`}>Trip</th>
+            <th className={TH}>Time Slot</th>
+            <th className={TH}>Cargo</th>
+            <th className={TH}>Status</th>
+            <th className={TH}>Driver</th>
+            <th className={TH}>Helper</th>
+            <th className={TH}>Truck</th>
+            <th className={TH}>Trailer</th>
+            <th className={TH}>
+              <span className="sr-only">Actions</span>
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.itinerary_id} className="border-b border-reports-hairline last:border-0">
-              <td className="px-4 py-3 text-reports-ink">
-                <Link
-                  to={`/dashboard/bookings?booking=${row.booking_id}`}
-                  className="font-medium underline-offset-2 hover:underline"
-                >
-                  #{row.booking_id}
-                </Link>
+            <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0">
+              <td className="py-4 pr-3 pl-5 text-base font-bold text-slate-900">#{row.itinerary_id}</td>
+              <td className="px-3 py-4">
+                <SlotCell row={row} now={ctx.now} />
               </td>
-              <td className="px-4 py-3 text-neutral-600">
-                {row.pickup_location} → {row.delivery_location}
-                <span className="mt-1 block text-[11px] font-medium text-reports-ink" title={row.cargo_description ?? undefined}>
-                  {row.cargo_label}
-                </span>
-                {row.cargo_description && (
-                  <span className="block max-w-56 truncate text-[11px]" title={row.cargo_description}>
-                    {row.cargo_description}
-                  </span>
-                )}
+              <td className="px-3 py-4">
+                <CargoCell row={row} />
               </td>
-              <td className="px-4 py-3 text-neutral-600">
-                <div className="flex flex-col items-start gap-1">
-                  {row.trip_start_at ? (
-                    <span className="whitespace-nowrap">{formatSlot(row.trip_start_at, row.trip_end_at)}</span>
-                  ) : (
-                    <>
-                      <span className="whitespace-nowrap">{formatDate(row.trip_date_from)}</span>
-                      <span className="text-[11px] font-medium text-amber-700">No time set</span>
-                    </>
-                  )}
-                  {/* Storage-deadline trip still at the port: that deadline is what
-                      matters until pickup, so it replaces "Overdue". */}
-                  {storagePending(row, now) ? (
-                    <span
-                      className={`px-1.5 py-0.5 text-[11px] font-semibold ${STORAGE_BADGE[storagePending(row, now)!].className}`}
-                    >
-                      {storagePending(row, now) === 'missed'
-                        ? STORAGE_BADGE.missed.label
-                        : `Pick up by ${formatDate(row.storage_deadline!)} 11:59 PM`}
-                    </span>
-                  ) : (
-                    isOverdue(row, now) && (
-                      <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
-                        Overdue
-                      </span>
-                    )
-                  )}
-                  {!readOnly && canEditStatus && (
-                    <button
-                      type="button"
-                      onClick={() => onEditTime(row)}
-                      disabled={savingId === row.itinerary_id}
-                      className="text-[11px] font-semibold text-accent-700 underline hover:text-accent-900"
-                    >
-                      {row.trip_start_at ? 'Edit time' : 'Set time'}
-                    </button>
-                  )}
-                </div>
+              <td className="px-3 py-4">
+                <StatusCell row={row} ctx={ctx} />
               </td>
-              <td className="px-4 py-3">
-                <div className="flex flex-col items-start gap-1.5">
-                  {canEditStatus && (!readOnly || canFreelyEditStatus) ? (
-                    <select
-                      value={row.status}
-                      disabled={savingId === row.itinerary_id}
-                      onChange={(e) => onStatusChange(row.itinerary_id, row.status, e.target.value)}
-                      // Fixed width: the long "(assign … first)" option text would
-                      // otherwise stretch it; the open list still shows it in full.
-                      className={`w-44 border px-2 py-1 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
-                        STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
-                      }`}
-                    >
-                      {(canFreelyEditStatus
-                        ? STATUS_FLOW
-                        : // Dispatcher: current status + the very next step only.
-                          STATUS_FLOW.slice(
-                            STATUS_FLOW.indexOf(row.status),
-                            STATUS_FLOW.indexOf(row.status) + 2,
-                          )
-                      ).map((status) => (
-                        <option
-                          key={status}
-                          value={status}
-                          // Same rule as the driver's side: a trip can't
-                          // leave Awaiting without a driver, truck and
-                          // trailer (helper is optional).
-                          // ...nor before the booking's downpayment is paid (or waived).
-                          disabled={
-                            row.status === 'Awaiting' &&
-                            status !== 'Awaiting' &&
-                            (!isFullyAssigned(row) || !tripsMayStart(row.downpayment))
-                          }
-                        >
-                          {STATUS_LABELS[status]}
-                          {row.status === 'Awaiting' && status !== 'Awaiting' && !isFullyAssigned(row)
-                            ? ` (assign ${missingForDispatch(row)} first)`
-                            : row.status === 'Awaiting' && status !== 'Awaiting' && !tripsMayStart(row.downpayment)
-                              ? ' (downpayment first)'
-                              : ''}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span
-                      className={`border px-2 py-1 text-xs font-semibold tracking-[0.03em] uppercase ${
-                        STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
-                      }`}
-                    >
-                      {STATUS_LABELS[row.status] ?? row.status}
-                    </span>
-                  )}
-                  {row.status === 'Awaiting' && row.downpayment && !tripsMayStart(row.downpayment) && (
-                    <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Awaiting downpayment — {formatMoney(row.downpayment.missing)} to go
-                      <span className="block font-normal">
-                        {formatMoney(row.downpayment.paid)} of {formatMoney(row.downpayment.required)} paid
-                      </span>
-                    </span>
-                  )}
-                  {row.status === 'Awaiting' && row.downpayment?.waived && !row.downpayment.met && (
-                    <span className="text-[11px] font-medium text-neutral-500">Downpayment waived by Admin</span>
-                  )}
-                  {/* Same as picking Delivered in the dropdown -- opens
-                  MarkDeliveredModal, where damage is recorded. */}
-                  {canEditStatus && !readOnly && row.status === 'InTransit' && (
-                    <button
-                      type="button"
-                      onClick={() => onStatusChange(row.itinerary_id, row.status, 'Delivered')}
-                      disabled={savingId === row.itinerary_id}
-                      className="text-left text-xs font-semibold text-accent-700 underline hover:text-accent-900"
-                    >
-                      Mark delivered
-                    </button>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                {readOnly ? (
-                  <span className="text-xs text-reports-ink">{row.assigned_driver_name ?? '—'}</span>
-                ) : (
-                  <CrewSelect
-                    row={row}
-                    crewRole="Driver"
-                    people={drivers}
-                    allRows={allRows}
-                    leaveByEmployee={leaveByEmployee}
-                    now={now}
-                    disabled={savingId === row.itinerary_id}
-                    onChange={(id) => onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
-                  />
-                )}
-              </td>
-              <td className="px-4 py-3">
-                {readOnly ? (
-                  <span className="text-xs text-reports-ink">{row.assigned_helper_name ?? '—'}</span>
-                ) : (
-                  <CrewSelect
-                    row={row}
-                    crewRole="Helper"
-                    people={helpers}
-                    allRows={allRows}
-                    leaveByEmployee={leaveByEmployee}
-                    now={now}
-                    disabled={savingId === row.itinerary_id}
-                    onChange={(id) => onCrewChange(row.itinerary_id, 'Helper', row.assigned_helper_employee_id, id)}
-                  />
-                )}
-              </td>
-              <td className="px-4 py-3">
-                {readOnly ? (
-                  <span className="text-xs text-reports-ink">{row.plate_number ?? '—'}</span>
-                ) : (
-                  <select
-                    value={row.plate_number ?? ''}
-                    disabled={savingId === row.itinerary_id}
-                    onChange={(e) => onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {trucks.map((truck) => {
-                      const hint = vehicleHint(
-                        row,
-                        allRows,
-                        truck,
-                        (r) => r.plate_number === truck.plate_number,
-                      )
-                      return (
-                        <option key={truck.plate_number} value={truck.plate_number} disabled={hint?.blocked ?? false}>
-                          {truck.plate_number}
-                          {hint ? ` (${hint.label})` : ''}
-                        </option>
-                      )
-                    })}
-                  </select>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                {readOnly ? (
-                  <span className="text-xs text-reports-ink">{row.trailer_id === null ? '—' : (trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)}</span>
-                ) : (
-                  <select
-                    value={row.trailer_id ?? ''}
-                    disabled={savingId === row.itinerary_id}
-                    onChange={(e) =>
-                      onTrailerChange(
-                        row.itinerary_id,
-                        row.trailer_id,
-                        e.target.value ? Number(e.target.value) : null,
-                      )
-                    }
-                    className="w-full min-w-36 border border-reports-hairline bg-transparent px-2 py-1.5 text-xs text-reports-ink focus:border-accent-500 focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {/* Only trailers of the type this trip's cargo needs (when set) */}
-                    {trailers
-                      .filter((t) => !row.required_trailer_type || t.trailer_type === row.required_trailer_type)
-                      .map((trailer) => {
-                      const hint = vehicleHint(
-                        row,
-                        allRows,
-                        trailer,
-                        (r) => r.trailer_id === trailer.trailer_id,
-                      )
-                      return (
-                        <option key={trailer.trailer_id} value={trailer.trailer_id} disabled={hint?.blocked ?? false}>
-                          {trailer.plate_number ?? `#${trailer.trailer_id}`}
-                          {hint ? ` (${hint.label})` : ''}
-                        </option>
-                      )
-                    })}
-                  </select>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                <ActionsMenu
-                  onViewLogs={() => onViewLogs(row.itinerary_id)}
-                  // Same conditions the old inline "Request correction"
-                  // button used; a pending request shows as a disabled item.
-                  correction={
-                    canEditStatus && !canFreelyEditStatus && row.status !== 'Awaiting'
-                      ? {
-                          pending: pendingCorrectionIds.has(row.itinerary_id),
-                          onRequest: () => onRequestCorrection(row),
-                        }
-                      : null
-                  }
+              <td className="px-3 py-4">
+                <CrewSelect
+                  row={row}
+                  crewRole="Driver"
+                  people={ctx.drivers}
+                  allRows={ctx.allRows}
+                  leaveByEmployee={ctx.leaveByEmployee}
+                  now={ctx.now}
+                  disabled={ctx.savingId === row.itinerary_id}
+                  onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
                 />
+              </td>
+              <td className="px-3 py-4">
+                <CrewSelect
+                  row={row}
+                  crewRole="Helper"
+                  people={ctx.helpers}
+                  allRows={ctx.allRows}
+                  leaveByEmployee={ctx.leaveByEmployee}
+                  now={ctx.now}
+                  disabled={ctx.savingId === row.itinerary_id}
+                  onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Helper', row.assigned_helper_employee_id, id)}
+                />
+              </td>
+              <td className="px-3 py-4">
+                <TruckSelect row={row} ctx={ctx} />
+              </td>
+              <td className="px-3 py-4">
+                <TrailerSelect row={row} ctx={ctx} />
+              </td>
+              <td className="py-4 pr-5 pl-3">
+                <ActionsMenu items={rowMenuItems(row, ctx)} />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Completed: one flat table, read-only -- changing the driver of a
+// delivered trip would move its pay to someone else, and assigning a truck
+// would flip it back to "In Transit". Admin can still move one back (⋮).
+function CompletedTripTable({ rows, ctx }: { rows: DispatchRow[]; ctx: BoardContext }) {
+  const trailerPlate = (id: number | null) =>
+    id === null ? '—' : (ctx.trailers.find((t) => t.trailer_id === id)?.plate_number ?? `#${id}`)
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="border-b border-slate-200 bg-slate-50">
+          <tr>
+            <th className={`${TH} pl-5`}>Booking</th>
+            <th className={TH}>Origin → Destination</th>
+            <th className={TH}>Cargo</th>
+            <th className={TH}>Time Slot</th>
+            <th className={TH}>Status</th>
+            <th className={TH}>Driver</th>
+            <th className={TH}>Helper</th>
+            <th className={TH}>Truck</th>
+            <th className={TH}>Trailer</th>
+            <th className={TH}>
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0">
+              <td className="py-3 pr-3 pl-5 text-base font-bold text-slate-900">
+                <Link to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`} className="hover:underline">
+                  #{row.booking_id}
+                </Link>
+              </td>
+              <td className="px-3 py-3 text-slate-900">
+                {row.pickup_location}
+                <span className="block text-slate-500">→ {row.delivery_location}</span>
+              </td>
+              <td className="px-3 py-3">
+                <CargoCell row={row} />
+              </td>
+              <td className="px-3 py-3">
+                <SlotCell row={row} now={ctx.now} />
+              </td>
+              <td className="px-3 py-3">
+                <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
+              </td>
+              <td className="px-3 py-3 text-slate-900">{row.assigned_driver_name ?? '—'}</td>
+              <td className="px-3 py-3 text-slate-900">{row.assigned_helper_name ?? '—'}</td>
+              <td className="px-3 py-3 text-slate-900">{row.plate_number ?? '—'}</td>
+              <td className="px-3 py-3 text-slate-900">{trailerPlate(row.trailer_id)}</td>
+              <td className="py-3 pr-5 pl-3">
+                <ActionsMenu items={rowMenuItems(row, ctx)} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// The big box every tab draws in: fills the screen height, with a footer
+// line (summary on the left, Previous/Next on the right when paged).
+function BoardBox({
+  children,
+  footer,
+  pager,
+}: {
+  children: React.ReactNode
+  footer?: string
+  pager?: { page: number; pageCount: number; onChange: (page: number) => void }
+}) {
+  const button = 'border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  return (
+    <div className="flex min-h-[calc(100dvh-14rem)] flex-col border-2 border-slate-300 bg-white">
+      <div className="flex flex-1 flex-col">{children}</div>
+      {(footer || (pager && pager.pageCount > 1)) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-700">
+          <span>{footer}</span>
+          {pager && pager.pageCount > 1 && (
+            <span className="flex gap-2">
+              <button type="button" onClick={() => pager.onChange(pager.page - 1)} disabled={pager.page === 0} className={button}>
+                ‹ Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => pager.onChange(pager.page + 1)}
+                disabled={pager.page >= pager.pageCount - 1}
+                className={button}
+              >
+                Next ›
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// A tab with nothing in it: dashed box, truck icon, message, optional button.
+function EmptyPanel({ message, action }: { message: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex flex-col items-center gap-3 border border-dashed border-slate-300 px-16 py-10 text-center">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600" aria-hidden="true">
+          <path d="M1 4h14v11H1zM15 8h4l3 3v4h-7M5.5 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM18.5 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
+        </svg>
+        <p className="text-[15px] font-medium text-slate-900">{message}</p>
+        {action && (
+          <button type="button" onClick={action.onClick} className="btn-primary px-5 py-2.5 text-sm font-semibold">
+            {action.label}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -831,6 +901,8 @@ function DispatchBoardSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
+  // Booking whose "Use Suggested Crew" is running (null = none).
+  const [bulkBookingId, setBulkBookingId] = useState<number | null>(null)
   const [myRequests, setMyRequests] = useState<MyItineraryRelogRequest[]>([])
   const [search, setSearch] = useState('')
   // Trip whose time slot is being edited (EditTripTimeModal).
@@ -1357,13 +1429,13 @@ function DispatchBoardSection() {
     crewRole: 'Driver' | 'Helper',
     previousEmployeeId: number | null,
     newEmployeeId: number | null,
-  ) {
+  ): Promise<boolean> {
     setSavingId(itineraryId)
     setError(null)
 
     if (!(await tripStillActive(itineraryId))) {
       setSavingId(null)
-      return
+      return false
     }
 
     // 1. Deactivate the current assignment, if there is one -- kept as a
@@ -1382,7 +1454,7 @@ function DispatchBoardSection() {
       if (deactivateError) {
         setError(deactivateError.message)
         setSavingId(null)
-        return
+        return false
       }
     }
 
@@ -1421,7 +1493,7 @@ function DispatchBoardSection() {
                 : { ...r, assigned_helper_employee_id: null, assigned_helper_name: null },
           ),
         )
-        return
+        return false
       }
     }
 
@@ -1458,6 +1530,7 @@ function DispatchBoardSection() {
           : r,
       ),
     )
+    return true
   }
 
   // Truck/trailer assignment: a plain overwrite on the itinerary row --
@@ -1555,6 +1628,52 @@ function DispatchBoardSection() {
     setSavingId(null)
   }
 
+  // "Use Suggested Crew for All N Trips": for every trip of one booking
+  // that has a time slot, fills an empty driver / helper with the top free
+  // suggestion (same ranking as the dropdowns), one at a time so each pick
+  // counts as busy for the next trip. The database still refuses overlaps.
+  async function assignSuggestedCrew(groupRows: DispatchRow[]) {
+    const ok = await confirmDialog({
+      title: 'Use the suggested crew?',
+      message:
+        'Every trip of this booking that has a time slot gets the top suggested free driver and helper where one is missing. You can change any of them afterwards.',
+      confirmLabel: 'Assign suggested crew',
+    })
+    if (!ok) return
+    setBulkBookingId(groupRows[0]?.booking_id ?? null)
+    let working = rows
+    let assigned = 0
+    for (const row of [...groupRows].sort((a, b) => Date.parse(a.trip_start_at ?? '') - Date.parse(b.trip_start_at ?? ''))) {
+      if (!row.trip_start_at) continue
+      for (const crewRole of ['Driver', 'Helper'] as const) {
+        const current = working.find((r) => r.itinerary_id === row.itinerary_id) ?? row
+        const currentId = crewRole === 'Driver' ? current.assigned_employee_id : current.assigned_helper_employee_id
+        if (currentId !== null) continue
+        const people = crewRole === 'Driver' ? drivers : helpers
+        const pick = rankPeople(current, people, working, leaveByEmployee, now).ranked.find((p) => p.blockedBy === null)
+        if (!pick) continue
+        if (!(await handleCrewChange(row.itinerary_id, crewRole, null, pick.employee_id))) {
+          setBulkBookingId(null)
+          return
+        }
+        assigned++
+        working = working.map((r) =>
+          r.itinerary_id !== row.itinerary_id
+            ? r
+            : crewRole === 'Driver'
+              ? { ...r, assigned_employee_id: pick.employee_id, assigned_driver_name: pick.full_name }
+              : { ...r, assigned_helper_employee_id: pick.employee_id, assigned_helper_name: pick.full_name },
+        )
+      }
+    }
+    setBulkBookingId(null)
+    showToast(
+      assigned > 0
+        ? `Assigned ${assigned} ${assigned === 1 ? 'driver/helper' : 'drivers/helpers'}.`
+        : 'No free driver or helper to suggest for these trips.',
+    )
+  }
+
   // Search: booking #, places, crew names, truck or trailer plate.
   const query = search.trim().toLowerCase()
   const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
@@ -1581,7 +1700,7 @@ function DispatchBoardSection() {
   const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
   const assignedRows = activeRows.filter(hasFullCrew)
 
-  const tableProps = {
+  const ctx: BoardContext = {
     allRows: rows,
     leaveByEmployee,
     drivers,
@@ -1591,32 +1710,45 @@ function DispatchBoardSection() {
     canEditStatus,
     canFreelyEditStatus,
     savingId,
+    now,
+    pendingCorrectionIds: new Set(myRequests.filter((r) => r.status === 'Pending').map((r) => r.itinerary_id)),
     onStatusChange: handleStatusChange,
     onRequestCorrection: handleRequestCorrection,
-    pendingCorrectionIds: new Set(
-      myRequests.filter((r) => r.status === 'Pending').map((r) => r.itinerary_id),
-    ),
     onCrewChange: handleCrewChange,
     onTruckChange: handleTruckChange,
     onTrailerChange: handleTrailerChange,
     onViewLogs: setLogsItineraryId,
-    now,
     onEditTime: setEditTimeRow,
   }
 
+  // Needs Assignment / Assigned: one block per booking. Bookings with trips
+  // still to leave the port by a storage deadline first, then earliest trip
+  // first; inside a booking, trips in time order.
+  const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
+  const byStart = (a: DispatchRow, b: DispatchRow) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id
+  function groupByBooking(list: DispatchRow[]) {
+    const map = new Map<number, DispatchRow[]>()
+    for (const r of list) map.set(r.booking_id, [...(map.get(r.booking_id) ?? []), r])
+    return [...map.entries()]
+      .map(([bookingId, trips]) => ({ bookingId, trips: trips.sort(byStart) }))
+      .sort(
+        (a, b) =>
+          Number(b.trips.some((r) => storagePending(r, now))) - Number(a.trips.some((r) => storagePending(r, now))) ||
+          byStart(a.trips[0], b.trips[0]),
+      )
+  }
+
   const tabs = [
-    { id: 'needs', label: 'Needs Assignment', rows: needsAssignmentRows, empty: 'Nothing waiting on a driver, truck, or trailer.' },
-    { id: 'assigned', label: 'Assigned — In Progress', rows: assignedRows, empty: 'No fully-crewed trips in progress.' },
-    {
-      id: 'completed',
-      label: `Completed (last ${COMPLETED_DAYS} days)`,
-      rows: completedRows,
-      empty: `No trips delivered in the last ${COMPLETED_DAYS} days. Older ones are in Bookings & Trips.`,
-    },
+    { id: 'needs', label: 'Needs Assignment', count: needsAssignmentRows.length },
+    { id: 'assigned', label: 'Assigned — In Progress', count: assignedRows.length },
+    { id: 'completed', label: `Completed — Last ${COMPLETED_DAYS} Days`, count: completedRows.length },
   ] as const
-  const activeTab = tabs.find((t) => t.id === tab) ?? tabs[0]
-  // One page of the active tab at a time (back to page 1 on a tab/search change).
-  const pagedTrips = usePaged(activeTab.rows, `${tab}|${search}`)
+  const groups = groupByBooking(tab === 'assigned' ? assignedRows : tab === 'needs' ? needsAssignmentRows : [])
+  // One page at a time (back to page 1 on a tab/search change): bookings
+  // on the two active tabs, trips on Completed.
+  const pagedGroups = usePaged(groups, `${tab}|${search}`)
+  const pagedCompleted = usePaged(tab === 'completed' ? completedRows : [], `${tab}|${search}`)
+  const activeCount = tab === 'needs' ? needsAssignmentRows.length : assignedRows.length
 
   return (
     <div>
@@ -1625,15 +1757,40 @@ function DispatchBoardSection() {
         subtitle="Assign drivers, helpers, trucks and trailers, and track each booking through delivery."
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Booking #, place, driver, helper or plate"
-          aria-label="Search trips"
-          className="min-w-0 flex-1 border border-reports-hairline bg-transparent px-3 py-1.5 font-ui text-sm text-reports-ink focus:border-accent-500 focus:outline-none sm:max-w-sm"
-        />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div role="tablist" className="flex flex-wrap gap-2">
+          {tabs.map((t) => {
+            const active = tab === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2.5 border-2 px-5 py-2.5 text-sm font-semibold ${
+                  active ? 'border-primary bg-primary text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                {t.label}
+                {!loading && (
+                  <span
+                    className={`px-1.5 text-xs ${
+                      active
+                        ? 'bg-white text-primary'
+                        : t.id === 'needs' && t.count > 0
+                          ? 'bg-primary text-white'
+                          : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <SearchBox value={search} onChange={setSearch} placeholder="Booking #, place, driver, helper or plate" />
         {/* Drivers move trips from their phones -- reload to see it. */}
         <button
           type="button"
@@ -1642,68 +1799,143 @@ function DispatchBoardSection() {
             if (isDispatcher(role) && employeeId) loadMyRequests(employeeId)
           }}
           disabled={loading}
-          className="border border-reports-hairline px-3 py-1.5 font-ui text-sm font-medium text-reports-ink hover:border-accent-500 disabled:opacity-50"
+          className="flex items-center gap-2 border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
         >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+          </svg>
           Refresh
         </button>
       </div>
 
-      {error && (
-        <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       {loading ? (
-        <p className="mt-4 font-ui text-neutral-500">Loading dispatch board...</p>
+        <BoardBox>
+          <p className="p-6 text-slate-500">Loading dispatch board...</p>
+        </BoardBox>
       ) : rows.length === 0 ? (
-        <EmptyState message="No trips right now." className="mt-4" />
+        <BoardBox>
+          <EmptyPanel message="No trips right now." />
+        </BoardBox>
       ) : visibleRows.length === 0 ? (
-        <p className="mt-4 font-ui text-neutral-500">
-          No trips match "{search}".{' '}
-          <button
-            type="button"
-            onClick={() => setSearch('')}
-            className="font-medium text-accent-700 underline hover:text-accent-900"
-          >
-            Clear search
-          </button>
-        </p>
+        <BoardBox>
+          <EmptyPanel message={`No trips match "${search}".`} action={{ label: 'Clear search', onClick: () => setSearch('') }} />
+        </BoardBox>
+      ) : tab === 'completed' ? (
+        <BoardBox
+          footer={`Showing ${pagedCompleted.rows.length} of ${completedRows.length} completed ${completedRows.length === 1 ? 'trip' : 'trips'}`}
+          pager={pagedCompleted.pager}
+        >
+          {completedRows.length === 0 ? (
+            <EmptyPanel message={`No trips delivered in the last ${COMPLETED_DAYS} days. Older ones are in Bookings & Trips.`} />
+          ) : (
+            <CompletedTripTable rows={pagedCompleted.rows} ctx={ctx} />
+          )}
+        </BoardBox>
       ) : (
-        // One table at a time; the tabs switch between them.
-        <div className="mt-8">
-          <div role="tablist" className="flex flex-wrap gap-1 border-b border-reports-hairline">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={`-mb-px flex items-center gap-2 border border-b-0 px-4 py-2 font-ui text-[11px] font-semibold tracking-[0.16em] uppercase ${
-                  tab === t.id
-                    ? 'border-reports-hairline bg-white text-reports-ink'
-                    : 'border-transparent text-neutral-500 hover:text-reports-ink'
-                }`}
-              >
-                {t.label}
-                <span className="border border-reports-hairline px-2 py-0.5 text-[11px] text-neutral-600">
-                  {t.rows.length}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="mt-3">
-            {activeTab.rows.length === 0 ? (
-              <p className="font-ui text-sm text-neutral-500">{activeTab.empty}</p>
+        <BoardBox
+          footer={
+            activeCount === 0
+              ? undefined
+              : tab === 'needs'
+                ? `${activeCount} ${activeCount === 1 ? 'trip needs' : 'trips need'} assignment · earliest first`
+                : `${activeCount} ${activeCount === 1 ? 'trip' : 'trips'} in progress · earliest first`
+          }
+          pager={pagedGroups.pager}
+        >
+          {activeCount === 0 ? (
+            tab === 'needs' ? (
+              <EmptyPanel
+                message="Nothing waiting on a driver, truck, or trailer."
+                action={
+                  assignedRows.length > 0
+                    ? { label: `View ${assignedRows.length} Trips In Progress`, onClick: () => setTab('assigned') }
+                    : undefined
+                }
+              />
             ) : (
-              <>
-                <DispatchTable rows={pagedTrips.rows} {...tableProps} readOnly={tab === 'completed'} />
-                <Pager {...pagedTrips.pager} />
-              </>
-            )}
-          </div>
-        </div>
+              <EmptyPanel
+                message="No fully-crewed trips in progress."
+                action={
+                  needsAssignmentRows.length > 0
+                    ? {
+                        label: `View ${needsAssignmentRows.length} ${needsAssignmentRows.length === 1 ? 'Trip' : 'Trips'} Needing Assignment`,
+                        onClick: () => setTab('needs'),
+                      }
+                    : undefined
+                }
+              />
+            )
+          ) : (
+            pagedGroups.rows.map((group) => {
+              const first = group.trips[0]
+              // Trips of this booking with a slot but no driver or helper yet.
+              const missingCrew = group.trips.filter(
+                (r) => r.trip_start_at && (r.assigned_employee_id === null || r.assigned_helper_employee_id === null),
+              )
+              // Same downpayment for every trip of a booking.
+              const downpaymentDue =
+                first.downpayment && !tripsMayStart(first.downpayment) && group.trips.some((r) => r.status === 'Awaiting')
+                  ? first.downpayment
+                  : null
+              return (
+                <section key={group.bookingId} className="border-b-2 border-slate-300 last:border-b-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <h3 className="text-lg font-bold text-slate-900">Booking #{group.bookingId}</h3>
+                      <span className="text-[15px] text-slate-700">
+                        {first.pickup_location} → {first.delivery_location}
+                      </span>
+                      <span className="bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                        {group.trips.length} {group.trips.length === 1 ? 'trip' : 'trips'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <Link
+                        to={`/dashboard/bookings?booking=${group.bookingId}`}
+                        className="text-sm font-semibold text-primary hover:underline"
+                      >
+                        Open Booking
+                      </Link>
+                      {canEditStatus && missingCrew.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => assignSuggestedCrew(group.trips)}
+                          disabled={bulkBookingId !== null}
+                          className="flex items-center gap-2 border-2 border-primary bg-white px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
+                        >
+                          <span aria-hidden="true">✓</span>
+                          {bulkBookingId === group.bookingId
+                            ? 'Assigning…'
+                            : `Use Suggested Crew for ${missingCrew.length === 1 ? 'Trip' : `All ${missingCrew.length} Trips`}`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {downpaymentDue && (
+                    <div className="mx-5 mb-4 flex flex-wrap items-center justify-between gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <p>
+                        <span aria-hidden="true" className="mr-2">⚠</span>
+                        <span className="font-semibold">Awaiting downpayment: {formatMoney(downpaymentDue.missing)} to go</span>
+                        {' · '}
+                        {formatMoney(downpaymentDue.paid)} of {formatMoney(downpaymentDue.required)} paid. No trip can start until it
+                        is paid.
+                      </p>
+                      {/* The Billing page exists only in the Admin routes. */}
+                      {canFreelyEditStatus && (
+                        <Link to={`/dashboard/billing/${group.bookingId}`} className="font-semibold underline">
+                          Open Billing
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                  <ActiveTripTable rows={group.trips} ctx={ctx} />
+                </section>
+              )
+            })
+          )}
+        </BoardBox>
       )}
 
       {isDispatcher(role) && myRequests.length > 0 && (
