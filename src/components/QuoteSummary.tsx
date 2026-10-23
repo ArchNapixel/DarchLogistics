@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
+  totalTrips,
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
@@ -81,7 +82,7 @@ export function QuoteSummary({
   // When given, each section gets an "Edit" link back to its step.
   onEditStep?: (step: 'route' | 'cargo' | 'schedule') => void
 }) {
-  const count = Number(form.deliveryOrderCount)
+  const count = totalTrips(form.cargoLines)
   const rate = Number(form.proposedRate)
   const hasCount = Number.isInteger(count) && count > 0
   const hasRate = rate > 0
@@ -94,17 +95,23 @@ export function QuoteSummary({
       </Section>
 
       <Section title="Cargo" onEdit={onEditStep && (() => onEditStep('cargo'))}>
-        <span>
-          {form.cargoType === 'Loose' ? 'Loose cargo' : 'Container'} · {form.containerType} {form.trailerType.toLowerCase()} trailer
-          {Number(form.weight) > 0 && ` · ${form.weight} t`}
-        </span>
-        {hasCount && (
-          <span>
-            {count} {count === 1 ? 'delivery' : 'deliveries'}
+        {form.cargoLines.map((line, index) => (
+          <span key={index}>
+            {Number(line.quantity) > 0 ? `${line.quantity} × ` : ''}
+            {line.cargoType === 'Loose' ? 'Loose cargo' : 'Container'} · {line.containerType}
+            {line.trailerType && ` ${line.trailerType.toLowerCase()}`} trailer
+            {Number(line.weight) > 0 && ` · ${line.weight} t`}
+            {line.descriptions.some((d) => d.trim()) && (
+              <span className="block text-slate-600">
+                {Array.from(new Set(line.descriptions.map((d) => d.trim()).filter(Boolean))).join(' · ')}
+              </span>
+            )}
           </span>
-        )}
-        {form.cargoDescription.trim() ? (
-          <span className="text-slate-600">{form.cargoDescription.trim()}</span>
+        ))}
+        {hasCount ? (
+          <span className="font-medium">
+            {count} {count === 1 ? 'trip' : 'trips'} in total
+          </span>
         ) : (
           <Muted>—</Muted>
         )}

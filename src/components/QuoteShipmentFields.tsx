@@ -5,13 +5,20 @@
 // One set of markup, so no channel can drift from the others. Each
 // field shows its own error message right under it (errors come from
 // validateShipment in lib/quoteRequest.ts).
-import type { ChangeEvent, InputHTMLAttributes, ReactNode } from 'react'
+import { useState, type ChangeEvent, type InputHTMLAttributes, type ReactNode } from 'react'
 import LocationPicker from './LocationPicker'
 import DateRangePicker from './DateRangePicker'
 import {
+  MAX_DELIVERY_ORDERS,
   MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
+  cargoLineErrors,
+  emptyCargoLine,
+  resizeDescriptions,
   todayDateString,
+  totalTrips,
+  type CargoLine,
+  type CargoLineErrors,
   type FieldErrors,
   type RecentLocation,
   type ShipmentField,
@@ -136,99 +143,199 @@ export function RouteFields({
   )
 }
 
+// Cargo as lines: each line is `quantity` trips carrying the same cargo
+// (e.g. 8 x 40ft container + 2 x loose on a flatbed). The total trips is
+// the sum of the quantities. Per-line problems (cargoLineErrors) show
+// once a submit/Next has flagged the section, and stay shown while the
+// user fixes them; weight over the limit shows red straight away.
 export function CargoFields({ form, setField, errors }: SectionProps) {
-  function handleChange(e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    setField(e.target.name as ShipmentField, e.target.value as never)
-  }
+  const [showLineErrors, setShowLineErrors] = useState(!!errors.cargoLines)
+  if (errors.cargoLines && !showLineErrors) setShowLineErrors(true)
 
-  // Over the limit shows red while typing, not only on submit (submit's
-  // own check in validateShipment still blocks it either way).
-  const weightError =
-    errors.weight ?? (Number(form.weight) > MAX_WEIGHT_TONS ? `Max ${MAX_WEIGHT_TONS} tons.` : undefined)
+  const lines = form.cargoLines
+  const trips = totalTrips(lines)
+
+  function updateLine(index: number, change: Partial<CargoLine>) {
+    setField(
+      'cargoLines',
+      lines.map((line, i) => (i === index ? { ...line, ...change } : line)),
+    )
+  }
 
   return (
     <>
-      <ToggleGroup
-        label="Cargo type"
-        options={[
-          { value: 'Container', label: 'Container' },
-          { value: 'Loose', label: 'Loose cargo' },
-        ]}
-        value={form.cargoType}
-        onChange={(value) => {
-          setField('cargoType', value)
-          // Loose cargo can't ride a skeletal trailer (that's a bare frame
-          // for containers) -- it always goes on a flatbed.
-          if (value === 'Loose') setField('trailerType', 'Flatbed')
-        }}
-      />
+      {errors.cargoLines && (
+        <p className="col-span-full text-sm text-red-600" role="alert">
+          {errors.cargoLines}
+        </p>
+      )}
 
-      <ToggleGroup
-        label="Trailer size"
-        options={[
-          { value: '20ft', label: '20 ft' },
-          { value: '40ft', label: '40 ft' },
-        ]}
-        value={form.containerType}
-        onChange={(value) => setField('containerType', value)}
-      />
+      {lines.map((line, index) => {
+        const lineErrors: CargoLineErrors = showLineErrors ? cargoLineErrors(line) : {}
+        // Over the limit shows red while typing, not only on submit.
+        const weightError =
+          lineErrors.weight ??
+          (Number(line.weight) > MAX_WEIGHT_TONS ? `Max ${MAX_WEIGHT_TONS} tons.` : undefined)
+        return (
+          <fieldset
+            key={index}
+            className="col-span-full grid gap-3 border-2 border-slate-300 bg-white p-4 sm:grid-cols-2 sm:gap-x-4"
+          >
+            <legend className="sr-only">Cargo line {index + 1}</legend>
+            <div className="col-span-full flex items-center justify-between text-sm font-semibold text-slate-800">
+              <span>
+                Cargo line {index + 1}
+                {lines.length > 1 && (
+                  <span className="ml-2 font-normal text-slate-500">
+                    {Number(line.quantity) > 0 ? `${line.quantity} trip${line.quantity === '1' ? '' : 's'}` : ''}
+                  </span>
+                )}
+              </span>
+              {lines.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setField('cargoLines', lines.filter((_, i) => i !== index))}
+                  className="text-sm font-medium text-red-700 underline hover:text-red-900"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
 
-      <Field
-        label="Trailer type"
-        hint={form.cargoType === 'Loose' ? '(loose cargo goes on a flatbed)' : undefined}
-        error={errors.trailerType}
-      >
-        <select
-          name="trailerType"
-          value={form.trailerType}
-          onChange={(e) => setField('trailerType', e.target.value as ShipmentForm['trailerType'])}
-          disabled={form.cargoType === 'Loose'}
-          aria-invalid={errors.trailerType ? true : undefined}
-          className={`${inputClasses(!!errors.trailerType)} disabled:bg-slate-100 disabled:text-slate-500`}
+            <ToggleGroup
+              label="Cargo type"
+              options={[
+                { value: 'Container', label: 'Container' },
+                { value: 'Loose', label: 'Loose cargo' },
+              ]}
+              value={line.cargoType}
+              // Loose cargo can't ride a skeletal trailer (that's a bare
+              // frame for containers) -- it always goes on a flatbed.
+              onChange={(value) =>
+                updateLine(index, value === 'Loose' ? { cargoType: value, trailerType: 'Flatbed' } : { cargoType: value })
+              }
+            />
+
+            <ToggleGroup
+              label="Trailer size"
+              options={[
+                { value: '20ft', label: '20 ft' },
+                { value: '40ft', label: '40 ft' },
+              ]}
+              value={line.containerType}
+              onChange={(value) => updateLine(index, { containerType: value })}
+            />
+
+            <Field
+              label="Trailer type"
+              hint={line.cargoType === 'Loose' ? '(loose cargo goes on a flatbed)' : undefined}
+              error={lineErrors.trailerType}
+            >
+              <select
+                value={line.trailerType}
+                onChange={(e) => updateLine(index, { trailerType: e.target.value as CargoLine['trailerType'] })}
+                disabled={line.cargoType === 'Loose'}
+                aria-invalid={lineErrors.trailerType ? true : undefined}
+                className={`${inputClasses(!!lineErrors.trailerType)} disabled:bg-slate-100 disabled:text-slate-500`}
+              >
+                <option value="">Select</option>
+                <option value="Flatbed">Flatbed</option>
+                <option value="Skeletal">Skeletal</option>
+              </select>
+            </Field>
+
+            <Field label="Weight per trip" hint="(tons)" error={weightError}>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={line.weight}
+                onChange={(e) => updateLine(index, { weight: e.target.value.replace(/[^\d.]/g, '') })}
+                placeholder="e.g. 24.5"
+                aria-invalid={weightError ? true : undefined}
+                className={inputClasses(!!weightError)}
+              />
+            </Field>
+
+            <Field label="Trips" hint="(of this cargo)" error={lineErrors.quantity}>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={line.quantity}
+                onChange={(e) => {
+                  const quantity = e.target.value.replace(/\D/g, '')
+                  // One details box per trip -- add/remove boxes to match.
+                  updateLine(index, { quantity, descriptions: resizeDescriptions(line.descriptions, quantity) })
+                }}
+                placeholder="e.g. 3"
+                aria-invalid={lineErrors.quantity ? true : undefined}
+                className={inputClasses(!!lineErrors.quantity)}
+              />
+            </Field>
+
+            {/* Cargo details: one box per trip of this line. */}
+            <div className="col-span-full flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2 text-sm font-medium text-slate-700">
+                <span>
+                  Cargo details <span className="font-normal text-slate-400">(per trip)</span>
+                </span>
+                {line.descriptions.length > 1 && line.descriptions[0].trim() && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateLine(index, { descriptions: line.descriptions.map(() => line.descriptions[0]) })
+                    }
+                    className="text-sm font-medium text-slate-600 underline hover:text-slate-900"
+                  >
+                    Copy trip 1 to all
+                  </button>
+                )}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {line.descriptions.map((description, tripIndex) => {
+                  const missing = !!lineErrors.descriptions && !description.trim()
+                  return (
+                    <label key={tripIndex} className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+                      Trip {tripIndex + 1}
+                      <input
+                        type="text"
+                        value={description}
+                        maxLength={300}
+                        onChange={(e) =>
+                          updateLine(index, {
+                            descriptions: line.descriptions.map((d, i) => (i === tripIndex ? e.target.value : d)),
+                          })
+                        }
+                        placeholder="What it is, packing, handling notes"
+                        aria-invalid={missing ? true : undefined}
+                        className={`${inputClasses(missing)} text-sm`}
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+              {lineErrors.descriptions && (
+                <span className="text-sm text-red-600" role="alert">
+                  {lineErrors.descriptions}
+                </span>
+              )}
+            </div>
+          </fieldset>
+        )
+      })}
+
+      <div className="col-span-full flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setField('cargoLines', [...lines, emptyCargoLine])}
+          className="border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
         >
-          <option value="">Select</option>
-          <option value="Flatbed">Flatbed</option>
-          <option value="Skeletal">Skeletal</option>
-        </select>
-      </Field>
-
-      <Field label="Weight" hint="(tons)" error={weightError}>
-        <input
-          type="text"
-          name="weight"
-          inputMode="decimal"
-          value={form.weight}
-          onChange={(e) => setField('weight', e.target.value.replace(/[^\d.]/g, ''))}
-          placeholder="e.g. 24.5"
-          aria-invalid={weightError ? true : undefined}
-          className={inputClasses(!!weightError)}
-        />
-      </Field>
-
-      <Field label="Deliveries" hint="(trips)" error={errors.deliveryOrderCount}>
-        <input
-          type="text"
-          name="deliveryOrderCount"
-          inputMode="numeric"
-          value={form.deliveryOrderCount}
-          onChange={(e) => setField('deliveryOrderCount', e.target.value.replace(/\D/g, ''))}
-          placeholder="e.g. 3"
-          aria-invalid={errors.deliveryOrderCount ? true : undefined}
-          className={inputClasses(!!errors.deliveryOrderCount)}
-        />
-      </Field>
-
-      <Field label="Cargo details" error={errors.cargoDescription} wide>
-        <textarea
-          name="cargoDescription"
-          value={form.cargoDescription}
-          onChange={handleChange}
-          rows={3}
-          placeholder="What it is, packing, handling notes"
-          aria-invalid={errors.cargoDescription ? true : undefined}
-          className={inputClasses(!!errors.cargoDescription)}
-        />
-      </Field>
+          + Add cargo line
+        </button>
+        <span className={`text-sm font-semibold ${trips > MAX_DELIVERY_ORDERS ? 'text-red-600' : 'text-slate-700'}`}>
+          Total: {trips} {trips === 1 ? 'trip' : 'trips'}
+          {trips > MAX_DELIVERY_ORDERS && ` (max ${MAX_DELIVERY_ORDERS})`}
+        </span>
+      </div>
     </>
   )
 }
@@ -238,7 +345,7 @@ export function ScheduleFields({ form, setField, errors }: SectionProps) {
     setField(e.target.name as ShipmentField, e.target.value as never)
   }
 
-  const deliveryCount = Number(form.deliveryOrderCount)
+  const deliveryCount = totalTrips(form.cargoLines)
   const rate = Number(form.proposedRate)
   const showTotal = Number.isInteger(deliveryCount) && deliveryCount > 1 && rate > 0
 

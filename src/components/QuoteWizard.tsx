@@ -26,7 +26,7 @@ const STEPS = [
   {
     id: 'cargo',
     title: 'Cargo',
-    fields: ['cargoType', 'containerType', 'trailerType', 'weight', 'deliveryOrderCount', 'cargoDescription'],
+    fields: ['cargoLines'],
   },
   {
     id: 'schedule',

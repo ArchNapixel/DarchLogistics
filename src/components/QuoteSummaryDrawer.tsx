@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
+  totalTrips,
   type LocationValue,
   type ShipmentForm,
 } from '../lib/quoteRequest'
@@ -90,7 +91,7 @@ export default function QuoteSummaryDrawer({
 
   if (!mounted) return null
 
-  const count = Number(form.deliveryOrderCount)
+  const count = totalTrips(form.cargoLines)
   const rate = Number(form.proposedRate)
   const total = rate * count
   const urgent = form.isLastDayOfPortStorage === 'Yes'
@@ -133,16 +134,25 @@ export default function QuoteSummaryDrawer({
           </Block>
 
           <Block title="Cargo">
-            <div className="flex flex-wrap gap-2">
-              <Chip>{form.cargoType === 'Loose' ? 'Loose cargo' : 'Container'}</Chip>
-              <Chip>{form.containerType}</Chip>
-              <Chip>{form.trailerType}</Chip>
-              <Chip>{form.weight} t</Chip>
-              <Chip>
-                {count} {count === 1 ? 'delivery' : 'deliveries'}
-              </Chip>
-            </div>
-            <p className="text-slate-600">{form.cargoDescription.trim()}</p>
+            {form.cargoLines.map((line, index) => (
+              <div key={index} className="flex flex-col gap-1">
+                <div className="flex flex-wrap gap-2">
+                  <Chip>× {line.quantity}</Chip>
+                  <Chip>{line.cargoType === 'Loose' ? 'Loose cargo' : 'Container'}</Chip>
+                  <Chip>{line.containerType}</Chip>
+                  <Chip>{line.trailerType}</Chip>
+                  <Chip>{line.weight} t</Chip>
+                </div>
+                <ol className="list-inside list-decimal text-slate-600">
+                  {line.descriptions.map((d, i) => (
+                    <li key={i}>{d.trim() || '—'}</li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+            <p className="font-semibold text-slate-900">
+              {count} {count === 1 ? 'trip' : 'trips'} in total
+            </p>
           </Block>
 
           <Block title="Schedule">

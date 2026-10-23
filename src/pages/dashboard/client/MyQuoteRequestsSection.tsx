@@ -19,7 +19,15 @@ import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import NewQuoteModal from './NewQuoteModal'
 import type { ResubmitTarget } from './ClientQuoteForm'
-import { REJECTION_TAGS, SHIPMENT_COLUMNS, quoteToForm, rejectionErrors, type RejectionTag } from '../../../lib/quoteRequest'
+import {
+  REJECTION_TAGS,
+  SHIPMENT_COLUMNS,
+  cargoSummary,
+  parseCargoLines,
+  quoteToForm,
+  rejectionErrors,
+  type RejectionTag,
+} from '../../../lib/quoteRequest'
 
 type QuoteRow = {
   quote_request_id: number
@@ -32,7 +40,8 @@ type QuoteRow = {
   pickup_barangay: string
   delivery_city: string
   delivery_barangay: string
-  cargo_type: string
+  // jsonb list of cargo lines (lib/quoteRequest.ts CargoLineRow).
+  cargo_lines: unknown
   preferred_pickup_date: string
   created_at: string
 }
@@ -59,7 +68,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_type, preferred_pickup_date, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -129,7 +138,7 @@ function MyQuoteRequestsSection() {
               <p className="text-xs text-slate-500">
                 {quote.reference_code ?? `Quote #${quote.quote_request_id}`}
                 {' · '}
-                {quote.cargo_type} · Pickup{' '}
+                {cargoSummary(parseCargoLines(quote.cargo_lines))} · Pickup{' '}
                 {formatDate(quote.preferred_pickup_date)}
               </p>
             </div>

@@ -32,21 +32,61 @@ export const emptyLocationValue: LocationValue = {
   lng: null,
 }
 
+// One cargo line: `quantity` trips that all carry the same cargo (e.g.
+// 8 x 40ft container). A quote can mix lines (containers + loose), and
+// Approve turns every line into that many trips, each with this cargo
+// (itineraries.cargo_*). Weight is PER TRIP; the cargo details are
+// written per trip too (`descriptions`, one per trip, always `quantity` long).
+export type CargoLine = {
+  cargoType: 'Container' | 'Loose'
+  containerType: '20ft' | '40ft'
+  // Flatbed or Skeletal -- '' until the customer picks one (required).
+  // Loose cargo is always Flatbed (a skeletal trailer only takes containers).
+  trailerType: '' | 'Flatbed' | 'Skeletal'
+  weight: string
+  descriptions: string[]
+  quantity: string
+}
+
+export const emptyCargoLine: CargoLine = {
+  cargoType: 'Container',
+  containerType: '20ft',
+  trailerType: '',
+  weight: '',
+  descriptions: [''],
+  quantity: '1',
+}
+
+// Keeps `descriptions` one per trip when the quantity changes: new trips
+// start blank, removed trips drop off the end. Invalid quantity -> 1 box.
+export function resizeDescriptions(descriptions: string[], quantity: string): string[] {
+  const n = Number(quantity)
+  const count = Number.isInteger(n) && n > 0 ? Math.min(n, MAX_DELIVERY_ORDERS) : 1
+  return Array.from({ length: count }, (_, i) => descriptions[i] ?? '')
+}
+
+// How a line is saved in quote_requests.cargo_lines (jsonb array) -- same
+// names as the itineraries columns it's copied to on Approve.
+export type CargoLineRow = {
+  cargo_type: 'Container' | 'Loose'
+  container_type: '20ft' | '40ft'
+  trailer_type: 'Flatbed' | 'Skeletal'
+  weight: number
+  // One per trip (length = quantity). Lines saved before 2026-10-23 had a
+  // single `cargo_description` instead -- parseCargoLines handles both.
+  cargo_descriptions: string[]
+  quantity: number
+}
+
 export type ShipmentForm = {
   pickup: LocationValue
   delivery: LocationValue
-  cargoType: 'Container' | 'Loose'
-  cargoDescription: string
-  weight: string
-  containerType: '20ft' | '40ft'
-  // Flatbed or Skeletal -- '' until the customer picks one (required).
-  trailerType: '' | 'Flatbed' | 'Skeletal'
+  cargoLines: CargoLine[]
   preferredPickupDate: string
   paymentTerms: 'Cash' | '7Days' | '14Days' | '30Days'
   proposedRate: string
   isLastDayOfPortStorage: 'No' | 'Yes'
   preferredDeliveryDate: string
-  deliveryOrderCount: string
 }
 
 export type ShipmentField = keyof ShipmentForm
@@ -57,17 +97,12 @@ export type FieldErrors = Partial<Record<ShipmentField, string>>
 export const emptyShipment: ShipmentForm = {
   pickup: emptyLocationValue,
   delivery: emptyLocationValue,
-  cargoType: 'Container',
-  cargoDescription: '',
-  weight: '',
-  containerType: '20ft',
-  trailerType: '',
+  cargoLines: [emptyCargoLine],
   preferredPickupDate: '',
   paymentTerms: 'Cash',
   proposedRate: '',
   isLastDayOfPortStorage: 'No',
   preferredDeliveryDate: '',
-  deliveryOrderCount: '',
 }
 
 export const PAYMENT_TERMS_LABELS: Record<ShipmentForm['paymentTerms'], string> = {
@@ -135,6 +170,46 @@ export const MAX_WEIGHT_TONS = 45
 // delivery, so an unbounded number would flood the Dispatch Board.
 export const MAX_DELIVERY_ORDERS = 50
 
+// Trips the cargo lines add up to (quote_requests.delivery_order_count).
+// A line with a blank/invalid quantity counts as 0.
+export function totalTrips(lines: CargoLine[]): number {
+  return lines.reduce((sum, line) => {
+    const n = Number(line.quantity)
+    return sum + (Number.isInteger(n) && n > 0 ? n : 0)
+  }, 0)
+}
+
+export type CargoLineErrors = Partial<Record<keyof CargoLine, string>>
+
+// Problems with one cargo line (empty object = fine). The cargo section
+// shows these under each line; validateShipment just needs to know if any.
+export function cargoLineErrors(line: CargoLine): CargoLineErrors {
+  const errors: CargoLineErrors = {}
+  if (!line.trailerType) {
+    errors.trailerType = 'Select a trailer type.'
+  } else if (line.cargoType === 'Loose' && line.trailerType !== 'Flatbed') {
+    // The form sets Flatbed for loose cargo; this catches an old quote
+    // being edited/resubmitted with Loose + Skeletal.
+    errors.trailerType = 'Loose cargo goes on a flatbed.'
+  }
+  if (line.descriptions.some((d) => !d.trim())) {
+    errors.descriptions = 'Fill in the details for every trip.'
+  }
+  const weight = Number(line.weight)
+  if (!line.weight || Number.isNaN(weight) || weight <= 0) {
+    errors.weight = 'Enter a weight.'
+  } else if (weight > MAX_WEIGHT_TONS) {
+    errors.weight = `Max ${MAX_WEIGHT_TONS} tons.`
+  } else if (!/^\d+(\.\d{1,2})?$/.test(line.weight)) {
+    errors.weight = 'Max 2 decimals.'
+  }
+  const quantity = Number(line.quantity)
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    errors.quantity = 'Enter 1 or more.'
+  }
+  return errors
+}
+
 // Checks every shipment field and returns a message for each one with
 // a problem (empty object = all good). Number(...) on an empty/invalid
 // string gives NaN, which would otherwise be sent to Supabase and
@@ -153,29 +228,15 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
       'Same as pickup. Add a landmark or pin.'
   }
 
-  if (!form.trailerType) {
-    errors.trailerType = 'Select a trailer type.'
-  } else if (form.cargoType === 'Loose' && form.trailerType !== 'Flatbed') {
-    // The form sets Flatbed for loose cargo; this catches an old quote
-    // being edited/resubmitted with Loose + Skeletal.
-    errors.trailerType = 'Loose cargo goes on a flatbed.'
-  }
-  if (!form.cargoDescription.trim()) {
-    errors.cargoDescription = 'Required.'
-  }
-  const weight = Number(form.weight)
-  if (!form.weight || Number.isNaN(weight) || weight <= 0) {
-    errors.weight = 'Enter a weight.'
-  } else if (weight > MAX_WEIGHT_TONS) {
-    errors.weight = `Max ${MAX_WEIGHT_TONS} tons.`
-  } else if (!/^\d+(\.\d{1,2})?$/.test(form.weight)) {
-    errors.weight = 'Max 2 decimals.'
-  }
-  const deliveryOrderCount = Number(form.deliveryOrderCount)
-  if (!Number.isInteger(deliveryOrderCount) || deliveryOrderCount <= 0) {
-    errors.deliveryOrderCount = 'Enter 1 or more.'
-  } else if (deliveryOrderCount > MAX_DELIVERY_ORDERS) {
-    errors.deliveryOrderCount = `Max ${MAX_DELIVERY_ORDERS} per quote.`
+  // One message for the whole cargo section (it drives which wizard step
+  // opens); CargoFields shows the per-line details via cargoLineErrors.
+  const trips = totalTrips(form.cargoLines)
+  if (form.cargoLines.length === 0) {
+    errors.cargoLines = 'Add at least one cargo line.'
+  } else if (form.cargoLines.some((line) => Object.keys(cargoLineErrors(line)).length > 0)) {
+    errors.cargoLines = 'Fix the cargo lines marked below.'
+  } else if (trips > MAX_DELIVERY_ORDERS) {
+    errors.cargoLines = `Max ${MAX_DELIVERY_ORDERS} trips per quote (now ${trips}).`
   }
 
   if (!form.preferredPickupDate) {
@@ -241,18 +302,25 @@ export function buildQuoteRow(form: ShipmentForm) {
       delivery_barangay: delivery.barangay,
       delivery_lat: delivery.lat,
       delivery_lng: delivery.lng,
-      cargo_type: form.cargoType,
-      cargo_description: form.cargoDescription.trim(),
-      weight: Number(form.weight),
-      container_type: form.containerType,
-      trailer_type: form.trailerType,
+      cargo_lines: form.cargoLines.map(
+        (line): CargoLineRow => ({
+          cargo_type: line.cargoType,
+          container_type: line.containerType,
+          // Validated above: never '' here.
+          trailer_type: line.trailerType as CargoLineRow['trailer_type'],
+          weight: Number(line.weight),
+          cargo_descriptions: resizeDescriptions(line.descriptions, line.quantity).map((d) => d.trim()),
+          quantity: Number(line.quantity),
+        }),
+      ),
       preferred_pickup_date: form.preferredPickupDate,
       payment_terms: form.paymentTerms,
       proposed_rate: Number(form.proposedRate),
       is_last_day_of_port_storage: form.isLastDayOfPortStorage === 'Yes',
       // Shown as "Deadline date".
       preferred_delivery_date: form.preferredDeliveryDate,
-      delivery_order_count: Number(form.deliveryOrderCount),
+      // Total trips across the lines.
+      delivery_order_count: totalTrips(form.cargoLines),
       request_status: 'Pending',
     },
   }
@@ -261,7 +329,7 @@ export function buildQuoteRow(form: ShipmentForm) {
 // The quote_requests columns buildQuoteRow writes -- what quoteToForm
 // needs to read a saved quote back into the form.
 export const SHIPMENT_COLUMNS =
-  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_type, cargo_description, weight, container_type, trailer_type, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
+  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_lines, preferred_pickup_date, payment_terms, proposed_rate, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
 
 // The reverse of buildQuoteRow: a saved quote (SHIPMENT_COLUMNS) back
 // into form state, so a rejected quote can be edited and resubmitted.
@@ -286,18 +354,72 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
       lat: q.delivery_lat ?? null,
       lng: q.delivery_lng ?? null,
     },
-    cargoType: q.cargo_type === 'Loose' ? 'Loose' : 'Container',
-    cargoDescription: text(q.cargo_description),
-    weight: text(q.weight),
-    containerType: q.container_type === '40ft' ? '40ft' : '20ft',
-    trailerType: q.trailer_type === 'Flatbed' || q.trailer_type === 'Skeletal' ? q.trailer_type : '',
+    cargoLines: rowsToCargoLines(q.cargo_lines),
     preferredPickupDate: text(q.preferred_pickup_date),
     paymentTerms: q.payment_terms in PAYMENT_TERMS_LABELS ? q.payment_terms : 'Cash',
     proposedRate: text(q.proposed_rate),
     isLastDayOfPortStorage: q.is_last_day_of_port_storage ? 'Yes' : 'No',
     preferredDeliveryDate: text(q.preferred_delivery_date),
-    deliveryOrderCount: text(q.delivery_order_count),
   }
+}
+
+// quote_requests.cargo_lines (jsonb) -> typed rows. Anything malformed is
+// defaulted rather than trusted. Also used by staff screens.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseCargoLines(value: any): CargoLineRow[] {
+  if (!Array.isArray(value)) return []
+  return value.map((line) => ({
+    cargo_type: line?.cargo_type === 'Loose' ? 'Loose' : 'Container',
+    container_type: line?.container_type === '40ft' ? '40ft' : '20ft',
+    trailer_type: line?.trailer_type === 'Skeletal' ? 'Skeletal' : 'Flatbed',
+    weight: Number(line?.weight) || 0,
+    quantity: lineQuantity(line),
+    cargo_descriptions: lineDescriptions(line),
+  }))
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lineQuantity(line: any): number {
+  const n = Number(line?.quantity)
+  return Number.isInteger(n) && n > 0 ? n : 1
+}
+
+// One description per trip: the saved list, or (older lines) the single
+// cargo_description repeated for every trip of the line.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lineDescriptions(line: any): string[] {
+  const quantity = lineQuantity(line)
+  const saved: string[] = Array.isArray(line?.cargo_descriptions)
+    ? line.cargo_descriptions.map((d: unknown) => (typeof d === 'string' ? d : ''))
+    : Array(quantity).fill(typeof line?.cargo_description === 'string' ? line.cargo_description : '')
+  return Array.from({ length: quantity }, (_, i) => saved[i] ?? '')
+}
+
+// One-line summary of saved cargo lines by trip count, e.g.
+// "8 container · 2 loose" ('—' when there are none).
+export function cargoSummary(rows: CargoLineRow[]): string {
+  const count = (type: CargoLineRow['cargo_type']) =>
+    rows.filter((r) => r.cargo_type === type).reduce((sum, r) => sum + r.quantity, 0)
+  const parts = [
+    count('Container') > 0 && `${count('Container')} container`,
+    count('Loose') > 0 && `${count('Loose')} loose`,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
+// Saved lines back into editable form lines (resubmitting a rejected
+// quote). A missing trailer type stays blank so the client must pick one.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowsToCargoLines(value: any): CargoLine[] {
+  if (!Array.isArray(value) || value.length === 0) return [emptyCargoLine]
+  return value.map((line) => ({
+    cargoType: line?.cargo_type === 'Loose' ? 'Loose' : 'Container',
+    containerType: line?.container_type === '40ft' ? '40ft' : '20ft',
+    trailerType: line?.trailer_type === 'Flatbed' || line?.trailer_type === 'Skeletal' ? line.trailer_type : '',
+    weight: line?.weight === null || line?.weight === undefined ? '' : String(line.weight),
+    descriptions: lineDescriptions(line),
+    quantity: String(lineQuantity(line)),
+  }))
 }
 
 // Form state + per-field errors, shared by all three quote channels.
@@ -309,7 +431,7 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
 // they open highlighted in red, on the step that holds them.
 export const REJECTION_TAGS = {
   Rate: { label: 'Trip rate too low', fields: ['proposedRate'] },
-  Weight: { label: 'Too heavy', fields: ['weight'] },
+  Weight: { label: 'Too heavy', fields: ['cargoLines'] },
   Schedule: { label: 'Schedule unavailable', fields: ['preferredPickupDate', 'preferredDeliveryDate'] },
   Terms: { label: 'Payment terms not accepted', fields: ['paymentTerms'] },
   Other: { label: 'Other', fields: [] },
