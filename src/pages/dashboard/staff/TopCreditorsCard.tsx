@@ -46,14 +46,18 @@ function TopCreditorsCard({ refreshKey }: { refreshKey: number }) {
   }, [refreshKey])
 
   return (
-    // Header sits above the box (like the Maintenance group); the box fills the rest
-    <div className="flex h-full flex-col">
-    <h2 className="font-ui text-sm font-medium text-neutral-500">Top Unpaid Clients</h2>
-    <div className="reports-blueprint-card mt-2 min-h-0 flex-1 overflow-y-auto px-5 py-3">
+    // Dashed box that fills its parent; the "Top Unpaid Clients" heading is
+    // on the dashboard, above this card.
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border border-dashed border-slate-300 px-4 py-3">
       {loading && <p className="font-ui text-sm text-neutral-500">Loading...</p>}
       {error && <p className="font-ui text-sm text-red-700">{error}</p>}
       {!loading && !error && creditors.length === 0 && (
-        <p className="font-ui text-sm text-neutral-500">No outstanding balances.</p>
+        <p className="flex flex-1 items-center gap-2 font-ui text-sm text-slate-700">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-700" aria-hidden="true">
+            <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM8 12l3 3 5-6" />
+          </svg>
+          No outstanding balances.
+        </p>
       )}
 
       <ol className="flex flex-col gap-2">
@@ -72,7 +76,6 @@ function TopCreditorsCard({ refreshKey }: { refreshKey: number }) {
           </li>
         ))}
       </ol>
-    </div>
     </div>
   )
 }
