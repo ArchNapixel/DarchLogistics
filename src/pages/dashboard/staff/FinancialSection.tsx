@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import { supabase } from '../../../lib/supabaseClient'
@@ -783,6 +783,18 @@ function FinancialSection() {
   useEffect(() => {
     loadBookings()
   }, [])
+
+  // Deep link from a booking's "downpayment due" banner (?downpayment=ID):
+  // once the rows are loaded, open that booking's Record downpayment form,
+  // then drop the param so closing the form doesn't reopen it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const downpaymentParam = Number(searchParams.get('downpayment'))
+  useEffect(() => {
+    if (!downpaymentParam || loading) return
+    const booking = bookings.find((b) => b.booking_id === downpaymentParam)
+    if (booking && downpaymentById.get(booking.booking_id)) setDownpaymentBooking(booking)
+    setSearchParams({}, { replace: true })
+  }, [downpaymentParam, loading, bookings, downpaymentById, setSearchParams])
 
   async function loadBookings() {
     setLoading(true)

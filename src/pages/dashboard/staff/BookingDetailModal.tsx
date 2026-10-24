@@ -971,9 +971,13 @@ function BookingDetailModal({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              {/* Admin only (the Bills Receivable page is in the Admin routes). */}
               {billingLink && (
-                <Link to={billingLink} className="text-sm font-semibold text-amber-900 underline">
-                  Open Billing
+                <Link
+                  to={`/dashboard/financial-records?downpayment=${booking.booking_id}`}
+                  className="text-sm font-semibold text-amber-900 underline"
+                >
+                  Record Downpayment
                 </Link>
               )}
               {isAdmin(role) && onChanged && (

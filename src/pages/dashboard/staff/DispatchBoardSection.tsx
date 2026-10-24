@@ -1922,10 +1922,10 @@ function DispatchBoardSection() {
                         {formatMoney(downpaymentDue.paid)} of {formatMoney(downpaymentDue.required)} paid. No trip can start until it
                         is paid.
                       </p>
-                      {/* The Billing page exists only in the Admin routes. */}
+                      {/* Bills Receivable exists only in the Admin routes. */}
                       {canFreelyEditStatus && (
-                        <Link to={`/dashboard/billing/${group.bookingId}`} className="font-semibold underline">
-                          Open Billing
+                        <Link to={`/dashboard/financial-records?downpayment=${group.bookingId}`} className="font-semibold underline">
+                          Record Downpayment
                         </Link>
                       )}
                     </div>
