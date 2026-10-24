@@ -81,6 +81,14 @@ function ScheduleOverviewSection() {
     return () => clearInterval(timer)
   }, [])
 
+  // Bookings made while this page sat open: load again when the browser tab
+  // is shown again (quietly -- the old schedule stays until the new one arrives).
+  useEffect(() => {
+    const onShow = () => document.visibilityState === 'visible' && setReloadKey((k) => k + 1)
+    document.addEventListener('visibilitychange', onShow)
+    return () => document.removeEventListener('visibilitychange', onShow)
+  }, [])
+
   // Clear the timeline and load again (the loading text shows meanwhile).
   function reload() {
     setData(null)
@@ -148,6 +156,13 @@ function ScheduleOverviewSection() {
             className="text-sm text-slate-600 underline hover:text-slate-900"
           >
             Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="text-sm text-slate-600 underline hover:text-slate-900"
+          >
+            Refresh
           </button>
         </div>
         <input

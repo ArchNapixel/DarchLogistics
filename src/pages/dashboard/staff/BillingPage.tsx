@@ -102,6 +102,20 @@ function BillingPage() {
 
   const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
 
+  // The statement's dated lines, with each trip not delivered yet slotted in
+  // by its scheduled date (after any line of the same day).
+  const rows = billing
+    ? (() => {
+        const out: ({ kind: 'line'; line: (typeof billing.lines)[number] } | { kind: 'pending'; trip: (typeof billing.pendingTrips)[number] })[] =
+          billing.lines.map((line) => ({ kind: 'line' as const, line }))
+        for (const trip of billing.pendingTrips) {
+          const at = out.findIndex((r) => (r.kind === 'line' ? r.line.date : (r.trip.date ?? '')) > (trip.date ?? '9999-12-31'))
+          out.splice(at === -1 ? out.length : at, 0, { kind: 'pending', trip })
+        }
+        return out
+      })()
+    : []
+
   return (
     <div>
       {/* Controls: not printed */}
@@ -197,20 +211,31 @@ function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {billing.lines.length === 0 && (
+              {rows.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-3 text-slate-500">Nothing has been billed for this booking yet.</td>
                 </tr>
               )}
-              {billing.lines.map((line, i) => (
-                <tr key={i} className="border-b border-slate-100 align-top">
-                  <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatDate(line.date)}</td>
-                  <td className="py-2 pr-3 text-slate-900">{line.description}</td>
-                  <td className="py-2 pr-3 text-right text-slate-900">{line.amount > 0 ? formatMoney(line.amount) : ''}</td>
-                  <td className="py-2 pr-3 text-right text-slate-900">{line.amount < 0 ? formatMoney(-line.amount) : ''}</td>
-                  <td className="py-2 text-right text-slate-900">{formatMoney(line.balance)}</td>
-                </tr>
-              ))}
+              {rows.map((row, i) =>
+                row.kind === 'pending' ? (
+                  // A trip not delivered yet: listed in date order, billed on delivery.
+                  <tr key={`t${row.trip.itinerary_id}`} className="border-b border-slate-100 align-top text-slate-400">
+                    <td className="whitespace-nowrap py-2 pr-3">{row.trip.date ? formatDate(row.trip.date) : '—'}</td>
+                    <td className="py-2 pr-3">{row.trip.description}</td>
+                    <td className="py-2 pr-3" />
+                    <td className="py-2 pr-3" />
+                    <td className="py-2" />
+                  </tr>
+                ) : (
+                  <tr key={i} className="border-b border-slate-100 align-top">
+                    <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatDate(row.line.date)}</td>
+                    <td className="py-2 pr-3 text-slate-900">{row.line.description}</td>
+                    <td className="py-2 pr-3 text-right text-slate-900">{row.line.amount > 0 ? formatMoney(row.line.amount) : ''}</td>
+                    <td className="py-2 pr-3 text-right text-slate-900">{row.line.amount < 0 ? formatMoney(-row.line.amount) : ''}</td>
+                    <td className="py-2 text-right text-slate-900">{formatMoney(row.line.balance)}</td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
 

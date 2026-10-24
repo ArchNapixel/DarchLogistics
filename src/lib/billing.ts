@@ -5,9 +5,10 @@
 // Receivable and the client's statement show; this file only adds the
 // booking's own details (route, cargo, terms, invoice number).
 import { supabase } from './supabaseClient'
+import { toManilaDate } from './payslip'
 import { loadLedgerInputs } from './statement'
 import { buildStatement } from './statementTotals'
-import { groupTripCargo } from './quoteRequest'
+import { groupTripCargo, tripCargoLabel } from './quoteRequest'
 
 export type Billing = {
   booking_id: number
@@ -25,8 +26,20 @@ export type Billing = {
   billed: number // delivery amount + client damage charges
   paid: number // payments received minus refunds
   balance_due: number
+  // Trips not delivered yet (cancelled ones left out): listed between the
+  // dated lines with no amount, billed once they are delivered.
+  pendingTrips: PendingTrip[]
   // Dated lines (delivered trips, adjustment, payments) with running balance.
   lines: ReturnType<typeof buildStatement>['lines']
+}
+
+// A trip still to be delivered, shown in the billing table in date order.
+export type PendingTrip = {
+  itinerary_id: number
+  // The day it is scheduled.
+  date: string | null
+  // "Trip #105 (not delivered yet): Brgy. Ilang -> Brgy. San Pedro · Loose cargo · 40ft flatbed · 16 t"
+  description: string
 }
 
 type PlaceRow = { place_id: number; place_name: string; city: string | null; barangay: string | null }
@@ -53,9 +66,10 @@ export async function loadBilling(
     // Cargo is per trip (itineraries.cargo_*) -- cancelled trips left out.
     supabase
       .from('itineraries')
-      .select('cargo_type, container_type, trailer_type, weight')
+      .select('itinerary_id, itinerary_status, trip_date_from, trip_start_at, cargo_type, container_type, trailer_type, weight, cargo_description')
       .eq('booking_id', bookingId)
-      .or('itinerary_status.is.null,itinerary_status.neq.Cancelled'),
+      .or('itinerary_status.is.null,itinerary_status.neq.Cancelled')
+      .order('itinerary_id'),
   ])
   if (ledger.error) return { billing: null, error: ledger.error }
   if (places.error) return { billing: null, error: places.error.message }
@@ -84,6 +98,17 @@ export async function loadBilling(
     '9999-12-31',
   )
 
+  // Same wording as the statement's trip lines, for trips not delivered yet.
+  const route = ledger.input.bookings.find((b) => b.booking_id === bookingId)?.route ?? ''
+  const delivered = new Set(ledger.input.trips.filter((t) => t.booking_id === bookingId).map((t) => t.itinerary_id))
+  const pendingTrips: PendingTrip[] = tripCargo.data
+    .filter((t) => !delivered.has(t.itinerary_id))
+    .map((t) => ({
+      itinerary_id: t.itinerary_id,
+      date: t.trip_start_at ? toManilaDate(new Date(t.trip_start_at)) : t.trip_date_from,
+      description: `Trip #${t.itinerary_id} (not delivered yet): ${route} · ${tripCargoLabel(t)}${t.cargo_description ? ` · ${t.cargo_description}` : ''}`,
+    }))
+
   return {
     billing: {
       booking_id: bookingId,
@@ -101,6 +126,7 @@ export async function loadBilling(
       billed: row.billable_amount,
       paid: row.amount_paid,
       balance_due: row.balance_due,
+      pendingTrips,
       lines: statement.lines,
     },
     error: null,

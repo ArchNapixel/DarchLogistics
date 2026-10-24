@@ -975,7 +975,7 @@ before creating it.
     payments) with running balance, total billed / paid / amount due (or
     PAID), due date, invoice no. if typed. It is `loadLedgerInputs(clientId)`
     narrowed to the booking, so it matches Bills Receivable and the
-    Statement. Titled "Billing" — NOT a BIR invoice. "Billing" link in
+    Statement. Trips not delivered yet are listed too (greyed, no amount, "Trip #N (not delivered yet): route · cargo", in date order, `pendingTrips` in `lib/billing.ts`) and are billed on delivery, like the statement's trip lines. Titled "Billing" — NOT a BIR invoice. "Billing" link in
     Bills Receivable's Action column and in `BookingDetailModal` (Admin
     only). No company address/TIN in the header yet. No self-check script
     (no new math).
