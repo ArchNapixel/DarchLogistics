@@ -22,6 +22,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
+import { tripOnRoad } from '../../../lib/tripSchedule'
 
 type Trip = {
   itinerary_id: number
@@ -264,6 +265,12 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
               itineraryId={trip.itinerary_id}
               currentStatus={trip.itinerary_status}
               hasTruck={trip.plate_number !== null && trip.trailer_label !== null}
+              busyOnTripId={
+                tripOnRoad(
+                  trips.map((t) => ({ itinerary_id: t.itinerary_id, status: t.itinerary_status })),
+                  trip.itinerary_id,
+                )?.itinerary_id ?? null
+              }
               onStatusChanged={handleStatusChanged}
             />
             <button

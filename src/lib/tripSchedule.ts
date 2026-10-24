@@ -51,6 +51,20 @@ export function findClash(
   return theirTrips.find((other) => tripsClash(trip, other, now)) ?? null
 }
 
+// Statuses of a trip that is out on the road.
+const ON_ROAD = ['Dispatched', 'PickedUp', 'InTransit']
+
+// Someone (driver or helper) can't start another trip while one of theirs is
+// still on the road. Given one person's OTHER trips, returns the one they
+// are on, or null when they're free to start. The database enforces the same
+// rule (trigger require_crew_free_of_road) -- this is for greying things out.
+export function tripOnRoad<T extends { itinerary_id: number; status: string }>(
+  theirOtherTrips: T[],
+  tripId: number,
+): T | null {
+  return theirOtherTrips.find((t) => t.itinerary_id !== tripId && ON_ROAD.includes(t.status)) ?? null
+}
+
 // Past its end time and still not Delivered/Cancelled.
 export function isOverdue(trip: ScheduledTrip, now: number): boolean {
   return !DONE.includes(trip.status) && !!trip.trip_end_at && ms(trip.trip_end_at) < now

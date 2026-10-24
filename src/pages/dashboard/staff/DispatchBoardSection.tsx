@@ -82,6 +82,7 @@ import {
   isOverdue,
   lateEarlierTrip,
   rankCandidates,
+  tripOnRoad,
   type ScheduledTrip,
 } from '../../../lib/tripSchedule'
 
@@ -417,9 +418,11 @@ const STATUS_LABELS: Record<string, string> = {
 // rather than just another dropdown option.
 const STATUS_SELECT_STYLES: Record<string, string> = {
   Awaiting: 'border-neutral-300 bg-transparent text-neutral-600',
-  Dispatched: 'border-accent-300 bg-accent-100 text-accent-700',
-  PickedUp: 'border-accent-500 bg-accent-100 text-accent-700',
-  InTransit: 'border-accent-500 bg-accent-300/50 text-accent-900',
+  // On the road: outline only, so the dark fill is left for trips that are
+  // waiting (blocked) behind them.
+  Dispatched: 'border-accent-300 bg-transparent text-accent-700',
+  PickedUp: 'border-accent-500 bg-transparent text-accent-700',
+  InTransit: 'border-accent-500 bg-transparent text-accent-900',
   Delivered: 'border-accent-900 bg-accent-900 text-white',
 }
 
@@ -555,22 +558,47 @@ function CargoCell({ row }: { row: DispatchRow }) {
   )
 }
 
+// An Awaiting trip can't start while its driver or helper is still on the
+// road with another trip. Returns why ("Roy Estoperes is on trip #97"), or
+// null when the crew is free. The database enforces it too
+// (require_crew_free_of_road).
+function crewOnRoadReason(row: DispatchRow, allRows: DispatchRow[]): string | null {
+  if (row.status !== 'Awaiting') return null
+  const people = [
+    { id: row.assigned_employee_id, name: row.assigned_driver_name, helper: false },
+    { id: row.assigned_helper_employee_id, name: row.assigned_helper_name, helper: true },
+  ]
+  for (const p of people) {
+    if (p.id === null) continue
+    const theirs = allRows
+      .filter((r) => (p.helper ? r.assigned_helper_employee_id : r.assigned_employee_id) === p.id)
+      .map((r) => ({ itinerary_id: r.itinerary_id, status: r.status }))
+    const onRoad = tripOnRoad(theirs, row.itinerary_id)
+    if (onRoad) return `${p.name ?? 'The crew'} is on trip #${onRoad.itinerary_id}`
+  }
+  return null
+}
+
 // Status: a badge while the trip still needs crew/vehicles (it can't move
 // yet), otherwise the dropdown -- Admin any status, Dispatcher only the
-// next step. Picking "Delivered" (or "Mark delivered") opens MarkDeliveredModal.
+// next step. Picking "Delivered" opens MarkDeliveredModal.
 function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
   const editable = ctx.canEditStatus && (row.status !== 'Awaiting' || isFullyAssigned(row))
+  const crewBusy = crewOnRoadReason(row, ctx.allRows)
   return (
     <div className="flex flex-col items-start gap-1.5">
       {editable ? (
         <select
           value={row.status}
-          disabled={ctx.savingId === row.itinerary_id}
+          disabled={ctx.savingId === row.itinerary_id || crewBusy !== null}
+          title={crewBusy ? `Can't start: ${crewBusy}.` : undefined}
           onChange={(e) => ctx.onStatusChange(row.itinerary_id, row.status, e.target.value)}
           // Fixed width: the long "(downpayment first)" option text would
           // otherwise stretch it; the open list still shows it in full.
           className={`w-40 border px-2 py-1.5 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
-            STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600'
+            crewBusy
+              ? 'cursor-not-allowed border-slate-300 bg-slate-200 text-slate-500'
+              : (STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600')
           }`}
         >
           {(ctx.canFreelyEditStatus
@@ -586,7 +614,7 @@ function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
               disabled={
                 row.status === 'Awaiting' &&
                 status !== 'Awaiting' &&
-                (!isFullyAssigned(row) || !tripsMayStart(row.downpayment))
+                (!isFullyAssigned(row) || !tripsMayStart(row.downpayment) || crewBusy !== null)
               }
             >
               {STATUS_LABELS[status]}
@@ -604,16 +632,6 @@ function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
             <span className="text-xs text-slate-500">Needs {missingForDispatch(row)}</span>
           )}
         </>
-      )}
-      {ctx.canEditStatus && row.status === 'InTransit' && (
-        <button
-          type="button"
-          onClick={() => ctx.onStatusChange(row.itinerary_id, row.status, 'Delivered')}
-          disabled={ctx.savingId === row.itinerary_id}
-          className="text-xs font-semibold text-primary underline hover:no-underline"
-        >
-          Mark delivered
-        </button>
       )}
     </div>
   )
@@ -2012,6 +2030,8 @@ function DispatchBoardSection() {
                 r.itinerary_id === itineraryId ? { ...r, status: 'Delivered' } : r,
               ),
             )
+            // The booking's later trips were re-timed too -- reload to show their new slots.
+            loadDispatchBoard()
           }}
         />
       )}

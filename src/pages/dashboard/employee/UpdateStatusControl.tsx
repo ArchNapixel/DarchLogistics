@@ -40,11 +40,14 @@ function UpdateStatusControl({
   itineraryId,
   currentStatus,
   hasTruck,
+  busyOnTripId = null,
   onStatusChanged,
 }: {
   itineraryId: number
   currentStatus: string
   hasTruck: boolean
+  // Another of this driver's trips that is still on the road (blocks starting this one).
+  busyOnTripId?: number | null
   onStatusChanged: (itineraryId: number, newStatus: string) => void
 }) {
   const { employeeId } = useAuth()
@@ -138,6 +141,8 @@ function UpdateStatusControl({
   // A trip can't leave Awaiting without a truck AND trailer on it (the
   // `hasTruck` prop means both; the driver is the one logged in).
   const blockedNoTruck = currentStatus === 'Awaiting' && !hasTruck
+  // ...nor while another of their trips hasn't been delivered yet.
+  const blockedBusy = currentStatus === 'Awaiting' && busyOnTripId !== null
 
   return (
     <div className="mt-3">
@@ -145,7 +150,7 @@ function UpdateStatusControl({
 
       <button
         onClick={handleClick}
-        disabled={updating || blockedNoTruck}
+        disabled={updating || blockedNoTruck || blockedBusy}
         className="btn-primary w-full px-4 py-2.5 text-sm font-medium sm:w-auto"
       >
         {updating ? 'Saving...' : `Mark as ${nextLabel}`}
@@ -154,6 +159,9 @@ function UpdateStatusControl({
         <p className="mt-1 text-xs text-slate-500">
           Waiting for dispatch to assign a truck and trailer.
         </p>
+      )}
+      {blockedBusy && (
+        <p className="mt-1 text-xs text-slate-500">Finish trip #{busyOnTripId} first.</p>
       )}
     </div>
   )

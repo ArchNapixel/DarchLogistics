@@ -21,6 +21,7 @@ import {
 import DamageFields from './DamageFields'
 import TripDocuments from './TripDocuments'
 import { showToast } from '../../../components/Toast'
+import { retimeAfterDelivery } from '../../../lib/tripRetime'
 
 function MarkDeliveredModal({
   itineraryId,
@@ -98,6 +99,10 @@ function MarkDeliveredModal({
           'error',
         )
       }
+
+      // The slot ends at the real delivery time; later trips follow it.
+      const retimeWarning = await retimeAfterDelivery(itineraryId)
+      if (retimeWarning) showToast(retimeWarning, 'error')
     }
 
     // 3. Damage, if any.

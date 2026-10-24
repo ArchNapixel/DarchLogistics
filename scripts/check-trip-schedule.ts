@@ -10,6 +10,7 @@ import {
   lateEarlierTrip,
   manilaWeek,
   rankCandidates,
+  tripOnRoad,
   tripsClash,
   type ScheduledTrip,
 } from '../src/lib/tripSchedule.ts'
@@ -101,5 +102,16 @@ assert.deepEqual(chainSlots(six, [6 * H, 6 * H, 6 * H, 6 * H]).map((x) => [x.sta
 assert.deepEqual(chainSlots(six, []), [])
 // Each trip keeps its own length (e.g. one was extended).
 assert.deepEqual(chainSlots(six, [8 * H, 6 * H]).map((x) => x.start), [six, six + 8 * H])
+
+// On the road: a person with a Dispatched / Picked Up / In Transit trip can't
+// start another; Awaiting, Delivered and Cancelled ones don't count.
+const mine = [
+  { itinerary_id: 97, status: 'Dispatched' },
+  { itinerary_id: 98, status: 'Awaiting' },
+]
+assert.equal(tripOnRoad(mine, 98)?.itinerary_id, 97)
+assert.equal(tripOnRoad(mine, 97), null) // the trip itself doesn't block itself
+assert.equal(tripOnRoad([{ itinerary_id: 1, status: 'InTransit' }], 2)?.itinerary_id, 1)
+assert.equal(tripOnRoad([{ itinerary_id: 1, status: 'Delivered' }, { itinerary_id: 3, status: 'Cancelled' }], 2), null)
 
 console.log('ok')
