@@ -3,7 +3,9 @@
 // are still Awaiting follow straight after it -- same back-to-back rule as
 // EditTripTimeModal, each trip keeping its own length (the "# of hours").
 // E.g. a 6 AM-12 NN trip delivered at 9:32 AM becomes 6 AM-9:32 AM, and the
-// next 6-hour trip becomes 9:32 AM-3:32 PM.
+// next 6-hour trip becomes 9:32 AM-3:32 PM. A trip run and delivered
+// before its slot even started (dispatched early) gets its slot moved to
+// when it really ran, and the later trips still follow its delivery.
 //
 // Called after the Delivered status is saved. It never fails the delivery:
 // it returns a warning message (or null) for the caller to show. Trips
@@ -26,8 +28,8 @@ export async function retimeAfterDelivery(itineraryId: number, deliveredAt = Dat
   if (!trip?.trip_start_at || !trip.trip_end_at) return null
   const start = new Date(trip.trip_start_at).getTime()
   const plannedEnd = new Date(trip.trip_end_at).getTime()
-  // On time (within a minute), or "delivered" before it was due to start: leave as is.
-  if (deliveredAt <= start || Math.abs(deliveredAt - plannedEnd) < MINUTE_MS) return null
+  // On time (within a minute): leave as is.
+  if (Math.abs(deliveredAt - plannedEnd) < MINUTE_MS) return null
 
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
@@ -35,6 +37,29 @@ export async function retimeAfterDelivery(itineraryId: number, deliveredAt = Dat
     .eq('booking_id', trip.booking_id)
     .maybeSingle()
   if (bookingError) return `Couldn't re-time the later trips: ${bookingError.message}`
+
+  // Run (and delivered) before its slot even started: the slot now starts
+  // when it really left -- its first status change out of Awaiting in
+  // dispatch_status_logs (else an hour before delivery). Saved on its own
+  // first, because changing the start alone moves the end with it
+  // (itinerary_slot_defaults); the end is set right after.
+  if (deliveredAt <= start) {
+    const { data: firstMove } = await supabase
+      .from('dispatch_status_logs')
+      .select('status_changed_at')
+      .eq('itinerary_id', itineraryId)
+      .eq('previous_status', 'Awaiting')
+      .order('status_changed_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    const leftAt = firstMove?.status_changed_at ? new Date(firstMove.status_changed_at).getTime() : NaN
+    const actualStart = leftAt < deliveredAt ? leftAt : deliveredAt - 60 * MINUTE_MS
+    const { error: startError } = await supabase
+      .from('itineraries')
+      .update({ trip_start_at: new Date(actualStart).toISOString() })
+      .eq('itinerary_id', itineraryId)
+    if (startError) return `Delivered, but its time slot wasn't moved: ${startError.message}`
+  }
 
   // This trip's slot now ends when it was really delivered.
   const { error: endError } = await supabase
