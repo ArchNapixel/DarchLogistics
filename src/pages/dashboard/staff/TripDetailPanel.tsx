@@ -18,7 +18,6 @@ import { formatDate, formatDateTime, formatMoney, formatSlot } from '../../../li
 import { loadDispatchStatusLogForItinerary, type DispatchStatusLogEntry } from '../../../lib/dispatchStatusLog'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { TRIP_STATUS_LABELS, type TripListRow } from '../../../lib/tripList'
-import { tripCargoLabel } from '../../../lib/quoteRequest'
 
 type Extra = {
   log: DispatchStatusLogEntry[]
@@ -187,18 +186,28 @@ function TripDetailPanel({
               <span className={missing}>No truck / no trailer</span>
             )}
           </Info>
-          <Info label="Cargo">
-            {tripCargoLabel(trip.cargo)}
-            {trip.cargo.cargo_description && (
-              <span className="block text-sm text-slate-500">{trip.cargo.cargo_description}</span>
-            )}
-          </Info>
           {trip.storage_deadline && (
             <Info label="Storage deadline">
               {formatDate(trip.storage_deadline)}, 11:59 PM
               {pickedUpAt && <span className="block text-sm text-slate-500">Picked up {formatDateTime(pickedUpAt)}</span>}
             </Info>
           )}
+        </div>
+      </Card>
+
+      {/* Cargo gets its own card so it's easy to compare against the quote. */}
+      <Card title="Cargo Details">
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Info label="Cargo Type">
+            {trip.cargo.cargo_type === 'Loose' ? 'Loose cargo' : (trip.cargo.cargo_type ?? '—')}
+          </Info>
+          <Info label="Container / Trailer">
+            {[trip.cargo.container_type, trip.cargo.trailer_type?.toLowerCase()].filter(Boolean).join(' ') || '—'}
+          </Info>
+          <Info label="Weight">
+            {trip.cargo.weight != null && trip.cargo.weight > 0 ? `${trip.cargo.weight} t` : '—'}
+          </Info>
+          <Info label="Description">{trip.cargo.cargo_description || '—'}</Info>
         </div>
       </Card>
 
