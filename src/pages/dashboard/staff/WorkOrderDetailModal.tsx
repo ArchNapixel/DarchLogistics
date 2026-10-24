@@ -7,9 +7,10 @@
 //   - change its status, including Cancelled -- through the same
 //     changeWorkOrderStatus() the mechanic uses, so cancelling frees the
 //     truck/trailer and reopening puts it back "Under Maintenance".
-// "Completed" isn't offered here: completing needs the mechanic's
-// completion form (CompleteWorkOrderModal.tsx -- description, parts,
-// odometer), so admin can't skip it.
+//   - finish it: "Complete work order..." opens the same completion form
+//     the mechanic uses (CompleteWorkOrderModal.tsx -- description, parts,
+//     odometer), so nothing is skipped; admin is recorded as who completed
+//     it. "Completed" isn't in the status dropdown for the same reason.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -17,6 +18,7 @@ import { changeWorkOrderStatus } from '../../../lib/workOrderStatusLog'
 import { loadWorkOrderNotes, type WorkOrderNote } from '../../../lib/workOrderNotes'
 import { loadWorkOrderPartsLog, type LoggedPart } from '../../../lib/workOrderPartsLog'
 import { ALL_STATUSES } from '../employee/MechanicTasks'
+import CompleteWorkOrderModal from '../employee/CompleteWorkOrderModal'
 import StatusBadge from '../../../components/StatusBadge'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
@@ -54,6 +56,7 @@ function WorkOrderDetailModal({
   const [parts, setParts] = useState<LoggedPart[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [completing, setCompleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -255,15 +258,41 @@ function WorkOrderDetailModal({
           )}
         </div>
 
-        <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
+        <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             Close
           </button>
+          {!isClosed && (
+            <button
+              onClick={() => setCompleting(true)}
+              disabled={saving}
+              className="btn-primary px-4 py-2 text-sm font-medium"
+            >
+              Complete work order...
+            </button>
+          )}
         </div>
       </div>
+
+      {completing && (
+        <CompleteWorkOrderModal
+          workOrderId={order.work_order_id}
+          workOrderNumber={order.work_order_number}
+          plateNumber={order.plate_number}
+          trailerId={order.trailer_id}
+          previousStatus={status}
+          onClose={() => setCompleting(false)}
+          onCompleted={() => {
+            setCompleting(false)
+            showToast(`${order.work_order_number} completed.`)
+            onChanged()
+            onClose()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -678,7 +678,11 @@ before creating it.
 - Work Order detail (`staff/WorkOrderDetailModal.tsx`) — Admin clicks a
   row on the Maintenance page: shows the mechanic's progress notes and
   mid-job parts log, lets Admin reassign or unassign (back to the Task
-  Board).
+  Board), and (since 2026-10-24) **Complete work order…** — opens the
+  mechanic's `CompleteWorkOrderModal` so Admin can finish a job the same
+  way (description, parts, odometer); Admin is recorded as the completer.
+  Needs staff INSERT/SELECT policies on `work_order_completions` and INSERT
+  on `work_order_parts_used` (SQL given in chat).
 - Client "My Quote Requests" (`client/MyQuoteRequestsSection.tsx`, in
   `ClientDashboard.tsx`) — the client's Pending and Rejected (with reason)
   quotes; Approved ones show under My Bookings instead.
