@@ -962,7 +962,7 @@ function StaffDashboard() {
               {loading ? '--' : `${summary.trailersOperational}/${summary.trailerCount}`}
               {!loading && <UnitSquares ok={summary.trailersOperational} total={summary.trailerCount} />}
             </StatTile>
-            <StatTile label="Drivers Available" to="/dashboard/driver-schedule">
+            <StatTile label="Drivers Available" to="/dashboard/schedule-overview">
               {hr ? `${hr.available}/${hr.drivers}` : '--'}
               {hr && <UnitSquares ok={hr.available} total={hr.drivers} />}
             </StatTile>

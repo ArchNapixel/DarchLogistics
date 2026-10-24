@@ -1084,9 +1084,15 @@ before creating it.
     Unavailable groups; "Assign X" one-click; "running late — reassign?"),
     trip can't leave Awaiting without a slot; BookingDetailModal shows
     slots + edits Hours per trip (re-times Awaiting trips);
-    `staff/DriverScheduleSection.tsx` (`/dashboard/driver-schedule`,
-    Admin + Dispatcher, Drivers/Helpers tabs, Day/Week timeline, bars
-    link to `?booking=&trip=`); driver portal: slots on My Tasks / History
+    `staff/ScheduleOverviewSection.tsx` (**Schedule Overview**,
+    `/dashboard/schedule-overview` since 2026-10-24, replaced Driver
+    Schedule; old URL redirects; Admin + Dispatcher; read-only; tabs
+    Drivers / Helpers / Trucks (Trucks|Trailers switch, bands for open
+    work orders, pending `maintenance_schedules`, `next_service_date`) /
+    Trips (+ "Needs assignment" list of open trips missing slot/driver/
+    truck/trailer) / Bookings; search box; Day/Week; bars link to
+    `?booking=&trip=`). Drawing = `staff/ScheduleTimeline.tsx`, loaders =
+    `lib/scheduleData.ts` (one per tab, same row/bar/band shape); driver portal: slots on My Tasks / History
     detail, `employee/MyScheduleSection.tsx` (`/dashboard/schedule`,
     Driver + Helper only), `components/TripNotifications.tsx` bell in the
     header (Driver/Helper; polls every minute, opening marks read). It is

@@ -34,7 +34,7 @@ import QuoteRequestsSection from './staff/QuoteRequestsSection'
 import ClientsSection from './staff/ClientsSection'
 import BookingsSection from './staff/BookingsSection'
 import DispatchBoardSection from './staff/DispatchBoardSection'
-import DriverScheduleSection from './staff/DriverScheduleSection'
+import ScheduleOverviewSection from './staff/ScheduleOverviewSection'
 import FleetSection from './staff/FleetSection'
 import MaintenanceSection from './staff/MaintenanceSection'
 import InventorySection from './staff/InventorySection'
@@ -69,7 +69,7 @@ const staffLinks = [
       { label: 'Bookings & Trips', to: '/dashboard/bookings' },
       { label: 'Clients', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
-      { label: 'Driver Schedule', to: '/dashboard/driver-schedule' },
+      { label: 'Schedule Overview', to: '/dashboard/schedule-overview' },
     ],
   },
   {
@@ -115,7 +115,7 @@ const clientLinks = [
 
 const dispatcherLinks = [
   { label: 'Dispatch Board', to: '/dashboard/dispatch' },
-  { label: 'Driver Schedule', to: '/dashboard/driver-schedule' },
+  { label: 'Schedule Overview', to: '/dashboard/schedule-overview' },
   { label: 'Bookings & Trips', to: '/dashboard/bookings' },
   { label: 'Damage Charges', to: '/dashboard/damage-charges' },
   { label: 'Quotations', to: '/dashboard/quotations' },
@@ -172,7 +172,8 @@ function DashboardRouter() {
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="clients" element={<ClientsSection />} />
           <Route path="dispatch" element={<DispatchBoardSection />} />
-          <Route path="driver-schedule" element={<DriverScheduleSection />} />
+          <Route path="schedule-overview" element={<ScheduleOverviewSection />} />
+          <Route path="driver-schedule" element={<Navigate to="/dashboard/schedule-overview" replace />} />
           <Route path="fleet" element={<FleetSection />} />
           <Route path="maintenance" element={<MaintenanceSection />} />
           <Route path="maintenance-monitoring" element={<TruckMaintenanceMonitoringSection />} />
@@ -204,7 +205,8 @@ function DashboardRouter() {
             element={<Navigate to="/dashboard/dispatch" replace />}
           />
           <Route path="dispatch" element={<DispatchBoardSection />} />
-          <Route path="driver-schedule" element={<DriverScheduleSection />} />
+          <Route path="schedule-overview" element={<ScheduleOverviewSection />} />
+          <Route path="driver-schedule" element={<Navigate to="/dashboard/schedule-overview" replace />} />
           <Route path="bookings" element={<BookingsSection />} />
           <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="quotations" element={<QuoteRequestsSection />} />
