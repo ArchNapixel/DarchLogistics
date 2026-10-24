@@ -217,8 +217,11 @@ before creating it.
   (Delivered) table is read-only for crew/truck/trailer (Admin keeps
   the status dropdown) and starts collapsed. Truck/trailer dropdowns
   disable vehicles that are Under Maintenance / Out of Service; one on
-  another active trip stays assignable (on purpose — a vehicle can be
-  booked on several trips), just labelled "(on booking #X)". Same
+  another active trip stays assignable only if the time slots don't
+  overlap (labelled "(on booking #X)"); an overlapping one is disabled
+  "(on trip #X, <slot>)" and refused by the DB trigger
+  `itinerary_vehicle_slot_check` (since 2026-10-24 — before that,
+  double-booking a vehicle was allowed on purpose). Same
   hint-only label for drivers/helpers; Deactivated/Terminated employees
   are left out of the crew dropdowns. Reassigning crew deactivates every
   active row for that role on the trip (not just the one on screen), so
@@ -1097,6 +1100,79 @@ before creating it.
     Driver + Helper only), `components/TripNotifications.tsx` bell in the
     header (Driver/Helper; polls every minute, opening marks read). It is
     separate from `ComplianceExpiryAlerts` (licence/medical bell).
+
+## 2026-10-24: scheduling rules, Capacity Check (SQL given in chat)
+- **Crew can't start a second trip while one is on the road.** A trip
+  can't leave Awaiting while its driver or helper has another trip
+  Dispatched / PickedUp / InTransit: `tripOnRoad()` in `lib/tripSchedule.ts`
+  (self-check `node scripts/check-trip-schedule.ts`), greyed-out status box on
+  the Dispatch Board (`crewOnRoadReason`), disabled "Mark as" button in the
+  driver app (`UpdateStatusControl busyOnTripId`), and the DB trigger
+  `require_crew_free_of_road` (BEFORE UPDATE OF itinerary_status). Trucks
+  are NOT covered on purpose. Admin has no override.
+- **Delivering re-times the booking.** `lib/tripRetime.ts`
+  `retimeAfterDelivery()`, called by `MarkDeliveredModal` after Delivered is
+  saved: the trip's `trip_end_at` becomes the real delivery time and the
+  booking's later Awaiting trips chain after it, each keeping its length.
+  Skipped for storage-deadline bookings (other trips untouched) and when
+  within a minute of plan. Board reloads afterwards. The "Mark delivered"
+  link on In Transit rows was removed (pick Delivered in the dropdown).
+- **Schedule Overview** (`/dashboard/schedule-overview`, replaced Driver
+  Schedule): see the Driver time slots bullet. "Needs assignment" on its
+  Trips tab is just a one-line notice linking to the Dispatch Board.
+- **Capacity Check** (can we actually run a quote's trips?). Rules:
+  `lib/capacity.ts` (pure, self-check `node scripts/check-capacity.ts`):
+  drivers/trucks/trailers (trailer type per trip) with busy windows; result
+  fits / later (before deadline) / late (after) / none; later starts are
+  tried once a day at the default start time, up to 14 days past the
+  deadline; chain vs parallel (storage-deadline); helpers not counted;
+  offered-but-unaccepted quotes count as tentative holds
+  (`withTentativeHolds`), and booked Awaiting trips with no driver /
+  truck / trailer picked yet still hold one of each for their slot
+  (`withUnassignedTrips`, RPC field `unassigned`). Re-timing a booking
+  later saves its trips last-first (EditTripTimeModal, tripRetime) so the
+  crew/vehicle overlap triggers never see a trip overlap its own next one. Loading: `lib/capacityLoad.ts` calls the read-only
+  RPC **`get_capacity_inputs(p_from, p_to, p_exclude_quote)`** (SECURITY
+  DEFINER, authenticated; names/plates/reasons only for `is_staff()`, so
+  clients see dates only). Screens: staff `CapacityCard` in Review Quote
+  (Use earliest date / Reject: schedule unavailable; sending an offer that
+  doesn't fit asks first — advisory), client `QuoteAvailabilityNote` on the
+  quote form's schedule step (assumes 6 h per trip, never blocks), client
+  `QuoteOfferCard` re-checks on Accept and refuses if the date was taken.
+  Not hard-blocked in the database (`accept_quote_counter` /
+  `respond_to_quote_offer` untouched): two clients accepting in the same
+  second can still double-book. Dispatch Board **At-risk trips** notice
+  (`atRiskReasons`): approved leave over the trip, licence expiring, truck/
+  trailer in the shop, driver's earlier trip running late. Review Quote's
+  explanation lines under distance / hours / pricing guide were removed.
+
+- **Fleet Match** (truck / trailer suggestions). Rules: `lib/fleetMatch.ts`
+  (pure, self-check `node scripts/check-fleet-match.ts`): `rankVehicles`
+  blocks Under Maintenance / Out of Service / in the shop (a work order In
+  Progress or On Hold) / a Created or Scheduled work order whose
+  scheduled date falls on a trip day / an overlapping trip, leaves out the
+  wrong trailer type, then ranks free ones same booking first → no service
+  due during the trip (pending `maintenance_schedules`, truck
+  `next_service_date`) and no work order waiting to start (labelled
+  "service due …" / "work order pending", not blocked) → idle longest.
+  (2026-10-24: any open work order used to block — a Created, undated
+  WO-TR3 on the only Flatbed blocked all of booking #52.) Capacity's
+  `get_capacity_inputs` uses the same work-order rule. `earliestFreeStart` for "Move to".
+  Dispatch Board: `VehicleSelect` (Suggested / Other free / Unavailable +
+  "Use X", same as CrewSelect; replaced TruckSelect/TrailerSelect and
+  `vehicleHint`); the booking button is now **Use Suggested Crew &
+  Vehicles for All N Trips**; `handleTruckChange` / `handleTrailerChange`
+  return success. At-risk notice adds "No truck / <type> trailer free for
+  this time" with **Move to <slot>** (opens Edit time pre-filled — Edit
+  time now decides "moving later" from the next trip's current start) and
+  **Replace <truck/trailer> on remaining trips** for a vehicle in the shop
+  or with an open work order. Capacity card shows a breakdown table
+  (`availabilityBreakdown`: needed at once / free at that time / earliest
+  free, per driver, truck, trailer type) and "Our fleet is too small"
+  when a quote needs more at once than we own. No driver–truck pairing,
+  no trailer size / payload columns (user: the 45 t max on quotes covers
+  it). Booking Detail has no breakdown — the board's At-risk notice
+  covers booked trips.
 
 ## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
 - **Payroll** no longer rebuilds every draft on page open (that wiped

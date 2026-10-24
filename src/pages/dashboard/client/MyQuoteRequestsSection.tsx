@@ -57,6 +57,9 @@ type QuoteRow = {
   delivery_order_count: number | null
   // Saved with our offer; the downpayment shown on it comes from this.
   cost_per_trip: number | null
+  // Saved with our offer (the Capacity Check re-reads them when the client accepts).
+  hours_per_trip: number | null
+  is_last_day_of_port_storage: boolean | null
   decline_reason: string | null
   created_at: string
 }
@@ -92,7 +95,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, decline_reason, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, decline_reason, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')

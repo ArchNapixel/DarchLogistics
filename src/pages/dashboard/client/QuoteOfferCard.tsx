@@ -12,6 +12,8 @@ import { loadQuoteOffers, respondToQuoteOffer, type QuoteOfferRow } from '../../
 import OfferComparison from '../../../components/OfferComparison'
 import { todayDateString } from '../../../lib/quoteRequest'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import { checkCapacity } from '../../../lib/capacity'
+import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
 
 const inputClasses =
   'border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none'
@@ -23,6 +25,10 @@ export type OfferQuote = {
   cost_per_trip: number | null
   preferred_pickup_date: string | null
   preferred_delivery_date: string | null
+  // What the Capacity Check needs to re-check the date when the client accepts.
+  cargo_lines: unknown
+  hours_per_trip: number | null
+  is_last_day_of_port_storage: boolean | null
 }
 
 function QuoteOfferCard({
@@ -61,6 +67,24 @@ function QuoteOfferCard({
     })
   }, [quote.quote_request_id])
 
+  // Can we still run the offered trips on the offered date? (Can't be
+  // checked -> true: never block a client because the check itself failed.)
+  async function dateStillFree() {
+    if (!quote.preferred_pickup_date || !quote.hours_per_trip) return true
+    const args = {
+      cargoLines: quote.cargo_lines,
+      hours: quote.hours_per_trip,
+      pickupDate: quote.preferred_pickup_date,
+      deadlineDate: quote.preferred_delivery_date,
+      storage: quote.is_last_day_of_port_storage === true,
+    }
+    const { inputs } = await loadCapacityInputs(buildDemand({ ...args, defaultStartMinutes: 360 }), quote.quote_request_id)
+    if (!inputs) return true
+    const demand = buildDemand({ ...args, defaultStartMinutes: inputs.defaultStartMinutes })
+    if (demand.trips.length === 0) return true
+    return checkCapacity(demand, inputs.resources).status === 'fits'
+  }
+
   async function accept() {
     const ok = await confirmDialog({
       title: `Accept ${formatMoney(rate)} per trip?`,
@@ -72,6 +96,13 @@ function QuoteOfferCard({
     if (!ok) return
     setSaving(true)
     setError(null)
+    // Capacity Check again: another booking may have taken the drivers or
+    // trucks since our offer went out. If the date is gone, don't book it;
+    // staff send a new date.
+    if (!(await dateStillFree())) {
+      setSaving(false)
+      return setError("Sorry, that pickup date was just taken. We'll send you a new date soon, or you can send a counter-offer with another date.")
+    }
     const { bookingId, error: rpcError } = await respondToQuoteOffer({ quoteId: quote.quote_request_id, action: 'accept' })
     setSaving(false)
     if (rpcError) return setError(rpcError)

@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { CargoFields, RouteFields, ScheduleFields, type SectionProps } from './QuoteShipmentFields'
 import { QuoteSummary } from './QuoteSummary'
+import QuoteAvailabilityNote from './QuoteAvailabilityNote'
 import {
   validateShipment,
   type FieldErrors,
@@ -202,6 +203,7 @@ function QuoteWizard({
           )}
           {step.id === 'cargo' && <CargoFields {...sectionProps} />}
           {step.id === 'schedule' && <ScheduleFields {...sectionProps} />}
+          {step.id === 'schedule' && <QuoteAvailabilityNote form={form} />}
           {isReview && (
             <>
               <div className="col-span-full">{contactSection}</div>

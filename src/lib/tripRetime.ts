@@ -65,7 +65,11 @@ export async function retimeAfterDelivery(itineraryId: number, deliveredAt = Dat
     ),
   )
   const failures: string[] = []
-  for (let i = 0; i < later.length; i++) {
+  // Moving later: start from the last trip, so a moved trip never overlaps
+  // its own next one on the same driver / truck (the database refuses that).
+  const order = later.map((_, i) => i)
+  if (deliveredAt > plannedEnd) order.reverse()
+  for (const i of order) {
     // Only while still Awaiting, and check a row really changed.
     const { data: moved, error: moveError } = await supabase
       .from('itineraries')

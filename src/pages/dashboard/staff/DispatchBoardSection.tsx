@@ -77,6 +77,7 @@ import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
+import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
 import {
   SUGGESTED_COUNT,
   isOverdue,
@@ -207,7 +208,11 @@ type DriverOption = {
 type TruckOption = {
   plate_number: string
   current_status: string | null
+  next_service_date: string | null
 }
+
+// Per vehicle ('T:<plate>' / 'R:<trailer_id>'): open work order, service due dates.
+type VehicleService = Map<string, { workOrders: VehicleCandidate['workOrders']; serviceDue: string[] }>
 
 type TrailerOption = {
   trailer_id: number
@@ -385,22 +390,54 @@ function leaveHint(
     : ` — on leave ${formatDate(clash.start_date)} – ${formatDate(clash.end_date)}`
 }
 
-// Dropdown hint for a truck/trailer option on this row. `blocked` = it
-// can't be picked (Under Maintenance / Out of Service). Being on another
-// active trip is only a hint -- one vehicle can be booked on several
-// trips. A row's own current assignment is always pickable.
-function vehicleHint(
+// Fleet Match (lib/fleetMatch.ts): trucks / trailers for one trip, best
+// first -- free ones (same booking first, then no service due, then idle
+// longest), then Unavailable with the reason (in the shop, open work order,
+// on an overlapping trip). Shared by the dropdowns, "Use Suggested Crew &
+// Vehicles" and the At-risk notice. The database refuses overlaps too
+// (itinerary_vehicle_slot_check).
+function truckCandidates(trucks: TruckOption[], service: VehicleService): VehicleCandidate[] {
+  return trucks.map((t) => {
+    const s = service.get(`T:${t.plate_number}`)
+    return {
+      id: `T:${t.plate_number}`,
+      label: t.plate_number,
+      current_status: t.current_status,
+      workOrders: s?.workOrders ?? [],
+      serviceDue: [...(s?.serviceDue ?? []), ...(t.next_service_date ? [t.next_service_date] : [])],
+    }
+  })
+}
+
+function trailerCandidates(trailers: TrailerOption[], service: VehicleService): VehicleCandidate[] {
+  return trailers.map((t) => {
+    const s = service.get(`R:${t.trailer_id}`)
+    return {
+      id: `R:${t.trailer_id}`,
+      label: t.plate_number ?? `#${t.trailer_id}`,
+      current_status: t.current_status,
+      trailer_type: t.trailer_type,
+      workOrders: s?.workOrders ?? [],
+      serviceDue: s?.serviceDue ?? [],
+    }
+  })
+}
+
+const vehicleIdOf = (kind: 'Truck' | 'Trailer', r: DispatchRow) =>
+  kind === 'Truck' ? (r.plate_number ? `T:${r.plate_number}` : null) : r.trailer_id !== null ? `R:${r.trailer_id}` : null
+
+function rankFleet(
+  kind: 'Truck' | 'Trailer',
   row: DispatchRow,
-  rows: DispatchRow[],
-  vehicle: { current_status: string | null },
-  isOnRow: (r: DispatchRow) => boolean,
-): { label: string; blocked: boolean } | null {
-  if (isOnRow(row)) return null
-  if (vehicle.current_status === 'Under Maintenance' || vehicle.current_status === 'Out of Service') {
-    return { label: vehicle.current_status, blocked: true }
+  candidates: VehicleCandidate[],
+  allRows: DispatchRow[],
+  now: number,
+) {
+  const tripsOf = (id: string): ScheduledTrip[] => allRows.filter((r) => vehicleIdOf(kind, r) === id)
+  return {
+    tripsOf,
+    ranked: rankVehicles(row, candidates, tripsOf, now, (t) => formatSlot(t.trip_start_at!, t.trip_end_at), formatDate),
   }
-  const otherTrip = rows.find((r) => r !== row && r.status !== 'Delivered' && isOnRow(r))
-  return otherTrip ? { label: `on booking #${otherTrip.booking_id}`, blocked: false } : null
 }
 
 const STATUS_FLOW = ['Awaiting', 'Dispatched', 'PickedUp', 'InTransit', 'Delivered']
@@ -486,6 +523,8 @@ type BoardContext = {
   helpers: DriverOption[]
   trucks: TruckOption[]
   trailers: TrailerOption[]
+  truckCandidates: VehicleCandidate[]
+  trailerCandidates: VehicleCandidate[]
   // Dispatcher or Admin.
   canEditStatus: boolean
   // Admin: any status, any direction.
@@ -503,8 +542,8 @@ type BoardContext = {
     previousEmployeeId: number | null,
     newEmployeeId: number | null,
   ) => void
-  onTruckChange: (itineraryId: number, previousPlateNumber: string | null, plateNumber: string | null) => void
-  onTrailerChange: (itineraryId: number, previousTrailerId: number | null, trailerId: number | null) => void
+  onTruckChange: (itineraryId: number, previousPlateNumber: string | null, plateNumber: string | null) => Promise<boolean>
+  onTrailerChange: (itineraryId: number, previousTrailerId: number | null, trailerId: number | null) => Promise<boolean>
   onViewLogs: (itineraryId: number) => void
   onEditTime: (row: DispatchRow) => void
 }
@@ -579,6 +618,50 @@ function crewOnRoadReason(row: DispatchRow, allRows: DispatchRow[]): string | nu
   return null
 }
 
+// Why an assigned trip may not happen as planned (the "At-risk trips" notice):
+// its driver or helper went on approved leave, the driver's licence ran out,
+// its truck/trailer went into the shop, or the driver's earlier trip is
+// running late into it. Only trips still to start are checked; the fix is
+// reassigning on this board.
+function atRiskReasons(
+  row: DispatchRow,
+  allRows: DispatchRow[],
+  leaveByEmployee: Map<number, LeaveRange[]>,
+  drivers: DriverOption[],
+  trucks: TruckOption[],
+  trailers: TrailerOption[],
+  now: number,
+): string[] {
+  if (row.status !== 'Awaiting' && row.status !== 'Dispatched') return []
+  const reasons: string[] = []
+  const onLeave = (id: number | null, name: string | null) => {
+    if (id === null) return
+    const leave = (leaveByEmployee.get(id) ?? []).find((l) => rangesOverlap(row.trip_date_from, row.trip_date_to, l.start_date, l.end_date))
+    if (leave) reasons.push(`${name ?? 'Crew'} is on leave ${formatDate(leave.start_date)}${leave.end_date !== leave.start_date ? ` – ${formatDate(leave.end_date)}` : ''}`)
+  }
+  onLeave(row.assigned_employee_id, row.assigned_driver_name)
+  onLeave(row.assigned_helper_employee_id, row.assigned_helper_name)
+  const expiry = drivers.find((d) => d.employee_id === row.assigned_employee_id)?.license_expiry
+  if (expiry && expiry < row.trip_date_from) reasons.push(`${row.assigned_driver_name ?? 'Driver'}'s licence expires before this trip`)
+  // Only while the trip hasn't left: a truck that goes in the shop later isn't this trip's problem.
+  if (row.status === 'Awaiting') {
+    const truck = trucks.find((t) => t.plate_number === row.plate_number)
+    if (truck && (truck.current_status === 'Under Maintenance' || truck.current_status === 'Out of Service')) {
+      reasons.push(`Truck ${truck.plate_number} is ${truck.current_status}`)
+    }
+    const trailer = trailers.find((t) => t.trailer_id === row.trailer_id)
+    if (trailer && (trailer.current_status === 'Under Maintenance' || trailer.current_status === 'Out of Service')) {
+      reasons.push(`Trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`} is ${trailer.current_status}`)
+    }
+    if (row.assigned_employee_id !== null) {
+      const theirs = allRows.filter((r) => r.assigned_employee_id === row.assigned_employee_id && r.itinerary_id !== row.itinerary_id)
+      const late = lateEarlierTrip(row, theirs, now)
+      if (late) reasons.push(`${row.assigned_driver_name ?? 'Driver'}'s trip #${late.itinerary_id} is running late`)
+    }
+  }
+  return reasons
+}
+
 // Status: a badge while the trip still needs crew/vehicles (it can't move
 // yet), otherwise the dropdown -- Admin any status, Dispatcher only the
 // next step. Picking "Delivered" opens MarkDeliveredModal.
@@ -637,50 +720,78 @@ function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
   )
 }
 
-function TruckSelect({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
-  return (
-    <select
-      value={row.plate_number ?? ''}
-      disabled={ctx.savingId === row.itinerary_id}
-      onChange={(e) => ctx.onTruckChange(row.itinerary_id, row.plate_number, e.target.value || null)}
-      className={pickerClasses(row.plate_number === null)}
-    >
-      <option value="">Unassigned</option>
-      {ctx.trucks.map((truck) => {
-        const hint = vehicleHint(row, ctx.allRows, truck, (r) => r.plate_number === truck.plate_number)
-        return (
-          <option key={truck.plate_number} value={truck.plate_number} disabled={hint?.blocked ?? false}>
-            {truck.plate_number}
-            {hint ? ` (${hint.label})` : ''}
-          </option>
-        )
-      })}
-    </select>
-  )
-}
+// Truck or trailer picker for one trip, grouped like the crew pickers:
+// Suggested (top free), Other free, Unavailable (with the reason --
+// disabled, except the one already on the row). Under it: "Use <top pick>"
+// while nothing is picked.
+function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: DispatchRow; ctx: BoardContext }) {
+  const currentId = vehicleIdOf(kind, row)
+  const candidates = kind === 'Truck' ? ctx.truckCandidates : ctx.trailerCandidates
+  const { ranked } = rankFleet(kind, row, candidates, ctx.allRows, ctx.now)
+  const free = ranked.filter((v) => v.blockedBy === null)
+  const suggested = free.slice(0, SUGGESTED_COUNT)
+  const otherFree = free.slice(SUGGESTED_COUNT)
+  const unavailable = ranked.filter((v) => v.blockedBy !== null)
+  const topPick = currentId === null && row.trip_start_at ? suggested[0] : undefined
 
-function TrailerSelect({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
+  // Option value -> what the handlers take (plate / trailer id).
+  const pick = (id: string | null) =>
+    kind === 'Truck'
+      ? ctx.onTruckChange(row.itinerary_id, row.plate_number, id ? id.slice(2) : null)
+      : ctx.onTrailerChange(row.itinerary_id, row.trailer_id, id ? Number(id.slice(2)) : null)
+  // Just the plate: the "this booking" / "service due" / "work order
+  // pending" hints only decide the order, and the Unavailable group is
+  // greyed out. The reason shows as a tooltip on hover (title).
+  const label = (v: (typeof ranked)[number]) => v.label
+
   return (
-    <select
-      value={row.trailer_id ?? ''}
-      disabled={ctx.savingId === row.itinerary_id}
-      onChange={(e) => ctx.onTrailerChange(row.itinerary_id, row.trailer_id, e.target.value ? Number(e.target.value) : null)}
-      className={pickerClasses(row.trailer_id === null)}
-    >
-      <option value="">Unassigned</option>
-      {/* Only trailers of the type this trip's cargo needs (when set) */}
-      {ctx.trailers
-        .filter((t) => !row.required_trailer_type || t.trailer_type === row.required_trailer_type)
-        .map((trailer) => {
-          const hint = vehicleHint(row, ctx.allRows, trailer, (r) => r.trailer_id === trailer.trailer_id)
-          return (
-            <option key={trailer.trailer_id} value={trailer.trailer_id} disabled={hint?.blocked ?? false}>
-              {trailer.plate_number ?? `#${trailer.trailer_id}`}
-              {hint ? ` (${hint.label})` : ''}
-            </option>
-          )
-        })}
-    </select>
+    <div className="flex flex-col gap-1">
+      <select
+        value={currentId ?? ''}
+        disabled={ctx.savingId === row.itinerary_id}
+        onChange={(e) => pick(e.target.value || null)}
+        className={pickerClasses(currentId === null)}
+      >
+        <option value="">Unassigned</option>
+        {suggested.length > 0 && (
+          <optgroup label="★ Suggested">
+            {suggested.map((v) => (
+              <option key={v.id} value={v.id}>
+                {label(v)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {otherFree.length > 0 && (
+          <optgroup label="Other free">
+            {otherFree.map((v) => (
+              <option key={v.id} value={v.id}>
+                {label(v)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {unavailable.length > 0 && (
+          <optgroup label="Unavailable">
+            {unavailable.map((v) => (
+              <option key={v.id} value={v.id} disabled={v.id !== currentId} title={v.blockedBy ?? undefined}>
+                {label(v)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      {topPick && (
+        <button
+          type="button"
+          disabled={ctx.savingId === row.itinerary_id}
+          onClick={() => pick(topPick.id)}
+          className="w-fit text-left text-xs font-semibold text-primary underline hover:no-underline disabled:opacity-50"
+        >
+          Use {topPick.label}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -765,10 +876,10 @@ function ActiveTripTable({ rows, ctx }: { rows: DispatchRow[]; ctx: BoardContext
                 />
               </td>
               <td className="px-3 py-4">
-                <TruckSelect row={row} ctx={ctx} />
+                <VehicleSelect kind="Truck" row={row} ctx={ctx} />
               </td>
               <td className="px-3 py-4">
-                <TrailerSelect row={row} ctx={ctx} />
+                <VehicleSelect kind="Trailer" row={row} ctx={ctx} />
               </td>
               <td className="py-4 pr-5 pl-3">
                 <ActionsMenu items={rowMenuItems(row, ctx)} />
@@ -916,6 +1027,7 @@ function DispatchBoardSection() {
   const [leaveByEmployee, setLeaveByEmployee] = useState<Map<number, LeaveRange[]>>(new Map())
   const [trucks, setTrucks] = useState<TruckOption[]>([])
   const [trailers, setTrailers] = useState<TrailerOption[]>([])
+  const [vehicleService, setVehicleService] = useState<VehicleService>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -1016,7 +1128,7 @@ function DispatchBoardSection() {
     // even when there are no active itineraries yet, so load them
     // regardless.
     const [trucksResult, trailersResult, startSettingResult] = await Promise.all([
-      supabase.from('truck_profiles').select('plate_number, current_status').order('plate_number'),
+      supabase.from('truck_profiles').select('plate_number, current_status, next_service_date').order('plate_number'),
       supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').order('trailer_id'),
       supabase
         .from('app_settings')
@@ -1026,6 +1138,29 @@ function DispatchBoardSection() {
     ])
     // Missing setting just keeps the 6 AM fallback.
     if (startSettingResult.data) setDefaultStartMinutes(Number(startSettingResult.data.setting_value))
+
+    // Fleet Match: open work orders block a vehicle, pending maintenance
+    // schedules move it down the suggestions. Not fatal -- without them the
+    // suggestions just don't know about the shop.
+    const [workOrdersResult, schedulesResult] = await Promise.all([
+      supabase.from('work_orders').select('plate_number, trailer_id, work_order_status, scheduled_start_date').not('work_order_status', 'in', '("Completed","Cancelled")'),
+      supabase.from('maintenance_schedules').select('plate_number, trailer_id, due_date').eq('status', 'Pending'),
+    ])
+    const service: VehicleService = new Map()
+    const serviceEntry = (plate: string | null, trailerId: number | null) => {
+      const key = plate ? `T:${plate}` : `R:${trailerId}`
+      if (!service.has(key)) service.set(key, { workOrders: [], serviceDue: [] })
+      return service.get(key)!
+    }
+    for (const w of workOrdersResult.data ?? []) {
+      serviceEntry(w.plate_number, w.trailer_id).workOrders.push({
+        status: w.work_order_status,
+        // Only the day matters (timestamps are cut to YYYY-MM-DD).
+        scheduledDate: w.scheduled_start_date ? String(w.scheduled_start_date).slice(0, 10) : null,
+      })
+    }
+    for (const m of schedulesResult.data ?? []) serviceEntry(m.plate_number, m.trailer_id).serviceDue.push(m.due_date)
+    setVehicleService(service)
 
     if (trucksResult.error) {
       setError(trucksResult.error.message)
@@ -1584,13 +1719,13 @@ function DispatchBoardSection() {
     itineraryId: number,
     previousPlateNumber: string | null,
     plateNumber: string | null,
-  ) {
+  ): Promise<boolean> {
     setSavingId(itineraryId)
     setError(null)
 
     if (!(await updateActiveTrip(itineraryId, { plate_number: plateNumber }))) {
       setSavingId(null)
-      return
+      return false
     }
 
     setRows((prev) =>
@@ -1607,19 +1742,20 @@ function DispatchBoardSection() {
         : null,
     )
     setSavingId(null)
+    return true
   }
 
   async function handleTrailerChange(
     itineraryId: number,
     previousTrailerId: number | null,
     trailerId: number | null,
-  ) {
+  ): Promise<boolean> {
     // Guard the dropdown filter: the trailer must match this trip's cargo.
     const row = rows.find((r) => r.itinerary_id === itineraryId)
     const picked = trailers.find((t) => t.trailer_id === trailerId)
     if (row?.required_trailer_type && picked && picked.trailer_type !== row.required_trailer_type) {
       setError(`This trip needs a ${row.required_trailer_type} trailer.`)
-      return
+      return false
     }
 
     setSavingId(itineraryId)
@@ -1627,7 +1763,7 @@ function DispatchBoardSection() {
 
     if (!(await updateActiveTrip(itineraryId, { trailer_id: trailerId }))) {
       setSavingId(null)
-      return
+      return false
     }
 
     setRows((prev) =>
@@ -1644,18 +1780,21 @@ function DispatchBoardSection() {
         : null,
     )
     setSavingId(null)
+    return true
   }
 
-  // "Use Suggested Crew for All N Trips": for every trip of one booking
-  // that has a time slot, fills an empty driver / helper with the top free
-  // suggestion (same ranking as the dropdowns), one at a time so each pick
-  // counts as busy for the next trip. The database still refuses overlaps.
+  // "Use Suggested Crew & Vehicles for All N Trips": for every trip of one
+  // booking that has a time slot, fills an empty driver / helper / truck /
+  // trailer with the top free suggestion (same ranking as the dropdowns),
+  // one at a time so each pick counts as busy for the next trip -- and a
+  // truck/trailer already on the booking ranks first, so one rig stays with
+  // it when it's free. The database still refuses overlaps.
   async function assignSuggestedCrew(groupRows: DispatchRow[]) {
     const ok = await confirmDialog({
-      title: 'Use the suggested crew?',
+      title: 'Use the suggested crew and vehicles?',
       message:
-        'Every trip of this booking that has a time slot gets the top suggested free driver and helper where one is missing. You can change any of them afterwards.',
-      confirmLabel: 'Assign suggested crew',
+        'Every trip of this booking that has a time slot gets the top suggested free driver, helper, truck and trailer where one is missing. You can change any of them afterwards.',
+      confirmLabel: 'Assign suggestions',
     })
     if (!ok) return
     setBulkBookingId(groupRows[0]?.booking_id ?? null)
@@ -1683,12 +1822,74 @@ function DispatchBoardSection() {
               : { ...r, assigned_helper_employee_id: pick.employee_id, assigned_helper_name: pick.full_name },
         )
       }
+      for (const kind of ['Truck', 'Trailer'] as const) {
+        const current = working.find((r) => r.itinerary_id === row.itinerary_id) ?? row
+        if (vehicleIdOf(kind, current) !== null) continue
+        const candidates = kind === 'Truck' ? truckCandidates(trucks, vehicleService) : trailerCandidates(trailers, vehicleService)
+        const pick = rankFleet(kind, current, candidates, working, now).ranked.find((v) => v.blockedBy === null)
+        if (!pick) continue
+        const saved =
+          kind === 'Truck'
+            ? await handleTruckChange(row.itinerary_id, null, pick.id.slice(2))
+            : await handleTrailerChange(row.itinerary_id, null, Number(pick.id.slice(2)))
+        if (!saved) {
+          setBulkBookingId(null)
+          return
+        }
+        assigned++
+        working = working.map((r) =>
+          r.itinerary_id !== row.itinerary_id
+            ? r
+            : kind === 'Truck'
+              ? { ...r, plate_number: pick.id.slice(2) }
+              : { ...r, trailer_id: Number(pick.id.slice(2)) },
+        )
+      }
     }
     setBulkBookingId(null)
+    showToast(assigned > 0 ? `Assigned ${assigned} ${assigned === 1 ? 'suggestion' : 'suggestions'}.` : 'Nothing free to suggest for these trips.')
+  }
+
+  // At-risk action: the truck / trailer on this booking's remaining
+  // (Awaiting) trips can't go -- put the top free suggestion on each instead.
+  async function replaceVehicle(kind: 'Truck' | 'Trailer', row: DispatchRow) {
+    const oldId = vehicleIdOf(kind, row)
+    const affected = rows
+      .filter((r) => r.booking_id === row.booking_id && r.status === 'Awaiting' && vehicleIdOf(kind, r) === oldId)
+      .sort((a, b) => Date.parse(a.trip_start_at ?? '') - Date.parse(b.trip_start_at ?? ''))
+    const ok = await confirmDialog({
+      title: `Replace the ${kind.toLowerCase()}?`,
+      message: `Trips ${affected.map((r) => `#${r.itinerary_id}`).join(', ')} get the top suggested free ${kind.toLowerCase()} instead. You can change them afterwards.`,
+      confirmLabel: `Replace ${kind.toLowerCase()}`,
+    })
+    if (!ok) return
+    const candidates = (kind === 'Truck' ? truckCandidates(trucks, vehicleService) : trailerCandidates(trailers, vehicleService)).filter(
+      (v) => v.id !== oldId,
+    )
+    let working = rows
+    let replaced = 0
+    for (const trip of affected) {
+      const current = working.find((r) => r.itinerary_id === trip.itinerary_id) ?? trip
+      const pick = rankFleet(kind, current, candidates, working, now).ranked.find((v) => v.blockedBy === null)
+      if (!pick) continue
+      const saved =
+        kind === 'Truck'
+          ? await handleTruckChange(trip.itinerary_id, trip.plate_number, pick.id.slice(2))
+          : await handleTrailerChange(trip.itinerary_id, trip.trailer_id, Number(pick.id.slice(2)))
+      if (!saved) return
+      replaced++
+      working = working.map((r) =>
+        r.itinerary_id !== trip.itinerary_id
+          ? r
+          : kind === 'Truck'
+            ? { ...r, plate_number: pick.id.slice(2) }
+            : { ...r, trailer_id: Number(pick.id.slice(2)) },
+      )
+    }
     showToast(
-      assigned > 0
-        ? `Assigned ${assigned} ${assigned === 1 ? 'driver/helper' : 'drivers/helpers'}.`
-        : 'No free driver or helper to suggest for these trips.',
+      replaced === affected.length
+        ? `Replaced the ${kind.toLowerCase()} on ${replaced} ${replaced === 1 ? 'trip' : 'trips'}.`
+        : `Replaced it on ${replaced} of ${affected.length} trips -- nothing free for the rest.`,
     )
   }
 
@@ -1716,6 +1917,61 @@ function DispatchBoardSection() {
   const completedRows = visibleRows.filter((r) => r.status === 'Delivered')
   const hasFullCrew = isFullyAssigned
   const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
+  // Planned trips that may not happen as assigned (leave, shop, late trip,
+  // no truck / trailer free for the slot...), with a fix where there is one.
+  const fleet = { Truck: truckCandidates(trucks, vehicleService), Trailer: trailerCandidates(trailers, vehicleService) }
+  const atRiskTrips = rows
+    .map((row) => {
+      const reasons = atRiskReasons(row, rows, leaveByEmployee, drivers, trucks, trailers, now)
+      const actions: { label: string; onClick: () => void }[] = []
+      if (row.status === 'Awaiting' && row.trip_start_at && row.trip_end_at) {
+        const short: ('Truck' | 'Trailer')[] = []
+        const freeAt: (number | null)[] = []
+        for (const kind of ['Truck', 'Trailer'] as const) {
+          const { ranked, tripsOf } = rankFleet(kind, row, fleet[kind], rows, now)
+          const currentId = vehicleIdOf(kind, row)
+          if (currentId === null) {
+            // Nothing picked and nothing of the right kind free for this slot.
+            if (!ranked.some((v) => v.blockedBy === null)) {
+              short.push(kind)
+              // Say why each one is out ("MAK 1452: open work order"), or that we have none.
+              const why = ranked.map((v) => `${v.label}: ${v.blockedBy}`).join(', ')
+              reasons.push(
+                `No ${kind === 'Truck' ? 'truck' : `${row.required_trailer_type ? `${row.required_trailer_type} ` : ''}trailer`} free for this time (${why || 'none in the fleet'})`,
+              )
+            }
+          } else {
+            // The one picked can't go because of the shop: in it now, or a work
+            // order scheduled on a trip day (status alone is reported above).
+            const current = ranked.find((v) => v.id === currentId)
+            const shop = current?.blockedBy?.includes('work order') ? current.blockedBy : null
+            if (current && shop) reasons.push(`${kind} ${current.label}: ${shop}`)
+            if (current && (shop || current.current_status === 'Under Maintenance' || current.current_status === 'Out of Service')) {
+              actions.push({ label: `Replace ${kind.toLowerCase()} on remaining trips`, onClick: () => replaceVehicle(kind, row) })
+            }
+          }
+          if (short.includes(kind)) freeAt.push(earliestFreeStart(row, fleet[kind], tripsOf, now, Date.parse(row.trip_start_at)))
+        }
+        if (short.length > 0) {
+          // The slot that works for every missing kind: the latest of their
+          // earliest free times. ponytail: each kind is searched on its own,
+          // so the truck could be busy again at the trailer's time; Edit time
+          // re-checks on save.
+          if (freeAt.every((t) => t !== null)) {
+            const start = Math.max(...(freeAt as number[]))
+            const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
+            const moved = { ...row, trip_start_at: new Date(start).toISOString(), trip_end_at: new Date(start + length).toISOString() }
+            actions.push({
+              label: `Move to ${formatSlot(moved.trip_start_at, moved.trip_end_at)}`,
+              // Opens Edit time already filled in; staff check and save.
+              onClick: () => setEditTimeRow(moved),
+            })
+          }
+        }
+      }
+      return { row, reasons, actions }
+    })
+    .filter((t) => t.reasons.length > 0)
   const assignedRows = activeRows.filter(hasFullCrew)
 
   const ctx: BoardContext = {
@@ -1725,6 +1981,8 @@ function DispatchBoardSection() {
     helpers,
     trucks,
     trailers,
+    truckCandidates: truckCandidates(trucks, vehicleService),
+    trailerCandidates: trailerCandidates(trailers, vehicleService),
     canEditStatus,
     canFreelyEditStatus,
     savingId,
@@ -1774,6 +2032,28 @@ function DispatchBoardSection() {
         title="Dispatch Board"
         subtitle="Assign drivers, helpers, trucks and trailers, and track each booking through delivery."
       />
+
+      {atRiskTrips.length > 0 && (
+        <div className="mb-4 border border-orange-300 bg-orange-50 px-4 py-3">
+          <p className="text-sm font-semibold text-orange-900">At-risk trips ({atRiskTrips.length})</p>
+          <ul className="mt-1 text-sm text-orange-900">
+            {atRiskTrips.slice(0, 5).map((t) => (
+              <li key={t.row.itinerary_id} className="flex flex-wrap items-baseline gap-x-3">
+                <span>
+                  Trip #{t.row.itinerary_id} · Booking #{t.row.booking_id} — {t.reasons.join('; ')}
+                </span>
+                {canEditStatus &&
+                  t.actions.map((a) => (
+                    <button key={a.label} type="button" onClick={a.onClick} className="text-xs font-semibold underline hover:no-underline">
+                      {a.label}
+                    </button>
+                  ))}
+              </li>
+            ))}
+          </ul>
+          {atRiskTrips.length > 5 && <p className="mt-1 text-xs text-orange-800">+ {atRiskTrips.length - 5} more</p>}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div role="tablist" className="flex flex-wrap gap-2">
@@ -1890,7 +2170,9 @@ function DispatchBoardSection() {
               const first = group.trips[0]
               // Trips of this booking with a slot but no driver or helper yet.
               const missingCrew = group.trips.filter(
-                (r) => r.trip_start_at && (r.assigned_employee_id === null || r.assigned_helper_employee_id === null),
+                (r) =>
+                  r.trip_start_at &&
+                  (r.assigned_employee_id === null || r.assigned_helper_employee_id === null || r.plate_number === null || r.trailer_id === null),
               )
               // Same downpayment for every trip of a booking.
               const downpaymentDue =
@@ -1926,7 +2208,7 @@ function DispatchBoardSection() {
                           <span aria-hidden="true">✓</span>
                           {bulkBookingId === group.bookingId
                             ? 'Assigning…'
-                            : `Use Suggested Crew for ${missingCrew.length === 1 ? 'Trip' : `All ${missingCrew.length} Trips`}`}
+                            : `Use Suggested Crew & Vehicles for ${missingCrew.length === 1 ? 'Trip' : `All ${missingCrew.length} Trips`}`}
                         </button>
                       )}
                     </div>

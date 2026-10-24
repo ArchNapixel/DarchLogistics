@@ -42,7 +42,7 @@ import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
-import { formatMoney, formatDate, formatSlot, manilaTimestamp } from '../../../lib/format'
+import { formatMoney, formatDate } from '../../../lib/format'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { toManilaDate } from '../../../lib/payslip'
 import {
@@ -67,9 +67,9 @@ import {
 } from '../../../lib/quoteOffers'
 import OfferComparison from '../../../components/OfferComparison'
 import { promptDialog } from '../../../components/ConfirmDialog'
+import CapacityCard from './CapacityCard'
+import type { CapacityResult } from '../../../lib/capacity'
 
-// Used when Settings has no default_trip_start_time row: 6 AM.
-const DEFAULT_TRIP_START_MINUTES = 360
 // Same cap as the bookings.hours_per_trip CHECK constraint.
 const MAX_HOURS_PER_TRIP = 72
 
@@ -251,8 +251,6 @@ function QuoteReviewModal({
   // Inline error under the hours box (checked on blur and on Approve).
   const [hoursError, setHoursError] = useState<string | null>(null)
   const hoursInputRef = useRef<HTMLInputElement>(null)
-  // Settings' default trip start time, minutes after midnight.
-  const [defaultStartMinutes, setDefaultStartMinutes] = useState(DEFAULT_TRIP_START_MINUTES)
   const [distanceIsCached, setDistanceIsCached] = useState(false)
   const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
   const [distanceIsFromPins, setDistanceIsFromPins] = useState(false)
@@ -260,6 +258,8 @@ function QuoteReviewModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
+  // Capacity Check result for the dates / hours being offered (CapacityCard).
+  const [capacity, setCapacity] = useState<CapacityResult | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   // Preset picked in the Reject form -- tells the client which field to
   // fix on resubmit (REJECTION_TAGS in lib/quoteRequest.ts).
@@ -306,7 +306,6 @@ function QuoteReviewModal({
           'diesel_price_per_liter',
           'driver_commission_rate',
           'driver_per_trip_fee',
-          'default_trip_start_time',
         ])
 
       if (settingsError || !data) {
@@ -334,12 +333,6 @@ function QuoteReviewModal({
       }
       if (perTripFeeSetting) {
         setDriverPerTripFee(perTripFeeSetting.setting_value)
-      }
-      const startSetting = data.find(
-        (setting) => setting.setting_key === 'default_trip_start_time',
-      )
-      if (startSetting) {
-        setDefaultStartMinutes(Number(startSetting.setting_value))
       }
     }
 
@@ -512,6 +505,22 @@ function QuoteReviewModal({
   async function handleSendOffer() {
     const offer = await checkOffer()
     if (!offer) return
+    // Capacity Check is advisory: ask before sending an offer we can't run as asked.
+    if (
+      capacity &&
+      capacity.status !== 'fits' &&
+      !(await confirmDialog({
+        title: "We can't run this as offered",
+        message:
+          capacity.status === 'none'
+            ? `No driver, truck and trailer are free for these trips on ${formatDate(offerPickupDate)}, or in the next 2 weeks after the deadline. Send the offer anyway?`
+            : `Not everything is free on ${formatDate(offerPickupDate)}. The earliest that works is ${formatDate(toManilaDate(new Date(capacity.start)))}. Send the offer anyway?`,
+        confirmLabel: 'Send anyway',
+        danger: true,
+      }))
+    ) {
+      return
+    }
     setSubmitting(true)
     setError(null)
     const { error: rpcError } = await supabase.rpc('send_quote_offer', {
@@ -1227,17 +1236,16 @@ function QuoteReviewModal({
                           }}
                           className={`${fieldClasses} mt-1.5 tabular-nums`}
                         />
-                        <p id="review-distance-hint" className="mt-1.5 text-[13px] text-slate-500">
-                          {autoEstimatingDistance
-                            ? 'Estimating distance…'
-                            : distanceIsCached
-                              ? 'From a previous trip between these barangays. Edit it if this route differs.'
+                        {/* Only notes that need a look: loading, or a figure to check. */}
+                        {(autoEstimatingDistance || (!distanceIsCached && (distanceIsFromPins || distanceIsAutoEstimated))) && (
+                          <p id="review-distance-hint" className="mt-1.5 text-[13px] text-slate-500">
+                            {autoEstimatingDistance
+                              ? 'Estimating distance…'
                               : distanceIsFromPins
                                 ? 'Driving distance between the two pinned spots. Check it before approving.'
-                                : distanceIsAutoEstimated
-                                  ? 'Rough estimate between the two barangay centres (no exact pins). Check it before approving.'
-                                  : 'One way, pickup to delivery.'}
-                        </p>
+                                : 'Rough estimate between the two barangay centres (no exact pins). Check it before approving.'}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <div className="flex items-baseline justify-between gap-2">
@@ -1266,21 +1274,11 @@ function QuoteReviewModal({
                           onBlur={() => setHoursError(hoursProblem(hoursPerTrip))}
                           className={`${fieldClasses} mt-1.5 tabular-nums ${hoursError ? 'border-red-700' : ''}`}
                         />
-                        <p
-                          id="review-hours-hint"
-                          className={`mt-1.5 text-[13px] ${hoursError ? 'font-medium text-red-700' : 'text-slate-500'}`}
-                        >
-                          {hoursError ??
-                            (Number(hoursPerTrip) > 0 && tripDateFrom
-                              ? `${deliveryCount > 1 ? 'Trip 1' : 'Each trip'}: ${formatSlot(
-                                  manilaTimestamp(tripDateFrom, defaultStartMinutes),
-                                  new Date(
-                                    new Date(manilaTimestamp(tripDateFrom, defaultStartMinutes)).getTime() +
-                                      Number(hoursPerTrip) * 3_600_000,
-                                  ),
-                                )}${deliveryCount > 1 ? (urgent ? ', all trips at the same time' : ', the rest follow back to back') : ''} (dispatch can move them)`
-                              : "How long one trip takes. Sets each driver's time slot.")}
-                        </p>
+                        {hoursError && (
+                          <p id="review-hours-hint" className="mt-1.5 text-[13px] font-medium text-red-700">
+                            {hoursError}
+                          </p>
+                        )}
                       </div>
                       <div className="col-span-2">
                         <label htmlFor="offer-rate" className="block text-sm font-semibold text-slate-900">
@@ -1338,18 +1336,35 @@ function QuoteReviewModal({
                     </div>
                   </section>
 
+                  <CapacityCard
+                    quoteId={quote.quote_request_id}
+                    cargoLines={quote.cargo_lines}
+                    hoursPerTrip={hoursPerTrip}
+                    pickupDate={offerPickupDate}
+                    deadlineDate={offerDeadline}
+                    storage={urgent}
+                    onResult={setCapacity}
+                    onUseStart={(pickup, lastTripEnd) => {
+                      setOfferPickupDate(pickup)
+                      // Don't leave a deadline before the new trips end.
+                      if (offerDeadline && offerDeadline < lastTripEnd) setOfferDeadline(lastTripEnd)
+                    }}
+                    onReject={() => {
+                      pickRejectTag('Schedule')
+                      setShowRejectForm(true)
+                    }}
+                  />
+
                   {(breakEvenRate !== null || fiftyLineRate !== null) && (
                     <section className="border-2 border-slate-300 px-5 py-5">
                       <h3 className="text-[17px] font-semibold text-slate-900">Pricing guide</h3>
                       <div className="mt-2 text-[15px]">
                         <CostRow
                           label="Break-even rate"
-                          hint="Per trip, where costs equal the rate"
                           value={breakEvenRate !== null ? formatMoney(breakEvenRate) : '—'}
                         />
                         <CostRow
                           label="Rate at the 50% line"
-                          hint="Lowest rate where costs stay at half the rate"
                           value={fiftyLineRate !== null ? formatMoney(fiftyLineRate) : '—'}
                         />
                         {fiftyLineRate !== null && (
