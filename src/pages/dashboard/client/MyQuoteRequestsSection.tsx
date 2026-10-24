@@ -26,6 +26,8 @@ import NewQuoteModal from './NewQuoteModal'
 import QuoteOfferCard from './QuoteOfferCard'
 import { formatMoney } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { withdrawQuoteRequest } from '../../../lib/quoteOffers'
 import type { ResubmitTarget } from './ClientQuoteForm'
 import {
   REJECTION_TAGS,
@@ -71,6 +73,7 @@ const CLIENT_STATUS_LABELS: Record<string, string> = {
   Countered: 'Your counter-offer sent',
   Rejected: 'Rejected',
   Declined: 'Declined',
+  Withdrawn: 'Withdrawn',
 }
 
 function MyQuoteRequestsSection() {
@@ -80,6 +83,7 @@ function MyQuoteRequestsSection() {
   const [error, setError] = useState<string | null>(null)
   const [resubmit, setResubmit] = useState<ResubmitTarget | null>(null)
   const [openingId, setOpeningId] = useState<number | null>(null)
+  const [withdrawingId, setWithdrawingId] = useState<number | null>(null)
 
   useEffect(() => {
     if (clientId) {
@@ -150,6 +154,23 @@ function MyQuoteRequestsSection() {
     )
   }
 
+  // Take back a quote that is still open (Pending / Offered / Countered).
+  async function withdraw(quote: QuoteRow) {
+    const ok = await confirmDialog({
+      title: 'Withdraw this quote?',
+      message: `${quote.reference_code ?? `Quote #${quote.quote_request_id}`} will be cancelled. You can send a new quote any time.`,
+      confirmLabel: 'Withdraw quote',
+      danger: true,
+    })
+    if (!ok || !clientId) return
+    setWithdrawingId(quote.quote_request_id)
+    const withdrawError = await withdrawQuoteRequest(quote.quote_request_id)
+    setWithdrawingId(null)
+    if (withdrawError) return showToast(withdrawError, 'error')
+    showToast('Quote withdrawn.')
+    load(clientId)
+  }
+
   const offersWaiting = quotes.filter((q) => q.request_status === 'Offered').length
 
   return (
@@ -217,6 +238,16 @@ function MyQuoteRequestsSection() {
                 {quote.rejection_reason}
               </p>
             </div>
+          )}
+          {['Pending', 'Offered', 'Countered'].includes(quote.request_status) && (
+            <button
+              type="button"
+              onClick={() => withdraw(quote)}
+              disabled={withdrawingId !== null}
+              className="mt-3 text-xs font-medium text-slate-500 underline hover:text-red-700 disabled:opacity-50"
+            >
+              {withdrawingId === quote.quote_request_id ? 'Withdrawing...' : 'Withdraw this quote'}
+            </button>
           )}
           {quote.request_status === 'Rejected' && (
             <button

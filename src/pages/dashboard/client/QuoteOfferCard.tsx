@@ -11,6 +11,7 @@ import { downpaymentFor } from '../../../lib/downpayment'
 import { loadQuoteOffers, respondToQuoteOffer, type QuoteOfferRow } from '../../../lib/quoteOffers'
 import OfferComparison from '../../../components/OfferComparison'
 import { todayDateString } from '../../../lib/quoteRequest'
+import { offerTiming } from '../../../lib/offerTiming'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { checkCapacity } from '../../../lib/capacity'
 import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
@@ -40,6 +41,8 @@ function QuoteOfferCard({
   onAnswered: (message: string) => void
 }) {
   const rate = quote.proposed_rate ?? 0
+  // Past its pickup date the offer can't be accepted (the trips would start in the past).
+  const timing = offerTiming(quote.preferred_pickup_date, todayDateString())
   const trips = quote.delivery_order_count ?? 1
   const downpayment = quote.cost_per_trip != null ? downpaymentFor(rate, quote.cost_per_trip, trips) : null
   const [note, setNote] = useState<string | null>(null)
@@ -227,6 +230,14 @@ function QuoteOfferCard({
         </label>
       )}
 
+      {timing !== 'open' && mode === 'view' && (
+        <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {timing === 'expired'
+            ? 'This offer has expired. Send a counter-offer with a new pickup date and we will reply.'
+            : 'The pickup date on this offer has passed. Send a counter-offer with a new pickup date and we will reply.'}
+        </p>
+      )}
+
       {error && (
         <p className="mt-2 text-sm text-red-700" role="alert">
           {error}
@@ -236,9 +247,11 @@ function QuoteOfferCard({
       <div className="mt-3 flex flex-wrap gap-2">
         {mode === 'view' ? (
           <>
-            <button type="button" onClick={accept} disabled={saving} className="btn-primary px-4 py-2 text-sm font-semibold">
-              {saving ? 'Accepting...' : 'Accept offer'}
-            </button>
+            {timing === 'open' && (
+              <button type="button" onClick={accept} disabled={saving} className="btn-primary px-4 py-2 text-sm font-semibold">
+                {saving ? 'Accepting...' : 'Accept offer'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMode('counter')}

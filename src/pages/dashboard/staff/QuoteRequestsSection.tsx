@@ -22,6 +22,7 @@ import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import StatusBadge from '../../../components/StatusBadge'
+import { offerTiming } from '../../../lib/offerTiming'
 import { usePaged } from '../../../lib/usePaged'
 
 // Rows per page on every tab (Pending, Approved, Rejected).
@@ -459,6 +460,12 @@ function QuoteRequestsSection() {
                       >
                         {quote.request_status === 'Countered' ? "Client's counter" : 'Our offer'}
                       </span>
+                      {/* An offer nobody answered by its pickup date: stale, then expired. */}
+                      {quote.request_status === 'Offered' && offerTiming(quote.preferred_pickup_date, today) !== 'open' && (
+                        <span className="mt-1 block w-fit bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+                          {offerTiming(quote.preferred_pickup_date, today) === 'expired' ? 'Offer expired' : 'Pickup date passed'}
+                        </span>
+                      )}
                     </>
                   )}
                 </td>

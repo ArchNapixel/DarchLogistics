@@ -68,6 +68,7 @@ import {
 import OfferComparison from '../../../components/OfferComparison'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import CapacityCard from './CapacityCard'
+import QuoteWarnings from './QuoteWarnings'
 import type { CapacityResult } from '../../../lib/capacity'
 
 // Same cap as the bookings.hours_per_trip CHECK constraint.
@@ -917,6 +918,14 @@ function QuoteReviewModal({
             <div className="grid gap-8 px-7 py-6 lg:grid-cols-[minmax(0,1fr)_436px]">
               {/* LEFT: the request, read-only */}
               <div className="flex flex-col gap-6">
+                <QuoteWarnings
+                  quoteId={quote.quote_request_id}
+                  clientId={quote.client_id}
+                  clientName={quote.client_name}
+                  pickupBarangay={quote.pickup_barangay}
+                  deliveryBarangay={quote.delivery_barangay}
+                  pickupDate={quote.preferred_pickup_date}
+                />
                 {countered && (
                   <div className="border-2 border-sky-300 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
                     <p className="font-semibold">

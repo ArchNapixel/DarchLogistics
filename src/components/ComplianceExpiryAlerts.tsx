@@ -1,4 +1,8 @@
 // ComplianceExpiryAlerts: the notification bell in the dashboard header.
+// Admin and Dispatcher also get trips that are badly overdue here (past
+// their end time by more than app_settings.overdue_alert_hours, default 2,
+// and not delivered / cancelled), linking to the trip -- so nobody has to
+// notice a red badge on the board. It reloads every 5 minutes.
 // Surfaces driver licenses and medical exams expiring within 30 days
 // (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
@@ -23,6 +27,18 @@ type ComplianceRow = {
   medical_exam_expiry_date: string | null
   employment_status_id: number | null
 }
+
+type OverdueTrip = {
+  tripId: number
+  bookingId: number
+  hoursOverdue: number
+  driver: string | null
+}
+
+// Overdue trips are only listed once they're this many hours late
+// (Settings: overdue_alert_hours).
+const DEFAULT_OVERDUE_ALERT_HOURS = 2
+const overdueKey = (t: OverdueTrip) => `trip-${t.tripId}`
 
 type ExpiryAlert = {
   employeeId: number
@@ -73,6 +89,61 @@ function ComplianceExpiryAlerts() {
   // they're individually removed with the X.
   const [readKeys, setReadKeys] = useState<string[]>([])
   const [open, setOpen] = useState(false)
+  const [overdue, setOverdue] = useState<OverdueTrip[]>([])
+
+  // Staff only: trips more than `overdue_alert_hours` past their end time.
+  const loadOverdue = useCallback(async () => {
+    if (!isStaff(role)) return
+    const { data: setting } = await supabase
+      .from('app_settings')
+      .select('setting_value')
+      .eq('setting_key', 'overdue_alert_hours')
+      .maybeSingle()
+    const hours = Number(setting?.setting_value) > 0 ? Number(setting?.setting_value) : DEFAULT_OVERDUE_ALERT_HOURS
+    const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString()
+    const { data: trips } = await supabase
+      .from('itineraries')
+      .select('itinerary_id, booking_id, trip_end_at')
+      .or('itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)')
+      .not('trip_end_at', 'is', null)
+      .lt('trip_end_at', cutoff)
+      .order('trip_end_at')
+      .limit(50)
+    if (!trips || trips.length === 0) {
+      setOverdue([])
+      return
+    }
+    const { data: crew } = await supabase
+      .from('itinerary_crews')
+      .select('itinerary_id, employee_id')
+      .eq('crew_role', 'Driver')
+      .eq('is_active', true)
+      .in('itinerary_id', trips.map((t) => t.itinerary_id))
+    const driverIds = [...new Set((crew ?? []).map((c) => c.employee_id))]
+    const { data: people } = driverIds.length
+      ? await supabase.from('employees').select('employee_id, full_name').in('employee_id', driverIds)
+      : { data: [] as { employee_id: number; full_name: string }[] }
+    const nameById = new Map((people ?? []).map((p) => [p.employee_id, p.full_name]))
+    const driverOf = new Map((crew ?? []).map((c) => [c.itinerary_id, nameById.get(c.employee_id) ?? null]))
+    setOverdue(
+      trips.map((t) => ({
+        tripId: t.itinerary_id,
+        bookingId: t.booking_id,
+        hoursOverdue: Math.floor((Date.now() - new Date(t.trip_end_at as string).getTime()) / 3_600_000),
+        driver: driverOf.get(t.itinerary_id) ?? null,
+      })),
+    )
+  }, [role])
+
+  useEffect(() => {
+    if (!isStaff(role)) return
+    const first = window.setTimeout(() => void loadOverdue(), 0)
+    const every = window.setInterval(() => void loadOverdue(), 5 * 60_000)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(every)
+    }
+  }, [loadOverdue, role])
 
   const loadAlerts = useCallback(async () => {
     if (!isStaff(role) && role !== 'Driver') {
@@ -162,20 +233,21 @@ function ComplianceExpiryAlerts() {
   const visibleAlerts = alerts.filter(
     (alert) => !dismissedKeys.includes(alertKey(alert)),
   )
-  const unreadCount = visibleAlerts.filter(
-    (alert) => !readKeys.includes(alertKey(alert)),
-  ).length
+  const visibleOverdue = overdue.filter((t) => !dismissedKeys.includes(overdueKey(t)))
+  const unreadCount =
+    visibleAlerts.filter((alert) => !readKeys.includes(alertKey(alert))).length +
+    visibleOverdue.filter((t) => !readKeys.includes(overdueKey(t))).length
 
   function handleToggle() {
     const nextOpen = !open
     setOpen(nextOpen)
     if (nextOpen) {
-      setReadKeys(alerts.map(alertKey))
+      setReadKeys([...alerts.map(alertKey), ...overdue.map(overdueKey)])
     }
   }
 
   // Nothing expiring (or a role that never gets these) -- no bell at all.
-  if (alerts.length === 0) return null
+  if (alerts.length === 0 && overdue.length === 0) return null
 
   return (
     <div className="relative">
@@ -209,7 +281,7 @@ function ComplianceExpiryAlerts() {
           <div className="fixed inset-x-4 top-16 z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border border-slate-200 bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
               <p className="text-sm font-semibold text-slate-900">
-                Compliance expiry notifications
+                Notifications
               </p>
               <button
                 onClick={() => setOpen(false)}
@@ -219,12 +291,36 @@ function ComplianceExpiryAlerts() {
               </button>
             </div>
 
-            {visibleAlerts.length === 0 ? (
+            {visibleAlerts.length === 0 && visibleOverdue.length === 0 ? (
               <p className="px-4 py-3 text-sm text-slate-500">
                 No notifications.
               </p>
             ) : (
               <div className="max-h-80 overflow-y-auto">
+                {visibleOverdue.map((trip) => (
+                  <div key={overdueKey(trip)} className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
+                    <Link
+                      to={`/dashboard/bookings?booking=${trip.bookingId}&trip=${trip.tripId}`}
+                      onClick={() => setOpen(false)}
+                      className="block flex-1 text-sm hover:bg-slate-50"
+                    >
+                      <p className="font-medium text-slate-900">
+                        Trip #{trip.tripId} · Booking #{trip.bookingId}
+                      </p>
+                      <p className="text-red-700">
+                        {trip.hoursOverdue}+ {trip.hoursOverdue === 1 ? 'hour' : 'hours'} overdue
+                        {trip.driver ? ` · ${trip.driver}` : ' · no driver'}
+                      </p>
+                    </Link>
+                    <button
+                      onClick={() => setDismissedKeys((prev) => [...prev, overdueKey(trip)])}
+                      aria-label="Dismiss notification"
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
                 {visibleAlerts.map((alert) => (
                   <div
                     key={alertKey(alert)}

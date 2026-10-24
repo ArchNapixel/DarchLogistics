@@ -63,6 +63,9 @@ import {
 } from '../../../lib/statusRelogRequests'
 import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
+import StatusTimeModal from './StatusTimeModal'
+import MarkAbsentModal from './MarkAbsentModal'
+import BreakdownModal from './BreakdownModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
 import { confirmDialog } from '../../../components/ConfirmDialog'
@@ -546,6 +549,7 @@ type BoardContext = {
   onTrailerChange: (itineraryId: number, previousTrailerId: number | null, trailerId: number | null) => Promise<boolean>
   onViewLogs: (itineraryId: number) => void
   onEditTime: (row: DispatchRow) => void
+  onBreakdown: (row: DispatchRow) => void
 }
 
 const TH = 'px-3 py-3 text-xs font-semibold tracking-wider text-slate-600 uppercase'
@@ -803,6 +807,10 @@ function rowMenuItems(row: DispatchRow, ctx: BoardContext): (MenuItem | null)[] 
     !done && ctx.canEditStatus
       ? { label: row.trip_start_at ? 'Edit time' : 'Set time', onClick: () => ctx.onEditTime(row) }
       : null,
+    // A trip on the road whose truck / trailer broke down.
+    ctx.canEditStatus && ['Dispatched', 'PickedUp', 'InTransit'].includes(row.status) && (row.plate_number || row.trailer_id !== null)
+      ? { label: 'Report breakdown', onClick: () => ctx.onBreakdown(row) }
+      : null,
     // Dispatcher: backward moves go through Admin.
     ctx.canEditStatus && !ctx.canFreelyEditStatus && row.status !== 'Awaiting'
       ? {
@@ -1017,6 +1025,11 @@ function DispatchBoardSection() {
   const canEditStatus = isAdmin(role) || isDispatcher(role)
   const [relogRequestRow, setRelogRequestRow] = useState<DispatchRow | null>(null)
   const [deliveryRow, setDeliveryRow] = useState<DispatchRow | null>(null)
+  // A forward status move waiting for "when did it happen?" (StatusTimeModal).
+  const [showAbsent, setShowAbsent] = useState(false)
+  // The trip whose truck / trailer broke down (BreakdownModal).
+  const [breakdownRow, setBreakdownRow] = useState<DispatchRow | null>(null)
+  const [timedChange, setTimedChange] = useState<{ itineraryId: number; previousStatus: string; newStatus: string } | null>(null)
   // Completed starts collapsed so it doesn't push active work down.
   const [tab, setTab] = useState<'needs' | 'assigned' | 'completed'>('needs')
   const [logsItineraryId, setLogsItineraryId] = useState<number | null>(null)
@@ -1456,6 +1469,17 @@ function DispatchBoardSection() {
       if (!ok) return
     }
 
+    // Moving forward: ask when it really happened (defaults to now), so a
+    // move logged late isn't recorded at the wrong time.
+    if (STATUS_FLOW.indexOf(newStatus) > STATUS_FLOW.indexOf(previousStatus)) {
+      setTimedChange({ itineraryId, previousStatus, newStatus })
+      return
+    }
+    await applyStatusChange(itineraryId, previousStatus, newStatus)
+  }
+
+  // The actual update + log. `atMs` = when it happened (default: now).
+  async function applyStatusChange(itineraryId: number, previousStatus: string, newStatus: string, atMs?: number) {
     setSavingId(itineraryId)
     setError(null)
 
@@ -1492,6 +1516,8 @@ function DispatchBoardSection() {
         previous_status: previousStatus,
         new_status: newStatus,
         changed_by: employeeId,
+        // Left out = the database's now().
+        ...(atMs ? { status_changed_at: new Date(atMs).toISOString() } : {}),
       })
 
     setSavingId(null)
@@ -1924,6 +1950,27 @@ function DispatchBoardSection() {
     .map((row) => {
       const reasons = atRiskReasons(row, rows, leaveByEmployee, drivers, trucks, trailers, now)
       const actions: { label: string; onClick: () => void }[] = []
+      // A driver / helper on leave (or marked absent today): one click puts the
+      // top free replacement on this trip.
+      if (row.status === 'Awaiting') {
+        for (const crewRole of ['Driver', 'Helper'] as const) {
+          const currentId = crewRole === 'Driver' ? row.assigned_employee_id : row.assigned_helper_employee_id
+          if (currentId === null) continue
+          const onLeave = (leaveByEmployee.get(currentId) ?? []).some((l) =>
+            rangesOverlap(row.trip_date_from, row.trip_date_to, l.start_date, l.end_date),
+          )
+          if (!onLeave) continue
+          const pick = rankPeople(row, crewRole === 'Driver' ? drivers : helpers, rows, leaveByEmployee, now).ranked.find(
+            (p) => p.blockedBy === null,
+          )
+          if (pick) {
+            actions.push({
+              label: `Use ${pick.full_name} as ${crewRole.toLowerCase()}`,
+              onClick: () => handleCrewChange(row.itinerary_id, crewRole, currentId, pick.employee_id),
+            })
+          }
+        }
+      }
       if (row.status === 'Awaiting' && row.trip_start_at && row.trip_end_at) {
         const short: ('Truck' | 'Trailer')[] = []
         const freeAt: (number | null)[] = []
@@ -1995,6 +2042,7 @@ function DispatchBoardSection() {
     onTrailerChange: handleTrailerChange,
     onViewLogs: setLogsItineraryId,
     onEditTime: setEditTimeRow,
+    onBreakdown: setBreakdownRow,
   }
 
   // Needs Assignment / Assigned: one block per booking. Bookings with trips
@@ -2090,6 +2138,15 @@ function DispatchBoardSection() {
         </div>
         <SearchBox value={search} onChange={setSearch} placeholder="Booking #, place, driver, helper or plate" />
         {/* Drivers move trips from their phones -- reload to see it. */}
+        {canEditStatus && (
+          <button
+            type="button"
+            onClick={() => setShowAbsent(true)}
+            className="border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+          >
+            Mark absent today
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -2294,6 +2351,68 @@ function DispatchBoardSection() {
           onRequested={() => {
             setRelogRequestRow(null)
             loadMyRequests(employeeId)
+          }}
+        />
+      )}
+
+      {showAbsent && (
+        <MarkAbsentModal
+          people={[
+            ...drivers.map((p) => ({ employee_id: p.employee_id, full_name: p.full_name, role: 'Driver' as const })),
+            ...helpers.map((p) => ({ employee_id: p.employee_id, full_name: p.full_name, role: 'Helper' as const })),
+          ]}
+          onClose={() => setShowAbsent(false)}
+          onDone={(name) => {
+            setShowAbsent(false)
+            showToast(`${name} marked absent today.`)
+            loadDispatchBoard()
+          }}
+        />
+      )}
+
+      {breakdownRow && (
+        (() => {
+          const current = rows.find((r) => r.itinerary_id === breakdownRow.itinerary_id) ?? breakdownRow
+          // Free vehicles for this trip's slot, best first, without the broken one.
+          const freeOptions = (kind: 'Truck' | 'Trailer') =>
+            rankFleet(kind, current, fleet[kind].filter((v) => v.id !== vehicleIdOf(kind, current)), rows, now)
+              .ranked.filter((v) => v.blockedBy === null)
+              .map((v) => ({ id: v.id.slice(2), label: v.label }))
+          return (
+            <BreakdownModal
+              trip={{
+                itinerary_id: current.itinerary_id,
+                plate_number: current.plate_number,
+                trailer_id: current.trailer_id,
+                trailer_label: trailers.find((t) => t.trailer_id === current.trailer_id)?.plate_number ?? (current.trailer_id !== null ? `#${current.trailer_id}` : null),
+                assigned_employee_id: current.assigned_employee_id,
+              }}
+              free={{ Truck: freeOptions('Truck'), Trailer: freeOptions('Trailer') }}
+              onSwap={(kind, newId) =>
+                kind === 'Truck'
+                  ? handleTruckChange(current.itinerary_id, current.plate_number, newId)
+                  : handleTrailerChange(current.itinerary_id, current.trailer_id, Number(newId))
+              }
+              onClose={() => setBreakdownRow(null)}
+              onDone={(message) => {
+                setBreakdownRow(null)
+                showToast(message)
+                loadDispatchBoard()
+              }}
+            />
+          )
+        })()
+      )}
+
+      {timedChange && (
+        <StatusTimeModal
+          itineraryId={timedChange.itineraryId}
+          statusLabel={STATUS_LABELS[timedChange.newStatus] ?? timedChange.newStatus}
+          onClose={() => setTimedChange(null)}
+          onConfirm={(atMs) => {
+            const change = timedChange
+            setTimedChange(null)
+            applyStatusChange(change.itineraryId, change.previousStatus, change.newStatus, atMs)
           }}
         />
       )}

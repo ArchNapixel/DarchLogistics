@@ -719,9 +719,13 @@ before creating it.
   the `complete_client_signup` RPC is now unused and can be dropped).
   Supabase redirect URL: `/client-login` for
   localhost:5173 and darch-logistics.vercel.app. SQL run by user, no
-  migration file. **Known gap:** signing up with an email that already
-  has a `clients` row (from an approved quote) creates a second
-  `clients` row — old bookings don't show in the new account.
+  migration file. **Known gap, partly fixed 2026-10-24 (SQL given in chat):**
+  `handle_client_signup()` now links a new sign-up to an existing
+  `clients` row with the same email that has no login yet (keeps its name,
+  fills a missing phone) instead of creating a second row. Duplicates that
+  already exist still need the Merge clients tool (Phase F, not built).
+  `users.client_id` is a plain nullable column, so several logins for one
+  client (#23) = several `users` rows with the same `client_id`.
 - **Payment tracking (#12) + driver paid status (#13), 2026-10-22; SQL
   given in chat.** GCash / Bank Transfer / Check payments need a
   reference no. (`referenceRequired` / `paymentDetailsError` in
@@ -1177,6 +1181,63 @@ before creating it.
   no trailer size / payload columns (user: the 45 t max on quotes covers
   it). Booking Detail has no breakdown — the board's At-risk notice
   covers booked trips.
+
+## 2026-10-24: operations scenarios, Phase A (quote hygiene; SQL given in chat)
+Plan of 22 scenarios decided with the user (phases A → D → E → B → C → F;
+multi-stop trips deliberately out; no DO requirement; truck ban hours
+6–8 AM and 6–8 PM for EVERY trip -- note the default start is 6 AM, inside
+that ban -- DECIDED 2026-10-24: move `default_trip_start_time` to 8 AM
+(Settings; user does it) and, in Phase C, a chained trip whose start would
+land inside a ban window waits for the window to end; absent = unpaid; returned trips are billed, re-delivery is an
+extra charge; no-work days only block STARTING a trip). Phase A built:
+- **Offer timing** (`lib/offerTiming.ts`, self-check
+  `node scripts/check-offer-timing.ts`): an Offered quote is `pickup-passed`
+  once its pickup date is over (client can't Accept -- must counter with a
+  new date; `respond_to_quote_offer` refuses too) and `expired` 3 days
+  later (staff list chip "Offer expired", no capacity hold). Worked out
+  from the date, no stored status. `QuoteOfferCard` hides Accept and says
+  why; Capacity's tentative holds skip non-open offers.
+- **Withdraw** (`withdraw_quote_request(p_quote_id)`, new enum value
+  `Withdrawn` on `request_status_enum`): client's "Withdraw this quote"
+  while Pending / Offered / Countered (`lib/quoteOffers.ts`).
+- **QuoteWarnings** (`staff/QuoteWarnings.tsx`, top of Review Quote,
+  advisory): similar quote (same client + pickup/delivery barangays,
+  pickup within 2 days, open or Approved) and delinquent / overdue client
+  (delinquency log + Payments Due). Needs `quote.client_id`.
+- **#1 same-day approvals** (SQL given in chat 2026-10-24):
+  `create_booking_from_quote` (called by both `accept_quote_counter` and
+  `respond_to_quote_offer`) now starts the first trip at the NEXT HALF HOUR
+  when pickup date + default start is already in the past, and chains the
+  rest from there; its fallback default start is 480 (8 AM) when the
+  Settings row is missing. Existing bookings aren't touched.
+
+**Phase D (day-of disruptions; SQL given in chat):**
+- **#19 "When did it happen?"** — a forward status move on the Dispatch
+  Board (Awaiting → Dispatched → Picked Up → In Transit) opens
+  `staff/StatusTimeModal.tsx` first (`StatusWhenField`, defaults to now in
+  5-minute steps, can't be in the future or before the trip's last log row,
+  `lib/statusTime.ts`); `applyStatusChange(…, atMs)` writes it as the log
+  row's `status_changed_at`. `MarkDeliveredModal` has the same field
+  ("When was it delivered?"): that time is the delivery date for payroll /
+  Payments Due and what `retimeAfterDelivery` re-times from. Backward
+  moves and the driver app still use now().
+- **#14 Overdue bell** — `ComplianceExpiryAlerts` (Admin + Dispatcher) also
+  lists trips past their end by more than `app_settings.overdue_alert_hours`
+  (default 2 if the row is missing), linking to the trip; reloads every 5 min.
+- **#13 Mark absent today** — board button → `MarkAbsentModal` → RPC
+  `mark_absent_today(p_employee_id, p_reason)` (staff only): approved
+  one-day Emergency `leave_requests` row for today + `Unpaid Leave`
+  attendance for non-drivers. Everything that reads leave (board dropdowns,
+  At-risk, Capacity, Schedule Overview) reacts with no new rule. At-risk
+  trips whose driver / helper is on leave get **Use <name> as driver** /
+  **helper** (top free suggestion).
+- **#12 Report breakdown** — ⋮ menu on a trip on the road →
+  `BreakdownModal`: swap in a free truck / trailer (board handlers, overlap
+  rules apply), open a Corrective work order for the broken one and set it
+  Under Maintenance (its other trips show under At-risk), optional cost as a
+  trip expense (`itinerary_expenses`, category Other, on the trip's driver).
+  Not one transaction: failures say which steps are done. Needs staff INSERT
+  policies on `itinerary_expenses` (and `work_orders` for Dispatchers).
 
 ## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
 - **Payroll** no longer rebuilds every draft on page open (that wiped

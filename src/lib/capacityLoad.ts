@@ -6,6 +6,8 @@
 // browser never learns who or what is booked.
 import { supabase } from './supabaseClient'
 import { manilaTimestamp } from './format'
+import { offerTiming } from './offerTiming'
+import { toManilaDate } from './payslip'
 import { expandCargoLines, parseCargoLines } from './quoteRequest'
 import {
   DAY_MS,
@@ -121,7 +123,10 @@ export async function loadCapacityInputs(
     ...raw.trailers.map(toResource('Trailer', 'R', 'A trailer')),
   ]
   // Offers sent but not accepted yet hold their slot, oldest first.
+  const today = toManilaDate(new Date())
   const holds = raw.offers
+    // An offer past its pickup date can't be accepted any more -- it holds nothing.
+    .filter((o) => offerTiming(o.pickup_date, today) === 'open')
     .map((o) => {
       const trips = expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type }))
       return {

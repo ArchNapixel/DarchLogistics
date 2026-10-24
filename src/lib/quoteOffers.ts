@@ -19,6 +19,7 @@ export const QUOTE_STATUS_LABELS: Record<string, string> = {
   Approved: 'Approved',
   Rejected: 'Rejected',
   Declined: 'Declined by client',
+  Withdrawn: 'Withdrawn by client',
 }
 
 // One row of quote_rate_offers.
@@ -74,6 +75,13 @@ export function offerActionLabel(row: QuoteOfferRow): string {
   const who = row.party === 'Business' ? 'We' : 'Client'
   const verb = { Offer: 'offered', Counter: 'countered', Accept: 'accepted', Decline: 'declined' }[row.action]
   return `${who} ${verb}${row.entered_by_staff ? ' (by phone)' : ''}`
+}
+
+// The client takes back their own quote while it is still open (Pending,
+// Offered or Countered). Database function withdraw_quote_request.
+export async function withdrawQuoteRequest(quoteId: number): Promise<string | null> {
+  const { error } = await supabase.rpc('withdraw_quote_request', { p_quote_id: quoteId })
+  return error?.message ?? null
 }
 
 // The client's answer to an offer. Accept returns the new booking's id.

@@ -9,7 +9,7 @@
 // Steps aren't in a DB transaction: the status goes first, then the
 // damage row. If the damage row fails, the trip is already Delivered, so
 // the modal stays open and "Save" only retries the damage part.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import {
@@ -22,6 +22,8 @@ import DamageFields from './DamageFields'
 import TripDocuments from './TripDocuments'
 import { showToast } from '../../../components/Toast'
 import { retimeAfterDelivery } from '../../../lib/tripRetime'
+import { loadLastStatusTime, nowRounded, statusTimeError } from '../../../lib/statusTime'
+import StatusWhenField from './StatusWhenField'
 
 function MarkDeliveredModal({
   itineraryId,
@@ -36,6 +38,13 @@ function MarkDeliveredModal({
 }) {
   const { employeeId } = useAuth()
   const [damage, setDamage] = useState<DamageInput>(EMPTY_DAMAGE)
+  // When it was really delivered (defaults to now). This is the delivery date
+  // for payroll and Payments Due, and what the later trips re-time from.
+  const [deliveredAt, setDeliveredAt] = useState(nowRounded)
+  const [lastChange, setLastChange] = useState<number | null>(null)
+  useEffect(() => {
+    loadLastStatusTime(itineraryId).then(setLastChange)
+  }, [itineraryId])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // True once the trip is Delivered -- a retry then only saves the damage.
@@ -45,6 +54,11 @@ function MarkDeliveredModal({
     const inputError = damageInputError(damage)
     if (inputError) {
       setError(inputError)
+      return
+    }
+    const timeError = statusDone ? null : statusTimeError(deliveredAt, lastChange)
+    if (timeError) {
+      setError(timeError)
       return
     }
 
@@ -89,6 +103,7 @@ function MarkDeliveredModal({
           previous_status: currentStatus,
           new_status: 'Delivered',
           changed_by: employeeId,
+          status_changed_at: new Date(deliveredAt).toISOString(),
         })
 
       if (logError) {
@@ -101,7 +116,7 @@ function MarkDeliveredModal({
       }
 
       // The slot ends at the real delivery time; later trips follow it.
-      const retimeWarning = await retimeAfterDelivery(itineraryId)
+      const retimeWarning = await retimeAfterDelivery(itineraryId, deliveredAt)
       if (retimeWarning) showToast(retimeWarning, 'error')
     }
 
@@ -135,6 +150,7 @@ function MarkDeliveredModal({
         )}
 
         <div className="mt-4 grid gap-4">
+          <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
           <DamageFields value={damage} onChange={setDamage} allowGood />
         </div>
 
