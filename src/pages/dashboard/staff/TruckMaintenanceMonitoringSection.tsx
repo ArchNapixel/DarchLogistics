@@ -17,7 +17,7 @@ import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type Truck = {
@@ -145,8 +145,8 @@ function AssignTruckScheduleModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Assign Maintenance Schedule</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
@@ -394,23 +394,23 @@ function OdometerUpdatesSection() {
   if (suggestions.length === 0) return <EmptyState message="No odometer updates are waiting for confirmation." />
 
   return (
-    <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-slate-500">
+    <div className="overflow-x-auto border-2 border-line-card bg-white">
+      <table className="w-full text-left text-sm text-ink-metric">
+        <thead>
           <tr>
-            <th className="px-4 py-3 font-medium">Truck</th>
-            <th className="px-4 py-3 font-medium">Trip date</th>
-            <th className="px-4 py-3 font-medium">J.P. Laurel to pickup</th>
-            <th className="px-4 py-3 font-medium">Delivery trip</th>
-            <th className="px-4 py-3 font-medium">Return to J.P. Laurel</th>
-            <th className="px-4 py-3 font-medium">Current</th>
-            <th className="px-4 py-3 font-medium">Suggested</th>
-            <th className="px-4 py-3 font-medium">Action</th>
+            <th className="px-4 py-2.5">Truck</th>
+            <th className="px-4 py-2.5">Trip date</th>
+            <th className="px-4 py-2.5">J.P. Laurel to pickup</th>
+            <th className="px-4 py-2.5">Delivery trip</th>
+            <th className="px-4 py-2.5">Return to J.P. Laurel</th>
+            <th className="px-4 py-2.5">Current</th>
+            <th className="px-4 py-2.5">Suggested</th>
+            <th className="px-4 py-2.5">Action</th>
           </tr>
         </thead>
         <tbody>
           {paged.rows.map((suggestion) => (
-            <tr key={suggestion.itinerary_id} className="border-b border-slate-100 last:border-0">
+            <tr key={suggestion.itinerary_id} className="border-b border-slate-200 last:border-0">
               <td className="px-4 py-3 font-medium text-slate-900">{suggestion.plate_number}</td>
               <td className="px-4 py-3 text-slate-600">{formatDate(suggestion.trip_date)}</td>
               <td className="px-4 py-3 text-slate-600">
@@ -477,9 +477,9 @@ function TruckMaintenanceMonitoringSection() {
       />
 
       {truckError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{truckError}</p>}
-      <div className="mt-6 flex gap-2 border-b border-slate-200">
+      <div className="mt-6 flex flex-wrap gap-2">
         {(['Schedules', 'Odometer Updates'] as Tab[]).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-medium ${activeTab === tab ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${activeTab === tab ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'}`}>
             {tab}
           </button>
         ))}

@@ -273,7 +273,7 @@ function MechanicTasks() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => setAccessingOrderId(order.work_order_id)}
-                  className="border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  className="border border-line-control px-3 py-1.5 text-xs font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]"
                 >
                   Open Work Order
                 </button>
@@ -305,11 +305,11 @@ function MechanicTasks() {
                   <StatusBadge status={order.work_order_status} />
                 </div>
                 {pendingRelogIds.includes(order.work_order_id) ? (
-                  <span className="text-xs text-slate-400">Correction requested</span>
+                  <span className="text-[13px] text-ink-muted">Correction requested</span>
                 ) : (
                   <button
                     onClick={() => setReopeningOrder(order)}
-                    className="border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    className="border border-line-control px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-[2px]"
                   >
                     Request correction
                   </button>

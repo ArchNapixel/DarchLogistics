@@ -104,13 +104,14 @@ const ICONS = {
   refresh: 'M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15',
   plus: 'M12 5v14M5 12h14',
   chevron: 'M9 6l6 6-6 6',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
 }
 
-function Icon({ name }: { name: keyof typeof ICONS }) {
+function Icon({ name, size = 16 }: { name: keyof typeof ICONS; size?: number }) {
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -125,63 +126,71 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
   )
 }
 
-const TH = 'px-5 py-3 font-semibold'
-const TD = 'px-5 py-3'
+// Same spacing as the canvas board: 20px at the table's edges, 16px between
+// columns, rows at least 60px tall.
+const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+const TD = 'px-2 py-2 first:pl-5 last:pr-5'
+const ROW = 'h-[60px] border-b border-slate-200 hover:bg-slate-50'
+
+// Column widths (px) from the canvas board; '' = takes the rest (the route).
+const PENDING_COLS = ['230px', '170px', '', '170px', '200px', '150px', '120px']
+const APPROVED_COLS = ['230px', '170px', '', '170px', '200px', '150px', '120px']
+// Rejected: the reason takes the last three columns' room (no Open link).
+const CLOSED_COLS = ['230px', '170px', '', '170px', '470px']
 
 // The bordered box every tab's table sits in: fills the screen height, with
-// a footer line at the bottom -- the pager when there's more than one page,
-// otherwise `summary` ("6 rejected quotations").
+// a footer line at the bottom -- "Page 2 of 5" (or `summary`, e.g. "6
+// rejected quotations") on the left, Previous / Next on the right.
 function TableCard({
   head,
+  cols,
   children,
   pager,
   summary,
 }: {
   head: React.ReactNode
+  cols: string[]
   children: React.ReactNode
   pager: { page: number; pageCount: number; onChange: (page: number) => void }
   summary: string
 }) {
-  const button =
-    'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  const button = 'btn-secondary px-3.5 text-sm font-medium'
   return (
-    <div className="mt-4 flex min-h-[calc(100dvh-15rem)] flex-col border-2 border-slate-300 bg-white">
+    <div className="card mt-4 flex min-h-[calc(100dvh-15rem)] flex-col">
       <div className="flex-1 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs tracking-wider text-slate-600 uppercase">
+        {/* Header row style comes from index.css (thead th). */}
+        <table className="w-full min-w-[1000px] table-fixed text-left text-sm text-ink-metric">
+          <colgroup>
+            {cols.map((width, i) => (
+              <col key={i} style={width ? { width } : undefined} />
+            ))}
+          </colgroup>
+          <thead>
             <tr>{head}</tr>
           </thead>
           <tbody>{children}</tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-700">
-        {pager.pageCount > 1 ? (
-          <>
-            <span>
-              Page {pager.page + 1} of {pager.pageCount}
-            </span>
-            <span className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => pager.onChange(pager.page - 1)}
-                disabled={pager.page === 0}
-                className={button}
-              >
-                ‹ Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => pager.onChange(pager.page + 1)}
-                disabled={pager.page >= pager.pageCount - 1}
-                className={button}
-              >
-                Next ›
-              </button>
-            </span>
-          </>
-        ) : (
-          <span>{summary}</span>
-        )}
+      <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
+        <span>{pager.pageCount > 1 ? `Page ${pager.page + 1} of ${pager.pageCount}` : summary}</span>
+        <span className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => pager.onChange(pager.page - 1)}
+            disabled={pager.page === 0}
+            className={button}
+          >
+            ‹ Previous
+          </button>
+          <button
+            type="button"
+            onClick={() => pager.onChange(pager.page + 1)}
+            disabled={pager.page >= pager.pageCount - 1}
+            className={button}
+          >
+            Next ›
+          </button>
+        </span>
       </div>
     </div>
   )
@@ -198,24 +207,29 @@ function MessageRow({ colSpan, children, tone = 'text-slate-500' }: { colSpan: n
   )
 }
 
+// The canvas's small tag (2px corners, 12px semibold).
+const CHIP = 'inline-flex w-fit items-center gap-1.5 rounded-[2px] px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
+const CHIP_WARN = `${CHIP} bg-amber-100 text-amber-900`
+// Small grey line under a cell's main value.
+const SUB = 'block text-[13px] leading-[18px] text-ink-muted'
+
 function ResubmittedChip({ count }: { count: number }) {
   if (count <= 0) return null
-  return (
-    <span className="ml-2 bg-amber-100 px-1.5 py-0.5 font-sans text-xs font-medium text-amber-800">
-      Resubmitted{count > 1 ? ` ×${count}` : ''}
-    </span>
-  )
+  return <span className={`${CHIP_WARN} font-sans`}>Resubmitted{count > 1 ? ` ×${count}` : ''}</span>
 }
 
-// Reference code (mono) + optional "Requested <date>" line.
+// Reference code (mono) + Resubmitted tag on one line, optional
+// "Requested <date>" under it.
 function QuoteCell({ q, showDate = true }: { q: { reference_code: string | null; quote_request_id: number; resubmit_count: number; created_at: string }; showDate?: boolean }) {
   return (
-    <td className={`${TD} whitespace-nowrap`}>
-      <span className="font-mono text-xs font-semibold text-slate-900">
-        {q.reference_code ?? `#${q.quote_request_id}`}
+    <td className={TD}>
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-mono text-[13px] font-semibold tracking-[0.02em] text-ink">
+          {q.reference_code ?? `#${q.quote_request_id}`}
+        </span>
+        <ResubmittedChip count={q.resubmit_count} />
       </span>
-      <ResubmittedChip count={q.resubmit_count} />
-      {showDate && <span className="block text-slate-500">Requested {formatDate(q.created_at)}</span>}
+      {showDate && <span className={SUB}>Requested {formatDate(q.created_at)}</span>}
     </td>
   )
 }
@@ -233,11 +247,11 @@ type RouteFields = {
 function RouteCell({ q }: { q: RouteFields }) {
   return (
     <td className={TD}>
-      <p className="text-slate-900">
+      <p>
         {formatLocationDisplay({ city: q.pickup_city, barangay: q.pickup_barangay, detail: q.pickup_location_text })}
       </p>
-      <p className="text-primary">
-        →{' '}
+      <p className="flex items-center gap-1.5 text-ink-muted">
+        <Icon name="arrow" size={14} />
         {formatLocationDisplay({
           city: q.delivery_city,
           barangay: q.delivery_barangay,
@@ -321,7 +335,7 @@ function QuoteRequestsSection() {
         title="Quotations"
         subtitle="Price each request and send the client an offer; it becomes a booking once a rate is accepted."
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             {/* The list doesn't update by itself -- quotes other admins
                 handled, or new client quotes, show after a refresh. */}
             <button
@@ -329,14 +343,14 @@ function QuoteRequestsSection() {
                 loadQuotes()
                 setRefreshKey((k) => k + 1)
               }}
-              className="btn-secondary flex items-center gap-2 px-4 py-2 text-sm font-medium"
+              className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium"
             >
               <Icon name="refresh" />
               Refresh
             </button>
             <button
               onClick={() => setShowNewQuote(true)}
-              className="btn-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
+              className="btn-primary flex items-center gap-2 px-5 text-sm"
             >
               <Icon name="plus" />
               New Quote
@@ -345,7 +359,8 @@ function QuoteRequestsSection() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Toolbar: tabs on the left, search on the right */}
+      <div className="flex flex-wrap items-center gap-2 gap-y-3">
         {([
           ['pricing', 'Needs pricing'],
           ['waiting', 'Waiting on client'],
@@ -356,30 +371,32 @@ function QuoteRequestsSection() {
             key={key}
             onClick={() => setTab(key)}
             aria-pressed={tab === key}
-            className={`flex items-center gap-2.5 border px-5 py-2.5 text-sm font-medium ${
+            className={`flex h-11 items-center gap-2.5 rounded-[2px] border px-5 text-sm font-semibold ${
               tab === key
                 ? 'border-primary bg-primary text-white'
-                : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {label}
             {(key === 'pricing' || key === 'waiting') && !loading && (
               <span
-                className={`px-1.5 text-xs ${tab === key ? 'bg-white text-primary' : 'bg-primary text-white'}`}
+                className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[2px] px-1.5 text-xs font-bold ${
+                  tab === key ? 'bg-white text-primary' : 'bg-primary text-white'
+                }`}
               >
                 {key === 'pricing' ? pricingQuotes.length : waitingQuotes.length}
               </span>
             )}
           </button>
         ))}
-        <label className="ml-auto flex items-center gap-3 text-sm text-slate-700">
+        <label className="ml-auto flex items-center gap-3 text-sm font-medium text-ink-secondary">
           Search
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Client or quote ID"
-            className="w-64 border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-primary focus:outline-none sm:w-80"
+            className="h-11 w-64 rounded-[2px] border border-line-control bg-white px-3 text-sm text-ink-metric placeholder:text-ink-muted focus:border-primary sm:w-80"
           />
         </label>
       </div>
@@ -393,17 +410,17 @@ function QuoteRequestsSection() {
         />
       ) : (
         <TableCard
+          cols={PENDING_COLS}
           pager={pendingPaged.pager}
-          summary={`${plural(visiblePending.length, 'quotation')} ${tab === 'waiting' ? 'waiting on the client' : 'to price'}`}
+          summary={`${plural(visiblePending.length, 'quotation')} ${tab === 'waiting' ? 'waiting on the client' : 'waiting for review'}`}
           head={
             <>
               <th className={TH}>Quote</th>
               <th className={TH}>Client</th>
               <th className={TH}>Pickup → Delivery</th>
-              <th className={TH}>Cargo type</th>
-              <th className={TH}>Pickup date</th>
-              <th className={TH}>Deliveries</th>
               <th className={TH}>Rate</th>
+              <th className={TH}>Pickup Date</th>
+              <th className={TH}>Cargo Type</th>
               <th className={TH}>
                 <span className="sr-only">Action</span>
               </th>
@@ -411,13 +428,13 @@ function QuoteRequestsSection() {
           }
         >
           {loading ? (
-            <MessageRow colSpan={8}>Loading quote requests...</MessageRow>
+            <MessageRow colSpan={7}>Loading quote requests...</MessageRow>
           ) : error ? (
-            <MessageRow colSpan={8} tone="text-red-700">
+            <MessageRow colSpan={7} tone="text-red-700">
               {error}
             </MessageRow>
           ) : visiblePending.length === 0 ? (
-            <MessageRow colSpan={8}>
+            <MessageRow colSpan={7}>
               {search
                 ? 'No quotes match your search.'
                 : tab === 'waiting'
@@ -426,53 +443,50 @@ function QuoteRequestsSection() {
             </MessageRow>
           ) : (
             pendingPaged.rows.map((quote) => (
-              <tr key={quote.quote_request_id} className="border-b border-slate-200 hover:bg-slate-50">
+              <tr key={quote.quote_request_id} className={ROW}>
                 <QuoteCell q={quote} showDate={false} />
-                <td className={`${TD} font-semibold text-slate-900`}>{quote.client_name}</td>
+                <td className={`${TD} font-semibold`}>{quote.client_name}</td>
                 <RouteCell q={quote} />
-                <td className={`${TD} text-slate-900`}>{cargoSummary(parseCargoLines(quote.cargo_lines))}</td>
-                <td className={`${TD} text-slate-900`}>
-                  <span className="whitespace-nowrap">
-                    {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
-                    {quote.preferred_pickup_date === today && (
-                      <span className="ml-2 bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                        Today
-                      </span>
-                    )}
-                  </span>
-                  {quote.is_last_day_of_port_storage && (
-                    <span className="mt-1 block w-fit bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
-                      Urgent · last free storage day
+                {/* Rate, "× N trips" under it, then where the negotiation is */}
+                <td className={TD}>
+                  {quote.request_status === 'Pending' ? (
+                    <span className="text-ink-muted">Not priced</span>
+                  ) : (
+                    <span className="font-semibold tabular-nums">{formatMoney(quote.proposed_rate ?? 0)}</span>
+                  )}
+                  {quote.delivery_order_count != null && (
+                    <span className={SUB}>× {plural(quote.delivery_order_count, 'trip')}</span>
+                  )}
+                  {quote.request_status !== 'Pending' && (
+                    <span
+                      className={`${CHIP} mt-1 ${
+                        quote.request_status === 'Countered' ? 'bg-sky-100 text-sky-800' : 'bg-slate-200 text-ink-secondary'
+                      }`}
+                    >
+                      {quote.request_status === 'Countered' ? "Client's counter" : 'Our offer'}
+                    </span>
+                  )}
+                  {/* An offer nobody answered by its pickup date: stale, then expired. */}
+                  {quote.request_status === 'Offered' && offerTiming(quote.preferred_pickup_date, today) !== 'open' && (
+                    <span className={`${CHIP} mt-1 bg-red-100 text-red-800`}>
+                      {offerTiming(quote.preferred_pickup_date, today) === 'expired' ? 'Offer expired' : 'Pickup date passed'}
                     </span>
                   )}
                 </td>
-                <td className={`${TD} text-slate-900`}>{quote.delivery_order_count ?? '—'}</td>
-                <td className={`${TD} whitespace-nowrap`}>
-                  {quote.request_status === 'Pending' ? (
-                    <span className="text-slate-500">Not priced</span>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-slate-900">{formatMoney(quote.proposed_rate ?? 0)}</span>
-                      <span
-                        className={`mt-1 block w-fit px-1.5 py-0.5 text-xs font-medium ${
-                          quote.request_status === 'Countered' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {quote.request_status === 'Countered' ? "Client's counter" : 'Our offer'}
-                      </span>
-                      {/* An offer nobody answered by its pickup date: stale, then expired. */}
-                      {quote.request_status === 'Offered' && offerTiming(quote.preferred_pickup_date, today) !== 'open' && (
-                        <span className="mt-1 block w-fit bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
-                          {offerTiming(quote.preferred_pickup_date, today) === 'expired' ? 'Offer expired' : 'Pickup date passed'}
-                        </span>
-                      )}
-                    </>
+                <td className={TD}>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>{quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}</span>
+                    {quote.preferred_pickup_date === today && <span className={CHIP_WARN}>Today</span>}
+                  </span>
+                  {quote.is_last_day_of_port_storage && (
+                    <span className={`${CHIP_WARN} mt-1`}>Urgent · last free storage day</span>
                   )}
                 </td>
-                <td className={`${TD} text-right`}>
+                <td className={TD}>{cargoSummary(parseCargoLines(quote.cargo_lines))}</td>
+                <td className={TD}>
                   <button
                     onClick={() => setSelectedQuote(quote)}
-                    className="btn-primary px-5 py-2 text-sm font-semibold"
+                    className="btn-primary h-11 px-5 text-sm"
                   >
                     {tab === 'waiting' ? 'View' : 'Review'}
                   </button>
@@ -612,10 +626,11 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
   const paged = usePaged(rows, search, QUOTES_PER_PAGE)
 
   const approved = status === 'Approved'
-  const cols = approved ? 7 : 6
+  const cols = approved ? 7 : 5
 
   return (
     <TableCard
+      cols={approved ? APPROVED_COLS : CLOSED_COLS}
       pager={paged.pager}
       summary={`${plural(rows.length, `${status.toLowerCase()} quotation`)}`}
       head={
@@ -627,13 +642,13 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
           {approved ? (
             <>
               <th className={TH}>Booking</th>
-              <th className={TH}>Booking status</th>
+              <th className={TH}>Booking Status</th>
             </>
           ) : (
             <th className={TH}>Reason</th>
           )}
           {approved && (
-            <th className="w-12 px-2 py-3">
+            <th className={TH}>
               <span className="sr-only">Open</span>
             </th>
           )}
@@ -660,26 +675,26 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
               ? REJECTION_TAGS[q.rejection_tag as RejectionTag].label
               : null
           return (
-            <tr key={q.quote_request_id} className="border-b border-slate-200 hover:bg-slate-50">
+            <tr key={q.quote_request_id} className={ROW}>
               <QuoteCell q={q} />
-              <td className={`${TD} font-semibold text-slate-900`}>
+              <td className={`${TD} font-semibold`}>
                 {/* The booking's client record when there is one (that's
                     who is billed), else the name on the quote. */}
                 {booking?.client_name ?? q.client_name}
               </td>
               <RouteCell q={q} />
-              <td className={`${TD} whitespace-nowrap`}>
-                <span className="font-semibold text-slate-900">
+              <td className={TD}>
+                <span className="font-semibold tabular-nums">
                   {q.proposed_rate !== null ? formatMoney(q.proposed_rate) : '—'}
                 </span>
                 {(q.delivery_order_count ?? 1) > 1 && (
-                  <span className="block text-slate-500">× {q.delivery_order_count} trips</span>
+                  <span className={SUB}>× {q.delivery_order_count} trips</span>
                 )}
               </td>
               {approved ? (
                 booking ? (
                   <>
-                    <td className={`${TD} whitespace-nowrap`}>
+                    <td className={TD}>
                       <Link
                         to={`/dashboard/bookings?booking=${booking.booking_id}`}
                         className="font-semibold text-primary hover:underline"
@@ -687,19 +702,19 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
                         Booking #{booking.booking_id}
                       </Link>
                       {booking.booking_date && (
-                        <span className="block text-slate-500">{formatDate(booking.booking_date)}</span>
+                        <span className={SUB}>{formatDate(booking.booking_date)}</span>
                       )}
                     </td>
                     <td className={TD}>
-                      <StatusBadge status={booking.booking_status} />
+                      <StatusBadge status={booking.booking_status} icon />
                     </td>
-                    <td className="px-2 py-3 text-slate-500">
+                    <td className={TD}>
                       <Link
                         to={`/dashboard/bookings?booking=${booking.booking_id}`}
                         aria-label={`Open booking #${booking.booking_id}`}
-                        className="hover:text-primary"
+                        className="flex h-11 w-11 items-center justify-center text-primary"
                       >
-                        <Icon name="chevron" />
+                        <Icon name="chevron" size={18} />
                       </Link>
                     </td>
                   </>
@@ -712,17 +727,11 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
                   </td>
                 )
               ) : (
-                <td className={`${TD} max-w-xs text-slate-900`}>
-                  {tag && (
-                    <span className="mb-1 inline-block bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
-                      {tag}
-                    </span>
-                  )}
+                <td className={`${TD} font-medium text-ink-secondary`}>
+                  {tag && <span className={`${CHIP} mb-1 bg-red-100 text-red-800`}>{tag}</span>}
                   {q.request_status === 'Declined' ? (
                     <>
-                      <span className="mb-1 inline-block bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
-                        Declined by client
-                      </span>
+                      <span className={`${CHIP} mb-1 bg-slate-200 text-ink-secondary`}>Declined by client</span>
                       <span className="block">{q.decline_reason ?? '—'}</span>
                     </>
                   ) : (

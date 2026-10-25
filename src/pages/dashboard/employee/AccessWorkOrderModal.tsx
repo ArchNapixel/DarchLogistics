@@ -27,7 +27,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import { formatDateTime, formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'border border-slate-400 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-slate-400 px-3 py-2 text-slate-900 focus:border-primary'
 
 function AccessWorkOrderModal({
   order,
@@ -167,8 +167,8 @@ function AccessWorkOrderModal({
     : inventoryItems
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-bold text-slate-900">{order.vehicle_label}</h3>
@@ -244,7 +244,7 @@ function AccessWorkOrderModal({
                       type="button"
                       disabled={item.quantity <= 0 || busy}
                       onClick={() => handleUsePart(item)}
-                      className="flex w-full items-center justify-between border-b border-slate-300 px-3 py-2 text-left last:border-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                      className="flex w-full items-center justify-between border-b border-line-control px-3 py-2 text-left last:border-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                     >
                       <span className="text-sm text-slate-900">{item.name}</span>
                       <span className="text-xs font-medium text-slate-600">
@@ -270,12 +270,12 @@ function AccessWorkOrderModal({
                       type="button"
                       disabled={busy}
                       onClick={() => handleReturnPart(part)}
-                      className="flex w-full items-center justify-between border-b border-slate-300 px-3 py-2 text-left last:border-0 hover:bg-slate-50 disabled:opacity-40"
+                      className="flex w-full items-center justify-between border-b border-line-control px-3 py-2 text-left last:border-0 hover:bg-slate-50 disabled:opacity-40"
                     >
                       <span className="text-sm text-slate-900">
                         {part.item_name_text} × {part.quantity}
                       </span>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-[13px] text-ink-muted">
                         {formatDateTime(part.used_at)}
                       </span>
                     </button>

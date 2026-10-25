@@ -1,8 +1,10 @@
-// ScheduleTimeline: the grid used by every Schedule Overview tab -- a time
-// axis, one row per person/truck/..., trips drawn as bars and grey bands
-// (leave, maintenance) behind them. Pure drawing: the page decides the
-// window (from/to), the rows come from lib/scheduleData.ts. Clicking a bar
-// opens that trip on Bookings & Trips.
+// ScheduleTimeline: the grid used by Schedule Overview (the canvas's
+// "Driver Schedule" board) -- a time axis, then one section per kind of
+// resource (Drivers, Helpers, Trucks, Trailers -- or one unnamed section for
+// the Trips / Bookings views), one lane per person/vehicle with trips drawn
+// as blocks and striped bands (leave, in the shop, service due) behind them.
+// Pure drawing: the page decides the window (from/to), the rows come from
+// lib/scheduleData.ts. Clicking a block opens that trip on Bookings & Trips.
 //
 // A trip on the road past its end is drawn up to "now" and red (Overdue).
 // The red line with the "Now" tag is the current time.
@@ -12,20 +14,66 @@ import { DAY_MS, DAY_START_HOUR, HOUR_MS, type TimelineRow } from '../../../lib/
 import { busyUntil, isOverdue } from '../../../lib/tripSchedule'
 import { storageState } from '../../../lib/storageDeadline'
 
-// One clear colour per status, each with a border so neighbouring bars
-// stay separate. Awaiting is an outline (not started yet).
-const BAR_STYLES: Record<string, string> = {
-  Awaiting: 'border-slate-400 bg-white text-slate-700',
-  Dispatched: 'border-amber-400 bg-amber-100 text-amber-900',
-  PickedUp: 'border-sky-500 bg-sky-100 text-sky-900',
-  InTransit: 'border-sky-800 bg-sky-700 text-white',
-  Delivered: 'border-green-500 bg-green-100 text-green-900',
+export type TimelineSection = {
+  // '' = no section header row (Trips / Bookings views).
+  title: string
+  note?: string
+  rows: TimelineRow[]
 }
-const OVERDUE_STYLE = 'border-red-800 bg-red-600 text-white'
+
+const STATUS_WORD: Record<string, string> = {
+  Dispatched: 'Dispatched',
+  PickedUp: 'Picked up',
+  InTransit: 'In transit',
+}
+
+// Striped amber, like the canvas's "Not operational" lane.
+const STRIPES = 'repeating-linear-gradient(45deg,#fef3c7 0 8px,#fde68a 8px 16px)'
+
+function Check() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+      <path d="M5 12l5 5 9-10" />
+    </svg>
+  )
+}
+
+// The legend row above the timeline.
+export function ScheduleLegend() {
+  const item = 'flex items-center gap-2 text-sm text-ink-secondary'
+  return (
+    <div aria-label="Legend" className="flex min-h-11 flex-wrap items-center gap-x-7 gap-y-2">
+      <span className={item}>
+        <span aria-hidden="true" className="h-4 w-7 border-2 border-primary bg-primary-soft" />
+        Trip (select to open)
+      </span>
+      <span className={item}>
+        <span aria-hidden="true" className="h-4 w-7 border-2 border-primary bg-white" />
+        Not started
+      </span>
+      <span className={item}>
+        <Check />
+        Delivered
+      </span>
+      <span className={item}>
+        <span aria-hidden="true" className="h-4 w-7 border-2 border-red-700 bg-red-50" />
+        Overdue
+      </span>
+      <span className={item}>
+        <span aria-hidden="true" className="h-4 w-7" style={{ background: STRIPES }} />
+        Leave / in the shop / service due
+      </span>
+      <span className={item}>
+        <span aria-hidden="true" className="h-4 w-7 border border-line bg-white" />
+        Free
+      </span>
+    </div>
+  )
+}
 
 type Props = {
-  rows: TimelineRow[]
-  // First column header, e.g. "Driver".
+  sections: TimelineSection[]
+  // Header of the label column, e.g. "Resource".
   columnLabel: string
   view: 'day' | 'week'
   from: number
@@ -33,7 +81,7 @@ type Props = {
   now: number
 }
 
-function ScheduleTimeline({ rows, columnLabel, view, from, to, now }: Props) {
+function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props) {
   const navigate = useNavigate()
   const pct = (t: number) => ((Math.min(Math.max(t, from), to) - from) / (to - from)) * 100
   const ticks =
@@ -51,131 +99,142 @@ function ScheduleTimeline({ rows, columnLabel, view, from, to, now }: Props) {
             timeZone: 'Asia/Manila',
           }),
         }))
-  // Faint hour lines between the labelled ones (every 6 h in week view).
-  const minorStep = view === 'day' ? HOUR_MS : 6 * HOUR_MS
-  const minorLines = Array.from({ length: Math.round((to - from) / minorStep) }, (_, i) => from + i * minorStep)
+  // Faint hour lines (every 6 h in week view), drawn as a background.
+  const gridCount = view === 'day' ? 24 : 28
+  const trackGrid = {
+    backgroundImage: 'linear-gradient(to right,#e2e8f0 1px,transparent 1px)',
+    backgroundSize: `calc(100% / ${gridCount}) 100%`,
+  }
   const nowInWindow = now >= from && now < to
 
   return (
-    <>
-      <div className="mt-4 overflow-x-auto border border-slate-200 bg-white">
-        <div className="min-w-[760px]">
-          {/* Time axis */}
-          <div className="flex border-b-2 border-slate-300 bg-slate-50 text-xs font-medium text-slate-600">
-            <div className="w-44 shrink-0 border-r border-slate-300 px-3 py-2.5 font-semibold text-slate-800">{columnLabel}</div>
-            <div className="relative h-10 flex-1">
-              {ticks.map((t) => (
-                <span key={t.at} className="absolute inset-y-0 border-l border-slate-300 pt-2.5 pl-1.5" style={{ left: `${pct(t.at)}%` }}>
-                  {t.label}
-                </span>
-              ))}
-              {nowInWindow && (
-                <span
-                  className="absolute bottom-0 -translate-x-1/2 bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white uppercase"
-                  style={{ left: `${pct(now)}%` }}
-                >
-                  Now
-                </span>
-              )}
-            </div>
+    <section aria-label="Schedule" className="card overflow-x-auto">
+      <div className="min-w-[860px]">
+        {/* Time axis */}
+        <div className="grid h-10 grid-cols-[240px_minmax(0,1fr)] border-b border-line">
+          <div className="flex items-center border-r border-line px-4 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+            {columnLabel}
           </div>
-
-          {rows.map((row, index) => (
-            <div
-              key={row.id}
-              className={`flex border-b border-slate-200 last:border-0 ${index % 2 === 1 ? 'bg-slate-50/70' : 'bg-white'}`}
-            >
-              <div className="flex w-44 shrink-0 flex-col justify-center border-r border-slate-300 px-3 leading-tight">
-                <span className="truncate text-sm font-semibold text-slate-900" title={row.label}>
-                  {row.label}
-                </span>
-                {row.sublabel && (
-                  <span className="truncate text-[11px] text-slate-500" title={row.sublabel}>
-                    {row.sublabel}
-                  </span>
-                )}
-              </div>
-              <div className="relative h-16 flex-1">
-                {minorLines.map((at) => (
-                  <span key={`m${at}`} className="absolute inset-y-0 border-l border-slate-100" style={{ left: `${pct(at)}%` }} />
-                ))}
-                {ticks.map((t) => (
-                  <span key={t.at} className="absolute inset-y-0 border-l border-slate-300" style={{ left: `${pct(t.at)}%` }} />
-                ))}
-                {row.bands.map((band) => {
-                  if (band.end <= from || band.start >= to) return null
-                  return (
-                    <div
-                      key={band.key}
-                      className="absolute inset-y-1.5 flex items-center border border-dashed border-slate-400 bg-slate-100 px-2 text-[11px] font-medium text-slate-600"
-                      style={{ left: `${pct(band.start)}%`, width: `${pct(band.end) - pct(band.start)}%` }}
-                    >
-                      {band.label}
-                    </div>
-                  )
-                })}
-                {row.bars.map((bar) => {
-                  const start = new Date(bar.trip_start_at).getTime()
-                  const end = busyUntil(bar, now) ?? new Date(bar.trip_end_at).getTime()
-                  if (end <= from || start >= to) return null
-                  // Still at the port on a storage-deadline booking: that
-                  // deadline replaces "overdue" until pickup.
-                  const storage = storageState({ deadline: bar.storage_deadline, status: bar.status, pickedUpAt: null, now })
-                  const storageNote =
-                    storage === 'pending' ? ' · PICK UP BY 11:59 PM' : storage === 'missed' ? ' · STORAGE MISSED' : ''
-                  const overdue = !storageNote && isOverdue(bar, now)
-                  return (
-                    <button
-                      key={bar.itinerary_id}
-                      type="button"
-                      onClick={() => navigate(`/dashboard/bookings?booking=${bar.booking_id}&trip=${bar.itinerary_id}`)}
-                      title={`Trip #${bar.itinerary_id} · ${bar.route}\n${formatSlot(bar.trip_start_at, bar.trip_end_at)}${overdue ? ' · OVERDUE' : ''}${storageNote}`}
-                      // 2px gap each side so back-to-back trips read as separate blocks.
-                      className={`absolute inset-y-2 flex flex-col justify-center overflow-hidden border-l-4 border-y border-r px-2 text-left leading-tight whitespace-nowrap shadow-sm hover:brightness-95 ${
-                        overdue || storage === 'missed' ? OVERDUE_STYLE : (BAR_STYLES[bar.status] ?? BAR_STYLES.Awaiting)
-                      }`}
-                      style={{
-                        left: `calc(${pct(start)}% + 2px)`,
-                        width: `calc(${Math.max(pct(end) - pct(start), 0.8)}% - 4px)`,
-                      }}
-                    >
-                      <span className="truncate text-[11px] font-bold">
-                        #{bar.itinerary_id} · {formatTime(bar.trip_start_at)} – {formatTime(bar.trip_end_at)}
-                        {overdue ? ' · OVERDUE' : ''}
-                        {storageNote}
-                      </span>
-                      <span className="truncate text-[11px] opacity-90">{bar.route}</span>
-                    </button>
-                  )
-                })}
-                {nowInWindow && (
-                  <span className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-red-600" style={{ left: `${pct(now)}%` }} aria-hidden="true" />
-                )}
-              </div>
-            </div>
-          ))}
+          <div className="relative">
+            {ticks.map((t) => (
+              <span
+                key={t.at}
+                className="absolute inset-y-0 flex items-center border-l border-line-card pl-1.5 text-xs leading-4 font-semibold whitespace-nowrap text-ink-secondary"
+                style={{ left: `${pct(t.at)}%` }}
+              >
+                {t.label}
+              </span>
+            ))}
+            {nowInWindow && (
+              <span
+                className="absolute bottom-0 z-10 -translate-x-1/2 bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white uppercase"
+                style={{ left: `${pct(now)}%` }}
+              >
+                Now
+              </span>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
-        {Object.entries({ Awaiting: 'Awaiting', Dispatched: 'Dispatched', PickedUp: 'Picked up', InTransit: 'In transit', Delivered: 'Delivered' }).map(
-          ([status, label]) => (
-            <span key={status} className="flex items-center gap-1.5">
-              <span className={`inline-block h-3.5 w-5 border border-l-4 ${BAR_STYLES[status]}`} /> {label}
-            </span>
-          ),
-        )}
-        <span className="flex items-center gap-1.5">
-          <span className={`inline-block h-3.5 w-5 border border-l-4 ${OVERDUE_STYLE}`} /> Overdue
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3.5 w-5 border border-dashed border-slate-400 bg-slate-100" /> Leave / in shop / service due
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3.5 border-l-2 border-red-600" /> Now
-        </span>
+        {sections.map((section, sectionIndex) => (
+          <div key={section.title || sectionIndex}>
+            {section.title && (
+              <div className="grid grid-cols-[240px_minmax(0,1fr)] border-b border-line bg-slate-100">
+                <span className="px-4 py-2 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+                  {section.title}
+                </span>
+                <span className="px-4 py-2 text-xs leading-4 font-medium text-ink-secondary">{section.note}</span>
+              </div>
+            )}
+            {section.rows.length === 0 && section.title && (
+              <p className="border-b border-slate-200 px-4 py-4 text-sm text-ink-muted">None on file.</p>
+            )}
+            {section.rows.map((row) => (
+              <div key={row.id} className="grid min-h-[72px] grid-cols-[240px_minmax(0,1fr)] border-b border-slate-200">
+                <div className="flex min-w-0 flex-col justify-center border-r border-line px-4 text-sm leading-5">
+                  <span className="truncate font-semibold text-ink" title={row.label}>
+                    {row.label}
+                  </span>
+                  {row.sublabel && (
+                    <span className="truncate text-[13px] leading-[18px] text-ink-muted" title={row.sublabel}>
+                      {row.sublabel}
+                    </span>
+                  )}
+                </div>
+                <div className="relative" style={trackGrid}>
+                  {row.bands.map((band) => {
+                    if (band.end <= from || band.start >= to) return null
+                    return (
+                      <div
+                        key={band.key}
+                        className="absolute inset-y-2 flex items-center overflow-hidden px-3.5 text-sm font-semibold whitespace-nowrap text-amber-900"
+                        style={{ left: `${pct(band.start)}%`, width: `${pct(band.end) - pct(band.start)}%`, background: STRIPES }}
+                        title={band.label}
+                      >
+                        {band.label}
+                      </div>
+                    )
+                  })}
+                  {row.bars.map((bar) => {
+                    const start = new Date(bar.trip_start_at).getTime()
+                    const end = busyUntil(bar, now) ?? new Date(bar.trip_end_at).getTime()
+                    if (end <= from || start >= to) return null
+                    // Still at the port on a storage-deadline booking: that
+                    // deadline replaces "overdue" until pickup.
+                    const storage = storageState({ deadline: bar.storage_deadline, status: bar.status, pickedUpAt: null, now })
+                    const storageNote =
+                      storage === 'pending' ? ' · Pick up by 11:59 PM' : storage === 'missed' ? ' · Storage missed' : ''
+                    const overdue = !storageNote && isOverdue(bar, now)
+                    const late = overdue || storage === 'missed'
+                    const delivered = bar.status === 'Delivered'
+                    const notStarted = bar.status === 'Awaiting'
+                    return (
+                      <button
+                        key={bar.itinerary_id}
+                        type="button"
+                        onClick={() => navigate(`/dashboard/bookings?booking=${bar.booking_id}&trip=${bar.itinerary_id}`)}
+                        aria-label={`Trip #${bar.itinerary_id}, ${formatSlot(bar.trip_start_at, bar.trip_end_at)}, ${bar.status}`}
+                        title={`Trip #${bar.itinerary_id} · ${bar.route}\n${formatSlot(bar.trip_start_at, bar.trip_end_at)}${overdue ? ' · OVERDUE' : ''}${storageNote}`}
+                        // 2px gap each side so back-to-back trips read as separate blocks.
+                        className={`absolute inset-y-2 flex flex-col justify-center gap-0.5 overflow-hidden border-2 px-2.5 py-1 text-left text-[13px] leading-[18px] whitespace-nowrap text-ink ${
+                          late
+                            ? 'border-red-700 bg-red-50 hover:bg-red-100'
+                            : notStarted
+                              ? 'border-primary bg-white hover:bg-primary-soft'
+                              : 'border-primary bg-primary-soft hover:bg-[#dbe5ee]'
+                        }`}
+                        style={{
+                          left: `calc(${pct(start)}% + 2px)`,
+                          width: `calc(${Math.max(pct(end) - pct(start), 0.8)}% - 4px)`,
+                        }}
+                      >
+                        <span className="flex items-center gap-1.5 font-bold">
+                          Trip #{bar.itinerary_id}
+                          {delivered && <Check />}
+                          {late && <span className="text-red-700">{overdue ? 'Overdue' : 'Storage missed'}</span>}
+                        </span>
+                        <span className="truncate text-ink-secondary">
+                          {formatTime(bar.trip_start_at)} – {formatTime(bar.trip_end_at)}
+                          {STATUS_WORD[bar.status] ? ` · ${STATUS_WORD[bar.status]}` : ''}
+                          {storage === 'pending' ? storageNote : ''} · {bar.route}
+                        </span>
+                      </button>
+                    )
+                  })}
+                  {nowInWindow && (
+                    <span
+                      className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-red-600"
+                      style={{ left: `${pct(now)}%` }}
+                      aria-hidden="true"
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
-    </>
+    </section>
   )
 }
 

@@ -13,7 +13,7 @@ import { phoneDigits, phoneError, phoneInput } from '../lib/quoteRequest'
 import { ACCOUNT_MAX as MAX, filterUsername, passwordError, usernameError } from '../lib/clientAccount'
 
 const fieldClasses =
-  'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
+  'w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 // Typing filters, so bad characters never get into the boxes at all.
@@ -169,7 +169,7 @@ function ClientLoginPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-8">
-      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border-2 border-line-card bg-white p-8">
         <div className="mx-auto flex h-12 w-12 items-center justify-center bg-navy text-xl font-bold text-white">
           D
         </div>

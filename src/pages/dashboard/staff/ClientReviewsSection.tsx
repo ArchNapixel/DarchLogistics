@@ -106,12 +106,12 @@ function ClientReviewsSection() {
         {reviews.map((review) => (
           <div
             key={review.review_id}
-            className="border border-slate-200 bg-white p-4 shadow-sm"
+            className="border-2 border-line-card bg-white p-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-baseline gap-2">
                 <p className="font-semibold text-slate-900">{review.client_name}</p>
-                <span className="text-xs text-slate-400">
+                <span className="text-[13px] text-ink-muted">
                   {review.total_bookings} booking{review.total_bookings === 1 ? '' : 's'}
                 </span>
                 {review.is_featured && (
@@ -124,7 +124,7 @@ function ClientReviewsSection() {
               <p className="mt-2 text-sm text-slate-700">{review.comment}</p>
             )}
             <div className="mt-2 flex items-center justify-between">
-              <p className="text-xs text-slate-400">
+              <p className="text-[13px] text-ink-muted">
                 Updated {formatDate(review.updated_at)}
               </p>
               <button

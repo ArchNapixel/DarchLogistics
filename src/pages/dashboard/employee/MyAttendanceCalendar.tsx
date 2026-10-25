@@ -36,13 +36,13 @@ function MyAttendanceCalendar({ employeeId, today }: { employeeId: number; today
   }, [employeeId, month, daysInMonth])
 
   return (
-    <div className="border border-slate-300 bg-white p-4 shadow-sm">
+    <div className="card p-4">
       <div className="flex items-center justify-between">
-        <button onClick={() => setMonth(shiftMonth(month, -1))} className="border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">&larr;</button>
+        <button onClick={() => setMonth(shiftMonth(month, -1))} className="border border-line-control px-3 py-1 text-sm text-ink-metric hover:bg-slate-50 rounded-[2px]">&larr;</button>
         <span className="text-sm font-semibold text-slate-900">
           {first.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
         </span>
-        <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth} className="border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">&rarr;</button>
+        <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth} className="border border-line-control px-3 py-1 text-sm text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]">&rarr;</button>
       </div>
 
       <div className="mt-3 grid grid-cols-7 gap-1 text-center text-sm">

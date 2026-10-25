@@ -10,15 +10,16 @@ import type { ReactNode } from 'react'
 //   <StatusBadge status={booking.status} />
 //   <StatusBadge status="Approved" label="Approved by Admin" />
 
+// Same chip colors as the redesign canvas (ok / warn / bad / info ...).
 const TONES = {
-  neutral: 'bg-slate-100 text-slate-700', // not started yet
-  info: 'bg-blue-100 text-blue-700', // confirmed / scheduled / on its way
-  progress: 'bg-purple-100 text-purple-700', // picked up
-  active: 'bg-orange-100 text-orange-700', // waiting on someone / under way
-  hold: 'bg-yellow-100 text-yellow-800', // paused / minor
-  good: 'bg-green-100 text-green-700', // done / approved / paid
-  bad: 'bg-red-100 text-red-700', // rejected / cancelled / problem
-  muted: 'bg-slate-100 text-slate-500', // voided / no longer counts
+  neutral: 'bg-slate-200 text-ink-secondary', // not started yet
+  info: 'bg-primary-soft text-primary', // confirmed / scheduled / on its way
+  progress: 'bg-violet-100 text-violet-800', // picked up
+  active: 'bg-orange-100 text-orange-800', // waiting on someone / under way
+  hold: 'bg-amber-100 text-amber-900', // paused / minor
+  good: 'bg-green-100 text-green-800', // done / approved / paid
+  bad: 'bg-red-100 text-red-800', // rejected / cancelled / problem
+  muted: 'bg-slate-100 text-ink-muted', // voided / no longer counts
 }
 
 const STATUS_TONE: Record<string, keyof typeof TONES> = {
@@ -64,6 +65,7 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   Absent: 'bad',
   Major: 'bad',
   Delinquent: 'bad',
+  Overdue: 'bad',
   Voided: 'muted',
 }
 
@@ -101,7 +103,7 @@ export default function StatusBadge({
         ? ICON_PATHS.cross
         : ICON_PATHS.clock
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 text-xs font-semibold ${tone}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[2px] px-2 py-0.5 text-xs font-semibold ${tone}`}>
       {icon && (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d={path} />

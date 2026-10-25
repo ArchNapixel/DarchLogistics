@@ -112,7 +112,7 @@ export default function DateRangePicker({
     year: 'numeric',
   })
   const navButton =
-    'flex h-8 w-8 items-center justify-center border-2 border-slate-300 text-slate-700 transition-colors hover:border-slate-500 hover:bg-slate-50'
+    'flex h-8 w-8 items-center justify-center border-2 border-line-control text-ink-metric transition-colors hover:border-slate-500 hover:bg-slate-50'
 
   const value = which === 'start' ? start : end
 
@@ -131,7 +131,7 @@ export default function DateRangePicker({
               ? 'border-red-400 hover:bg-red-50 focus:border-red-500'
               : isOpen
                 ? 'border-slate-500 bg-slate-50'
-                : 'border-slate-300 hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500'
+                : 'border-line-control hover:border-slate-500 hover:bg-slate-50 focus:border-primary'
           } ${value ? 'text-slate-900' : 'text-slate-400'}`}
         >
           {value ? formatDate(value) : 'Select a date'}
@@ -147,7 +147,7 @@ export default function DateRangePicker({
         <div
           role="dialog"
           aria-label="Choose a date"
-          className="absolute top-full left-0 z-20 mt-1 w-full max-w-sm border-2 border-slate-300 bg-white p-4 shadow-lg"
+          className="absolute top-full left-0 z-20 mt-1 w-full max-w-sm border-2 border-line-card bg-white p-4 border-line-card"
         >
           <div className="mb-3 flex items-center justify-between">
             <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className={navButton}>

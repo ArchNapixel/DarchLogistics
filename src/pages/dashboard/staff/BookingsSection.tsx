@@ -34,9 +34,12 @@ import TripsView from './TripsView'
 import BookingDetailModal from './BookingDetailModal'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatDate } from '../../../lib/format'
+import { formatDate, formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
-import { DetailPane, FilterButtons, ListBox, PageViewSwitch, SearchBox } from './BookingsTripsControls'
+import { FilterButtons, ListBox, PageViewSwitch, SearchBox } from './BookingsTripsControls'
+import BookingSummaryPane from './BookingSummaryPane'
+import { useAuth } from '../../../context/AuthContext'
+import { isAdmin } from '../../../lib/roles'
 
 export type Booking = {
   booking_id: number
@@ -113,6 +116,39 @@ type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
 // the booking as a pop-up (no room for two panes).
 const WIDE = '(min-width: 1024px)' // Tailwind's lg
 
+// Table spacing from the canvas board: 20px at the edges, 16px between columns.
+const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+const TD = 'px-2 py-2 first:pl-5 last:pr-5'
+const SUB = 'block truncate text-[13px] leading-[18px] text-ink-muted'
+
+function ArrowIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+      <path d="M5 12h14 M13 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+// The Payment column: "Paid", "₱12,000.00 due", "Not billed yet" (nothing
+// delivered yet), with a color for each.
+function paymentLabel(b: Booking): { text: string; tone: string } {
+  if (b.billable_amount <= 0) {
+    return b.amount_paid > 0
+      ? { text: `${formatMoney(b.amount_paid)} paid ahead`, tone: 'text-ink-secondary' }
+      : { text: b.status === 'Cancelled' ? 'Not billed' : 'Not billed yet', tone: 'text-ink-muted' }
+  }
+  if (b.balance_due <= 0) return { text: 'Paid', tone: 'text-green-800' }
+  return { text: `${formatMoney(b.balance_due)} due`, tone: 'text-ink-secondary' }
+}
+
 function matchesStatus(status: string, filter: StatusFilter) {
   if (filter === 'All') return true
   if (filter === 'Active') return status !== 'Delivered' && status !== 'Cancelled'
@@ -120,6 +156,7 @@ function matchesStatus(status: string, filter: StatusFilter) {
 }
 
 function BookingsSection() {
+  const { role } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -151,7 +188,7 @@ function BookingsSection() {
   const linkedBooking = linkedBookingId
     ? (bookings.find((b) => b.booking_id === linkedBookingId) ?? null)
     : null
-  const shownBooking = selectedBooking ?? linkedBooking
+  const shownBooking = selectedBooking ?? (split ? null : linkedBooking)
 
   function closeDetail() {
     setSelectedBooking(null)
@@ -460,68 +497,123 @@ function BookingsSection() {
               </button>
             </p>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-start">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_460px] lg:items-start">
               <ListBox
                 pager={paged.pager}
                 summary={`${visibleBookings.length} ${filterWord}${visibleBookings.length === 1 ? 'booking' : 'bookings'}`}
               >
-                <ul>
-                  {paged.rows.map((booking) => {
-                    const active = split && paneBooking?.booking_id === booking.booking_id
-                    return (
-                      <li key={booking.booking_id} className="border-b border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => openBooking(booking)}
-                          aria-current={active || undefined}
-                          className={`block w-full px-4 py-3 text-left text-sm ${
-                            active ? 'bg-slate-100' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-start justify-between gap-2">
-                            <span className="truncate">
-                              <span className="font-semibold text-slate-900">
-                                #{booking.booking_id} {booking.client_name}
+                <div className="overflow-x-auto">
+                  {/* Header row style comes from index.css (thead th). */}
+                  <table className="w-full min-w-[900px] table-fixed text-left text-sm text-ink-metric">
+                    <colgroup>
+                      {['150px', '110px', '', '150px', '140px', '110px', '52px'].map((width, i) => (
+                        <col key={i} style={width ? { width } : undefined} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className={TH}>Booking</th>
+                        <th className={TH}>Client</th>
+                        <th className={TH}>Pickup → Delivery</th>
+                        <th className={TH}>Rate</th>
+                        <th className={TH}>Status</th>
+                        <th className={TH}>Payment</th>
+                        <th className={TH}>
+                          <span className="sr-only">Open</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.rows.map((booking) => {
+                        const active = split && paneBooking?.booking_id === booking.booking_id
+                        const payment = paymentLabel(booking)
+                        return (
+                          <tr
+                            key={booking.booking_id}
+                            onClick={() => openBooking(booking)}
+                            aria-current={active || undefined}
+                            className={`h-[60px] cursor-pointer border-b border-slate-200 ${
+                              active ? 'bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <td className={TD}>
+                              <span className="block font-bold text-ink">#{booking.booking_id}</span>
+                              <span className={SUB}>
+                                {booking.reference_code && (
+                                  <span className="font-mono text-xs font-semibold tracking-[0.02em]">{booking.reference_code} · </span>
+                                )}
+                                {booking.date ? formatDate(booking.date) : '—'}
                               </span>
-                              {booking.date && <span className="text-primary"> · {formatDate(booking.date)}</span>}
-                            </span>
-                            <StatusBadge status={booking.status} />
-                          </span>
-                          <span className="mt-0.5 block truncate text-slate-800" title={booking.pickup_location}>
-                            {booking.pickup_location}
-                          </span>
-                          <span className="block truncate text-slate-500" title={booking.delivery_location}>
-                            → {booking.delivery_location}
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
+                            </td>
+                            <td className={`${TD} truncate font-semibold`} title={booking.client_name}>
+                              {booking.client_name}
+                            </td>
+                            <td className={TD}>
+                              <span className="block truncate" title={booking.pickup_location}>
+                                {booking.pickup_location}
+                              </span>
+                              <span className="flex items-center gap-1.5 text-ink-muted">
+                                <ArrowIcon />
+                                <span className="truncate" title={booking.delivery_location}>
+                                  {booking.delivery_location}
+                                </span>
+                              </span>
+                            </td>
+                            <td className={TD}>
+                              <span className="block font-semibold tabular-nums">
+                                {booking.rate !== null ? formatMoney(booking.rate) : '—'}
+                              </span>
+                              <span className={SUB}>
+                                {booking.completed_trips}/{booking.total_trips} {booking.total_trips === 1 ? 'trip' : 'trips'}
+                                {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''}
+                              </span>
+                            </td>
+                            <td className={TD}>
+                              <StatusBadge status={booking.status} icon />
+                            </td>
+                            <td className={`${TD} font-medium ${payment.tone}`}>{payment.text}</td>
+                            <td className={TD}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openBooking(booking)
+                                }}
+                                aria-label={`Open booking #${booking.booking_id}`}
+                                className="flex h-11 w-11 items-center justify-center text-primary"
+                              >
+                                <ChevronIcon />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </ListBox>
               {split && paneBooking && (
-                <DetailPane>
-                  {/* key = a fresh card per booking */}
-                  <BookingDetailModal
-                    key={paneBooking.booking_id}
-                    booking={paneBooking}
-                    inline
-                    onChanged={loadBookings}
-                    highlightTripId={paneHighlightTrip}
-                  />
-                </DetailPane>
+                <BookingSummaryPane
+                  // key = a fresh panel (and trip load) per booking
+                  key={paneBooking.booking_id}
+                  booking={paneBooking}
+                  highlightTripId={paneHighlightTrip}
+                  canRecordPayment={isAdmin(role)}
+                  onOpenFull={() => setSelectedBooking(paneBooking)}
+                />
               )}
             </div>
           )}
         </div>
       )}
 
-      {/* Pop-up on phones; wide screens use the pane. */}
-      {shownBooking && !split && (
+      {/* The full booking card: "Full Details" on wide screens, any row on
+          phones (no room for the side panel). */}
+      {shownBooking && (
         <BookingDetailModal
           booking={shownBooking}
           // Only when opened from a ?trip= link, not a row click.
-          highlightTripId={selectedBooking ? null : linkedTripId}
+          highlightTripId={shownBooking.booking_id === linkedBookingId ? linkedTripId : null}
           onClose={closeDetail}
           onChanged={() => {
             closeDetail()

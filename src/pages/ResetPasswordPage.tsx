@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
 const fieldClasses =
-  'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200'
+  'w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 const MIN_LENGTH = 6 // Supabase's default minimum; raise it in the dashboard if you change it there
 
@@ -47,7 +47,7 @@ function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border-2 border-line-card bg-white p-8">
         <h1 className="text-center text-xl font-bold text-slate-900">
           Choose a new password
         </h1>

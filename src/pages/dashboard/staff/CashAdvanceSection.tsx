@@ -1,15 +1,17 @@
 // CashAdvanceSection (Admin, Human Resource -> Cash Advance): one page for
 // everything cash-advance related that used to sit on the Payroll page --
 // issue an advance directly, review employees' pending requests, and the
-// full ledger. Just composes the existing components; no new logic.
+// full ledger. Just composes the existing components; no new logic. Laid
+// out like the canvas board: totals on top, the ledger table, and the
+// Issue Cash Advance form as a panel on the right.
 import { useState } from 'react'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import CashAdvanceRequestsSection from './CashAdvanceRequestsSection'
 import CashAdvanceLedgerSection from './CashAdvanceLedgerSection'
-import PageHeader, { SectionHeader } from '../../../components/PageHeader'
+import PageHeader from '../../../components/PageHeader'
+import { showToast } from '../../../components/Toast'
 
 function CashAdvanceSection() {
-  const [showIssueAdvance, setShowIssueAdvance] = useState(false)
   // Bumped after issuing so the ledger remounts and reloads
   const [ledgerKey, setLedgerKey] = useState(0)
 
@@ -17,33 +19,26 @@ function CashAdvanceSection() {
     <div>
       <PageHeader
         title="Cash Advances"
-        subtitle="Issue advances, review employee requests and track balances."
-        actions={
-          <button
-            onClick={() => setShowIssueAdvance(true)}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
-            Issue Cash Advance
-          </button>
-        }
+        subtitle="Money released to employees ahead of payday, recovered through payroll deductions."
       />
 
-      <CashAdvanceRequestsSection />
+      {/* Employees' own requests waiting for a decision (shows nothing when none). */}
+      <div className="mb-4">
+        <CashAdvanceRequestsSection />
+      </div>
 
-      <section className="mt-6 border-t border-slate-200 pt-6">
-        <SectionHeader title="Cash Advance Ledger" />
-        <CashAdvanceLedgerSection key={ledgerKey} />
-      </section>
-
-      {showIssueAdvance && (
-        <IssueCashAdvanceModal
-          onClose={() => setShowIssueAdvance(false)}
-          onIssued={() => {
-            setShowIssueAdvance(false)
-            setLedgerKey((key) => key + 1)
-          }}
-        />
-      )}
+      <CashAdvanceLedgerSection
+        key={ledgerKey}
+        side={
+          <IssueCashAdvanceModal
+            inline
+            onIssued={() => {
+              showToast('Cash advance issued.')
+              setLedgerKey((key) => key + 1)
+            }}
+          />
+        }
+      />
     </div>
   )
 }

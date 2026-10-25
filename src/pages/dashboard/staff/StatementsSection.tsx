@@ -60,103 +60,160 @@ function StatementsSection() {
   }, [clientId, from, to])
 
   const clientName = clients.find((c) => String(c.client_id) === clientId)?.client_name ?? ''
-  const fieldClass = 'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900'
+  const fieldClass =
+    'min-h-11 rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-medium text-ink-metric focus:border-primary'
+  const filterLabel = 'flex items-center gap-2.5 text-sm font-medium text-ink-secondary'
+  const printIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6 M6 18H4v-7h16v7h-2 M6 14h12v7H6z" />
+    </svg>
+  )
+  const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+  const TD = 'px-2 py-2 first:pl-5 last:pr-5'
 
   return (
     <div>
       {/* Controls: not printed */}
       <PageHeader
         title="Statements"
-        subtitle="Statement of account for one client and period."
-        actions={<>
-        <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Client" value={clientId} onChange={(e) => setClientId(e.target.value)} className={fieldClass}>
-            <option value="">Choose a client...</option>
-            {clients.map((c) => (
-              <option key={c.client_id} value={c.client_id}>{c.client_name}</option>
-            ))}
-          </select>
-          <label htmlFor="stmt-from" className="text-sm font-medium text-slate-700">From</label>
-          <input id="stmt-from" type="date" value={from} max={to || today} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
-          <label htmlFor="stmt-to" className="text-sm font-medium text-slate-700">To</label>
-          <input id="stmt-to" type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
-          <button
-            onClick={() => window.print()}
-            disabled={!statement}
-            className="btn-primary px-3 py-1.5 text-sm font-medium"
-          >
-            Print
-          </button>
-        </div>
-        </>}
+        subtitle="Statement of account for one client: every charge and payment, with a running balance."
+        actions={
+          <div className="flex gap-3">
+            <button onClick={() => window.print()} disabled={!statement} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
+              {printIcon}
+              Print
+            </button>
+            {/* The browser's print dialog has "Save as PDF". */}
+            <button onClick={() => window.print()} disabled={!statement} className="btn-primary flex items-center gap-2 px-5 text-sm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12 M7 10l5 5 5-5 M5 21h14" />
+              </svg>
+              Save as PDF
+            </button>
+          </div>
+        }
       />
 
-      {error && <p className="mt-4 text-red-700 print:hidden">{error}</p>}
-      {!clientId && <p className="mt-4 text-slate-500 print:hidden">Choose a client to see their statement.</p>}
-      {loading && <p className="mt-4 text-slate-500 print:hidden">Building statement...</p>}
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3 print:hidden">
+        <label className={filterLabel}>
+          Client
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)} className={`${fieldClass} w-56`}>
+            <option value="">Choose a client...</option>
+            {clients.map((c) => (
+              <option key={c.client_id} value={c.client_id}>
+                {c.client_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={filterLabel}>
+          From
+          <input type="date" value={from} max={to || today} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
+        </label>
+        <label className={filterLabel}>
+          To
+          <input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
+        </label>
+      </div>
+
+      {error && <p className="mb-4 text-red-700 print:hidden">{error}</p>}
+      {!clientId && <p className="text-ink-muted print:hidden">Choose a client to see their statement.</p>}
+      {loading && <p className="text-ink-muted print:hidden">Building statement...</p>}
 
       {statement && !loading && (
-        <div className="mt-4 border border-slate-200 bg-white p-6 shadow-sm print:mt-0 print:border-0 print:p-0 print:shadow-none">
-          <div className="flex flex-wrap items-start justify-between gap-2">
+        <section aria-label="Statement of account" className="card flex flex-col print:border-0">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-6 py-4 print:px-0">
             <div>
-              <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>
-              <p className="text-xs text-slate-500">{COMPANY.address} · {COMPANY.phone}</p>
-              <h3 className="mt-3 text-lg font-bold text-slate-900">Statement of Account</h3>
+              <p className="text-sm font-bold text-ink">{COMPANY.name}</p>
+              <p className="text-[13px] text-ink-muted">
+                {COMPANY.address} · {COMPANY.phone}
+              </p>
+              <h2 className="mt-3 text-lg leading-[26px] font-bold text-ink">Statement of Account · {clientName}</h2>
             </div>
-            <div className="text-right text-sm text-slate-600">
-              <p className="font-semibold text-slate-900">{clientName}</p>
-              <p>{from} to {to}</p>
-              <p className="text-xs">Prepared {today}</p>
+            <div className="text-right text-sm text-ink-secondary">
+              <p>
+                <strong className="text-ink">Period</strong> {formatDate(from)} – {formatDate(to)}
+              </p>
+              <p>
+                <strong className="text-ink">Generated</strong> {formatDate(today)}
+              </p>
             </div>
           </div>
 
-          <table className="mt-5 w-full text-left text-sm">
-            <thead className="border-b border-slate-300 text-slate-500">
-              <tr>
-                <th className="py-2 pr-3 font-medium">Date</th>
-                <th className="py-2 pr-3 font-medium">Booking</th>
-                <th className="py-2 pr-3 font-medium">Description</th>
-                <th className="py-2 pr-3 text-right font-medium">Billed</th>
-                <th className="py-2 pr-3 text-right font-medium">Paid</th>
-                <th className="py-2 text-right font-medium">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-slate-100 font-medium text-slate-900">
-                <td className="py-2 pr-3" colSpan={5}>Opening balance (as of {from})</td>
-                <td className="py-2 text-right">{formatMoney(statement.opening)}</td>
-              </tr>
-              {statement.lines.length === 0 && (
+          <div className="grid grid-cols-2 gap-px border-b border-line bg-line sm:grid-cols-4">
+            {(
+              [
+                ['Opening balance', statement.opening, ''],
+                ['Charges', statement.billed, ''],
+                ['Payments', statement.paid, ''],
+                ['Closing balance', statement.closing, 'text-primary'],
+              ] as const
+            ).map(([label, amount, tone]) => (
+              <div key={label} className="bg-white px-6 py-3.5">
+                <p className="text-sm font-medium text-ink-secondary">{label}</p>
+                <p className={`text-[22px] leading-[30px] font-bold tabular-nums ${tone || 'text-ink'}`}>{formatMoney(amount)}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm text-ink-metric">
+              <thead>
                 <tr>
-                  <td colSpan={6} className="py-3 text-slate-500">Nothing was billed or paid in this period.</td>
+                  <th className={TH}>Date</th>
+                  <th className={TH}>Booking</th>
+                  <th className={TH}>Description</th>
+                  <th className={`${TH} text-right`}>Charges</th>
+                  <th className={`${TH} text-right`}>Payments</th>
+                  <th className={`${TH} text-right`}>Balance</th>
                 </tr>
-              )}
-              {statement.lines.map((line, i) => (
-                <tr key={i} className="border-b border-slate-100 align-top">
-                  <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatDate(line.date)}</td>
-                  <td className="py-2 pr-3 text-slate-600">#{line.booking_id}</td>
-                  <td className="py-2 pr-3 text-slate-900">{line.description}</td>
-                  <td className="py-2 pr-3 text-right text-slate-900">{line.amount > 0 ? formatMoney(line.amount) : ''}</td>
-                  <td className="py-2 pr-3 text-right text-slate-900">{line.amount < 0 ? formatMoney(-line.amount) : ''}</td>
-                  <td className="py-2 text-right text-slate-900">{formatMoney(line.balance)}</td>
+              </thead>
+              <tbody>
+                <tr className="h-12 border-b border-slate-200 font-semibold">
+                  <td className={TD} colSpan={5}>
+                    Opening balance (as of {formatDate(from)})
+                  </td>
+                  <td className={`${TD} text-right tabular-nums`}>{formatMoney(statement.opening)}</td>
                 </tr>
-              ))}
-              <tr className="border-t border-slate-300 font-semibold text-slate-900">
-                <td className="py-2 pr-3" colSpan={3}>Totals for the period</td>
-                <td className="py-2 pr-3 text-right">{formatMoney(statement.billed)}</td>
-                <td className="py-2 pr-3 text-right">{formatMoney(statement.paid)}</td>
-                <td className="py-2"></td>
-              </tr>
-              <tr className="font-bold text-slate-900">
-                <td className="py-2 pr-3" colSpan={5}>Closing balance (as of {to}) — amount due</td>
-                <td className="py-2 text-right">{formatMoney(statement.closing)}</td>
-              </tr>
-            </tbody>
-          </table>
+                {statement.lines.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-4 text-ink-muted">
+                      Nothing was billed or paid in this period.
+                    </td>
+                  </tr>
+                )}
+                {statement.lines.map((line, i) => (
+                  <tr key={i} className="h-12 border-b border-slate-200 align-top">
+                    <td className={`${TD} whitespace-nowrap text-ink-secondary`}>{formatDate(line.date)}</td>
+                    <td className={`${TD} text-ink-secondary`}>#{line.booking_id}</td>
+                    <td className={TD}>{line.description}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{line.amount > 0 ? formatMoney(line.amount) : ''}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{line.amount < 0 ? formatMoney(-line.amount) : ''}</td>
+                    <td className={`${TD} text-right font-semibold tabular-nums`}>{formatMoney(line.balance)}</td>
+                  </tr>
+                ))}
+                <tr className="h-12 border-b border-slate-200 font-semibold">
+                  <td className={TD} colSpan={3}>
+                    Totals for the period
+                  </td>
+                  <td className={`${TD} text-right tabular-nums`}>{formatMoney(statement.billed)}</td>
+                  <td className={`${TD} text-right tabular-nums`}>{formatMoney(statement.paid)}</td>
+                  <td className={TD}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-slate-50 px-6 py-4">
+            <span className="text-sm font-semibold text-ink">
+              Closing balance (as of {formatDate(to)}){statement.closing > 0 ? ' — amount due' : ''}
+            </span>
+            <span className="text-2xl leading-8 font-bold text-ink tabular-nums">{formatMoney(statement.closing)}</span>
+          </div>
           {statement.closing < 0 && (
-            <p className="mt-2 text-sm text-slate-600">A negative balance means the client has paid ahead (credit).</p>
+            <p className="px-6 pb-4 text-sm text-ink-secondary">A negative balance means the client has paid ahead (credit).</p>
           )}
-        </div>
+        </section>
       )}
     </div>
   )

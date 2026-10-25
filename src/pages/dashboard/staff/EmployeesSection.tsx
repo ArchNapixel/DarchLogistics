@@ -5,16 +5,18 @@
 // as place-name lookups in DriverTasks.tsx / MyBookingsSection.tsx).
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
 import EmployeeDetailModal from './EmployeeDetailModal'
+import IssueCashAdvanceModal from './IssueCashAdvanceModal'
+import { showToast } from '../../../components/Toast'
+import { toManilaDate } from '../../../lib/payslip'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatDate } from '../../../lib/format'
+import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 // Only these positions have trips/work orders to show a detail view
@@ -39,6 +41,11 @@ function extractRateAmount(row: Record<string, unknown>, rateType: string) {
   return typeof value === 'number' ? value : null
 }
 
+// Filter row: "Position [▾]  Status [▾]  Search [   ]" (redesign canvas).
+const FILTER_LABEL = 'flex items-center gap-2.5 text-sm font-medium text-ink-secondary'
+const FILTER_CONTROL =
+  'min-h-11 rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-medium text-ink-metric focus:border-primary'
+
 const TABS = ['Active', 'Deactivated'] as const
 type Tab = (typeof TABS)[number]
 
@@ -53,7 +60,7 @@ function expiryLabel(date: string | null) {
 }
 
 function expiryClass(date: string | null) {
-  if (!date) return 'text-slate-400'
+  if (!date) return 'text-ink-muted'
   const days = Math.ceil(
     (new Date(`${date}T00:00:00`).getTime() - Date.now()) / 86400000,
   )
@@ -61,7 +68,218 @@ function expiryClass(date: string | null) {
     ? 'font-medium text-red-700'
     : days <= 30
       ? 'font-medium text-orange-700'
-      : 'text-slate-600'
+      : 'text-ink-metric'
+}
+
+// Table spacing from the canvas board: 20px at the edges, 16px between columns.
+const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+const TD = 'px-2 py-2 first:pl-5 last:pr-5'
+const LABEL = 'text-[13px] leading-[18px] font-medium text-ink-muted'
+const VALUE = 'm-0 text-[15px] leading-[22px] font-medium text-ink'
+const GROUP = 'mb-2.5 flex justify-between gap-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink'
+
+function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? 'col-span-full' : ''}>
+      <dt className={LABEL}>{label}</dt>
+      <dd className={VALUE}>{children ?? '—'}</dd>
+    </div>
+  )
+}
+
+// "Age 34" from a YYYY-MM-DD birthday.
+function age(dateOfBirth: string | null) {
+  if (!dateOfBirth) return null
+  const born = new Date(`${dateOfBirth}T00:00:00`)
+  const now = new Date()
+  let years = now.getFullYear() - born.getFullYear()
+  if (now < new Date(now.getFullYear(), born.getMonth(), born.getDate())) years--
+  return years
+}
+
+// Today's trips of one driver / helper ("Trip #91 · 6 AM – 9 AM · MAD 1957").
+function useTodaysTrips(employeeId: number, enabled: boolean) {
+  const [trips, setTrips] = useState<{ itinerary_id: number; slot: string; plate: string | null }[] | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    async function load() {
+      const today = toManilaDate(new Date())
+      const { data: crew } = await supabase
+        .from('itinerary_crews')
+        .select('itinerary_id')
+        .eq('employee_id', employeeId)
+        .eq('is_active', true)
+      const ids = (crew ?? []).map((c) => c.itinerary_id)
+      if (ids.length === 0) {
+        if (!cancelled) setTrips([])
+        return
+      }
+      const { data: rows } = await supabase
+        .from('itineraries')
+        .select('itinerary_id, trip_start_at, trip_end_at, plate_number, itinerary_status')
+        .in('itinerary_id', ids)
+        .eq('trip_date_from', today)
+        .neq('itinerary_status', 'Cancelled')
+        .order('trip_start_at')
+      if (cancelled) return
+      setTrips(
+        (rows ?? []).map((r) => ({
+          itinerary_id: r.itinerary_id,
+          slot: r.trip_start_at ? formatSlot(r.trip_start_at, r.trip_end_at).replace(/^[^,]+, \d{4}, /, '') : 'no time set',
+          plate: r.plate_number,
+        })),
+      )
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [employeeId, enabled])
+  return trips
+}
+
+// The right-hand panel (the canvas's employee card): employment, contact,
+// licence and medical exam, today's trips, and the actions.
+function EmployeePanel({
+  employee,
+  hasLogin,
+  onEdit,
+  onSetStatus,
+  onSetUpAccount,
+  onCashAdvance,
+  onHistory,
+}: {
+  employee: Employee
+  hasLogin: boolean
+  onEdit: () => void
+  onSetStatus: (status: 'Deactivated' | 'Active') => void
+  onSetUpAccount: () => void
+  onCashAdvance: () => void
+  onHistory: (() => void) | null
+}) {
+  const info = employee.editable
+  const onTrips = employee.position === 'Driver' || employee.position === 'Helper'
+  const trips = useTodaysTrips(employee.employee_id, onTrips)
+  const rate = RATE_TYPES.find((r) => r.value === info.rate_type)
+  const inactive = employee.status === 'Deactivated' || employee.status === 'Terminated'
+  const years = age(info.date_of_birth)
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' })
+
+  return (
+    <aside aria-labelledby="em-title" className="card flex flex-col xl:sticky xl:top-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-5 py-4">
+        <h2 id="em-title" className="text-lg leading-[26px] font-bold text-ink">
+          {employee.name}
+        </h2>
+        <span className="rounded-[2px] bg-slate-200 px-2 py-0.5 text-xs font-semibold text-ink-secondary">{employee.position}</span>
+        <StatusBadge status={employee.status} icon />
+      </div>
+
+      <div className="flex flex-col gap-[18px] px-5 py-4">
+        <section>
+          <h3 className={GROUP}>Employment</h3>
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+            <Field label="Employee ID">#{employee.employee_id}</Field>
+            <Field label="Date Hired">{employee.hire_date ? formatDate(employee.hire_date) : null}</Field>
+            <Field label="Rate Type">{rate?.label ?? info.rate_type}</Field>
+            <Field label={rate?.column ? (rate.label.charAt(0).toUpperCase() + rate.label.slice(1)) : 'Pay'}>
+              {rate?.column ? (info.rate_amount !== null ? formatMoney(info.rate_amount) : null) : 'Commission % of trip rate'}
+            </Field>
+            <Field label="Portal Login">{hasLogin ? 'Has login' : 'No login yet'}</Field>
+          </dl>
+        </section>
+
+        <section>
+          <h3 className={GROUP}>Contact</h3>
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+            <Field label="Contact No.">{info.phone_number}</Field>
+            <Field label="Birthdate · Age">
+              {info.date_of_birth ? `${formatDate(info.date_of_birth)}${years !== null ? ` · ${years}` : ''}` : null}
+            </Field>
+            <Field label="Address" wide>
+              {[info.address, info.city, info.province].filter(Boolean).join(', ') || null}
+            </Field>
+            <Field label="Emergency Contact" wide>
+              {[info.emergency_contact_name, info.emergency_contact_number].filter(Boolean).join(' · ') || null}
+            </Field>
+          </dl>
+        </section>
+
+        {employee.position === 'Driver' && (
+          <section>
+            <h3 className={GROUP}>
+              <span>Driver License &amp; Medical Exam</span>
+              <button type="button" onClick={onEdit} className="font-semibold text-primary hover:underline">
+                Update
+              </button>
+            </h3>
+            <dl className="grid grid-cols-3 gap-x-5 gap-y-3">
+              <Field label="License No.">{info.driver_license_number}</Field>
+              <Field label="License Expires">
+                <span className={expiryClass(info.driver_license_expiry_date)}>{expiryLabel(info.driver_license_expiry_date)}</span>
+              </Field>
+              <Field label="Medical Exam Expires">
+                <span className={expiryClass(info.medical_exam_expiry_date)}>{expiryLabel(info.medical_exam_expiry_date)}</span>
+              </Field>
+            </dl>
+          </section>
+        )}
+
+        {onTrips && (
+          <section className="border border-line bg-slate-50 px-3.5 py-3">
+            <h3 className="mb-1 text-sm font-semibold text-ink">Today, {today}</h3>
+            <div className="text-sm text-ink-secondary">
+              {trips === null
+                ? 'Loading…'
+                : trips.length === 0
+                  ? 'No trips today.'
+                  : trips.map((t) => (
+                      <div key={t.itinerary_id}>
+                        Trip #{t.itinerary_id} · {t.slot}
+                        {t.plate ? ` · ${t.plate}` : ''}
+                      </div>
+                    ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
+        {inactive ? (
+          <button type="button" onClick={() => onSetStatus('Active')} className="btn-secondary px-4 text-sm font-medium">
+            Reactivate
+          </button>
+        ) : (
+          <button type="button" onClick={() => onSetStatus('Deactivated')} className="btn-danger px-4 text-sm">
+            Deactivate…
+          </button>
+        )}
+        <span className="flex-1" />
+        {onHistory && (
+          <button type="button" onClick={onHistory} className="btn-secondary px-4 text-sm font-medium">
+            {employee.position === 'Mechanic' ? 'Work History' : 'Trip History'}
+          </button>
+        )}
+        {!hasLogin && !inactive && (
+          <button type="button" onClick={onSetUpAccount} className="btn-secondary px-4 text-sm font-medium">
+            Set Up Account
+          </button>
+        )}
+        {!inactive && (
+          <button type="button" onClick={onCashAdvance} className="btn-secondary px-4 text-sm font-medium">
+            Add Cash Advance
+          </button>
+        )}
+        <button type="button" onClick={onEdit} className="btn-primary flex items-center gap-2 px-5 text-sm">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
+          </svg>
+          Edit
+        </button>
+      </div>
+    </aside>
+  )
 }
 
 function EmployeesSection() {
@@ -79,6 +297,10 @@ function EmployeesSection() {
     null,
   )
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
+  // The employee shown in the right panel (null = first on the page), and
+  // the one a cash advance is being issued to.
+  const [paneId, setPaneId] = useState<number | null>(null)
+  const [cashAdvanceFor, setCashAdvanceFor] = useState<Employee | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [positionFilter, setPositionFilter] = useState('')
@@ -331,6 +553,7 @@ function EmployeesSection() {
 
   // One page at a time (back to page 1 when the filters change).
   const paged = usePaged(filteredEmployees, `${activeTab}|${searchTerm}|${positionFilter}|${statusFilter}`)
+  const paneEmployee = paged.rows.find((e) => e.employee_id === paneId) ?? paged.rows[0] ?? null
   return (
     <div>
       <PageHeader
@@ -339,14 +562,17 @@ function EmployeesSection() {
         actions={
           <button
             onClick={() => setShowAddEmployee(true)}
-            className="btn-primary px-4 py-2 text-sm font-medium"
+            className="btn-primary flex items-center gap-2 px-5 text-sm"
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14 M5 12h14" />
+            </svg>
             Add Employee
           </button>
         }
       />
 
-      <div className="flex gap-2 border-b border-slate-200">
+      <div className="flex flex-wrap gap-2">
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -354,10 +580,10 @@ function EmployeesSection() {
               setActiveTab(tab)
               setStatusFilter('')
             }}
-            className={`px-4 py-2 text-sm font-medium ${
+            className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${
               activeTab === tab
-                ? 'border-b-2 border-slate-900 text-slate-900'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {tab}
@@ -372,23 +598,14 @@ function EmployeesSection() {
       )}
 
       {!loading && !error && employees.length > 0 && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <label>
-            <span className="sr-only">Search employee names</span>
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search names..."
-              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-            />
-          </label>
-          <label>
-            <span className="sr-only">Filter by position</span>
+        // Filters: Position, Status, Search -- each with a visible label.
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <label className={FILTER_LABEL}>
+            Position
             <select
               value={positionFilter}
               onChange={(e) => setPositionFilter(e.target.value)}
-              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className={`${FILTER_CONTROL} w-44`}
             >
               <option value="">All positions</option>
               {positions.map((position) => (
@@ -398,12 +615,12 @@ function EmployeesSection() {
               ))}
             </select>
           </label>
-          <label>
-            <span className="sr-only">Filter by status</span>
+          <label className={FILTER_LABEL}>
+            Status
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className={`${FILTER_CONTROL} w-40`}
             >
               <option value="">All statuses</option>
               {statuses.map((status) => (
@@ -412,6 +629,16 @@ function EmployeesSection() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className={FILTER_LABEL}>
+            Search
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Employee name"
+              className={`${FILTER_CONTROL} w-60 font-normal placeholder:text-ink-muted`}
+            />
           </label>
         </div>
       )}
@@ -427,88 +654,127 @@ function EmployeesSection() {
       )}
 
       {!loading && !error && filteredEmployees.length > 0 && (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Position</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Hire Date</th>
-                <th className="px-4 py-3 font-medium">License Expiry</th>
-                <th className="px-4 py-3 font-medium">Medical Exam</th>
-                <th className="px-4 py-3 font-medium">Account</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.rows.map((employee) => {
-                const isLinked = linkedEmployeeIds.has(employee.employee_id)
-                return (
-                  <tr
-                    key={employee.employee_id}
-                    className="border-b border-slate-100 last:border-0"
-                  >
-                    <td className="px-4 py-3 text-slate-900">
-                      {DETAIL_VIEW_POSITIONS.has(employee.position) ? (
-                        <button
-                          onClick={() => setDetailEmployee(employee)}
-                          className="font-medium text-slate-900 underline decoration-slate-300 hover:text-slate-700"
-                        >
-                          {employee.name}
-                        </button>
-                      ) : (
-                        employee.name
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {employee.position}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={employee.status} />
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(employee.hire_date)}
-                    </td>
-                    <td className={`px-4 py-3 ${expiryClass(employee.licenseExpiryDate)}`}>
-                      {employee.position === 'Driver'
-                        ? expiryLabel(employee.licenseExpiryDate)
-                        : '—'}
-                    </td>
-                    <td className={`px-4 py-3 ${expiryClass(employee.medicalExamExpiryDate)}`}>
-                      {employee.position === 'Driver'
-                        ? expiryLabel(employee.medicalExamExpiryDate)
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      {isLinked ? (
-                        <StatusBadge status="Set Up" />
-                      ) : (
-                        <button
-                          onClick={() => setAccountEmployee(employee)}
-                          className="btn-secondary px-3 py-1.5 text-xs font-medium"
-                        >
-                          Set Up Account
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          onClick={() => setEditingEmployee(employee)}
-                          className="font-medium text-slate-600 hover:text-slate-900"
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </td>
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_520px] xl:items-start">
+          <section aria-label="Employee masterlist" className="card flex min-h-[calc(100dvh-19rem)] flex-col">
+            <div className="flex-1 overflow-x-auto">
+              {/* Header row style comes from index.css (thead th). */}
+              <table className="w-full min-w-[860px] table-fixed text-left text-sm text-ink-metric">
+                <colgroup>
+                  {['120px', '', '130px', '120px', '160px', '150px', '52px'].map((width, i) => (
+                    <col key={i} style={width ? { width } : undefined} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className={TH}>Employee ID</th>
+                    <th className={TH}>Full Name</th>
+                    <th className={TH}>Position</th>
+                    <th className={TH}>Status</th>
+                    <th className={TH}>Contact</th>
+                    <th className={TH}>License Expiry</th>
+                    <th className={TH}>
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <Pager {...paged.pager} />
+                </thead>
+                <tbody>
+                  {paged.rows.map((employee) => {
+                    const active = paneEmployee?.employee_id === employee.employee_id
+                    return (
+                      <tr
+                        key={employee.employee_id}
+                        onClick={() => setPaneId(employee.employee_id)}
+                        aria-current={active || undefined}
+                        className={`h-[60px] cursor-pointer border-b border-slate-200 ${
+                          active ? 'bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className={`${TD} text-ink-muted tabular-nums`}>#{employee.employee_id}</td>
+                        <td className={`${TD} truncate font-semibold text-ink`} title={employee.name}>
+                          {employee.name}
+                        </td>
+                        <td className={TD}>{employee.position}</td>
+                        <td className={TD}>
+                          <StatusBadge status={employee.status} icon />
+                        </td>
+                        <td className={`${TD} tabular-nums ${employee.editable.phone_number ? '' : 'text-ink-muted'}`}>
+                          {employee.editable.phone_number ?? '—'}
+                        </td>
+                        <td className={`${TD} ${employee.position === 'Driver' ? expiryClass(employee.licenseExpiryDate) : 'text-ink-muted'}`}>
+                          {employee.position === 'Driver' ? expiryLabel(employee.licenseExpiryDate) : 'Not a driver'}
+                        </td>
+                        <td className={TD}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPaneId(employee.employee_id)
+                            }}
+                            aria-label={`Open ${employee.name}`}
+                            className="flex h-11 w-11 items-center justify-center text-primary"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M9 6l6 6-6 6" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
+              <span>
+                {filteredEmployees.length} {filteredEmployees.length === 1 ? 'employee' : 'employees'} ·{' '}
+                {filteredEmployees.filter((e) => e.position === 'Driver').length} drivers
+              </span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page - 1)}
+                  disabled={paged.pager.page === 0}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  ‹ Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page + 1)}
+                  disabled={paged.pager.page >= paged.pager.pageCount - 1}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  Next ›
+                </button>
+              </span>
+            </div>
+          </section>
+
+          {paneEmployee && (
+            <EmployeePanel
+              // key = fresh "today's trips" per employee
+              key={paneEmployee.employee_id}
+              employee={paneEmployee}
+              hasLogin={linkedEmployeeIds.has(paneEmployee.employee_id)}
+              onEdit={() => setEditingEmployee(paneEmployee)}
+              onSetStatus={(status) => handleSetStatus(paneEmployee, status)}
+              onSetUpAccount={() => setAccountEmployee(paneEmployee)}
+              onCashAdvance={() => setCashAdvanceFor(paneEmployee)}
+              onHistory={DETAIL_VIEW_POSITIONS.has(paneEmployee.position) ? () => setDetailEmployee(paneEmployee) : null}
+            />
+          )}
         </div>
+      )}
+
+      {cashAdvanceFor && (
+        <IssueCashAdvanceModal
+          employeeId={cashAdvanceFor.employee_id}
+          onClose={() => setCashAdvanceFor(null)}
+          onIssued={() => {
+            showToast(`Cash advance issued to ${cashAdvanceFor.name}.`)
+            setCashAdvanceFor(null)
+          }}
+        />
       )}
 
       {showAddEmployee && (

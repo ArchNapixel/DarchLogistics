@@ -239,20 +239,20 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
       {history.length === 0 ? (
         <EmptyState message="No history yet." className="mt-2" />
       ) : (
-        <div className="mt-2 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <div className="mt-2 overflow-x-auto border-2 border-line-card bg-white">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Client</th>
-                <th className="px-4 py-3 font-medium">Action</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
-                <th className="px-4 py-3 font-medium">By</th>
-                <th className="px-4 py-3 font-medium">When</th>
+                <th className="px-4 py-2.5">Client</th>
+                <th className="px-4 py-2.5">Action</th>
+                <th className="px-4 py-2.5">Reason</th>
+                <th className="px-4 py-2.5">By</th>
+                <th className="px-4 py-2.5">When</th>
               </tr>
             </thead>
             <tbody>
               {history.map((entry) => (
-                <tr key={entry.log_id} className="border-b border-slate-100 last:border-0">
+                <tr key={entry.log_id} className="border-b border-slate-200 last:border-0">
                   <td className="px-4 py-3 text-slate-900">{entry.client_name}</td>
                   <td className="px-4 py-3">
                     <span

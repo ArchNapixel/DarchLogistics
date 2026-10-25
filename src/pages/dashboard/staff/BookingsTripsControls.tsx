@@ -20,8 +20,8 @@ export function PageViewSwitch({
           type="button"
           onClick={() => onChange(v)}
           aria-pressed={view === v}
-          className={`border-2 px-6 py-2.5 text-sm font-semibold ${
-            view === v ? 'border-primary bg-primary text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+          className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${
+            view === v ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
           }`}
         >
           {v === 'trips' ? 'Trips' : 'Bookings'}
@@ -31,7 +31,8 @@ export function PageViewSwitch({
   )
 }
 
-// Joined status filter buttons, each with its count.
+// Status filter buttons (the canvas's tabs: outlined, the chosen one filled
+// steel blue), each with its count.
 export function FilterButtons<T extends string>({
   options,
   value,
@@ -47,7 +48,7 @@ export function FilterButtons<T extends string>({
   label: string
 }) {
   return (
-    <div role="group" aria-label={label} className="flex">
+    <div role="group" aria-label={label} className="flex flex-wrap gap-2">
       {options.map((option) => {
         const active = value === option.value
         return (
@@ -56,15 +57,19 @@ export function FilterButtons<T extends string>({
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={active}
-            className={`flex items-center gap-2 border px-4 py-2.5 text-sm [&:not(:first-child)]:-ml-px ${
+            className={`flex h-11 items-center gap-2.5 rounded-[2px] border px-5 text-sm font-semibold ${
               active
-                ? 'relative border-primary bg-primary-soft font-semibold text-slate-900'
-                : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                ? 'border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {option.label}
             {counts && (
-              <span className={`px-1.5 text-xs ${active ? 'bg-white text-slate-900' : 'bg-slate-100 text-slate-600'}`}>
+              <span
+                className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[2px] px-1.5 text-xs font-bold ${
+                  active ? 'bg-white text-primary' : 'bg-primary text-white'
+                }`}
+              >
                 {counts[option.value] ?? 0}
               </span>
             )}
@@ -86,14 +91,14 @@ export function SearchBox({
   placeholder: string
 }) {
   return (
-    <label className="ml-auto flex w-full items-center gap-3 text-sm text-slate-700 sm:w-auto">
+    <label className="ml-auto flex w-full items-center gap-3 text-sm font-medium text-ink-secondary sm:w-auto">
       Search
       <input
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="min-w-0 flex-1 border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-primary focus:outline-none sm:w-[34rem] sm:flex-none"
+        className="min-w-0 flex-1 border border-line-control bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-primary sm:w-[34rem] sm:flex-none rounded-[2px] min-h-11"
       />
     </label>
   )
@@ -111,12 +116,11 @@ export function ListBox({
   pager: { page: number; pageCount: number; onChange: (page: number) => void }
   summary: string
 }) {
-  const button =
-    'border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  const button = 'btn-secondary px-3.5 text-sm font-medium'
   return (
-    <div className="flex min-h-[calc(100dvh-14rem)] flex-col border-2 border-slate-300 bg-white">
+    <div className="card flex min-h-[calc(100dvh-14rem)] flex-col">
       <div className="flex-1">{children}</div>
-      <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
+      <div className="flex min-h-[60px] items-center justify-between gap-3 border-t border-line px-4 py-2 text-sm text-ink-secondary">
         {pager.pageCount > 1 ? (
           <>
             <span>
@@ -147,7 +151,7 @@ export function ListBox({
 // The right-hand pane next to the list: sticks while the list scrolls.
 export function DetailPane({ children }: { children: ReactNode }) {
   return (
-    <div className="border-2 border-slate-300 bg-white p-5 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
+    <div className="card p-5 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
       {children}
     </div>
   )

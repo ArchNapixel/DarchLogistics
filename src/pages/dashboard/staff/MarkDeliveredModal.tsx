@@ -138,8 +138,8 @@ function MarkDeliveredModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h3 className="text-lg font-bold text-slate-900">Mark Trip #{itineraryId} Delivered</h3>
         <p className="mt-1 text-sm text-slate-500">
           If any cargo arrived damaged, short or missing, record it here.

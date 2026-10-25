@@ -14,8 +14,6 @@
 // the employee's own payslip page. "Mark Paid" (finalized only) is the
 // separate step once money has actually changed hands.
 import { useEffect, useState } from 'react'
-import Pager from '../../../components/Pager'
-import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   markPayslipPaid,
@@ -64,6 +62,7 @@ type PayrollEntry = {
   employee_id: number
   employee_name: string
   position: string
+  rate_type: string | null
   period_start: string
   period_end: string
   period: string
@@ -98,16 +97,15 @@ function PayrollSection() {
   const [markingPaidId, setMarkingPaidId] = useState<number | null>(null)
   // payroll_id being finalized/discarded, or 'all' for Finalize All
   const [reviewingId, setReviewingId] = useState<number | 'all' | null>(null)
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  // Which employee's card is open (one at a time)
-  const [openEmployeeId, setOpenEmployeeId] = useState<number | null>(null)
   const [lineItemsByPayroll, setLineItemsByPayroll] = useState<
     Record<number, PayslipLineItem[]>
   >({})
-  const [lineItemsLoading, setLineItemsLoading] = useState(false)
 
   // What each employee still owes (cash advances), by employee id
   const [owedByEmployee, setOwedByEmployee] = useState<Record<number, number>>({})
+  // The pay period shown ('start|end'; '' = the latest one) and whose payslip is open.
+  const [periodKey, setPeriodKey] = useState('')
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
 
 
   useEffect(() => {
@@ -176,7 +174,7 @@ function PayrollSection() {
       supabase
         .from('payroll_payslips')
         .select(
-          'payroll_id, payroll_period_start, payroll_period_end, gross_pay, cash_advance_deducted, sss_ee, philhealth_ee, pagibig_ee, withholding_tax, deductions_note, net_pay, payslip_status, finalized_at, on_hold, employee_id, employees(full_name, position)',
+          'payroll_id, payroll_period_start, payroll_period_end, gross_pay, cash_advance_deducted, sss_ee, philhealth_ee, pagibig_ee, withholding_tax, deductions_note, net_pay, payslip_status, finalized_at, on_hold, employee_id, employees(full_name, position, rate_type)',
         )
         .order('payroll_period_start', { ascending: false })
         .order('payroll_id', { ascending: false })
@@ -200,13 +198,14 @@ function PayrollSection() {
         // not the type: indexing with [0] here always returned
         // undefined, which is why every row showed a blank employee
         // name.
-        const employee = entry.employees as unknown as { full_name: string; position: string } | null
+        const employee = entry.employees as unknown as { full_name: string; position: string; rate_type: string | null } | null
 
         return {
           payroll_id: entry.payroll_id,
           employee_id: entry.employee_id,
           employee_name: employee?.full_name ?? '—',
           position: employee?.position ?? '',
+          rate_type: employee?.rate_type ?? null,
           period_start: entry.payroll_period_start,
           period_end: entry.payroll_period_end,
           period: formatPeriod(entry.payroll_period_start, entry.payroll_period_end),
@@ -341,42 +340,118 @@ function PayrollSection() {
     )
   }
 
-  async function toggleExpand(payrollId: number) {
-    if (expandedId === payrollId) {
-      setExpandedId(null)
-      return
+  // Pay periods, newest first; the list shows one period at a time.
+  const periods = [...new Map(payroll.map((e) => [`${e.period_start}|${e.period_end}`, e])).values()].map((e) => ({
+    key: `${e.period_start}|${e.period_end}`,
+    label: e.period,
+    end: e.period_end,
+  }))
+  const lastWeek = getDefaultPayPeriod()
+  const shownPeriodKey =
+    periodKey || periods.find((p) => p.key === `${lastWeek.start}|${lastWeek.end}`)?.key || periods[0]?.key || ''
+  const shownPeriod = periods.find((p) => p.key === shownPeriodKey)
+  const periodEntries = employeeGroups
+    .map((g) => g.entries.find((e) => `${e.period_start}|${e.period_end}` === shownPeriodKey))
+    .filter((e): e is PayrollEntry => e !== undefined)
+  const selected = periodEntries.find((e) => e.employee_id === selectedEmployeeId) ?? periodEntries[0] ?? null
+  const periodGross = periodEntries.reduce((sum, e) => sum + e.gross_pay, 0)
+  const periodFinalized = periodEntries.filter((e) => e.status !== 'Draft').length
+
+  // Load the open payslip's lines (trips / days) when it changes.
+  useEffect(() => {
+    const id = selected?.payroll_id
+    if (id === undefined || lineItemsByPayroll[id]) return
+    let cancelled = false
+    loadPayslipLineItems(id).then(({ lineItems, error: lineItemsError }) => {
+      if (cancelled) return
+      if (lineItemsError) setActionError(lineItemsError)
+      else setLineItemsByPayroll((prev) => ({ ...prev, [id]: lineItems }))
+    })
+    return () => {
+      cancelled = true
     }
+  }, [selected?.payroll_id, lineItemsByPayroll])
 
-    setExpandedId(payrollId)
+  const rateLabel = (rateType: string | null) =>
+    rateType === 'Commission Per Trip' ? 'Commission per trip' : rateType ? rateType.replace('Fixed', 'rate').toLowerCase().replace(/^./, (c) => c.toUpperCase()) : '—'
+  const STATUS_LABEL: Record<string, string> = { Pending: 'Finalized' }
+  const deductionRows = selected
+    ? ([
+        ['SSS', selected.sss_ee],
+        ['PhilHealth', selected.philhealth_ee],
+        ['Pag-IBIG', selected.pagibig_ee],
+        ['Withholding tax', selected.withholding_tax],
+        ['Cash advance', selected.cash_advance_deducted],
+      ] as const)
+    : []
+  const lines = selected ? lineItemsByPayroll[selected.payroll_id] : undefined
+  const selectedDraft = selected?.status === 'Draft'
+  const kv = 'flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm'
 
-    if (!lineItemsByPayroll[payrollId]) {
-      setLineItemsLoading(true)
-      const { lineItems, error: lineItemsError } = await loadPayslipLineItems(payrollId)
-      setLineItemsLoading(false)
-
-      if (lineItemsError) {
-        setActionError(lineItemsError)
-        return
-      }
-
-      setLineItemsByPayroll((prev) => ({ ...prev, [payrollId]: lineItems }))
-    }
-  }
-
-  // One page of employees (10) at a time.
-  const paged = usePaged(employeeGroups, '')
   return (
     <div>
-      <PageHeader title="Payroll" subtitle="Weekly payslip drafts: review, finalize, then mark paid." />
+      <PageHeader
+        title="Payroll"
+        subtitle={
+          shownPeriod ? (
+            <>
+              Gross pay for {shownPeriod.label}:{' '}
+              <strong className="text-ink tabular-nums">{formatMoney(periodGross)}</strong>
+            </>
+          ) : (
+            'Weekly payslip drafts: review, finalize, then mark paid.'
+          )
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            {periods.length > 0 && (
+              <label className="flex items-center gap-2.5 text-sm font-medium text-ink-secondary">
+                Pay period
+                <select
+                  value={shownPeriodKey}
+                  onChange={(e) => {
+                    setPeriodKey(e.target.value)
+                    setSelectedEmployeeId(null)
+                  }}
+                  className="min-h-11 w-64 rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-medium text-ink-metric focus:border-primary"
+                >
+                  {periods.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                      {isWeekInProgress(p.end) ? ' (in progress)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {draftIds.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (
+                    await confirmDialog({
+                      message:
+                        `Finalize and release ${draftIds.length} draft payslip${draftIds.length === 1 ? '' : 's'} to employees?` +
+                        (heldCount + inProgressCount > 0 ? ' Drafts on hold or with the week still in progress are skipped.' : ''),
+                      confirmLabel: 'Finalize',
+                    })
+                  ) {
+                    handleFinalize(draftIds, 'all')
+                  }
+                }}
+                disabled={reviewingId !== null}
+                className="btn-secondary px-4 text-sm font-medium"
+              >
+                {reviewingId === 'all' ? 'Finalizing...' : `Finalize All ${draftIds.length} Drafts`}
+              </button>
+            )}
+          </div>
+        }
+      />
 
-      {actionError && (
-        <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {actionError}
-        </p>
-      )}
+      {actionError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
       {generationWarnings.length > 0 && (
-        <div className="mt-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mb-4 border border-amber-600 bg-amber-100 px-4 py-3 text-sm text-amber-900">
           <p className="font-semibold">Couldn&apos;t create a draft for:</p>
           <ul className="mt-1 list-disc pl-5">
             {generationWarnings.map((warning) => (
@@ -386,246 +461,266 @@ function PayrollSection() {
         </div>
       )}
 
-      {generating && <p className="mt-4 text-slate-500">Preparing this week&apos;s draft payslips...</p>}
-      {!generating && loading && <p className="mt-4 text-slate-500">Loading payroll...</p>}
-      {error && <p className="mt-4 text-red-700">{error}</p>}
-      {!loading && !error && payroll.length === 0 && (
-        <EmptyState message="No payroll entries yet." hint="Draft payslips appear here automatically once employees have trips or attendance in a completed week." className="mt-4" />
+      {!loading && !error && drafts.length > 0 && (
+        <p className="mb-4 border border-line bg-primary-soft px-4 py-3 text-sm text-ink-secondary">
+          <strong className="text-ink">
+            {drafts.length} draft payslip{drafts.length === 1 ? '' : 's'} awaiting review
+            {heldCount > 0 && ` (${heldCount} on hold)`}
+            {inProgressCount > 0 && ` (${inProgressCount} still in progress)`}.
+          </strong>{' '}
+          Employees can&apos;t see drafts until they are finalized.
+        </p>
       )}
 
-      {!loading && !error && drafts.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
-          <p className="text-blue-900">
-            <span className="font-semibold">
-              {drafts.length} draft payslip{drafts.length === 1 ? '' : 's'} awaiting review
-              {heldCount > 0 && ` (${heldCount} on hold)`}
-              {inProgressCount > 0 && ` (${inProgressCount} still in progress)`}.
-            </span>{' '}
-            Employees can&apos;t see drafts. Open an employee's card to check their draft, then finalize to release it.
-          </p>
-          {draftIds.length > 0 && (
-            <button
-              onClick={async () => {
-                if (
-                  await confirmDialog({
-                    message:
-                      `Finalize and release ${draftIds.length} draft payslip${draftIds.length === 1 ? '' : 's'} to employees?` +
-                      (heldCount + inProgressCount > 0
-                        ? ' Drafts on hold or with the week still in progress are skipped.'
-                        : ''),
-                    confirmLabel: 'Finalize',
-                  })
-                ) {
-                  handleFinalize(draftIds, 'all')
-                }
-              }}
-              disabled={reviewingId !== null}
-              className="bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
-            >
-              {reviewingId === 'all' ? 'Finalizing...' : `Finalize all ${draftIds.length}`}
-            </button>
+      {generating && <p className="text-ink-muted">Preparing this week&apos;s draft payslips...</p>}
+      {!generating && loading && <p className="text-ink-muted">Loading payroll...</p>}
+      {error && <p className="text-red-700">{error}</p>}
+      {!loading && !error && payroll.length === 0 && (
+        <EmptyState message="No payroll entries yet." hint="Draft payslips appear here automatically once employees have trips or attendance in a completed week." />
+      )}
+
+      {!loading && !error && payroll.length > 0 && (
+        <div className="grid gap-4 xl:grid-cols-[520px_minmax(0,1fr)] xl:items-start">
+          <section aria-label="Employees this period" className="card flex flex-col">
+            <table className="w-full table-fixed text-left text-sm text-ink-metric">
+              <colgroup>
+                <col />
+                <col style={{ width: '150px' }} />
+                <col style={{ width: '130px' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className="px-2 py-2.5 first:pl-5">Employee</th>
+                  <th className="px-2 py-2.5">Rate Type</th>
+                  <th className="px-2 py-2.5 last:pr-5">Payslip</th>
+                </tr>
+              </thead>
+              <tbody>
+                {periodEntries.map((entry) => {
+                  const active = selected?.payroll_id === entry.payroll_id
+                  return (
+                    <tr
+                      key={entry.payroll_id}
+                      onClick={() => setSelectedEmployeeId(entry.employee_id)}
+                      aria-current={active || undefined}
+                      className={`h-16 cursor-pointer border-b border-slate-200 ${
+                        active ? 'bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <td className="px-2 py-2 first:pl-5">
+                        <span className="block truncate font-semibold text-primary">{entry.employee_name}</span>
+                        <span className="block text-[13px] leading-[18px] text-ink-muted">{entry.position || '—'}</span>
+                      </td>
+                      <td className="px-2 py-2">{rateLabel(entry.rate_type)}</td>
+                      <td className="px-2 py-2 last:pr-5">
+                        <span className="flex flex-col items-start gap-1">
+                          <StatusBadge status={entry.status} label={STATUS_LABEL[entry.status]} icon />
+                          {entry.status === 'Draft' && entry.on_hold && <StatusBadge status="On Hold" />}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div className="flex min-h-[60px] items-center border-t border-line px-5 py-2 text-sm text-ink-secondary">
+              {periodEntries.length} {periodEntries.length === 1 ? 'employee' : 'employees'} · {periodFinalized} of {periodEntries.length} finalized
+            </div>
+          </section>
+
+          {selected && (
+            <section aria-labelledby="ps-title" className="card flex flex-col">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-5 py-3.5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <h2 id="ps-title" className="text-lg leading-[26px] font-bold text-ink">
+                    Payslip · {selected.employee_name}
+                  </h2>
+                  <span className="rounded-[2px] bg-slate-200 px-2 py-0.5 text-xs font-semibold text-ink-secondary">
+                    {selected.position || '—'} · {rateLabel(selected.rate_type)}
+                  </span>
+                  {selectedDraft && isWeekInProgress(selected.period_end) && (
+                    <span className="rounded-[2px] bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Week in progress</span>
+                  )}
+                </div>
+                {selectedDraft && selected.position === 'Driver' && (
+                  <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium text-ink-secondary">
+                    <input
+                      type="checkbox"
+                      checked={selected.on_hold}
+                      disabled={reviewingId !== null}
+                      onChange={() => handleToggleHold(selected)}
+                      className="h-5 w-5 accent-primary"
+                    />
+                    Hold this payslip
+                  </label>
+                )}
+              </div>
+
+              <div className="px-5 pt-3.5">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-ink">What this payslip pays for</h3>
+                  <span className="text-[13px] text-ink-muted">{selected.period}</span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="mt-2 w-full text-left text-sm text-ink-metric">
+                  <thead>
+                    <tr>
+                      <th className="px-5 py-2.5">Line</th>
+                      <th className="px-5 py-2.5 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!lines ? (
+                      <tr>
+                        <td colSpan={2} className="px-5 py-4 text-ink-muted">
+                          Loading breakdown...
+                        </td>
+                      </tr>
+                    ) : lines.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="px-5 py-4 text-ink-muted">
+                          No lines on this payslip.
+                        </td>
+                      </tr>
+                    ) : (
+                      lines.map((item, index) => (
+                        <tr key={index} className="h-12 border-b border-slate-200">
+                          <td className="px-5 py-2">{item.description}</td>
+                          <td className="px-5 py-2 text-right font-semibold tabular-nums">{formatMoney(item.amount)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid gap-6 px-5 py-4 md:grid-cols-2">
+                <section aria-labelledby="ps-earn">
+                  <h3 id="ps-earn" className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">
+                    Earnings
+                  </h3>
+                  <div className={kv}>
+                    <span className="text-ink-secondary">
+                      {lines ? `${lines.length} ${lines.length === 1 ? 'line' : 'lines'}` : 'Lines'}
+                    </span>
+                    <span className="font-semibold tabular-nums">{formatMoney(selected.gross_pay)}</span>
+                  </div>
+                  <div className={`${kv} border-b-0`}>
+                    <span className="font-semibold text-ink">Gross pay</span>
+                    <span className="text-base font-semibold tabular-nums">{formatMoney(selected.gross_pay)}</span>
+                  </div>
+                </section>
+                <section aria-labelledby="ps-ded">
+                  <h3 id="ps-ded" className="mb-1 flex items-center justify-between gap-3 border-b border-line pb-2 text-sm font-semibold text-ink">
+                    <span>Deductions</span>
+                    {selectedDraft && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingDraft({
+                            payrollId: selected.payroll_id,
+                            employeeId: selected.employee_id,
+                            employeeName: selected.employee_name,
+                            periodStart: selected.period_start,
+                            periodEnd: selected.period_end,
+                            periodLabel: selected.period,
+                          })
+                        }
+                        disabled={reviewingId !== null}
+                        className="font-semibold text-primary hover:underline disabled:opacity-50"
+                      >
+                        Edit deductions
+                      </button>
+                    )}
+                  </h3>
+                  {deductionRows.map(([label, amount]) => (
+                    <div key={label} className={kv}>
+                      <span className="text-ink-secondary">{label}</span>
+                      <span className={`font-semibold tabular-nums ${amount === 0 ? 'text-ink-muted' : ''}`}>
+                        {amount < 0 ? '+' : ''}
+                        {formatMoney(Math.abs(amount))}
+                      </span>
+                    </div>
+                  ))}
+                  {selected.status !== 'Paid' && (owedByEmployee[selected.employee_id] ?? 0) + selected.cash_advance_deducted > 0 && (
+                    <p className="mt-2 text-[13px] text-ink-muted">
+                      Cash advance owed before this payslip:{' '}
+                      {formatMoney((owedByEmployee[selected.employee_id] ?? 0) + selected.cash_advance_deducted)}
+                    </p>
+                  )}
+                  {selected.deductions_note && <p className="mt-2 text-[13px] text-amber-800">{selected.deductions_note}</p>}
+                </section>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-line bg-slate-50 px-5 py-3.5">
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    Net pay <span className="text-[13px] font-normal text-ink-muted">gross pay − deductions</span>
+                  </div>
+                  <div className="text-2xl leading-8 font-bold text-ink tabular-nums">{formatMoney(selected.net_pay)}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {selectedDraft && (
+                    <>
+                      <button
+                        onClick={() => handleRegenerate(selected)}
+                        disabled={reviewingId !== null}
+                        className="btn-secondary px-4 text-sm font-medium"
+                      >
+                        Regenerate
+                      </button>
+                      <button
+                        onClick={() =>
+                          setEditingDraft({
+                            payrollId: selected.payroll_id,
+                            employeeId: selected.employee_id,
+                            employeeName: selected.employee_name,
+                            periodStart: selected.period_start,
+                            periodEnd: selected.period_end,
+                            periodLabel: selected.period,
+                          })
+                        }
+                        disabled={reviewingId !== null}
+                        className="btn-secondary px-4 text-sm font-medium"
+                      >
+                        Edit Payslip
+                      </button>
+                      <button
+                        onClick={() => handleFinalize([selected.payroll_id], selected.payroll_id)}
+                        disabled={reviewingId !== null || selected.on_hold || isWeekInProgress(selected.period_end)}
+                        title={
+                          selected.on_hold
+                            ? 'Remove the hold first'
+                            : isWeekInProgress(selected.period_end)
+                              ? 'Can be finalized once the week is over'
+                              : undefined
+                        }
+                        className="btn-primary flex items-center gap-2 px-5 text-sm"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M5 12l5 5 9-10" />
+                        </svg>
+                        {reviewingId === selected.payroll_id ? 'Saving...' : 'Finalize Payslip'}
+                      </button>
+                    </>
+                  )}
+                  {selected.status === 'Pending' && (
+                    <button
+                      onClick={() => handleMarkPaid(selected.payroll_id)}
+                      disabled={markingPaidId === selected.payroll_id}
+                      className="btn-primary px-5 text-sm"
+                    >
+                      {markingPaidId === selected.payroll_id ? 'Saving...' : 'Mark Paid'}
+                    </button>
+                  )}
+                  {selected.status === 'Paid' && <StatusBadge status="Paid" icon />}
+                </div>
+              </div>
+            </section>
           )}
         </div>
       )}
-
-      {/* One card per employee: click it to list all their payslips, click a payslip for its breakdown */}
-      {!loading && !error && payroll.length > 0 && (
-        <div className="mt-4 flex flex-col gap-3">
-          {paged.rows.map((group) => {
-            const isOpen = openEmployeeId === group.employee_id
-            const draftCount = group.entries.filter((e) => e.status === 'Draft').length
-            const pendingCount = group.entries.filter((e) => e.status === 'Pending').length
-            const latest = group.entries[0]
-            return (
-              <div key={group.employee_id} className="overflow-hidden border-2 border-slate-400 bg-white">
-                <button
-                  onClick={() => {
-                    setOpenEmployeeId(isOpen ? null : group.employee_id)
-                    setExpandedId(null)
-                  }}
-                  className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-900">{group.employee_name}</p>
-                    <p className="text-xs text-slate-500">
-                      {group.position || '—'} · {group.entries.length} payslip{group.entries.length === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                  {/* Chevron in the middle: points down when closed, flips up when open */}
-                  <span
-                    className={`flex h-8 w-8 items-center justify-center border border-slate-300 bg-slate-100 text-slate-700 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                  >
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </span>
-                  <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
-                    {draftCount > 0 && (
-                      <StatusBadge status="Draft" label={`${draftCount} draft${draftCount === 1 ? '' : 's'}`} />
-                    )}
-                    {pendingCount > 0 && (
-                      <StatusBadge status="Pending" label={`${pendingCount} to pay`} />
-                    )}
-                    <span className="text-slate-500">Latest net:</span>
-                    <span className="font-medium text-slate-900">{formatMoney(latest.net_pay)}</span>
-                  </div>
-                </button>
-
-                {isOpen && (
-                  <div className="border-t-2 border-slate-400">
-                    {group.entries.map((entry) => (
-                      <div key={entry.payroll_id} className="border-b border-slate-300 last:border-0">
-                        <div
-                          onClick={() => toggleExpand(entry.payroll_id)}
-                          className="grid cursor-pointer grid-cols-2 items-center gap-x-6 gap-y-2 px-4 py-3 text-sm hover:bg-slate-50 md:grid-cols-[minmax(12rem,1.2fr)_1fr_1fr_minmax(16rem,1.5fr)]"
-                        >
-                          <div>
-                            <p className="text-slate-900">{entry.period}</p>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              <StatusBadge status={entry.status} />
-                              {entry.status === 'Draft' && entry.on_hold && (
-                                <StatusBadge status="On Hold" />
-                              )}
-                              {entry.status === 'Draft' && isWeekInProgress(entry.period_end) && (
-                                <span className="bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                  Week in progress
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-slate-600">Gross {formatMoney(entry.gross_pay)}</div>
-                          <div className="font-medium text-slate-900">Net {formatMoney(entry.net_pay)}</div>
-                          <div className="col-span-2 md:col-span-1 md:justify-self-end" onClick={(e) => e.stopPropagation()}>
-                            {entry.status === 'Draft' && (
-                              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                                <button
-                                  onClick={() => handleFinalize([entry.payroll_id], entry.payroll_id)}
-                                  disabled={reviewingId !== null || entry.on_hold || isWeekInProgress(entry.period_end)}
-                                  title={
-                                    entry.on_hold
-                                      ? 'Remove the hold first'
-                                      : isWeekInProgress(entry.period_end)
-                                        ? 'Can be finalized once the week is over'
-                                        : undefined
-                                  }
-                                  className="font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
-                                >
-                                  {reviewingId === entry.payroll_id ? 'Saving...' : 'Finalize'}
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    setEditingDraft({
-                                      payrollId: entry.payroll_id,
-                                      employeeId: entry.employee_id,
-                                      employeeName: entry.employee_name,
-                                      periodStart: entry.period_start,
-                                      periodEnd: entry.period_end,
-                                      periodLabel: entry.period,
-                                    })
-                                  }
-                                  disabled={reviewingId !== null}
-                                  className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleRegenerate(entry)}
-                                  disabled={reviewingId !== null}
-                                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                                >
-                                  Regenerate
-                                </button>
-                                {entry.position === 'Driver' && (
-                                  <button
-                                    onClick={() => handleToggleHold(entry)}
-                                    disabled={reviewingId !== null}
-                                    className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                                  >
-                                    {entry.on_hold ? 'Remove Hold' : 'Hold Payslip'}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {entry.status === 'Pending' && (
-                              <button
-                                onClick={() => handleMarkPaid(entry.payroll_id)}
-                                disabled={markingPaidId === entry.payroll_id}
-                                className="font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
-                              >
-                                {markingPaidId === entry.payroll_id ? 'Saving...' : 'Mark Paid'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {expandedId === entry.payroll_id && (
-                          <div className="bg-slate-50 px-4 py-3">
-                            {lineItemsLoading && !lineItemsByPayroll[entry.payroll_id] ? (
-                              <p className="text-sm text-slate-500">Loading breakdown...</p>
-                            ) : (
-                              <div className="flex flex-col gap-1.5 text-sm">
-                                {(lineItemsByPayroll[entry.payroll_id] ?? []).map((item, index) => (
-                                  <div key={index} className="flex items-center justify-between">
-                                    <span className="text-slate-600">{item.description}</span>
-                                    <span className="font-medium text-slate-900">
-                                      {formatMoney(item.amount)}
-                                    </span>
-                                  </div>
-                                ))}
-                                <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
-                                  <span className="text-slate-600">Gross pay</span>
-                                  <span className="font-medium text-slate-900">{formatMoney(entry.gross_pay)}</span>
-                                </div>
-                                {(
-                                  [
-                                    ['Cash advance', entry.cash_advance_deducted],
-                                    ['SSS', entry.sss_ee],
-                                    ['PhilHealth', entry.philhealth_ee],
-                                    ['Pag-IBIG', entry.pagibig_ee],
-                                    ['Withholding tax', entry.withholding_tax],
-                                  ] as const
-                                )
-                                  .filter(([, amount]) => amount !== 0)
-                                  .map(([label, amount]) => (
-                                    <div key={label} className="flex items-center justify-between">
-                                      <span className="text-slate-600">{label}</span>
-                                      <span className="font-medium text-red-600">
-                                        {amount > 0 ? '-' : '+'}
-                                        {formatMoney(Math.abs(amount))}
-                                      </span>
-                                    </div>
-                                  ))}
-                                <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-900">
-                                  <span>Net pay</span>
-                                  <span>{formatMoney(entry.net_pay)}</span>
-                                </div>
-                                {entry.status !== 'Paid' && (owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted > 0 && (
-                                  <p className="text-xs text-slate-500">
-                                    Cash advance owed before this payslip:{' '}
-                                    {formatMoney((owedByEmployee[entry.employee_id] ?? 0) + entry.cash_advance_deducted)}
-                                  </p>
-                                )}
-                                {entry.deductions_note && (
-                                  <p className="text-xs text-amber-700">{entry.deductions_note}</p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-      <Pager {...paged.pager} />
 
       {editingDraft && (
         <EditDraftPayslipModal
@@ -638,7 +733,6 @@ function PayrollSection() {
               delete next[editingDraft.payrollId]
               return next
             })
-            setExpandedId(null)
             setEditingDraft(null)
             loadPayroll()
           }}

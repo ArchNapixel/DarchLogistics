@@ -104,7 +104,7 @@ function CashAdvanceRequestsSection() {
   }
 
   return (
-    <div className="border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="border-2 border-line-card bg-white p-5">
       <h3 className="text-sm font-semibold text-slate-700">
         Cash Advance Requests
       </h3>
@@ -122,7 +122,7 @@ function CashAdvanceRequestsSection() {
           {paged.rows.map((request) => (
             <div
               key={request.cash_advance_id}
-              className="border border-slate-200 p-4"
+              className="border border-line p-4"
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-slate-900">
@@ -146,7 +146,7 @@ function CashAdvanceRequestsSection() {
                 <button
                   onClick={() => handleDecide(request, false)}
                   disabled={decidingId === request.cash_advance_id}
-                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]"
                 >
                   Reject
                 </button>

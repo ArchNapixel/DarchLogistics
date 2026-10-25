@@ -7,7 +7,7 @@ const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5)
 
 const selectClasses =
-  'border border-slate-300 bg-white px-2 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'rounded-[2px] border border-line-control bg-white px-2 py-2 text-slate-900 focus:border-primary'
 
 function TimeInput12({
   value,

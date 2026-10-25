@@ -139,8 +139,8 @@ function TripDetailModal({
   const expenseTotal = (detail?.expenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Trip #{itineraryId}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -418,13 +418,13 @@ function HistorySection() {
       ) : (
         !loading &&
         !error && (
-          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-slate-500">
+          <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+            <table className="w-full text-left text-sm text-ink-metric">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Description</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-2.5">Date</th>
+                  <th className="px-4 py-2.5">Description</th>
+                  <th className="px-4 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -443,7 +443,7 @@ function HistorySection() {
                       role: 'button',
                       'aria-label': `View details for ${entry.description}`,
                     })}
-                    className={`border-b border-slate-100 last:border-0 ${
+                    className={`border-b border-slate-200 last:border-0 ${
                       rowsClickable
                         ? 'cursor-pointer hover:bg-slate-100 focus:bg-slate-100 focus:outline-none'
                         : ''

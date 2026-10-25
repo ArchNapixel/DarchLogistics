@@ -17,7 +17,7 @@ import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
 function InventoryReportModal({ onClose }: { onClose: () => void }) {
   const [weekOptions, setWeekOptions] = useState<ReportWeekOption[]>([])
@@ -96,8 +96,8 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Print Inventory Report</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -144,17 +144,17 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                 Current Stock ({currentStock.length} items)
               </h4>
               <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm text-ink-metric">
                   <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                     <tr>
-                      <th className="px-3 py-2 font-medium">Name</th>
-                      <th className="px-3 py-2 font-medium">Type</th>
-                      <th className="px-3 py-2 font-medium">Quantity</th>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Quantity</th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentStock.map((item) => (
-                      <tr key={item.item_id} className="border-b border-slate-100 last:border-0">
+                      <tr key={item.item_id} className="border-b border-slate-200 last:border-0">
                         <td className="px-3 py-2 text-slate-900">{item.name}</td>
                         <td className="px-3 py-2 text-slate-600">{item.item_type}</td>
                         <td className="px-3 py-2 text-slate-600">{item.quantity}</td>
@@ -171,17 +171,17 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                 <EmptyState message="No stock used this week." className="mt-2" />
               ) : (
                 <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-sm text-ink-metric">
                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                       <tr>
-                        <th className="px-3 py-2 font-medium">Item</th>
-                        <th className="px-3 py-2 font-medium">Total Used</th>
-                        <th className="px-3 py-2 font-medium">Work Orders</th>
+                        <th className="px-3 py-2">Item</th>
+                        <th className="px-3 py-2">Total Used</th>
+                        <th className="px-3 py-2">Work Orders</th>
                       </tr>
                     </thead>
                     <tbody>
                       {usageTotals.map((row) => (
-                        <tr key={row.item_id} className="border-b border-slate-100 last:border-0">
+                        <tr key={row.item_id} className="border-b border-slate-200 last:border-0">
                           <td className="px-3 py-2 text-slate-900">{row.name}</td>
                           <td className="px-3 py-2 font-medium text-slate-900">{row.total_used}</td>
                           <td className="px-3 py-2 text-slate-600">{row.work_order_count}</td>
@@ -201,18 +201,18 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
                 <EmptyState message="No stock used this week." className="mt-2" />
               ) : (
                 <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-sm text-ink-metric">
                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                       <tr>
-                        <th className="px-3 py-2 font-medium">Item</th>
-                        <th className="px-3 py-2 font-medium">Qty Used</th>
-                        <th className="px-3 py-2 font-medium">Work Order</th>
-                        <th className="px-3 py-2 font-medium">Completed</th>
+                        <th className="px-3 py-2">Item</th>
+                        <th className="px-3 py-2">Qty Used</th>
+                        <th className="px-3 py-2">Work Order</th>
+                        <th className="px-3 py-2">Completed</th>
                       </tr>
                     </thead>
                     <tbody>
                       {usedStock.map((row, index) => (
-                        <tr key={index} className="border-b border-slate-100 last:border-0">
+                        <tr key={index} className="border-b border-slate-200 last:border-0">
                           <td className="px-3 py-2 text-slate-900">{row.item_name_text}</td>
                           <td className="px-3 py-2 text-slate-600">{row.quantity}</td>
                           <td className="px-3 py-2 text-slate-600">{row.work_order_number}</td>

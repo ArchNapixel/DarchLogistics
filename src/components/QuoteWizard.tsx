@@ -173,7 +173,7 @@ function QuoteWizard({
                     <span
                       className={`flex h-6 w-6 items-center justify-center text-xs font-semibold ${
                         current
-                          ? 'bg-slate-900 text-white'
+                          ? 'bg-primary text-white'
                           : reachable
                             ? 'bg-slate-200 text-slate-800'
                             : 'border border-slate-300 text-slate-400'
@@ -207,7 +207,7 @@ function QuoteWizard({
           {isReview && (
             <>
               <div className="col-span-full">{contactSection}</div>
-              <div className="col-span-full border-2 border-slate-300 bg-white p-4">
+              <div className="col-span-full border-2 border-line-card bg-white p-4">
                 <QuoteSummary form={form} onEditStep={editStep} />
               </div>
             </>
@@ -249,7 +249,7 @@ function QuoteWizard({
 
       <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
         {!isReview && (
-          <div className="hidden border-2 border-slate-300 bg-white p-4 lg:block">
+          <div className="hidden border-2 border-line-card bg-white p-4 lg:block">
             <p className="mb-3 text-sm font-semibold text-slate-900">Summary</p>
             <QuoteSummary form={form} />
           </div>

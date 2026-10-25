@@ -91,8 +91,12 @@ async function loadAlerts(): Promise<DashboardAlert[]> {
   ].filter((a) => a.count > 0)
 }
 
-// Every dashboard panel uses this same white box with a 2px border.
-const CARD = 'border-2 border-slate-300 bg-white'
+// Every dashboard panel uses this same white box with a 2px border
+// (.card in index.css).
+const CARD = 'card'
+// Panel heading, and the small grey "1 Month" / "Today" tag beside it.
+const PANEL_TITLE = 'text-base leading-6 font-semibold text-ink'
+const PANEL_TAG = 'rounded-[2px] bg-slate-200 px-2 py-1 text-xs font-medium text-ink-secondary'
 
 // Small outline icons (24x24 SVG paths, same style as the sidebar's).
 const ICONS = {
@@ -125,15 +129,15 @@ function Icon({ name, size = 16, className = '' }: { name: keyof typeof ICONS; s
   )
 }
 
-// One row of small squares: filled = operational/available, hollow orange =
+// One row of small squares: filled = operational/available, hollow amber =
 // not. Capped at 12 so a big fleet doesn't wrap.
 function UnitSquares({ ok, total }: { ok: number; total: number }) {
   return (
-    <span className="ml-3 inline-flex gap-1 align-middle" aria-hidden="true">
+    <span className="inline-flex gap-1" aria-hidden="true">
       {Array.from({ length: Math.min(total, 12) }, (_, i) => (
         <span
           key={i}
-          className={i < ok ? 'h-3 w-3 bg-primary' : 'h-3 w-3 border-2 border-orange-600'}
+          className={i < ok ? 'h-3 w-3 bg-primary' : 'h-3 w-3 border-2 border-amber-800 bg-white'}
         />
       ))}
     </span>
@@ -141,40 +145,70 @@ function UnitSquares({ ok, total }: { ok: number; total: number }) {
 }
 
 // Label + amount over a bar. Bars in the Financial Summary share one scale
-// (the biggest of the four figures = full width).
+// (the biggest of the four figures = full width). `big` = the top row's
+// larger amount.
 function MoneyBar({
   label,
   value,
   max,
   tone,
   to,
+  big = false,
 }: {
   label: string
   value: number | null
   max: number
   tone: string
   to: string
+  big?: boolean
 }) {
   return (
-    <Link to={to} className="block hover:opacity-80">
+    <Link to={to} className="flex flex-col gap-1.5 hover:opacity-80">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm text-slate-700">{label}</span>
-        <span className="text-lg font-bold text-slate-900">{value === null ? '--' : formatMoney(value)}</span>
+        <span className="text-sm font-medium text-ink-secondary">{label}</span>
+        <span
+          className={`text-ink-metric tabular-nums ${big ? 'text-xl leading-7 font-bold' : 'text-base leading-6 font-semibold'}`}
+        >
+          {value === null ? '--' : formatMoney(value)}
+        </span>
       </div>
-      <div className="mt-1.5 h-2.5 bg-slate-200">
-        <div className={`h-2.5 ${tone}`} style={{ width: `${max > 0 && value ? (value / max) * 100 : 0}%` }} />
+      <div className="h-3 bg-slate-200">
+        {/* A tiny but non-zero amount still shows a sliver. */}
+        <div
+          className={`h-3 ${tone} ${value ? 'min-w-1' : ''}`}
+          style={{ width: `${max > 0 && value ? (value / max) * 100 : 0}%` }}
+        />
       </div>
     </Link>
   )
 }
 
 // A small bordered tile with a label and a big number (Fleet & Crew, etc.).
-function StatTile({ label, to, note, children }: { label: string; to: string; note?: string; children: React.ReactNode }) {
+// `squares` sit beside the number; `note` is a small amber warning beside
+// the label.
+function StatTile({
+  label,
+  to,
+  note,
+  squares,
+  children,
+}: {
+  label: string
+  to: string
+  note?: string
+  squares?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <Link to={to} className="flex flex-col justify-center border border-slate-300 px-3 py-4 hover:border-primary">
-      <p className="text-sm text-slate-700">{label}</p>
-      {note && <p className="text-xs text-orange-700">{note}</p>}
-      <p className="mt-1 text-2xl font-bold text-slate-900">{children}</p>
+    <Link to={to} className="flex flex-col justify-center gap-0.5 border border-line px-3 py-2 hover:border-primary">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="text-sm font-medium text-ink-secondary">{label}</span>
+        {note && <span className="text-xs font-semibold text-amber-800">{note}</span>}
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-2xl font-semibold tracking-[-0.01em] text-ink-metric tabular-nums">{children}</span>
+        {squares}
+      </div>
     </Link>
   )
 }
@@ -648,9 +682,9 @@ function StaffDashboard() {
     <div className="flex flex-col gap-4">
       {/* Header: title, "Needs attention" banner, period + Refresh */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="min-w-0 border-l-4 border-primary pl-3">
-          <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">
+        <div className="min-w-0 border-l-[3px] border-primary pl-4">
+          <h1 className="text-xl leading-7 font-bold text-ink">Dashboard</h1>
+          <p className="text-sm text-ink-muted">
             Welcome, {username} ·{' '}
             {new Date().toLocaleDateString('en-US', {
               timeZone: 'Asia/Manila',
@@ -663,27 +697,32 @@ function StaffDashboard() {
         </div>
 
         {allAlerts.length > 0 && (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-6 gap-y-1 border border-amber-400 bg-amber-100 px-4 py-2.5 text-sm">
-            <span className="flex items-center gap-2 font-semibold text-amber-900">
-              <Icon name="warning" />
+          <section
+            aria-label="Needs attention"
+            className="flex min-w-0 flex-1 basis-[480px] flex-wrap items-center gap-x-7 border border-amber-600 bg-amber-100 px-4 text-sm text-amber-900"
+          >
+            <strong className="flex min-h-11 items-center gap-2 font-bold">
+              <Icon name="warning" size={18} />
               Needs Attention
-            </span>
+            </strong>
             {allAlerts.map((a) => (
               <Link
                 key={a.label}
                 to={a.to}
-                className="flex items-center gap-1.5 font-medium text-amber-900 underline underline-offset-2 hover:no-underline"
+                className="flex min-h-11 items-center gap-2 font-medium underline underline-offset-2 hover:no-underline"
               >
-                {a.count} {a.label} · {a.page}
-                <Icon name="arrow" size={14} />
+                <span>
+                  <strong>{a.count} {a.label}</strong> · {a.page}
+                </span>
+                <Icon name="arrow" />
               </Link>
             ))}
-          </div>
+          </section>
         )}
 
         {/* Period for revenue + every expense figure; Refresh reloads the whole page. */}
         <div className="ml-auto flex items-center gap-3">
-          <label htmlFor="dashboard-period" className="text-sm text-slate-700">
+          <label htmlFor="dashboard-period" className="text-sm font-medium text-ink-secondary">
             Period
           </label>
           <select
@@ -692,7 +731,7 @@ function StaffDashboard() {
             onChange={(e) =>
               setRevenueRange(e.target.value as (typeof REVENUE_RANGES)[number]['value'])
             }
-            className="border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none"
+            className="h-11 rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric"
           >
             {REVENUE_RANGES.map((r) => (
               <option key={r.value} value={r.value}>
@@ -706,7 +745,7 @@ function StaffDashboard() {
               setRefreshKey((k) => k + 1)
             }}
             disabled={refreshing}
-            className="flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 hover:border-primary disabled:opacity-50"
+            className="btn-secondary flex h-11 items-center gap-2 px-4 text-sm font-medium"
           >
             <Icon name="refresh" className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
             {refreshing ? 'Refreshing…' : 'Refresh'}
@@ -719,110 +758,117 @@ function StaffDashboard() {
       )}
 
       {/* Financial Summary: net on the left, the four figures as bars */}
-      <section className={`${CARD} px-5 py-4`}>
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-900">Financial Summary</h2>
-          <span className="bg-slate-100 px-2 py-1 text-xs text-slate-600">{rangeLabel}</span>
+      <section aria-labelledby="fin-h" className={`${CARD} flex flex-col gap-3 px-5 pt-3.5 pb-[18px]`}>
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="fin-h" className={PANEL_TITLE}>Financial Summary</h2>
+          <span className={PANEL_TAG}>{rangeLabel}</span>
         </div>
-        <div className="mt-2 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)]">
-          <div title="Cash received this period vs. costs incurred (incl. estimated diesel and draft payslips). A guide, not an accounting profit.">
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-500">Net Result</span>
+        <div className="flex flex-wrap items-center gap-x-14 gap-y-4">
+          <div
+            className="flex shrink grow-0 basis-[420px] flex-col gap-1"
+            title="Cash received this period vs. costs incurred (incl. estimated diesel and draft payslips). A guide, not an accounting profit."
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-neutral-500">Net Result</span>
               {net !== null && (
                 <span
-                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium ${
-                    net < 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                  className={`inline-flex items-center gap-1.5 rounded-[2px] px-2.5 py-1 text-xs font-semibold ${
+                    net < 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                   }`}
                 >
-                  <Icon name={net < 0 ? 'down' : 'up'} size={12} />
+                  <Icon name={net < 0 ? 'down' : 'up'} size={14} />
                   {net < 0 ? 'Net Loss' : 'Net Profit'}
                 </span>
               )}
             </div>
             <p
-              className={`mt-2 text-4xl font-bold tracking-tight sm:text-5xl ${
-                net !== null && net < 0 ? 'text-red-700' : 'text-slate-900'
+              className={`text-4xl font-bold tracking-[-0.02em] tabular-nums [overflow-wrap:anywhere] sm:text-5xl sm:leading-14 ${
+                net !== null && net < 0 ? 'text-red-700' : 'text-ink-metric'
               }`}
             >
               {net === null ? '--' : `${net < 0 ? '−' : ''}${formatMoney(Math.abs(net))}`}
             </p>
-            <p className="mt-2 text-sm text-slate-500">Collected − expenses</p>
+            <p className="text-sm text-ink-muted">Collected − operational − maintenance</p>
+            {net !== null && expenses && (
+              <p className="text-[13px] leading-[18px] text-ink-muted tabular-nums">
+                {formatMoney(revenue)} − {formatMoney(expenses.ops)} − {formatMoney(expenses.maint)}
+              </p>
+            )}
           </div>
 
           {revenueError || expensesError ? (
-            <p className="text-sm text-red-700 lg:col-span-2">{revenueError ?? expensesError}</p>
+            <p className="flex-1 text-sm text-red-700">{revenueError ?? expensesError}</p>
           ) : (
-            <>
-              <div className="flex flex-col justify-center gap-5">
-                <MoneyBar
-                  label="Total Revenue (collected)"
-                  value={revenueLoading ? null : revenue}
-                  max={barMax}
-                  tone="bg-primary"
-                  to="/dashboard/collections"
-                />
-                <MoneyBar
-                  label="Payroll Expenses"
-                  value={expenses?.payroll ?? null}
-                  max={barMax}
-                  tone="bg-navy"
-                  to="/dashboard/money-summary?tab=expenses#pay"
-                />
-              </div>
-              <div className="flex flex-col justify-center gap-5">
-                <MoneyBar
-                  label="Operational Expenses"
-                  value={expenses?.ops ?? null}
-                  max={barMax}
-                  tone="bg-navy"
-                  to="/dashboard/money-summary?tab=expenses#op"
-                />
-                <MoneyBar
-                  label="Maintenance Expenses (parts)"
-                  value={expenses?.maint ?? null}
-                  max={barMax}
-                  tone="bg-navy"
-                  to="/dashboard/money-summary?tab=expenses#mt"
-                />
-              </div>
-            </>
+            // Read left-to-right: Revenue | Operational, then Payroll | Maintenance.
+            <div className="grid flex-1 basis-[560px] gap-x-10 gap-y-4 sm:grid-cols-2">
+              <MoneyBar
+                label="Total Revenue (collected)"
+                value={revenueLoading ? null : revenue}
+                max={barMax}
+                tone="bg-primary"
+                to="/dashboard/collections"
+                big
+              />
+              <MoneyBar
+                label="Operational Expenses"
+                value={expenses?.ops ?? null}
+                max={barMax}
+                tone="bg-ink-secondary"
+                to="/dashboard/money-summary?tab=expenses#op"
+                big
+              />
+              <MoneyBar
+                label="Payroll Expenses"
+                value={expenses?.payroll ?? null}
+                max={barMax}
+                tone="bg-ink-secondary"
+                to="/dashboard/money-summary?tab=expenses#pay"
+              />
+              <MoneyBar
+                label="Maintenance Expenses (parts)"
+                value={expenses?.maint ?? null}
+                max={barMax}
+                tone="bg-ink-secondary"
+                to="/dashboard/money-summary?tab=expenses#mt"
+              />
+            </div>
           )}
         </div>
       </section>
 
       {/* Today's Deliveries */}
-      <section className={CARD}>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <div className="flex items-center gap-3">
-            <h2 className="font-semibold text-slate-900">Today's Deliveries</h2>
-            <span className="bg-slate-100 px-2 py-1 text-xs text-slate-600">Today</span>
+      <section aria-labelledby="del-h" className={CARD}>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-1">
+          <div className="flex min-h-11 items-center gap-3">
+            <h2 id="del-h" className={PANEL_TITLE}>Today's Deliveries</h2>
+            <span className={PANEL_TAG}>Today</span>
           </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <div className="flex flex-wrap items-center gap-x-6 text-sm">
             {todayDeliveryRows.length > 0 && (
-              <span className="flex items-center gap-2 font-medium text-green-700">
+              <span className="flex items-center gap-3 font-semibold text-green-800">
                 <span className="flex gap-1" aria-hidden="true">
                   {todayDeliveryRows.slice(0, 10).map((r) => (
                     <span
                       key={r.itinerary_id}
-                      className={`h-1.5 w-7 ${r.status === 'Delivered' ? 'bg-green-700' : 'bg-slate-200'}`}
+                      className={`h-2 w-7 ${r.status === 'Delivered' ? 'bg-green-700' : 'bg-slate-200'}`}
                     />
                   ))}
                 </span>
                 {deliveredCount} of {todayDeliveryRows.length} delivered
               </span>
             )}
-            <Link to="/dashboard/dispatch" className="flex items-center gap-1.5 font-medium text-primary hover:underline">
+            <Link to="/dashboard/dispatch" className="flex min-h-11 items-center gap-2 font-semibold text-primary hover:underline">
               Open Dispatch Board
-              <Icon name="arrow" size={14} />
+              <Icon name="arrow" />
             </Link>
           </div>
         </div>
 
         {todayDeliveriesLoading && (
-          <p className="border-t border-slate-200 px-5 py-4 text-sm text-slate-500">Loading today's deliveries...</p>
+          <p className="border-t border-line px-5 py-4 text-sm text-ink-muted">Loading today's deliveries...</p>
         )}
         {!todayDeliveriesLoading && todayDeliveriesError && (
-          <p className="border-t border-slate-200 px-5 py-4 text-sm text-red-700">{todayDeliveriesError}</p>
+          <p className="border-t border-line px-5 py-4 text-sm text-red-700">{todayDeliveriesError}</p>
         )}
         {!todayDeliveriesLoading && !todayDeliveriesError && todayDeliveryRows.length === 0 && (
           <EmptyState message="No deliveries scheduled for today." className="m-4" />
@@ -831,7 +877,7 @@ function StaffDashboard() {
         {!todayDeliveriesLoading && todayDeliveryRows.length > 0 && (
           <>
             {/* Phone: one stacked row per delivery (the table is too wide) */}
-            <div className="flex flex-col border-t border-slate-200 sm:hidden">
+            <div className="flex flex-col border-t border-line sm:hidden">
               {deliveriesOnPage.map((row) => (
                 <Link
                   key={row.itinerary_id}
@@ -839,16 +885,16 @@ function StaffDashboard() {
                   className="border-b border-slate-200 px-4 py-3 text-sm last:border-0"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-primary">
+                    <span className="font-semibold text-primary">
                       Trip #{row.itinerary_id}{' '}
-                      <span className="font-normal text-slate-500">· Booking #{row.booking_id}</span>
+                      <span className="font-normal text-ink-muted">· Booking #{row.booking_id}</span>
                     </span>
-                    <StatusBadge status={row.status} />
+                    <StatusBadge status={row.status} icon />
                   </div>
-                  <p className="mt-1 text-slate-900">
-                    {row.from} <span className="text-slate-400">→</span> {row.to}
+                  <p className="mt-1 text-ink-metric">
+                    {row.from} <span className="text-ink-muted">→</span> {row.to}
                   </p>
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-1 text-xs text-ink-secondary">
                     {row.startAt ? formatSlot(row.startAt, row.endAt) : 'No time set'} ·{' '}
                     {row.driver ?? 'Unassigned'} · {row.rate != null ? formatMoney(row.rate) : 'N/A'}
                   </p>
@@ -856,60 +902,64 @@ function StaffDashboard() {
               ))}
             </div>
 
-            <div className="hidden overflow-x-auto sm:block">
-              <table className="w-full text-left text-sm">
-                <thead className="border-y border-slate-200 bg-slate-50 text-xs tracking-wider text-slate-600 uppercase">
+            <div className="hidden overflow-x-auto border-t border-line sm:block">
+              {/* Header row style comes from index.css (thead th). */}
+              <table className="w-full text-left text-sm text-ink-metric">
+                <thead>
                   <tr>
-                    <th className="px-4 py-2.5 font-semibold">Trip / Booking</th>
-                    <th className="px-4 py-2.5 font-semibold">Time slot</th>
-                    <th className="px-4 py-2.5 font-semibold">Driver</th>
-                    <th className="px-4 py-2.5 font-semibold">Route</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Rate</th>
-                    <th className="px-4 py-2.5 font-semibold">Truck / Trailer</th>
-                    <th className="px-4 py-2.5 font-semibold">Status</th>
-                    <th className="w-10 px-2 py-2.5">
+                    <th className="px-4 py-2">Trip / Booking</th>
+                    <th className="px-4 py-2">Time slot</th>
+                    <th className="px-4 py-2">Driver</th>
+                    <th className="px-4 py-2">Route</th>
+                    <th className="px-4 py-2 text-right">Rate</th>
+                    <th className="px-4 py-2">Truck / Trailer</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="w-11 px-2 py-2">
                       <span className="sr-only">Open</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {deliveriesOnPage.map((row) => (
-                    <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50">
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <Link to={tripLink(row)} className="font-medium text-primary hover:underline">
+                    <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0">
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <Link to={tripLink(row)} className="font-semibold text-primary hover:underline">
                           Trip #{row.itinerary_id}
                         </Link>
-                        <p className="text-xs text-slate-500">Booking #{row.booking_id}</p>
+                        <p className="text-[13px] leading-[18px] text-ink-muted">Booking #{row.booking_id}</p>
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">
+                      <td className="px-4 py-2 whitespace-nowrap">
                         {row.startAt ? formatSlot(row.startAt, row.endAt) : '—'}
                       </td>
-                      <td className={`px-4 py-2.5 ${row.driver ? 'text-slate-700' : 'text-slate-400'}`}>
+                      <td className={`px-4 py-2 ${row.driver ? '' : 'text-ink-muted'}`}>
                         {row.driver ?? 'Unassigned'}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <p className="text-slate-900">{row.from}</p>
-                        <p className="text-slate-500">→ {row.to}</p>
+                      <td className="px-4 py-2">
+                        <p>{row.from}</p>
+                        <p className="flex items-center gap-1.5 text-ink-muted">
+                          <Icon name="arrow" size={14} />
+                          {row.to}
+                        </p>
                       </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap text-slate-900">
+                      <td className="px-4 py-2 text-right font-semibold whitespace-nowrap tabular-nums">
                         {row.rate != null ? formatMoney(row.rate) : 'N/A'}
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <p className={`font-medium ${row.truckPlateNumber ? 'text-slate-900' : 'text-slate-400'}`}>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <p className={`font-semibold ${row.truckPlateNumber ? '' : 'font-normal text-ink-muted'}`}>
                           {row.truckPlateNumber ?? 'No truck'}
                         </p>
-                        <p className="text-xs text-slate-500">{row.trailerPlateNumber ?? 'No trailer'}</p>
+                        <p className="text-[13px] leading-[18px] text-ink-muted">{row.trailerPlateNumber ?? 'No trailer'}</p>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <StatusBadge status={row.status} />
+                      <td className="px-4 py-2">
+                        <StatusBadge status={row.status} icon />
                       </td>
-                      <td className="px-2 py-2.5 text-slate-500">
+                      <td className="px-0 py-0">
                         <Link
                           to={tripLink(row)}
                           aria-label={`Open trip #${row.itinerary_id}`}
-                          className="hover:text-primary"
+                          className="flex h-11 w-11 items-center justify-center text-primary"
                         >
-                          <Icon name="chevron" />
+                          <Icon name="chevron" size={18} />
                         </Link>
                       </td>
                     </tr>
@@ -918,12 +968,12 @@ function StaffDashboard() {
               </table>
             </div>
             {deliveryPageCount > 1 && (
-              <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-4 py-2 text-sm text-slate-600">
+              <div className="flex items-center justify-end gap-3 border-t border-line px-5 py-2 text-sm text-ink-secondary">
                 <button
                   type="button"
                   onClick={() => setDeliveryPage((p) => Math.max(p - 1, 0))}
                   disabled={safeDeliveryPage === 0}
-                  className="border border-slate-300 px-2.5 py-1 hover:border-primary disabled:opacity-40"
+                  className="btn-secondary h-11 px-3.5 font-medium"
                 >
                   ‹ Previous
                 </button>
@@ -934,7 +984,7 @@ function StaffDashboard() {
                   type="button"
                   onClick={() => setDeliveryPage((p) => Math.min(p + 1, deliveryPageCount - 1))}
                   disabled={safeDeliveryPage >= deliveryPageCount - 1}
-                  className="border border-slate-300 px-2.5 py-1 hover:border-primary disabled:opacity-40"
+                  className="btn-secondary h-11 px-3.5 font-medium"
                 >
                   Next ›
                 </button>
@@ -946,25 +996,31 @@ function StaffDashboard() {
 
       {/* Bottom row: Fleet & Crew, Cash Advance, Clients & Bookings */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className={`${CARD} flex flex-col px-5 py-4`}>
-          <h2 className="font-semibold text-slate-900">Fleet &amp; Crew</h2>
-          {hrError && <p className="mt-1 text-xs text-red-700">{hrError}</p>}
-          <div className="mt-3 grid flex-1 grid-cols-2 gap-3">
+        <section aria-labelledby="fleet-h" className={`${CARD} flex flex-col gap-2.5 px-5 pt-3.5 pb-4`}>
+          <h2 id="fleet-h" className={PANEL_TITLE}>Fleet &amp; Crew</h2>
+          {hrError && <p className="text-xs text-red-700">{hrError}</p>}
+          <div className="grid flex-1 auto-rows-fr grid-cols-2 gap-3">
             <StatTile
               label="Trucks Operational"
               to="/dashboard/fleet"
               note={!loading && trucksDown > 0 ? `${trucksDown} not operational` : undefined}
+              squares={!loading && <UnitSquares ok={summary.trucksOperational} total={summary.truckCount} />}
             >
               {loading ? '--' : `${summary.trucksOperational}/${summary.truckCount}`}
-              {!loading && <UnitSquares ok={summary.trucksOperational} total={summary.truckCount} />}
             </StatTile>
-            <StatTile label="Trailers Operational" to="/dashboard/fleet">
+            <StatTile
+              label="Trailers Operational"
+              to="/dashboard/fleet"
+              squares={!loading && <UnitSquares ok={summary.trailersOperational} total={summary.trailerCount} />}
+            >
               {loading ? '--' : `${summary.trailersOperational}/${summary.trailerCount}`}
-              {!loading && <UnitSquares ok={summary.trailersOperational} total={summary.trailerCount} />}
             </StatTile>
-            <StatTile label="Drivers Available" to="/dashboard/schedule-overview">
+            <StatTile
+              label="Drivers Available"
+              to="/dashboard/schedule-overview"
+              squares={hr && <UnitSquares ok={hr.available} total={hr.drivers} />}
+            >
               {hr ? `${hr.available}/${hr.drivers}` : '--'}
-              {hr && <UnitSquares ok={hr.available} total={hr.drivers} />}
             </StatTile>
             <StatTile label="Total Employees" to="/dashboard/employees">
               {hr?.total ?? '--'}
@@ -972,22 +1028,24 @@ function StaffDashboard() {
           </div>
         </section>
 
-        <Link to="/dashboard/cash-advance" className={`${CARD} flex flex-col px-5 py-4 hover:border-primary`}>
-          <h2 className="font-semibold text-slate-900">Cash Advance</h2>
+        <Link to="/dashboard/cash-advance" className={`${CARD} flex flex-col gap-2.5 px-5 pt-3.5 pb-4 hover:border-primary`}>
+          <h2 className={PANEL_TITLE}>Cash Advance</h2>
           {cashAdvanceError ? (
-            <p className="mt-2 text-sm text-red-700">{cashAdvanceError}</p>
+            <p className="text-sm text-red-700">{cashAdvanceError}</p>
           ) : (
-            <div className="mt-3 grid flex-1 items-center gap-6 sm:grid-cols-2">
-              <div>
-                <p className="text-sm text-slate-600">Current Balance</p>
-                <p className="mt-1 text-4xl font-bold tracking-tight text-primary">
-                  {cashAdvance ? formatMoney(cashAdvance.current) : '--'}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">Disbursed − deducted</p>
+            <div className="flex flex-1 flex-wrap items-center gap-x-7 gap-y-3">
+              <div className="flex flex-1 basis-[190px] flex-col gap-1.5">
+                <div>
+                  <p className="text-sm font-medium text-neutral-500">Current Balance</p>
+                  <p className="text-[40px] leading-12 font-bold tracking-[-0.02em] text-primary tabular-nums">
+                    {cashAdvance ? formatMoney(cashAdvance.current) : '--'}
+                  </p>
+                  <p className="text-sm text-ink-muted">Disbursed − deducted</p>
+                </div>
                 {/* Share of what was disbursed that has been paid back */}
-                <div className="mt-3 h-2.5 bg-slate-200">
+                <div className="h-3 bg-[#dbe5ee]">
                   <div
-                    className="h-2.5 bg-navy"
+                    className="h-3 bg-ink-secondary"
                     style={{
                       width: `${
                         cashAdvance && cashAdvance.issued > 0
@@ -997,16 +1055,16 @@ function StaffDashboard() {
                     }}
                   />
                 </div>
-                <p className="mt-2 flex gap-4 text-xs text-slate-600">
+                <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-secondary">
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 bg-navy" /> Deducted
+                    <span className="h-2.5 w-2.5 bg-ink-secondary" /> Deducted
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 border border-slate-400 bg-slate-200" /> Balance
+                    <span className="h-2.5 w-2.5 border border-line-control bg-[#dbe5ee]" /> Balance
                   </span>
                 </p>
               </div>
-              <dl className="text-sm">
+              <dl className="flex-1 basis-[170px] text-sm">
                 {(
                   [
                     ['Disbursed', cashAdvance?.issued],
@@ -1014,9 +1072,9 @@ function StaffDashboard() {
                     ['Pending Approval', cashAdvance?.pending],
                   ] as const
                 ).map(([label, value]) => (
-                  <div key={label} className="flex justify-between gap-3 border-t border-slate-200 py-3">
-                    <dt className="text-slate-700">{label}</dt>
-                    <dd className="font-semibold text-slate-900">{value == null ? '--' : formatMoney(value)}</dd>
+                  <div key={label} className="flex justify-between gap-3 border-t border-slate-200 py-2.5 last:pb-0">
+                    <dt className="font-medium text-ink-secondary">{label}</dt>
+                    <dd className="font-semibold text-ink-metric tabular-nums">{value == null ? '--' : formatMoney(value)}</dd>
                   </div>
                 ))}
               </dl>
@@ -1024,25 +1082,29 @@ function StaffDashboard() {
           )}
         </Link>
 
-        <section className={`${CARD} flex flex-col px-5 py-4`}>
-          <h2 className="font-semibold text-slate-900">Clients &amp; Bookings</h2>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <Link to="/dashboard/quotations" className="border border-slate-300 px-3 py-3 hover:border-primary">
-              <p className="text-sm text-slate-700">Pending Quotes</p>
-              <p className="mt-1 flex items-baseline justify-between gap-2">
-                <span className="text-2xl font-bold text-primary">{loading ? '--' : summary.pendingQuotes}</span>
+        <section aria-labelledby="cli-h" className={`${CARD} flex flex-col gap-2.5 px-5 pt-3.5 pb-4`}>
+          <h2 id="cli-h" className={PANEL_TITLE}>Clients &amp; Bookings</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <Link to="/dashboard/quotations" className="flex flex-col gap-0.5 border border-line px-3 py-2 hover:border-primary">
+              <span className="text-sm font-medium text-ink-secondary">Pending Quotes</span>
+              <span className="flex items-center justify-between gap-3">
+                <span className="text-2xl font-semibold tracking-[-0.01em] text-primary tabular-nums">
+                  {loading ? '--' : summary.pendingQuotes}
+                </span>
                 {!loading && summary.pendingQuotes > 0 && (
-                  <span className="text-sm font-medium text-primary">Review</span>
+                  <span className="text-sm font-semibold text-primary">Review</span>
                 )}
-              </p>
+              </span>
             </Link>
-            <Link to="/dashboard/bookings" className="border border-slate-300 px-3 py-3 hover:border-primary">
-              <p className="text-sm text-slate-700">Active Bookings</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? '--' : summary.activeBookings}</p>
+            <Link to="/dashboard/bookings" className="flex flex-col gap-0.5 border border-line px-3 py-2 hover:border-primary">
+              <span className="text-sm font-medium text-ink-secondary">Active Bookings</span>
+              <span className="text-2xl font-semibold tracking-[-0.01em] text-ink-metric tabular-nums">
+                {loading ? '--' : summary.activeBookings}
+              </span>
             </Link>
           </div>
-          <h3 className="mt-4 text-sm font-semibold text-slate-900">Top Unpaid Clients</h3>
-          <div className="mt-2 flex min-h-32 flex-1 flex-col">
+          <h3 className="text-sm font-semibold text-ink">Top Unpaid Clients</h3>
+          <div className="flex min-h-32 flex-1 flex-col">
             <TopCreditorsCard refreshKey={refreshKey} />
           </div>
         </section>

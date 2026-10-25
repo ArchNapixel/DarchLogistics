@@ -128,7 +128,7 @@ function SettingsSection() {
       )}
 
       {!loading && !error && settings.length > 0 && (
-        <div className="mt-6 max-w-md border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mt-6 max-w-md border-2 border-line-card bg-white p-6">
           <div className="flex flex-col gap-4">
             {settings.map((setting) => (
               <label
@@ -161,7 +161,7 @@ function SettingsSection() {
                         [setting.setting_key]: e.target.value,
                       }))
                     }
-                    className="w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                    className="w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
                   />
                   {setting.unit && (
                     <span className="text-sm text-slate-400">{setting.unit}</span>

@@ -50,7 +50,7 @@
 // The row shows "Awaiting downpayment" and the next status is disabled;
 // the database (require_downpayment trigger) enforces the same rule for
 // drivers' phones too.
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { usePaged } from '../../../lib/usePaged'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
@@ -63,7 +63,7 @@ import {
 } from '../../../lib/statusRelogRequests'
 import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
-import StatusTimeModal from './StatusTimeModal'
+import UpdateStatusModal from './UpdateStatusModal'
 import MarkAbsentModal from './MarkAbsentModal'
 import BreakdownModal from './BreakdownModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
@@ -75,7 +75,6 @@ import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney, formatSlot, slotLines } from '../../../lib/format'
 import StatusBadge from '../../../components/StatusBadge'
-import { SearchBox } from './BookingsTripsControls'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -227,7 +226,7 @@ type TrailerOption = {
 // Dropdown look for the crew / truck / trailer pickers. Orange while
 // nothing is picked, so what's still missing stands out.
 function pickerClasses(unassigned: boolean) {
-  return `w-full min-w-40 border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-primary focus:outline-none disabled:opacity-60 ${
+  return `min-h-11 w-full min-w-40 rounded-[2px] border border-line-control bg-white px-3 py-2.5 text-sm focus:border-primary disabled:opacity-60 ${
     unassigned ? 'font-medium text-orange-700' : 'text-slate-900'
   }`
 }
@@ -292,7 +291,7 @@ function CrewSelect({
         <select disabled className={pickerClasses(currentId === null)} value="">
           <option value="">{currentName ?? 'Unassigned'}</option>
         </select>
-        <span className="text-xs text-amber-700">Set the trip time first (⋮ menu)</span>
+        <span className="text-xs text-amber-700">Set the trip time first (Schedule above)</span>
       </div>
     )
   }
@@ -453,71 +452,6 @@ const STATUS_LABELS: Record<string, string> = {
   Delivered: 'Delivered',
 }
 
-// Mono accent ramp only, no traffic-light colors -- weight increases as
-// a trip gets closer to done, Delivered reads as a solid, locked-in tag
-// rather than just another dropdown option.
-const STATUS_SELECT_STYLES: Record<string, string> = {
-  Awaiting: 'border-neutral-300 bg-transparent text-neutral-600',
-  // On the road: outline only, so the dark fill is left for trips that are
-  // waiting (blocked) behind them.
-  Dispatched: 'border-accent-300 bg-transparent text-accent-700',
-  PickedUp: 'border-accent-500 bg-transparent text-accent-700',
-  InTransit: 'border-accent-500 bg-transparent text-accent-900',
-  Delivered: 'border-accent-900 bg-accent-900 text-white',
-}
-
-// "⋮" button + small popup with the row's actions. The popup is
-// position: fixed because the table's overflow-x-auto wrapper would clip
-// an absolutely-positioned one. Items left out (null) aren't shown.
-type MenuItem = { label: string; onClick: () => void; disabled?: boolean }
-
-function ActionsMenu({ items }: { items: (MenuItem | null)[] }) {
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
-  const close = () => setPos(null)
-  const itemClass =
-    'block w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent'
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Row actions"
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
-        }}
-        className="flex h-11 w-11 items-center justify-center border border-slate-300 text-lg leading-none text-slate-600 hover:bg-slate-50"
-      >
-        ⋮
-      </button>
-      {pos && (
-        <>
-          {/* invisible full-screen layer: clicking anywhere else closes the menu */}
-          <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="fixed z-50 min-w-48 border border-slate-200 bg-white py-1 shadow-lg" style={{ top: pos.top, right: pos.right }}>
-            {items
-              .filter((item): item is MenuItem => item !== null)
-              .map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={itemClass}
-                  disabled={item.disabled}
-                  onClick={() => {
-                    close()
-                    item.onClick()
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-          </div>
-        </>
-      )}
-    </>
-  )
-}
-
 // Everything the trip tables need from the board.
 type BoardContext = {
   allRows: DispatchRow[]
@@ -552,37 +486,117 @@ type BoardContext = {
   onBreakdown: (row: DispatchRow) => void
 }
 
-const TH = 'px-3 py-3 text-xs font-semibold tracking-wider text-slate-600 uppercase'
+// Table spacing from the canvas board: 20px at the edges, 16px between
+// columns, rows at least 60px tall.
+const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+const TD = 'px-2 py-2 first:pl-5 last:pr-5'
+// The canvas's small tag (2px corners, 12px semibold).
+const CHIP = 'inline-flex w-fit items-center gap-1.5 rounded-[2px] px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
+// Small grey line under a cell's main value.
+const SUB = 'block text-[13px] leading-[18px] text-ink-muted'
 
-// Time slot on two lines, plus Overdue / storage-deadline flags.
-function SlotCell({ row, now }: { row: DispatchRow; now: number }) {
+// Trips on the road right now.
+const ON_ROAD = ['Dispatched', 'PickedUp', 'InTransit']
+
+// The day a trip belongs to on the day view: its slot's start (Manila),
+// else its trip date.
+function tripDay(r: DispatchRow): string {
+  return r.trip_start_at ? toManilaDate(new Date(r.trip_start_at)) : r.trip_date_from
+}
+
+// 'YYYY-MM-DD' moved by n days (noon UTC, so no timezone edge).
+function shiftDay(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// "Today · Fri, Oct 23, 2026"
+function dayLabel(day: string, today: string): string {
+  const text = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  if (day === today) return `Today · ${text}`
+  if (day === shiftDay(today, 1)) return `Tomorrow · ${text}`
+  if (day === shiftDay(today, -1)) return `Yesterday · ${text}`
+  return text
+}
+
+// Small outline icons (24x24 paths, same style as the sidebar's).
+const ICONS = {
+  clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v5l3 2',
+  truck: 'M2 6h11v10H2z M13 9h5l4 4v3h-9z M6 18.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0 M16 18.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
+  box: 'M3 8l9-5 9 5v8l-9 5-9-5z M3 8l9 5 9-5 M12 13v8',
+  arrow: 'M5 12h14 M13 6l6 6-6 6',
+  check: 'M5 12l5 5 9-10',
+  wrench: 'M14.5 6.5a4 4 0 0 0 4.5 5L9 21.5a2 2 0 0 1-3-3l10-10 M14.5 6.5l3-3 2 2-3 3',
+  calendar: 'M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4',
+  left: 'M15 6l-6 6 6 6',
+  right: 'M9 6l6 6-6 6',
+  refresh: 'M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15',
+  close: 'M6 6l12 12 M18 6L6 18',
+  warning: 'M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+}
+
+function Icon({ name, size = 16, className = '' }: { name: keyof typeof ICONS; size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <path d={ICONS[name]} />
+    </svg>
+  )
+}
+
+// The five status tiles (and their chip colors), in order.
+const FLOW_TILES: { status: string; label: string; icon: keyof typeof ICONS; chip: string }[] = [
+  { status: 'Awaiting', label: 'Awaiting', icon: 'clock', chip: 'bg-amber-100 text-amber-900' },
+  { status: 'Dispatched', label: 'Dispatched', icon: 'truck', chip: 'bg-primary-soft text-primary' },
+  { status: 'PickedUp', label: 'Picked up', icon: 'box', chip: 'bg-violet-100 text-violet-800' },
+  { status: 'InTransit', label: 'In transit', icon: 'arrow', chip: 'bg-orange-100 text-orange-800' },
+  { status: 'Delivered', label: 'Delivered', icon: 'check', chip: 'bg-green-100 text-green-800' },
+]
+
+// Time slot (date above it when the trip isn't on the day being shown),
+// plus Overdue / storage-deadline flags.
+function SlotCell({ row, now, showDate }: { row: DispatchRow; now: number; showDate: boolean }) {
   const slot = row.trip_start_at ? slotLines(row.trip_start_at, row.trip_end_at) : null
   const storage = storagePending(row, now)
   return (
-    <div className="flex flex-col items-start gap-1 text-slate-900">
+    <div className="flex flex-col items-start gap-1">
       {slot ? (
-        <span>
-          {slot.date}
-          <span className="block text-slate-500">{slot.time}</span>
+        <span className="tabular-nums">
+          {showDate && <span className={SUB}>{slot.date}</span>}
+          {slot.time}
         </span>
       ) : (
         <span>
-          {formatDate(row.trip_date_from)}
-          <span className="block text-xs font-medium text-amber-700">No time set</span>
+          {showDate && <span className={SUB}>{formatDate(row.trip_date_from)}</span>}
+          <span className="text-[13px] font-semibold text-orange-700">No time set</span>
         </span>
       )}
       {/* Storage-deadline trip still at the port: that deadline is what
           matters until pickup, so it replaces "Overdue". */}
       {storage ? (
-        <span className={`px-1.5 py-0.5 text-[11px] font-semibold ${STORAGE_BADGE[storage].className}`}>
+        <span className={`${CHIP} ${STORAGE_BADGE[storage].className}`}>
           {storage === 'missed' ? STORAGE_BADGE.missed.label : `Pick up by ${formatDate(row.storage_deadline!)} 11:59 PM`}
         </span>
       ) : (
-        isOverdue(row, now) && (
-          <span className="border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 uppercase">
-            Overdue
-          </span>
-        )
+        isOverdue(row, now) && <span className={`${CHIP} bg-red-100 text-red-800`}>Overdue</span>
       )}
     </div>
   )
@@ -590,10 +604,10 @@ function SlotCell({ row, now }: { row: DispatchRow; now: number }) {
 
 function CargoCell({ row }: { row: DispatchRow }) {
   return (
-    <span className="text-slate-900">
+    <span>
       {row.cargo_label}
       {row.cargo_description && (
-        <span className="block max-w-60 truncate text-slate-500" title={row.cargo_description}>
+        <span className={SUB} title={row.cargo_description}>
           {row.cargo_description}
         </span>
       )}
@@ -664,64 +678,6 @@ function atRiskReasons(
     }
   }
   return reasons
-}
-
-// Status: a badge while the trip still needs crew/vehicles (it can't move
-// yet), otherwise the dropdown -- Admin any status, Dispatcher only the
-// next step. Picking "Delivered" opens MarkDeliveredModal.
-function StatusCell({ row, ctx }: { row: DispatchRow; ctx: BoardContext }) {
-  const editable = ctx.canEditStatus && (row.status !== 'Awaiting' || isFullyAssigned(row))
-  const crewBusy = crewOnRoadReason(row, ctx.allRows)
-  return (
-    <div className="flex flex-col items-start gap-1.5">
-      {editable ? (
-        <select
-          value={row.status}
-          disabled={ctx.savingId === row.itinerary_id || crewBusy !== null}
-          title={crewBusy ? `Can't start: ${crewBusy}.` : undefined}
-          onChange={(e) => ctx.onStatusChange(row.itinerary_id, row.status, e.target.value)}
-          // Fixed width: the long "(downpayment first)" option text would
-          // otherwise stretch it; the open list still shows it in full.
-          className={`w-40 border px-2 py-1.5 text-xs font-semibold tracking-[0.03em] uppercase focus:outline-none ${
-            crewBusy
-              ? 'cursor-not-allowed border-slate-300 bg-slate-200 text-slate-500'
-              : (STATUS_SELECT_STYLES[row.status] ?? 'border-neutral-300 text-neutral-600')
-          }`}
-        >
-          {(ctx.canFreelyEditStatus
-            ? STATUS_FLOW
-            : // Dispatcher: current status + the very next step only.
-              STATUS_FLOW.slice(STATUS_FLOW.indexOf(row.status), STATUS_FLOW.indexOf(row.status) + 2)
-          ).map((status) => (
-            <option
-              key={status}
-              value={status}
-              // A trip can't leave Awaiting without a time slot, driver, truck
-              // and trailer, nor before the booking's downpayment is paid (or waived).
-              disabled={
-                row.status === 'Awaiting' &&
-                status !== 'Awaiting' &&
-                (!isFullyAssigned(row) || !tripsMayStart(row.downpayment) || crewBusy !== null)
-              }
-            >
-              {STATUS_LABELS[status]}
-              {row.status === 'Awaiting' && status !== 'Awaiting' && !tripsMayStart(row.downpayment)
-                ? ' (downpayment first)'
-                : ''}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <>
-          <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
-          {/* What it still needs before it can leave Awaiting. */}
-          {row.status === 'Awaiting' && !isFullyAssigned(row) && (
-            <span className="text-xs text-slate-500">Needs {missingForDispatch(row)}</span>
-          )}
-        </>
-      )}
-    </div>
-  )
 }
 
 // Truck or trailer picker for one trip, grouped like the crew pickers:
@@ -799,223 +755,436 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
   )
 }
 
-// The ⋮ menu items for one trip.
-function rowMenuItems(row: DispatchRow, ctx: BoardContext): (MenuItem | null)[] {
-  const done = row.status === 'Delivered'
-  return [
-    { label: 'View logs', onClick: () => ctx.onViewLogs(row.itinerary_id) },
-    !done && ctx.canEditStatus
-      ? { label: row.trip_start_at ? 'Edit time' : 'Set time', onClick: () => ctx.onEditTime(row) }
-      : null,
-    // A trip on the road whose truck / trailer broke down.
-    ctx.canEditStatus && ['Dispatched', 'PickedUp', 'InTransit'].includes(row.status) && (row.plate_number || row.trailer_id !== null)
-      ? { label: 'Report breakdown', onClick: () => ctx.onBreakdown(row) }
-      : null,
-    // Dispatcher: backward moves go through Admin.
-    ctx.canEditStatus && !ctx.canFreelyEditStatus && row.status !== 'Awaiting'
-      ? {
-          label: ctx.pendingCorrectionIds.has(row.itinerary_id) ? 'Correction pending' : 'Request correction',
-          disabled: ctx.pendingCorrectionIds.has(row.itinerary_id),
-          onClick: () => ctx.onRequestCorrection(row),
-        }
-      : null,
-    // Admin: un-deliver a completed trip (asks first).
-    done && ctx.canFreelyEditStatus
-      ? { label: 'Move back to In Transit…', onClick: () => ctx.onStatusChange(row.itinerary_id, 'Delivered', 'InTransit') }
-      : null,
-  ]
-}
+// What a trip still needs or is waiting on, as small tags under its status.
+type AtRisk = { reasons: string[]; actions: { label: string; onClick: () => void }[] }
 
-// Needs Assignment / Assigned: one booking's trips.
-function ActiveTripTable({ rows, ctx }: { rows: DispatchRow[]; ctx: BoardContext }) {
+function TripStatusCell({ row, risk, pendingCorrection }: { row: DispatchRow; risk: AtRisk | undefined; pendingCorrection: boolean }) {
+  const needs = row.status === 'Awaiting' && !isFullyAssigned(row) ? missingForDispatch(row) : null
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-y border-slate-200 bg-slate-50">
-          <tr>
-            <th className={`${TH} pl-5`}>Trip</th>
-            <th className={TH}>Time Slot</th>
-            <th className={TH}>Cargo</th>
-            <th className={TH}>Status</th>
-            <th className={TH}>Driver</th>
-            <th className={TH}>Helper</th>
-            <th className={TH}>Truck</th>
-            <th className={TH}>Trailer</th>
-            <th className={TH}>
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0">
-              <td className="py-4 pr-3 pl-5 text-base font-bold text-slate-900">#{row.itinerary_id}</td>
-              <td className="px-3 py-4">
-                <SlotCell row={row} now={ctx.now} />
-              </td>
-              <td className="px-3 py-4">
-                <CargoCell row={row} />
-              </td>
-              <td className="px-3 py-4">
-                <StatusCell row={row} ctx={ctx} />
-              </td>
-              <td className="px-3 py-4">
-                <CrewSelect
-                  row={row}
-                  crewRole="Driver"
-                  people={ctx.drivers}
-                  allRows={ctx.allRows}
-                  leaveByEmployee={ctx.leaveByEmployee}
-                  now={ctx.now}
-                  disabled={ctx.savingId === row.itinerary_id}
-                  onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
-                />
-              </td>
-              <td className="px-3 py-4">
-                <CrewSelect
-                  row={row}
-                  crewRole="Helper"
-                  people={ctx.helpers}
-                  allRows={ctx.allRows}
-                  leaveByEmployee={ctx.leaveByEmployee}
-                  now={ctx.now}
-                  disabled={ctx.savingId === row.itinerary_id}
-                  onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Helper', row.assigned_helper_employee_id, id)}
-                />
-              </td>
-              <td className="px-3 py-4">
-                <VehicleSelect kind="Truck" row={row} ctx={ctx} />
-              </td>
-              <td className="px-3 py-4">
-                <VehicleSelect kind="Trailer" row={row} ctx={ctx} />
-              </td>
-              <td className="py-4 pr-5 pl-3">
-                <ActionsMenu items={rowMenuItems(row, ctx)} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col items-start gap-1">
+      <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
+      {needs && <span className="text-[13px] leading-[18px] font-semibold text-orange-700">Needs {needs}</span>}
+      {row.status === 'Awaiting' && row.downpayment && !tripsMayStart(row.downpayment) && (
+        <span className={`${CHIP} bg-amber-100 text-amber-900`}>Awaiting downpayment</span>
+      )}
+      {risk && <span className={`${CHIP} bg-red-100 text-red-800`}>At risk</span>}
+      {pendingCorrection && <span className={`${CHIP} bg-slate-200 text-ink-secondary`}>Correction pending</span>}
     </div>
   )
 }
 
-// Completed: one flat table, read-only -- changing the driver of a
-// delivered trip would move its pay to someone else, and assigning a truck
-// would flip it back to "In Transit". Admin can still move one back (⋮).
-function CompletedTripTable({ rows, ctx }: { rows: DispatchRow[]; ctx: BoardContext }) {
-  const trailerPlate = (id: number | null) =>
-    id === null ? '—' : (ctx.trailers.find((t) => t.trailer_id === id)?.plate_number ?? `#${id}`)
+// One label + value pair in the trip panel.
+function PanelField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50">
-          <tr>
-            <th className={`${TH} pl-5`}>Booking</th>
-            <th className={TH}>Origin → Destination</th>
-            <th className={TH}>Cargo</th>
-            <th className={TH}>Time Slot</th>
-            <th className={TH}>Status</th>
-            <th className={TH}>Driver</th>
-            <th className={TH}>Helper</th>
-            <th className={TH}>Truck</th>
-            <th className={TH}>Trailer</th>
-            <th className={TH}>
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.itinerary_id} className="border-b border-slate-200 last:border-0">
-              <td className="py-3 pr-3 pl-5 text-base font-bold text-slate-900">
-                <Link to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`} className="hover:underline">
-                  #{row.booking_id}
-                </Link>
-              </td>
-              <td className="px-3 py-3 text-slate-900">
-                {row.pickup_location}
-                <span className="block text-slate-500">→ {row.delivery_location}</span>
-              </td>
-              <td className="px-3 py-3">
-                <CargoCell row={row} />
-              </td>
-              <td className="px-3 py-3">
-                <SlotCell row={row} now={ctx.now} />
-              </td>
-              <td className="px-3 py-3">
-                <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
-              </td>
-              <td className="px-3 py-3 text-slate-900">{row.assigned_driver_name ?? '—'}</td>
-              <td className="px-3 py-3 text-slate-900">{row.assigned_helper_name ?? '—'}</td>
-              <td className="px-3 py-3 text-slate-900">{row.plate_number ?? '—'}</td>
-              <td className="px-3 py-3 text-slate-900">{trailerPlate(row.trailer_id)}</td>
-              <td className="py-3 pr-5 pl-3">
-                <ActionsMenu items={rowMenuItems(row, ctx)} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[13px] leading-[18px] font-medium text-ink-muted">{label}</span>
+      <div className="text-[15px] leading-[22px] font-medium text-ink">{children}</div>
     </div>
   )
 }
 
-// The big box every tab draws in: fills the screen height, with a footer
-// line (summary on the left, Previous/Next on the right when paged).
-function BoardBox({
-  children,
-  footer,
-  pager,
+const PANEL_HEADING = 'mb-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink'
+
+// "View" on a trip: everything about it in a panel that slides in from the
+// right -- schedule (edit time), crew and vehicles (the pickers with
+// suggestions), cargo, the booking (downpayment, "Use suggested crew for all
+// trips"), at-risk reasons with their one-click fixes, and the logs /
+// breakdown / correction actions.
+function TripPanel({
+  row,
+  ctx,
+  bookingTrips,
+  risk,
+  pendingCorrection,
+  bulkBusy,
+  onClose,
+  onUpdateStatus,
+  onAssignSuggested,
 }: {
-  children: React.ReactNode
-  footer?: string
-  pager?: { page: number; pageCount: number; onChange: (page: number) => void }
+  row: DispatchRow
+  ctx: BoardContext
+  // Every loaded trip of the same booking (this one included).
+  bookingTrips: DispatchRow[]
+  risk: AtRisk | undefined
+  pendingCorrection: boolean
+  // "Use suggested crew" is running for this booking.
+  bulkBusy: boolean
+  onClose: () => void
+  onUpdateStatus: (row: DispatchRow) => void
+  onAssignSuggested: (trips: DispatchRow[]) => void
 }) {
-  const button = 'border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  const done = row.status === 'Delivered'
+  const onRoad = ON_ROAD.includes(row.status)
+  const trailerPlate =
+    row.trailer_id === null ? null : (ctx.trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)
+  const openTrips = bookingTrips.filter((r) => r.status !== 'Delivered')
+  // Trips of this booking with a slot but someone / something still missing.
+  const missingCrew = openTrips.filter(
+    (r) =>
+      r.trip_start_at &&
+      (r.assigned_employee_id === null || r.assigned_helper_employee_id === null || r.plate_number === null || r.trailer_id === null),
+  )
+  // Same downpayment for every trip of a booking.
+  const downpaymentDue =
+    row.downpayment && !tripsMayStart(row.downpayment) && bookingTrips.some((r) => r.status === 'Awaiting') ? row.downpayment : null
+  const canUpdate = ctx.canEditStatus && (!done || ctx.canFreelyEditStatus)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
-    <div className="flex min-h-[calc(100dvh-14rem)] flex-col border-2 border-slate-300 bg-white">
-      <div className="flex flex-1 flex-col">{children}</div>
-      {(footer || (pager && pager.pageCount > 1)) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-700">
-          <span>{footer}</span>
-          {pager && pager.pageCount > 1 && (
-            <span className="flex gap-2">
-              <button type="button" onClick={() => pager.onChange(pager.page - 1)} disabled={pager.page === 0} className={button}>
-                ‹ Previous
+    <div className="fixed inset-0 z-40">
+      {/* Dim backdrop over the board; clicking it closes the panel. */}
+      <div className="absolute inset-0 bg-slate-900/50" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trip-panel-title"
+        className="absolute inset-y-0 right-0 flex w-full max-w-[720px] flex-col border-l-2 border-line-card bg-white"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 py-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h2 id="trip-panel-title" className="text-xl leading-7 font-bold text-ink">
+                Trip #{row.itinerary_id}
+              </h2>
+              <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
+            </div>
+            <p className="mt-0.5 text-sm text-ink-secondary">
+              <Link
+                to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`}
+                className="font-semibold text-primary hover:underline"
+              >
+                Booking #{row.booking_id}
+              </Link>
+              {' · '}
+              {row.pickup_location} → {row.delivery_location}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close trip"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5">
+          {risk && (
+            <section className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+              <p className="flex items-center gap-2 font-semibold">
+                <Icon name="warning" />
+                At risk
+              </p>
+              <ul className="mt-1 list-disc pl-6">
+                {risk.reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+              {ctx.canEditStatus && risk.actions.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {risk.actions.map((a) => (
+                    <button key={a.label} type="button" onClick={a.onClick} className="btn-secondary px-4 text-sm font-medium">
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {downpaymentDue && (
+            <section className="flex flex-wrap items-center justify-between gap-3 border border-amber-600 bg-amber-100 px-4 py-3 text-sm text-amber-900">
+              <p>
+                <span className="font-semibold">Awaiting downpayment: {formatMoney(downpaymentDue.missing)} to go</span>
+                {' · '}
+                {formatMoney(downpaymentDue.paid)} of {formatMoney(downpaymentDue.required)} paid. No trip can start until it is paid.
+              </p>
+              {/* Bills Receivable exists only in the Admin routes. */}
+              {ctx.canFreelyEditStatus && (
+                <Link to={`/dashboard/financial-records?downpayment=${row.booking_id}`} className="font-semibold underline">
+                  Record Downpayment
+                </Link>
+              )}
+            </section>
+          )}
+
+          <section>
+            <h3 className={PANEL_HEADING}>Schedule</h3>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <PanelField label="Time slot">
+                <SlotCell row={row} now={ctx.now} showDate />
+              </PanelField>
+              {ctx.canEditStatus && !done && (
+                <button type="button" onClick={() => ctx.onEditTime(row)} className="btn-secondary px-4 text-sm font-medium">
+                  {row.trip_start_at ? 'Edit time' : 'Set time'}
+                </button>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h3 className={PANEL_HEADING}>Crew &amp; Vehicles</h3>
+            {done ? (
+              // Delivered trips are read-only here: changing the driver would
+              // move the trip's pay, assigning a truck would put it back on the road.
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PanelField label="Driver">{row.assigned_driver_name ?? '—'}</PanelField>
+                <PanelField label="Helper">{row.assigned_helper_name ?? '—'}</PanelField>
+                <PanelField label="Truck">{row.plate_number ?? '—'}</PanelField>
+                <PanelField label="Trailer">{trailerPlate ?? '—'}</PanelField>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PanelField label="Driver">
+                  <CrewSelect
+                    row={row}
+                    crewRole="Driver"
+                    people={ctx.drivers}
+                    allRows={ctx.allRows}
+                    leaveByEmployee={ctx.leaveByEmployee}
+                    now={ctx.now}
+                    disabled={!ctx.canEditStatus || ctx.savingId === row.itinerary_id}
+                    onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
+                  />
+                </PanelField>
+                <PanelField label="Helper (optional)">
+                  <CrewSelect
+                    row={row}
+                    crewRole="Helper"
+                    people={ctx.helpers}
+                    allRows={ctx.allRows}
+                    leaveByEmployee={ctx.leaveByEmployee}
+                    now={ctx.now}
+                    disabled={!ctx.canEditStatus || ctx.savingId === row.itinerary_id}
+                    onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Helper', row.assigned_helper_employee_id, id)}
+                  />
+                </PanelField>
+                <PanelField label="Truck">
+                  <VehicleSelect kind="Truck" row={row} ctx={ctx} />
+                </PanelField>
+                <PanelField label={row.required_trailer_type ? `Trailer (${row.required_trailer_type})` : 'Trailer'}>
+                  <VehicleSelect kind="Trailer" row={row} ctx={ctx} />
+                </PanelField>
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h3 className={PANEL_HEADING}>Cargo</h3>
+            <div className="text-[15px] font-medium text-ink">
+              <CargoCell row={row} />
+            </div>
+          </section>
+
+          <section>
+            <h3 className={PANEL_HEADING}>Booking</h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-ink-secondary">
+                {bookingTrips.length} {bookingTrips.length === 1 ? 'trip' : 'trips'} on this board · {openTrips.length} not delivered
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ctx.canEditStatus && missingCrew.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onAssignSuggested(bookingTrips)}
+                    disabled={bulkBusy}
+                    className="btn-secondary px-4 text-sm font-semibold text-primary"
+                  >
+                    {bulkBusy
+                      ? 'Assigning…'
+                      : `Use Suggested Crew & Vehicles for ${missingCrew.length === 1 ? '1 Trip' : `All ${missingCrew.length} Trips`}`}
+                  </button>
+                )}
+                <Link
+                  to={`/dashboard/bookings?booking=${row.booking_id}`}
+                  className="btn-secondary inline-flex items-center px-4 text-sm font-medium"
+                >
+                  Open Booking
+                </Link>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line px-6 py-4">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => ctx.onViewLogs(row.itinerary_id)} className="btn-secondary px-4 text-sm font-medium">
+              Status History
+            </button>
+            {/* A trip on the road whose truck / trailer broke down. */}
+            {ctx.canEditStatus && onRoad && (row.plate_number || row.trailer_id !== null) && (
+              <button type="button" onClick={() => ctx.onBreakdown(row)} className="btn-secondary px-4 text-sm font-medium">
+                Report Breakdown
               </button>
+            )}
+            {/* Dispatcher: backward moves go through Admin. */}
+            {ctx.canEditStatus && !ctx.canFreelyEditStatus && row.status !== 'Awaiting' && (
               <button
                 type="button"
-                onClick={() => pager.onChange(pager.page + 1)}
-                disabled={pager.page >= pager.pageCount - 1}
-                className={button}
+                onClick={() => ctx.onRequestCorrection(row)}
+                disabled={pendingCorrection}
+                className="btn-secondary px-4 text-sm font-medium"
               >
-                Next ›
+                {pendingCorrection ? 'Correction Pending' : 'Request Correction'}
               </button>
-            </span>
+            )}
+          </div>
+          {canUpdate && (
+            <button type="button" onClick={() => onUpdateStatus(row)} className="btn-primary px-6 text-sm">
+              Update Status
+            </button>
           )}
-        </div>
-      )}
+        </footer>
+      </div>
     </div>
   )
 }
 
-// A tab with nothing in it: dashed box, truck icon, message, optional button.
-function EmptyPanel({ message, action }: { message: string; action?: { label: string; onClick: () => void } }) {
+// One line of the Resources Today panel: name, its trips, a status chip.
+type ResourceLine = { key: string; name: string; sub: string; chip: { label: string; icon: keyof typeof ICONS; className: string }; muted?: boolean }
+
+const RESOURCE_CHIP = {
+  available: { label: 'Available', icon: 'check' as const, className: 'bg-green-100 text-green-800' },
+  onTrip: { label: 'On a trip', icon: 'truck' as const, className: 'bg-orange-100 text-orange-800' },
+  down: { label: 'Not operational', icon: 'wrench' as const, className: 'bg-amber-100 text-amber-900' },
+  leave: { label: 'On leave', icon: 'user' as const, className: 'bg-amber-100 text-amber-900' },
+}
+
+function ResourceGroup({ title, summary, lines }: { title: string; summary: string; lines: ResourceLine[] }) {
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
-      <div className="flex flex-col items-center gap-3 border border-dashed border-slate-300 px-16 py-10 text-center">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600" aria-hidden="true">
-          <path d="M1 4h14v11H1zM15 8h4l3 3v4h-7M5.5 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM18.5 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
-        </svg>
-        <p className="text-[15px] font-medium text-slate-900">{message}</p>
-        {action && (
-          <button type="button" onClick={action.onClick} className="btn-primary px-5 py-2.5 text-sm font-semibold">
-            {action.label}
-          </button>
-        )}
-      </div>
-    </div>
+    <section>
+      <h3 className="mb-1 flex justify-between gap-3 border-b border-line pb-2 text-sm font-semibold text-ink">
+        <span>{title}</span>
+        <span className="font-medium text-ink-secondary">{summary}</span>
+      </h3>
+      {lines.length === 0 ? (
+        <p className="py-3 text-sm text-ink-muted">None on file.</p>
+      ) : (
+        lines.map((line) => (
+          <div key={line.key} className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-200 text-sm">
+            <div className="min-w-0">
+              <div className={`truncate font-semibold ${line.muted ? 'text-ink-muted' : 'text-ink'}`}>{line.name}</div>
+              <div className={SUB}>{line.sub}</div>
+            </div>
+            <span className={`${CHIP} ${line.chip.className}`}>
+              <Icon name={line.chip.icon} size={14} />
+              {line.chip.label}
+            </span>
+          </div>
+        ))
+      )}
+    </section>
+  )
+}
+
+// "Trips #91, #93" / "No trips today"
+function tripList(ids: number[], noneText: string): string {
+  if (ids.length === 0) return noneText
+  return `${ids.length === 1 ? 'Trip' : 'Trips'} ${ids.map((id) => `#${id}`).join(', ')}`
+}
+
+// Resources Today: every truck, trailer, driver and helper with the trips
+// they have on the day shown and whether they can work (in the shop, on
+// leave, out on another trip right now).
+function ResourcesPanel({
+  day,
+  isToday,
+  dayRows,
+  ctx,
+}: {
+  day: string
+  isToday: boolean
+  // The trips on the day shown.
+  dayRows: DispatchRow[]
+  ctx: BoardContext
+}) {
+  const noTrips = isToday ? 'No trips today' : 'No trips this day'
+  const onRoadNow = ctx.allRows.filter((r) => ON_ROAD.includes(r.status))
+  const isDown = (status: string | null) => status === 'Under Maintenance' || status === 'Out of Service'
+
+  const truckLines: ResourceLine[] = ctx.trucks.map((t) => {
+    const ids = dayRows.filter((r) => r.plate_number === t.plate_number).map((r) => r.itinerary_id)
+    const down = isDown(t.current_status)
+    const busy = onRoadNow.some((r) => r.plate_number === t.plate_number)
+    return {
+      key: t.plate_number,
+      name: t.plate_number,
+      sub: down && ids.length === 0 ? `${t.current_status} · see Truck Monitoring` : tripList(ids, noTrips),
+      chip: down ? RESOURCE_CHIP.down : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+      muted: down,
+    }
+  })
+  const trailerLines: ResourceLine[] = ctx.trailers.map((t) => {
+    const ids = dayRows.filter((r) => r.trailer_id === t.trailer_id).map((r) => r.itinerary_id)
+    const down = isDown(t.current_status)
+    const busy = onRoadNow.some((r) => r.trailer_id === t.trailer_id)
+    return {
+      key: String(t.trailer_id),
+      name: `${t.plate_number ?? `#${t.trailer_id}`}${t.trailer_type ? ` · ${t.trailer_type}` : ''}`,
+      sub: down && ids.length === 0 ? `${t.current_status} · see Truck Monitoring` : tripList(ids, noTrips),
+      chip: down ? RESOURCE_CHIP.down : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+      muted: down,
+    }
+  })
+  const personLines = (people: DriverOption[], helper: boolean): ResourceLine[] =>
+    people.map((p) => {
+      const crewId = (r: DispatchRow) => (helper ? r.assigned_helper_employee_id : r.assigned_employee_id)
+      const ids = dayRows.filter((r) => crewId(r) === p.employee_id).map((r) => r.itinerary_id)
+      const onLeave = (ctx.leaveByEmployee.get(p.employee_id) ?? []).some((l) => l.start_date <= day && day <= l.end_date)
+      const busy = onRoadNow.some((r) => crewId(r) === p.employee_id)
+      return {
+        key: String(p.employee_id),
+        name: p.full_name,
+        sub: tripList(ids, noTrips),
+        chip: onLeave ? RESOURCE_CHIP.leave : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+        muted: onLeave,
+      }
+    })
+  const driverLines = personLines(ctx.drivers, false)
+  const helperLines = personLines(ctx.helpers, true)
+  const count = (lines: ResourceLine[], chip: ResourceLine['chip'][]) => lines.filter((l) => !chip.includes(l.chip)).length
+
+  return (
+    <aside aria-labelledby="res-h" className="card flex flex-col gap-[18px] px-5 py-4">
+      <h2 id="res-h" className="text-base leading-6 font-semibold text-ink">
+        Resources {isToday ? 'Today' : `· ${dayLabel(day, day)}`}
+      </h2>
+      <ResourceGroup
+        title="Trucks"
+        summary={`${count(truckLines, [RESOURCE_CHIP.down])} of ${truckLines.length} operational`}
+        lines={truckLines}
+      />
+      <ResourceGroup
+        title="Trailers"
+        summary={`${count(trailerLines, [RESOURCE_CHIP.down])} of ${trailerLines.length} operational`}
+        lines={trailerLines}
+      />
+      <ResourceGroup
+        title="Drivers"
+        summary={`${count(driverLines, [RESOURCE_CHIP.leave, RESOURCE_CHIP.onTrip])} of ${driverLines.length} available`}
+        lines={driverLines}
+      />
+      {helperLines.length > 0 && (
+        <ResourceGroup
+          title="Helpers"
+          summary={`${count(helperLines, [RESOURCE_CHIP.leave, RESOURCE_CHIP.onTrip])} of ${helperLines.length} available`}
+          lines={helperLines}
+        />
+      )}
+      <Link
+        to="/dashboard/schedule-overview"
+        className="mt-auto inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary hover:underline"
+      >
+        Open Schedule Overview
+        <Icon name="arrow" />
+      </Link>
+    </aside>
   )
 }
 
@@ -1029,9 +1198,16 @@ function DispatchBoardSection() {
   const [showAbsent, setShowAbsent] = useState(false)
   // The trip whose truck / trailer broke down (BreakdownModal).
   const [breakdownRow, setBreakdownRow] = useState<DispatchRow | null>(null)
-  const [timedChange, setTimedChange] = useState<{ itineraryId: number; previousStatus: string; newStatus: string } | null>(null)
-  // Completed starts collapsed so it doesn't push active work down.
-  const [tab, setTab] = useState<'needs' | 'assigned' | 'completed'>('needs')
+  // The day shown ('YYYY-MM-DD', Manila), or 'all' = every trip not delivered yet.
+  const [day, setDay] = useState<string>(() => toManilaDate(new Date()))
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  // Filters: status ('all' | 'needs' | 'atrisk' | a status), driver ('all' | 'none' | employee id), booking / trip #.
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [driverFilter, setDriverFilter] = useState('all')
+  const [bookingFilter, setBookingFilter] = useState('')
+  // The trip open in the View panel, and the one in the Update Status pop-up.
+  const [panelRowId, setPanelRowId] = useState<number | null>(null)
+  const [statusRowId, setStatusRowId] = useState<number | null>(null)
   const [logsItineraryId, setLogsItineraryId] = useState<number | null>(null)
   const [rows, setRows] = useState<DispatchRow[]>([])
   const [drivers, setDrivers] = useState<DriverOption[]>([])
@@ -1047,7 +1223,6 @@ function DispatchBoardSection() {
   // Booking whose "Use Suggested Crew" is running (null = none).
   const [bulkBookingId, setBulkBookingId] = useState<number | null>(null)
   const [myRequests, setMyRequests] = useState<MyItineraryRelogRequest[]>([])
-  const [search, setSearch] = useState('')
   // Trip whose time slot is being edited (EditTripTimeModal).
   const [editTimeRow, setEditTimeRow] = useState<DispatchRow | null>(null)
   // Settings' default trip start (minutes after midnight), for trips with no slot yet.
@@ -1469,12 +1644,8 @@ function DispatchBoardSection() {
       if (!ok) return
     }
 
-    // Moving forward: ask when it really happened (defaults to now), so a
-    // move logged late isn't recorded at the wrong time.
-    if (STATUS_FLOW.indexOf(newStatus) > STATUS_FLOW.indexOf(previousStatus)) {
-      setTimedChange({ itineraryId, previousStatus, newStatus })
-      return
-    }
+    // Forward moves come with their time from UpdateStatusModal and go
+    // straight to applyStatusChange; this path is backward moves (Admin).
     await applyStatusChange(itineraryId, previousStatus, newStatus)
   }
 
@@ -1919,30 +2090,16 @@ function DispatchBoardSection() {
     )
   }
 
-  // Search: booking #, places, crew names, truck or trailer plate.
-  const query = search.trim().toLowerCase()
-  const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
-  const visibleRows = !query
-    ? rows
-    : rows.filter((r) =>
-        [
-          `#${r.booking_id}`,
-          r.pickup_location,
-          r.delivery_location,
-          r.assigned_driver_name,
-          r.assigned_helper_name,
-          r.plate_number,
-          r.trailer_id !== null ? trailerPlateById.get(r.trailer_id) : null,
-        ].some((text) => text?.toLowerCase().includes(query)),
-      )
-  // Trips that must still leave the port by the storage deadline go first
-  // (stable sort -- everything else keeps its order).
-  const activeRows = visibleRows
-    .filter((r) => r.status !== 'Delivered')
-    .sort((a, b) => Number(storagePending(b, now) !== null) - Number(storagePending(a, now) !== null))
-  const completedRows = visibleRows.filter((r) => r.status === 'Delivered')
-  const hasFullCrew = isFullyAssigned
-  const needsAssignmentRows = activeRows.filter((r) => !hasFullCrew(r))
+  // Day view (the canvas board): the trips on one day -- by slot start,
+  // Manila time -- plus, on today, every trip still on the road whenever it
+  // started. 'all' = every trip not delivered yet, any day.
+  const today = toManilaDate(new Date(now))
+  const isAllDays = day === 'all'
+  const shownDay = isAllDays ? today : day
+  const onDay = (r: DispatchRow) =>
+    isAllDays ? r.status !== 'Delivered' : tripDay(r) === day || (day === today && ON_ROAD.includes(r.status))
+  const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
+  const dayRows = rows.filter(onDay).sort((a, b) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id)
   // Planned trips that may not happen as assigned (leave, shop, late trip,
   // no truck / trailer free for the slot...), with a fix where there is one.
   const fleet = { Truck: truckCandidates(trucks, vehicleService), Trailer: trailerCandidates(trailers, vehicleService) }
@@ -2019,7 +2176,6 @@ function DispatchBoardSection() {
       return { row, reasons, actions }
     })
     .filter((t) => t.reasons.length > 0)
-  const assignedRows = activeRows.filter(hasFullCrew)
 
   const ctx: BoardContext = {
     allRows: rows,
@@ -2045,298 +2201,503 @@ function DispatchBoardSection() {
     onBreakdown: setBreakdownRow,
   }
 
-  // Needs Assignment / Assigned: one block per booking. Bookings with trips
-  // still to leave the port by a storage deadline first, then earliest trip
-  // first; inside a booking, trips in time order.
-  const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
-  const byStart = (a: DispatchRow, b: DispatchRow) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id
-  function groupByBooking(list: DispatchRow[]) {
-    const map = new Map<number, DispatchRow[]>()
-    for (const r of list) map.set(r.booking_id, [...(map.get(r.booking_id) ?? []), r])
-    return [...map.entries()]
-      .map(([bookingId, trips]) => ({ bookingId, trips: trips.sort(byStart) }))
-      .sort(
-        (a, b) =>
-          Number(b.trips.some((r) => storagePending(r, now))) - Number(a.trips.some((r) => storagePending(r, now))) ||
-          byStart(a.trips[0], b.trips[0]),
-      )
+  const atRiskById = new Map<number, AtRisk>(atRiskTrips.map((t) => [t.row.itinerary_id, { reasons: t.reasons, actions: t.actions }]))
+
+  // Filters under the tiles: Status (plus Needs assignment / At risk), Driver, Booking ID.
+  const bookingQuery = bookingFilter.trim().replace(/^#/, '')
+  const filteredRows = dayRows.filter((r) => {
+    if (statusFilter === 'needs' && (r.status !== 'Awaiting' || isFullyAssigned(r))) return false
+    if (statusFilter === 'atrisk' && !atRiskById.has(r.itinerary_id)) return false
+    if (!['all', 'needs', 'atrisk'].includes(statusFilter) && r.status !== statusFilter) return false
+    if (driverFilter === 'none' && r.assigned_employee_id !== null) return false
+    if (!['all', 'none'].includes(driverFilter) && r.assigned_employee_id !== Number(driverFilter)) return false
+    // Booking ID box also finds a trip number.
+    if (bookingQuery && String(r.booking_id) !== bookingQuery && String(r.itinerary_id) !== bookingQuery) return false
+    return true
+  })
+  const pagedTrips = usePaged(filteredRows, `${day}|${statusFilter}|${driverFilter}|${bookingFilter}`)
+  const anyFilter = statusFilter !== 'all' || driverFilter !== 'all' || bookingFilter !== ''
+  const deliveredCount = dayRows.filter((r) => r.status === 'Delivered').length
+  // Unassigned trips on other days -- the day view would hide them.
+  const needsElsewhere = isAllDays ? 0 : rows.filter((r) => r.status === 'Awaiting' && !isFullyAssigned(r) && !onDay(r)).length
+  const dayWord = isAllDays ? 'not delivered yet' : day === today ? 'today' : 'this day'
+  const panelRow = panelRowId !== null ? (rows.find((r) => r.itinerary_id === panelRowId) ?? null) : null
+  const statusRow = statusRowId !== null ? (rows.find((r) => r.itinerary_id === statusRowId) ?? null) : null
+
+  // What the Update Status pop-up offers: Admin any other status, Dispatcher
+  // the very next step only.
+  function statusChoices(row: DispatchRow): string[] {
+    if (!canEditStatus) return []
+    if (canFreelyEditStatus) return STATUS_FLOW.filter((s) => s !== row.status)
+    const next = STATUS_FLOW[STATUS_FLOW.indexOf(row.status) + 1]
+    return next ? [next] : []
   }
 
-  const tabs = [
-    { id: 'needs', label: 'Needs Assignment', count: needsAssignmentRows.length },
-    { id: 'assigned', label: 'Assigned — In Progress', count: assignedRows.length },
-    { id: 'completed', label: `Completed — Last ${COMPLETED_DAYS} Days`, count: completedRows.length },
-  ] as const
-  const groups = groupByBooking(tab === 'assigned' ? assignedRows : tab === 'needs' ? needsAssignmentRows : [])
-  // One page at a time (back to page 1 on a tab/search change): bookings
-  // on the two active tabs, trips on Completed.
-  const pagedGroups = usePaged(groups, `${tab}|${search}`)
-  const pagedCompleted = usePaged(tab === 'completed' ? completedRows : [], `${tab}|${search}`)
-  const activeCount = tab === 'needs' ? needsAssignmentRows.length : assignedRows.length
+  // Why an Awaiting trip can't start yet, or null.
+  function blockedReasonFor(row: DispatchRow): string | null {
+    if (row.status !== 'Awaiting') return null
+    if (!isFullyAssigned(row)) return `It still needs a ${missingForDispatch(row)} before it can leave Awaiting. Add them under View.`
+    if (!tripsMayStart(row.downpayment)) {
+      return (
+        `The booking's downpayment isn't paid yet${row.downpayment ? ` (${formatMoney(row.downpayment.missing)} to go)` : ''}. ` +
+        `No trip can start until it is paid${canFreelyEditStatus ? ' or waived' : ''}.`
+      )
+    }
+    const busy = crewOnRoadReason(row, rows)
+    return busy ? `Can't start yet: ${busy}.` : null
+  }
+
+  const FILTER_LABEL = 'flex items-center gap-2.5 text-sm font-medium text-ink-secondary'
+  const FILTER_CONTROL =
+    'min-h-11 rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-medium text-ink-metric focus:border-primary'
+  const squareButton =
+    'flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50'
 
   return (
     <div>
       <PageHeader
         title="Dispatch Board"
-        subtitle="Assign drivers, helpers, trucks and trailers, and track each booking through delivery."
+        subtitle="Every trip scheduled for the day and where it is now."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" aria-label="Previous day" onClick={() => setDay(shiftDay(shownDay, -1))} className={squareButton}>
+              <Icon name="left" size={18} />
+            </button>
+            {/* The date: click it to pick any day. */}
+            <button
+              type="button"
+              onClick={() => {
+                // showPicker() opens the browser's calendar (older browsers: just focus it).
+                const input = dateInputRef.current
+                if (!input) return
+                try {
+                  input.showPicker()
+                } catch {
+                  input.focus()
+                }
+              }}
+              className="flex h-11 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-ink hover:bg-slate-50"
+            >
+              <Icon name="calendar" className="text-primary" />
+              {isAllDays ? 'All trips not delivered yet' : dayLabel(day, today)}
+            </button>
+            <input
+              ref={dateInputRef}
+              type="date"
+              aria-label="Pick a day"
+              value={shownDay}
+              onChange={(e) => e.target.value && setDay(e.target.value)}
+              className="sr-only"
+            />
+            <button type="button" aria-label="Next day" onClick={() => setDay(shiftDay(shownDay, 1))} className={squareButton}>
+              <Icon name="right" size={18} />
+            </button>
+            {day !== today && (
+              <button type="button" onClick={() => setDay(today)} className="btn-secondary px-4 text-sm font-medium">
+                Today
+              </button>
+            )}
+            {canEditStatus && (
+              <button type="button" onClick={() => setShowAbsent(true)} className="btn-secondary ml-2 px-4 text-sm font-medium">
+                Mark Absent Today
+              </button>
+            )}
+            {/* Drivers move trips from their phones -- reload to see it. */}
+            <button
+              type="button"
+              onClick={() => {
+                loadDispatchBoard()
+                if (isDispatcher(role) && employeeId) loadMyRequests(employeeId)
+              }}
+              disabled={loading}
+              className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium"
+            >
+              <Icon name="refresh" />
+              Refresh
+            </button>
+          </div>
+        }
       />
 
+      {/* Trips by status for the day shown -- click a tile to list only those. */}
+      <section aria-label="Trips by status" className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:items-center">
+        {FLOW_TILES.map((tile, i) => {
+          const pressed = statusFilter === tile.status
+          return (
+            <Fragment key={tile.status}>
+              <button
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => setStatusFilter(pressed ? 'all' : tile.status)}
+                className={`flex min-w-0 flex-1 items-center gap-3 border-2 bg-white px-4 py-3 text-left hover:bg-slate-50 ${
+                  pressed ? 'border-primary' : 'border-line'
+                }`}
+              >
+                <span className={`inline-flex items-center rounded-[2px] p-2 ${tile.chip}`}>
+                  <Icon name={tile.icon} size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-ink-secondary">{tile.label}</span>
+                  <span className="block text-[28px] leading-9 font-bold text-ink tabular-nums">
+                    {loading ? '–' : dayRows.filter((r) => r.status === tile.status).length}
+                  </span>
+                </span>
+              </button>
+              {i < FLOW_TILES.length - 1 && <Icon name="arrow" size={18} className="hidden text-line-control lg:block" />}
+            </Fragment>
+          )
+        })}
+      </section>
+
+      {error && <p className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+      {needsElsewhere > 0 && (
+        <p className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border border-amber-600 bg-amber-100 px-4 py-2.5 text-sm text-amber-900">
+          <Icon name="warning" />
+          <span>
+            <strong>
+              {needsElsewhere} {needsElsewhere === 1 ? 'trip' : 'trips'}
+            </strong>{' '}
+            on other days still {needsElsewhere === 1 ? 'needs' : 'need'} a driver, truck, trailer or time slot.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setDay('all')
+              setStatusFilter('needs')
+            }}
+            className="font-semibold underline hover:no-underline"
+          >
+            Show them
+          </button>
+        </p>
+      )}
+
       {atRiskTrips.length > 0 && (
-        <div className="mb-4 border border-orange-300 bg-orange-50 px-4 py-3">
-          <p className="text-sm font-semibold text-orange-900">At-risk trips ({atRiskTrips.length})</p>
-          <ul className="mt-1 text-sm text-orange-900">
+        <div className="mb-4 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="flex items-center gap-2 font-semibold">
+            <Icon name="warning" />
+            At-risk trips ({atRiskTrips.length})
+          </p>
+          <ul className="mt-1 flex flex-col gap-1">
             {atRiskTrips.slice(0, 5).map((t) => (
               <li key={t.row.itinerary_id} className="flex flex-wrap items-baseline gap-x-3">
                 <span>
                   Trip #{t.row.itinerary_id} · Booking #{t.row.booking_id} — {t.reasons.join('; ')}
                 </span>
+                <button type="button" onClick={() => setPanelRowId(t.row.itinerary_id)} className="font-semibold underline hover:no-underline">
+                  View
+                </button>
                 {canEditStatus &&
                   t.actions.map((a) => (
-                    <button key={a.label} type="button" onClick={a.onClick} className="text-xs font-semibold underline hover:no-underline">
+                    <button key={a.label} type="button" onClick={a.onClick} className="font-semibold underline hover:no-underline">
                       {a.label}
                     </button>
                   ))}
               </li>
             ))}
           </ul>
-          {atRiskTrips.length > 5 && <p className="mt-1 text-xs text-orange-800">+ {atRiskTrips.length - 5} more</p>}
+          {atRiskTrips.length > 5 && (
+            <button
+              type="button"
+              onClick={() => {
+                setDay('all')
+                setStatusFilter('atrisk')
+              }}
+              className="mt-1 text-xs font-semibold underline"
+            >
+              Show all {atRiskTrips.length}
+            </button>
+          )}
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div role="tablist" className="flex flex-wrap gap-2">
-          {tabs.map((t) => {
-            const active = tab === t.id
-            return (
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_440px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className={FILTER_LABEL}>
+              Status
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${FILTER_CONTROL} w-48`}>
+                <option value="all">All statuses</option>
+                <option value="needs">Needs assignment</option>
+                <option value="atrisk">At risk</option>
+                {FLOW_TILES.map((t) => (
+                  <option key={t.status} value={t.status}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={FILTER_LABEL}>
+              Driver
+              <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)} className={`${FILTER_CONTROL} w-52`}>
+                <option value="all">All drivers</option>
+                <option value="none">Unassigned</option>
+                {drivers.map((d) => (
+                  <option key={d.employee_id} value={d.employee_id}>
+                    {d.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={FILTER_LABEL}>
+              Booking ID
+              <input
+                type="search"
+                value={bookingFilter}
+                onChange={(e) => setBookingFilter(e.target.value)}
+                placeholder="e.g. 48"
+                className={`${FILTER_CONTROL} w-40 font-normal placeholder:text-ink-muted`}
+              />
+            </label>
+            {anyFilter && (
               <button
-                key={t.id}
                 type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-2.5 border-2 px-5 py-2.5 text-sm font-semibold ${
-                  active ? 'border-primary bg-primary text-white' : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
-                }`}
+                onClick={() => {
+                  setStatusFilter('all')
+                  setDriverFilter('all')
+                  setBookingFilter('')
+                }}
+                className="text-sm font-semibold text-primary underline hover:no-underline"
               >
-                {t.label}
-                {!loading && (
-                  <span
-                    className={`px-1.5 text-xs ${
-                      active
-                        ? 'bg-white text-primary'
-                        : t.id === 'needs' && t.count > 0
-                          ? 'bg-primary text-white'
-                          : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {t.count}
-                  </span>
-                )}
+                Clear filters
               </button>
-            )
-          })}
+            )}
+          </div>
+
+          <section aria-label="Trips" className="card flex min-h-[calc(100dvh-24rem)] flex-col">
+            <div className="flex flex-1 flex-col overflow-x-auto">
+              {loading ? (
+                <p className="p-6 text-ink-muted">Loading dispatch board...</p>
+              ) : filteredRows.length === 0 ? (
+                <div className="flex flex-1 items-center justify-center p-8">
+                  <div className="flex flex-col items-center gap-3 border border-dashed border-line px-16 py-10 text-center">
+                    <Icon name="truck" size={28} className="text-ink-secondary" />
+                    <p className="text-[15px] font-medium text-ink">
+                      {anyFilter
+                        ? 'No trips match these filters.'
+                        : isAllDays
+                          ? 'Every trip has been delivered.'
+                          : `No trips ${day === today ? 'today' : 'on this day'}.`}
+                    </p>
+                    {!isAllDays && !anyFilter && rows.some((r) => r.status !== 'Delivered') && (
+                      <button type="button" onClick={() => setDay('all')} className="btn-primary px-5 text-sm">
+                        Show All Trips Not Delivered Yet
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <table className="w-full min-w-[980px] table-fixed text-left text-sm text-ink-metric">
+                  <colgroup>
+                    {['120px', '130px', '', '150px', '120px', '130px', '236px'].map((width, i) => (
+                      <col key={i} style={width ? { width } : undefined} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th className={TH}>Trip</th>
+                      <th className={TH}>Time Slot</th>
+                      <th className={TH}>Pickup → Delivery</th>
+                      <th className={TH}>Driver</th>
+                      <th className={TH}>Truck / Trailer</th>
+                      <th className={TH}>Status</th>
+                      <th className={TH}>
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedTrips.rows.map((row) => {
+                      const trailerPlate =
+                        row.trailer_id === null ? null : (trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)
+                      const canUpdate = canEditStatus && (row.status !== 'Delivered' || canFreelyEditStatus)
+                      return (
+                        <tr key={row.itinerary_id} className="h-[60px] border-b border-slate-200 hover:bg-slate-50">
+                          <td className={TD}>
+                            <span className="block font-bold text-ink">Trip #{row.itinerary_id}</span>
+                            <Link
+                              to={`/dashboard/bookings?booking=${row.booking_id}&trip=${row.itinerary_id}`}
+                              className="text-[13px] leading-[18px] font-medium text-primary hover:underline"
+                            >
+                              Booking #{row.booking_id}
+                            </Link>
+                          </td>
+                          <td className={TD}>
+                            <SlotCell row={row} now={now} showDate={isAllDays || tripDay(row) !== day} />
+                          </td>
+                          <td className={TD}>
+                            <span className="block truncate" title={row.pickup_location}>
+                              {row.pickup_location}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-ink-muted">
+                              <Icon name="arrow" size={14} />
+                              <span className="truncate" title={row.delivery_location}>
+                                {row.delivery_location}
+                              </span>
+                            </span>
+                          </td>
+                          <td className={TD}>
+                            {row.assigned_driver_name ? (
+                              <span className="block truncate font-semibold">{row.assigned_driver_name}</span>
+                            ) : (
+                              <span className="block font-semibold text-orange-700">Unassigned</span>
+                            )}
+                            {row.assigned_helper_name && <span className={`${SUB} truncate`}>+ {row.assigned_helper_name}</span>}
+                          </td>
+                          <td className={TD}>
+                            {row.plate_number ? (
+                              <span className="block font-semibold">{row.plate_number}</span>
+                            ) : (
+                              <span className="block font-semibold text-orange-700">No truck</span>
+                            )}
+                            <span className={trailerPlate ? SUB : 'block text-[13px] leading-[18px] font-semibold text-orange-700'}>
+                              {trailerPlate ?? 'No trailer'}
+                            </span>
+                          </td>
+                          <td className={TD}>
+                            <TripStatusCell
+                              row={row}
+                              risk={atRiskById.get(row.itinerary_id)}
+                              pendingCorrection={ctx.pendingCorrectionIds.has(row.itinerary_id)}
+                            />
+                          </td>
+                          <td className={TD}>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setStatusRowId(row.itinerary_id)}
+                                disabled={!canUpdate || savingId === row.itinerary_id}
+                                aria-describedby={row.status === 'Delivered' && !canFreelyEditStatus ? 'final-note' : undefined}
+                                className="btn-secondary w-[140px] px-0 text-sm font-medium"
+                              >
+                                Update Status
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPanelRowId(row.itinerary_id)}
+                                className="btn-secondary w-20 px-0 text-sm font-medium"
+                              >
+                                View
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="flex min-h-[60px] flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
+              <span className="flex items-center gap-2">
+                {dayRows.length > 0 && deliveredCount === dayRows.length && <Icon name="check" className="text-green-800" />}
+                {dayRows.length} {dayRows.length === 1 ? 'trip' : 'trips'} {dayWord}
+                {!isAllDays && ` · ${deliveredCount} of ${dayRows.length} delivered`}
+                {anyFilter && ` · ${filteredRows.length} shown`}
+              </span>
+              {!canFreelyEditStatus && deliveredCount > 0 && (
+                <span id="final-note" className="ml-auto text-ink-muted">
+                  Delivered is the last status, so it can't be updated.
+                </span>
+              )}
+              {pagedTrips.pager.pageCount > 1 && (
+                <span className="ml-auto flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => pagedTrips.pager.onChange(pagedTrips.pager.page - 1)}
+                    disabled={pagedTrips.pager.page === 0}
+                    className="btn-secondary px-3.5 text-sm font-medium"
+                  >
+                    ‹ Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => pagedTrips.pager.onChange(pagedTrips.pager.page + 1)}
+                    disabled={pagedTrips.pager.page >= pagedTrips.pager.pageCount - 1}
+                    className="btn-secondary px-3.5 text-sm font-medium"
+                  >
+                    Next ›
+                  </button>
+                </span>
+              )}
+            </div>
+          </section>
         </div>
-        <SearchBox value={search} onChange={setSearch} placeholder="Booking #, place, driver, helper or plate" />
-        {/* Drivers move trips from their phones -- reload to see it. */}
-        {canEditStatus && (
-          <button
-            type="button"
-            onClick={() => setShowAbsent(true)}
-            className="border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-          >
-            Mark absent today
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            loadDispatchBoard()
-            if (isDispatcher(role) && employeeId) loadMyRequests(employeeId)
-          }}
-          disabled={loading}
-          className="flex items-center gap-2 border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
-          </svg>
-          Refresh
-        </button>
+
+        <ResourcesPanel day={shownDay} isToday={shownDay === today} dayRows={isAllDays ? rows.filter((r) => tripDay(r) === today) : dayRows} ctx={ctx} />
       </div>
 
-      {error && <p className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-
-      {loading ? (
-        <BoardBox>
-          <p className="p-6 text-slate-500">Loading dispatch board...</p>
-        </BoardBox>
-      ) : rows.length === 0 ? (
-        <BoardBox>
-          <EmptyPanel message="No trips right now." />
-        </BoardBox>
-      ) : visibleRows.length === 0 ? (
-        <BoardBox>
-          <EmptyPanel message={`No trips match "${search}".`} action={{ label: 'Clear search', onClick: () => setSearch('') }} />
-        </BoardBox>
-      ) : tab === 'completed' ? (
-        <BoardBox
-          footer={`Showing ${pagedCompleted.rows.length} of ${completedRows.length} completed ${completedRows.length === 1 ? 'trip' : 'trips'}`}
-          pager={pagedCompleted.pager}
-        >
-          {completedRows.length === 0 ? (
-            <EmptyPanel message={`No trips delivered in the last ${COMPLETED_DAYS} days. Older ones are in Bookings & Trips.`} />
-          ) : (
-            <CompletedTripTable rows={pagedCompleted.rows} ctx={ctx} />
-          )}
-        </BoardBox>
-      ) : (
-        <BoardBox
-          footer={
-            activeCount === 0
-              ? undefined
-              : tab === 'needs'
-                ? `${activeCount} ${activeCount === 1 ? 'trip needs' : 'trips need'} assignment · earliest first`
-                : `${activeCount} ${activeCount === 1 ? 'trip' : 'trips'} in progress · earliest first`
-          }
-          pager={pagedGroups.pager}
-        >
-          {activeCount === 0 ? (
-            tab === 'needs' ? (
-              <EmptyPanel
-                message="Nothing waiting on a driver, truck, or trailer."
-                action={
-                  assignedRows.length > 0
-                    ? { label: `View ${assignedRows.length} Trips In Progress`, onClick: () => setTab('assigned') }
-                    : undefined
-                }
-              />
-            ) : (
-              <EmptyPanel
-                message="No fully-crewed trips in progress."
-                action={
-                  needsAssignmentRows.length > 0
-                    ? {
-                        label: `View ${needsAssignmentRows.length} ${needsAssignmentRows.length === 1 ? 'Trip' : 'Trips'} Needing Assignment`,
-                        onClick: () => setTab('needs'),
-                      }
-                    : undefined
-                }
-              />
-            )
-          ) : (
-            pagedGroups.rows.map((group) => {
-              const first = group.trips[0]
-              // Trips of this booking with a slot but no driver or helper yet.
-              const missingCrew = group.trips.filter(
-                (r) =>
-                  r.trip_start_at &&
-                  (r.assigned_employee_id === null || r.assigned_helper_employee_id === null || r.plate_number === null || r.trailer_id === null),
-              )
-              // Same downpayment for every trip of a booking.
-              const downpaymentDue =
-                first.downpayment && !tripsMayStart(first.downpayment) && group.trips.some((r) => r.status === 'Awaiting')
-                  ? first.downpayment
-                  : null
-              return (
-                <section key={group.bookingId} className="border-b-2 border-slate-300 last:border-b-0">
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h3 className="text-lg font-bold text-slate-900">Booking #{group.bookingId}</h3>
-                      <span className="text-[15px] text-slate-700">
-                        {first.pickup_location} → {first.delivery_location}
-                      </span>
-                      <span className="bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                        {group.trips.length} {group.trips.length === 1 ? 'trip' : 'trips'}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-4">
-                      <Link
-                        to={`/dashboard/bookings?booking=${group.bookingId}`}
-                        className="text-sm font-semibold text-primary hover:underline"
-                      >
-                        Open Booking
-                      </Link>
-                      {canEditStatus && missingCrew.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => assignSuggestedCrew(group.trips)}
-                          disabled={bulkBookingId !== null}
-                          className="flex items-center gap-2 border-2 border-primary bg-white px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
-                        >
-                          <span aria-hidden="true">✓</span>
-                          {bulkBookingId === group.bookingId
-                            ? 'Assigning…'
-                            : `Use Suggested Crew & Vehicles for ${missingCrew.length === 1 ? 'Trip' : `All ${missingCrew.length} Trips`}`}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {downpaymentDue && (
-                    <div className="mx-5 mb-4 flex flex-wrap items-center justify-between gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                      <p>
-                        <span aria-hidden="true" className="mr-2">⚠</span>
-                        <span className="font-semibold">Awaiting downpayment: {formatMoney(downpaymentDue.missing)} to go</span>
-                        {' · '}
-                        {formatMoney(downpaymentDue.paid)} of {formatMoney(downpaymentDue.required)} paid. No trip can start until it
-                        is paid.
-                      </p>
-                      {/* Bills Receivable exists only in the Admin routes. */}
-                      {canFreelyEditStatus && (
-                        <Link to={`/dashboard/financial-records?downpayment=${group.bookingId}`} className="font-semibold underline">
-                          Record Downpayment
-                        </Link>
-                      )}
-                    </div>
-                  )}
-                  <ActiveTripTable rows={group.trips} ctx={ctx} />
-                </section>
-              )
-            })
-          )}
-        </BoardBox>
-      )}
-
       {isDispatcher(role) && myRequests.length > 0 && (
-        <div className="mt-8">
-          <h3 className="font-ui text-[11px] font-semibold tracking-[0.16em] text-neutral-500 uppercase">
-            My Correction Requests
-          </h3>
-          <ul className="reports-blueprint-card mt-2 divide-y divide-reports-hairline font-ui text-sm">
+        <section className="card mt-6 px-5 py-4">
+          <h3 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">My Correction Requests</h3>
+          <ul className="text-sm">
             {myRequests.map((request) => {
               const bookingId = rows.find((r) => r.itinerary_id === request.itinerary_id)?.booking_id
               return (
-                <li key={request.request_id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
-                  <span className="text-reports-ink">
+                <li key={request.request_id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-slate-200 py-3 last:border-0">
+                  <span className="text-ink">
                     {bookingId !== undefined ? `Booking #${bookingId}` : `Trip #${request.itinerary_id}`}:{' '}
                     {STATUS_LABELS[request.current_status] ?? request.current_status} →{' '}
                     {STATUS_LABELS[request.requested_status] ?? request.requested_status}
                   </span>
-                  <span
-                    className={`border px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                      request.status === 'Approved'
-                        ? 'border-accent-900 bg-accent-900 text-white'
-                        : request.status === 'Rejected'
-                          ? 'border-red-300 text-red-700'
-                          : 'border-neutral-300 text-neutral-600'
-                    }`}
-                  >
-                    {request.status}
-                  </span>
-                  <span className="text-xs text-neutral-500">
-                    {formatDate(request.created_at)}
-                  </span>
-                  <span className="w-full text-xs text-neutral-600">Reason: {request.reason}</span>
+                  <StatusBadge status={request.status} />
+                  <span className="text-[13px] text-ink-muted">{formatDate(request.created_at)}</span>
+                  <span className="w-full text-[13px] text-ink-secondary">Reason: {request.reason}</span>
                   {request.resolution_note && (
-                    <span className="w-full text-xs text-neutral-600">
-                      Admin note: {request.resolution_note}
-                    </span>
+                    <span className="w-full text-[13px] text-ink-secondary">Admin note: {request.resolution_note}</span>
                   )}
                 </li>
               )
             })}
           </ul>
-        </div>
+        </section>
       )}
 
+      {panelRow && (
+        <TripPanel
+          row={panelRow}
+          ctx={ctx}
+          bookingTrips={rows.filter((r) => r.booking_id === panelRow.booking_id)}
+          risk={atRiskById.get(panelRow.itinerary_id)}
+          pendingCorrection={ctx.pendingCorrectionIds.has(panelRow.itinerary_id)}
+          bulkBusy={bulkBookingId === panelRow.booking_id}
+          onClose={() => setPanelRowId(null)}
+          onUpdateStatus={(r) => setStatusRowId(r.itinerary_id)}
+          onAssignSuggested={assignSuggestedCrew}
+        />
+      )}
+
+      {statusRow && (
+        <UpdateStatusModal
+          itineraryId={statusRow.itinerary_id}
+          subtitle={[`Booking #${statusRow.booking_id}`, statusRow.assigned_driver_name ?? 'No driver', statusRow.plate_number ?? 'No truck'].join(' · ')}
+          flow={STATUS_FLOW}
+          labels={STATUS_LABELS}
+          currentStatus={statusRow.status}
+          choices={statusChoices(statusRow)}
+          blockedReason={blockedReasonFor(statusRow)}
+          correction={
+            canEditStatus && !canFreelyEditStatus
+              ? {
+                  pending: ctx.pendingCorrectionIds.has(statusRow.itinerary_id),
+                  onRequest: () => {
+                    setStatusRowId(null)
+                    handleRequestCorrection(statusRow)
+                  },
+                }
+              : null
+          }
+          onClose={() => setStatusRowId(null)}
+          onConfirm={(newStatus, atMs) => {
+            const row = statusRow
+            setStatusRowId(null)
+            if (newStatus === 'Delivered') setDeliveryRow(row)
+            else if (atMs !== undefined) applyStatusChange(row.itinerary_id, row.status, newStatus, atMs)
+            else handleStatusChange(row.itinerary_id, row.status, newStatus)
+          }}
+        />
+      )}
       {relogRequestRow && employeeId && (
         <RequestStatusRelogModal
           targetType="itinerary"
@@ -2402,19 +2763,6 @@ function DispatchBoardSection() {
             />
           )
         })()
-      )}
-
-      {timedChange && (
-        <StatusTimeModal
-          itineraryId={timedChange.itineraryId}
-          statusLabel={STATUS_LABELS[timedChange.newStatus] ?? timedChange.newStatus}
-          onClose={() => setTimedChange(null)}
-          onConfirm={(atMs) => {
-            const change = timedChange
-            setTimedChange(null)
-            applyStatusChange(change.itineraryId, change.previousStatus, change.newStatus, atMs)
-          }}
-        />
       )}
 
       {deliveryRow && (

@@ -101,7 +101,7 @@ export function ConfirmHost() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 px-4"
       onClick={() => close(false)}
     >
       <div
@@ -109,7 +109,7 @@ export function ConfirmHost() {
         aria-modal="true"
         aria-labelledby="confirm-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-white p-6 shadow-lg"
+        className="w-full max-w-sm bg-white p-6 border-2 border-line-card"
       >
         <h3 id="confirm-title" className="text-lg font-bold text-slate-900">
           {pending.title ?? (pending.danger ? 'Are you sure?' : 'Please confirm')}
@@ -122,7 +122,7 @@ export function ConfirmHost() {
             onChange={(e) => setText(e.target.value)}
             placeholder={pending.placeholder}
             rows={3}
-            className="mt-3 w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+            className="mt-3 w-full border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11"
           />
         )}
         <div className="mt-6 flex justify-end gap-3">

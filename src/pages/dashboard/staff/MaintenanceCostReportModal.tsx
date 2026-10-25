@@ -14,7 +14,7 @@ import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
 function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
   const [month, setMonth] = useState(currentReportMonth())
@@ -60,8 +60,8 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Maintenance Cost Report</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -117,17 +117,17 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
             <div>
               <h4 className="text-sm font-semibold text-slate-700">Cost by Vehicle</h4>
               <div className="mt-2 overflow-x-auto border border-slate-200">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm text-ink-metric">
                   <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
                     <tr>
-                      <th className="px-3 py-2 font-medium">Vehicle</th>
-                      <th className="px-3 py-2 font-medium">Work Orders</th>
-                      <th className="px-3 py-2 font-medium">Parts Cost</th>
+                      <th className="px-3 py-2">Vehicle</th>
+                      <th className="px-3 py-2">Work Orders</th>
+                      <th className="px-3 py-2">Parts Cost</th>
                     </tr>
                   </thead>
                   <tbody>
                     {vehicles.map((v) => (
-                      <tr key={v.vehicle_label} className="border-b border-slate-100 last:border-0">
+                      <tr key={v.vehicle_label} className="border-b border-slate-200 last:border-0">
                         <td className="px-3 py-2 text-slate-900">{v.vehicle_label}</td>
                         <td className="px-3 py-2 text-slate-600">{v.work_order_count}</td>
                         <td className="px-3 py-2 font-medium text-slate-900">
@@ -150,7 +150,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
               <div className="mt-2 grid gap-3">
                 {workOrders.map((wo) => (
                   <div key={`${wo.work_order_id}-${wo.completed_at}`} className="border border-slate-200">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                       <span className="font-medium text-slate-900">
                         {wo.work_order_number} · {wo.vehicle_label}
                       </span>
@@ -162,10 +162,10 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
                     {wo.lines.length === 0 ? (
                       <p className="px-3 py-2 text-sm text-slate-500">No parts used.</p>
                     ) : (
-                      <table className="w-full text-left text-sm">
+                      <table className="w-full text-left text-sm text-ink-metric">
                         <tbody>
                           {wo.lines.map((line, index) => (
-                            <tr key={index} className="border-b border-slate-100 last:border-0">
+                            <tr key={index} className="border-b border-slate-200 last:border-0">
                               <td className="px-3 py-2 text-slate-900">{line.item_name_text}</td>
                               <td className="px-3 py-2 text-slate-600">
                                 {line.quantity} × {line.unit_cost !== null ? formatMoney(line.unit_cost) : 'no price'}

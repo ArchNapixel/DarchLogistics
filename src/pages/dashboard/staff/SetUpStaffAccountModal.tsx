@@ -10,7 +10,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { extractEdgeFunctionErrorMessage } from '../../../lib/edgeFunctionError'
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 type Employee = {
@@ -98,8 +98,8 @@ function SetUpStaffAccountModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         {done ? (
           <>
             <h3 className="text-lg font-bold text-slate-900">

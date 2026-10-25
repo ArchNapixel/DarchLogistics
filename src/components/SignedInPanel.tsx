@@ -10,7 +10,7 @@ function SignedInPanel({ hint }: { hint: string }) {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <div className="w-full max-w-sm border-2 border-line-card bg-white p-8 text-center">
         <h1 className="text-xl font-bold text-slate-900">You're already logged in</h1>
         <p className="mt-2 text-sm text-slate-600">
           {role
@@ -29,7 +29,7 @@ function SignedInPanel({ hint }: { hint: string }) {
           {role && (
             <Link
               to="/dashboard"
-              className="border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="border border-line-control px-4 py-3 text-sm font-semibold text-ink-metric hover:bg-slate-50 rounded-[2px]"
             >
               Go to my dashboard
             </Link>

@@ -88,7 +88,7 @@ function ClientTestimonials() {
           {reviews.map((review) => (
             <div
               key={review.review_id}
-              className="border border-slate-300 bg-white p-5"
+              className="card p-5"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-slate-900">Verified Client</p>

@@ -254,19 +254,13 @@ function ComplianceExpiryAlerts() {
       <button
         onClick={handleToggle}
         aria-label="Notifications"
-        className="flex items-center justify-center p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        className="flex h-11 w-11 items-center justify-center text-ink-secondary hover:bg-slate-100 hover:text-ink"
       >
-        <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
-          <path
-            d="M10 3a4 4 0 0 0-4 4v3l-1.5 2.5h11L14 10V7a4 4 0 0 0-4-4zM8.5 15.5a1.5 1.5 0 0 0 3 0"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z M10 21h4" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] font-bold text-white">
+          <span className="absolute right-0.5 top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-[2px] bg-orange-700 px-1 text-[11px] font-bold text-white">
             {unreadCount}
           </span>
         )}
@@ -278,8 +272,8 @@ function ComplianceExpiryAlerts() {
               panel, without a document-level listener. */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
 
-          <div className="fixed inset-x-4 top-16 z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border border-slate-200 bg-white shadow-lg">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+          <div className="card fixed inset-x-4 top-16 z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80">
+            <div className="flex items-center justify-between border-b border-line px-4 py-2">
               <p className="text-sm font-semibold text-slate-900">
                 Notifications
               </p>
@@ -298,7 +292,7 @@ function ComplianceExpiryAlerts() {
             ) : (
               <div className="max-h-80 overflow-y-auto">
                 {visibleOverdue.map((trip) => (
-                  <div key={overdueKey(trip)} className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
+                  <div key={overdueKey(trip)} className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
                     <Link
                       to={`/dashboard/bookings?booking=${trip.bookingId}&trip=${trip.tripId}`}
                       onClick={() => setOpen(false)}
@@ -324,7 +318,7 @@ function ComplianceExpiryAlerts() {
                 {visibleAlerts.map((alert) => (
                   <div
                     key={alertKey(alert)}
-                    className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                    className="flex items-start gap-2 border-b border-slate-200 px-4 py-3 last:border-b-0"
                   >
                     {/* Admin: the notice opens that employee's edit form on the
                         Employees page, where the date is fixed. Dispatcher/Driver

@@ -110,11 +110,11 @@ function BreakdownModal({
     )
   }
 
-  const fieldClass = 'border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none'
+  const fieldClass = 'border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h3 className="text-lg font-bold text-slate-900">Report breakdown · Trip #{trip.itinerary_id}</h3>
         <p className="mt-1 text-sm text-slate-500">
           The replacement takes over this trip. The broken one goes to the shop with a work order, and its other trips show under

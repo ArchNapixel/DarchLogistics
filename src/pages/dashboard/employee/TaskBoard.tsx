@@ -187,7 +187,7 @@ function TaskBoard({ onAccepted }: { onAccepted: () => void }) {
               <button
                 onClick={() => handleAccept(order)}
                 disabled={acceptingId === order.work_order_id}
-                className="mt-2 border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className="mt-2 border border-line-control px-3 py-1 text-xs font-medium text-ink-metric hover:bg-slate-100 disabled:opacity-50 rounded-[2px]"
               >
                 {acceptingId === order.work_order_id
                   ? 'Accepting...'

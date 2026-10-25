@@ -47,8 +47,8 @@ function ReportPayslipIssueModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h3 className="text-lg font-bold text-slate-900">Report a Payslip Issue</h3>
         <p className="mt-1 text-sm text-slate-500">Payslip: {period}</p>
 
@@ -65,7 +65,7 @@ function ReportPayslipIssueModal({
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder="e.g. This is missing a trip I delivered on..."
-            className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+            className="border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
           />
         </label>
 

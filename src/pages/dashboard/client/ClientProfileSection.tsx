@@ -46,13 +46,13 @@ export function useClientProfile(clientId: number | null) {
 }
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+      <p className="text-sm font-medium text-neutral-500">
         {label}
       </p>
       <p className="mt-0.5 text-slate-900">{value}</p>

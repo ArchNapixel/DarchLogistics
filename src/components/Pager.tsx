@@ -14,10 +14,9 @@ function Pager({
   className?: string
 }) {
   if (pageCount <= 1) return null
-  const button =
-    'border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40'
+  const button = 'btn-secondary h-11 px-3.5 text-sm font-medium'
   return (
-    <div className={`mt-3 flex items-center justify-end gap-3 text-sm text-slate-600 ${className}`}>
+    <div className={`mt-3 flex items-center justify-end gap-3 text-sm text-ink-secondary ${className}`}>
       <button type="button" onClick={() => onChange(page - 1)} disabled={page === 0} className={button}>
         ‹ Previous
       </button>

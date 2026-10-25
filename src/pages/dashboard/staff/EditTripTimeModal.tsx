@@ -28,7 +28,7 @@ import { formatDate } from '../../../lib/format'
 
 const HOUR_MS = 3_600_000
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
 function EditTripTimeModal({
   itineraryId,
@@ -167,8 +167,8 @@ function EditTripTimeModal({
   const hours = (endMs - startMs) / HOUR_MS
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h2 className="text-lg font-bold text-slate-900">Trip #{itineraryId} time</h2>
         <p className="mt-1 text-sm text-slate-500">
           Changing the start moves the end with it. Push the end later if the trip is running long.

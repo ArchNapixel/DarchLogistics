@@ -18,7 +18,7 @@ import { showToast } from '../../../components/Toast'
 import { ACCOUNT_MAX, filterUsername, passwordError, usernameError } from '../../../lib/clientAccount'
 
 const fieldClasses =
-  'w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function ClientAccountSection() {
@@ -95,7 +95,7 @@ function ClientAccountSection() {
       {editing === null && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Username</p>
+            <p className="text-sm font-medium text-neutral-500">Username</p>
             <p className="mt-0.5 text-slate-900">{shownUsername ?? '—'}</p>
             <button
               type="button"
@@ -106,7 +106,7 @@ function ClientAccountSection() {
             </button>
           </div>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Password</p>
+            <p className="text-sm font-medium text-neutral-500">Password</p>
             <p className="mt-0.5 text-slate-900">••••••••</p>
             <button
               type="button"

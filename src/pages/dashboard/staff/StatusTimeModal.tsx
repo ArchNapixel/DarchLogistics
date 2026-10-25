@@ -34,8 +34,8 @@ function StatusTimeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h3 className="text-lg font-bold text-slate-900">
           Trip #{itineraryId} → {statusLabel}
         </h3>

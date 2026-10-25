@@ -38,7 +38,7 @@ import type { LocationValue, RecentLocation } from '../lib/quoteRequest'
 const STOP_LABELS = { pickup: 'Pickup', delivery: 'Delivery' }
 
 const selectClasses =
-  'border-2 border-slate-300 bg-white px-3 py-2 text-slate-900 transition-colors hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400'
+  'border-2 border-line-control bg-white px-3 py-2 text-slate-900 transition-colors hover:border-slate-500 hover:bg-slate-50 focus:border-primary disabled:bg-slate-100 disabled:text-slate-400'
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({
@@ -264,8 +264,8 @@ function LocationPicker({
               aria-pressed={selected}
               className={`w-32 truncate border-2 px-3 py-1.5 text-center text-sm font-medium transition-colors ${
                 selected
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 text-slate-700 hover:border-slate-500 hover:bg-slate-50'
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-line-control text-ink-metric hover:border-slate-500 hover:bg-slate-50'
               }`}
             >
               {location.label}
@@ -309,7 +309,7 @@ function LocationPicker({
           <button
               type="button"
               onClick={() => setSpecific(true)}
-              className="inline-flex w-32 items-center justify-center gap-1.5 border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+              className="inline-flex w-32 items-center justify-center gap-1.5 border-2 border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:border-slate-500 hover:bg-slate-50"
             >
               <PinIcon />
               Select
@@ -432,7 +432,7 @@ function LocationPicker({
           type="button"
           onClick={() => setShowMap((prev) => !prev)}
           aria-expanded={showMap}
-          className="inline-flex items-center gap-1.5 border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 border-2 border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:border-slate-500 hover:bg-slate-50"
         >
           <PinIcon />
           {showMap ? 'Hide map' : savedPin ? 'Move pin' : 'Pin on map'}
@@ -466,7 +466,7 @@ function LocationPicker({
 
       {specific && showMap && (
         <div className="col-span-full">
-          <div className="h-80 w-full overflow-hidden border-2 border-slate-300">
+          <div className="h-80 w-full overflow-hidden border-2 border-line-card">
             <MapContainer
               center={savedPin ?? DEFAULT_CENTER}
               zoom={savedPin ? 16 : 11}

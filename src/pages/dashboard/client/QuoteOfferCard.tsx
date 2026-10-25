@@ -17,7 +17,7 @@ import { checkCapacity } from '../../../lib/capacity'
 import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
 
 const inputClasses =
-  'border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
 export type OfferQuote = {
   quote_request_id: number
@@ -255,7 +255,7 @@ function QuoteOfferCard({
             <button
               type="button"
               onClick={() => setMode('counter')}
-              className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
             >
               Counter-offer
             </button>

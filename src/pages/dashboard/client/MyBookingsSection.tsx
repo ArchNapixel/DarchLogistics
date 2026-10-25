@@ -53,7 +53,7 @@ export type Booking = {
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+      <p className="text-sm font-medium text-neutral-500">
         {label}
       </p>
       <p className="mt-0.5 text-sm text-slate-900">{value}</p>
@@ -246,10 +246,10 @@ function MyBookingsSection({
           <button
             key={tab.label}
             onClick={() => setShowPast(tab.past)}
-            className={`px-3 py-1.5 text-sm font-medium ${
+            className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${
               showPast === tab.past
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-600 hover:bg-slate-100'
+                ? 'border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {tab.label}
@@ -284,11 +284,11 @@ function MyBookingsSection({
         return (
           <div
             key={booking.booking_id}
-            className="border border-slate-200 bg-white p-5 shadow-sm"
+            className="border-2 border-line-card bg-white p-5"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                <p className="text-sm font-medium text-neutral-500">
                   Booking #{booking.booking_id}
                 </p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-900">

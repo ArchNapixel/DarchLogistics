@@ -117,19 +117,13 @@ function TripNotifications() {
       <button
         onClick={toggle}
         aria-label={`Trip notifications${unread.length ? `, ${unread.length} unread` : ''}`}
-        className="relative flex items-center justify-center p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        className="relative flex h-11 w-11 items-center justify-center text-ink-secondary hover:bg-slate-100 hover:text-ink"
       >
-        <svg width="24" height="24" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path
-            d="M10 3a4 4 0 0 0-4 4v3l-1.5 2.5h11L14 10V7a4 4 0 0 0-4-4zM8.5 15.5a1.5 1.5 0 0 0 3 0"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z M10 21h4" />
         </svg>
         {unread.length > 0 && (
-          <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+          <span className="absolute right-0.5 top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-[2px] bg-red-700 px-1 text-[11px] font-bold text-white">
             {unread.length}
           </span>
         )}
@@ -138,8 +132,8 @@ function TripNotifications() {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="fixed inset-x-4 top-16 z-40 border border-slate-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+          <div className="card fixed inset-x-4 top-16 z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
+            <div className="flex items-center justify-between border-b border-line px-4 py-2">
               <p className="text-sm font-semibold text-slate-900">Trip notifications</p>
               <button onClick={() => setOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700">
                 ✕
@@ -150,7 +144,7 @@ function TripNotifications() {
             ) : (
               <ul className="max-h-96 overflow-y-auto">
                 {items.map((n) => (
-                  <li key={n.notification_id} className="border-b border-slate-100 last:border-b-0">
+                  <li key={n.notification_id} className="border-b border-slate-200 last:border-b-0">
                     <button
                       type="button"
                       onClick={() => {

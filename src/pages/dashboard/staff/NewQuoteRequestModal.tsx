@@ -59,8 +59,8 @@ type ExistingClient = {
 const toggleClasses = (active: boolean) =>
   `flex-1 border px-3 py-2 text-sm font-medium transition-colors [&:not(:first-child)]:-ml-px ${
     active
-      ? 'relative border-slate-900 bg-slate-900 text-white'
-      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+      ? 'relative border-primary bg-primary text-white'
+      : 'border-line-control bg-white text-ink-metric hover:bg-slate-50'
   }`
 
 function Section({
@@ -224,8 +224,8 @@ function NewQuoteRequestModal({
   const sectionProps = { form, setField, errors }
 
   const shell = (children: ReactNode) => (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col bg-white shadow-lg">{children}</div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col bg-white border-2 border-line-card">{children}</div>
     </div>
   )
 
@@ -328,7 +328,7 @@ function NewQuoteRequestModal({
                     className={`border bg-white px-3 py-2 text-slate-900 focus:outline-none ${
                       clientErrors.existingClient
                         ? 'border-red-400'
-                        : 'border-slate-300 focus:border-slate-500'
+                        : 'border-line-control focus:border-primary'
                     }`}
                   >
                     <option value="">Select</option>

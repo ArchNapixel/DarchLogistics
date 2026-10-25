@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import Pager from '../../../components/Pager'
+import StatusBadge from '../../../components/StatusBadge'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import { fetchAll } from '../../../lib/dashboardExpenses'
@@ -26,7 +26,8 @@ type LedgerTotals = {
   total: number
 }
 
-function CashAdvanceLedgerSection() {
+// `side` = a panel shown to the right of the table (the page's Issue form).
+function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
   const [rows, setRows] = useState<LedgerRow[]>([])
   const [totals, setTotals] = useState<LedgerTotals>({ pending: 0, issued: 0, deducted: 0, total: 0 })
   const [loading, setLoading] = useState(true)
@@ -131,63 +132,117 @@ function CashAdvanceLedgerSection() {
 
   // One page at a time.
   const paged = usePaged(rows, '')
-  return (
-    <div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Pending approval</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.pending)}</p>
-        </div>
-        <div className="border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Disbursed to employee</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.issued)}</p>
-        </div>
-        <div className="border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Deducted from payroll</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.deducted)}</p>
-        </div>
-        <div className="border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total current cash advances</p>
-          <p className="mt-1 text-xl font-bold text-slate-900">{formatMoney(totals.total)}</p>
-        </div>
-      </div>
+  const tile = 'card min-w-0 flex-1 px-[18px] py-3.5'
+  const tileLabel = 'text-sm font-medium text-ink-secondary'
+  const tileValue = 'text-[28px] leading-9 font-bold tracking-[-0.01em] text-ink tabular-nums'
+  const deductedShare = totals.issued > 0 ? Math.min((totals.deducted / totals.issued) * 100, 100) : 0
+  const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+  const TD = 'px-2 py-2 first:pl-5 last:pr-5'
 
-      {loading && <p className="mt-4 text-slate-500">Loading cash advance ledger...</p>}
-      {error && <p className="mt-4 text-red-700">{error}</p>}
-      {!loading && !error && rows.length === 0 && <EmptyState message="No cash advances recorded." className="mt-4" />}
-      {!loading && !error && rows.length > 0 && (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Amount</th>
-                <th className="px-4 py-3 font-medium">Repaid</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.rows.map((row) => (
-                <tr key={row.cash_advance_id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3 text-slate-900">{row.employee_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(row.created_at)}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{formatMoney(Number(row.amount))}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.status === 'Approved' ? `${formatMoney(row.repaid)} / ${formatMoney(Number(row.amount))}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.status === 'Approved' && row.repaid >= Number(row.amount) ? 'Settled' : row.status}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{row.note ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <Pager {...paged.pager} />
+  return (
+    <div className="flex flex-col gap-4">
+      <section aria-label="Totals" className="flex flex-col gap-3 sm:flex-row">
+        <div className={tile}>
+          <p className={tileLabel}>Disbursed</p>
+          <p className={tileValue}>{formatMoney(totals.issued)}</p>
         </div>
-      )}
+        <div className={tile}>
+          <p className={tileLabel}>Deducted</p>
+          <p className={tileValue}>{formatMoney(totals.deducted)}</p>
+          <div className="mt-1.5 h-2 bg-slate-200" aria-hidden="true">
+            <div className="h-2 bg-ink-secondary" style={{ width: `${deductedShare}%` }} />
+          </div>
+          <p className="mt-1 text-[13px] text-ink-muted">{deductedShare.toFixed(1)}% of disbursed</p>
+        </div>
+        <div className={tile}>
+          <p className={tileLabel}>Current balance</p>
+          <p className={`${tileValue} text-primary`}>{formatMoney(totals.total)}</p>
+          <p className="mt-1 text-[13px] text-ink-muted">
+            {formatMoney(totals.issued)} − {formatMoney(totals.deducted)}
+          </p>
+        </div>
+        <div className={tile}>
+          <p className={tileLabel}>Pending approval</p>
+          <p className={tileValue}>{formatMoney(totals.pending)}</p>
+        </div>
+      </section>
+
+      <div className={side ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start' : ''}>
+        <section aria-label="Cash advances" className="card flex min-h-[calc(100dvh-24rem)] flex-col">
+          {loading ? (
+            <p className="p-5 text-ink-muted">Loading cash advance ledger...</p>
+          ) : error ? (
+            <p className="p-5 text-red-700">{error}</p>
+          ) : rows.length === 0 ? (
+            <EmptyState message="No cash advances recorded." className="m-5" />
+          ) : (
+            <div className="flex-1 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm text-ink-metric">
+                <thead>
+                  <tr>
+                    <th className={TH}>Employee</th>
+                    <th className={TH}>Reason</th>
+                    <th className={TH}>Date</th>
+                    <th className={`${TH} text-right`}>Amount</th>
+                    <th className={`${TH} text-right`}>Remaining</th>
+                    <th className={TH}>Deduction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.rows.map((row) => {
+                    const amount = Number(row.amount)
+                    const settled = row.status === 'Approved' && row.repaid >= amount
+                    return (
+                      <tr key={row.cash_advance_id} className="h-[60px] border-b border-slate-200">
+                        <td className={`${TD} font-semibold text-ink`}>{row.employee_name}</td>
+                        <td className={`${TD} ${row.note ? '' : 'text-ink-muted'}`}>{row.note ?? '—'}</td>
+                        <td className={`${TD} whitespace-nowrap`}>{formatDate(row.created_at)}</td>
+                        <td className={`${TD} text-right font-semibold tabular-nums`}>{formatMoney(amount)}</td>
+                        <td className={`${TD} text-right tabular-nums`}>
+                          {row.status === 'Approved' ? formatMoney(Math.max(amount - row.repaid, 0)) : '—'}
+                        </td>
+                        <td className={TD}>
+                          {settled ? (
+                            <StatusBadge status="Paid" label="Settled" icon />
+                          ) : row.status === 'Approved' ? (
+                            <StatusBadge status="In Progress" label="Deducting" icon />
+                          ) : (
+                            <StatusBadge status={row.status} icon />
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
+            <span>Remaining amounts are deducted from each employee&apos;s next payslips.</span>
+            {paged.pager.pageCount > 1 && (
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page - 1)}
+                  disabled={paged.pager.page === 0}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  ‹ Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page + 1)}
+                  disabled={paged.pager.page >= paged.pager.pageCount - 1}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  Next ›
+                </button>
+              </span>
+            )}
+          </div>
+        </section>
+        {side}
+      </div>
     </div>
   )
 }

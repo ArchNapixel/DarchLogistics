@@ -696,7 +696,7 @@ function BookingDetailModal({
   const billingLink = isAdmin(role) ? `/dashboard/billing/${booking.booking_id}` : null
 
   const cargoCard = (
-    <section className="border-2 border-slate-300 bg-white px-5 py-4">
+    <section className="border-2 border-line-card bg-white px-5 py-4">
       <h4 className="text-base font-semibold text-slate-900">Cargo Per Trip</h4>
       {!details ? (
         <p className="mt-3 text-sm text-slate-500">Loading…</p>
@@ -716,7 +716,7 @@ function BookingDetailModal({
   )
 
   const moneyCard = (
-    <section className="border-2 border-slate-300 bg-white px-5 py-4">
+    <section className="border-2 border-line-card bg-white px-5 py-4">
       <h4 className="text-base font-semibold text-slate-900">Money</h4>
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
         <Figure label="Rate Per Trip" value={formatMoney(booking.rate)} />
@@ -765,7 +765,7 @@ function BookingDetailModal({
   )
 
   const detailsSection = (
-    <div className="grid gap-4 border-x-2 border-b-2 border-slate-300 bg-white px-5 py-4 sm:grid-cols-2">
+    <div className="grid gap-4 border-x-2 border-b-2 border-line-card bg-white px-5 py-4 sm:grid-cols-2">
       <SectionTitle>Route</SectionTitle>
       <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
       <InfoRow label="Delivery" value={details?.delivery ?? booking.delivery_location} pin={details?.delivery_pin} />
@@ -805,7 +805,7 @@ function BookingDetailModal({
               aria-label="Hours per trip"
               value={hoursDraft}
               onChange={(e) => setHoursDraft(e.target.value)}
-              className="w-20 border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+              className="w-20 rounded-[2px] border border-line-control px-2 py-1 text-sm text-slate-900 focus:border-primary"
             />
             <button
               type="button"
@@ -853,10 +853,10 @@ function BookingDetailModal({
       className={
         inline
           ? ''
-          : 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center'
+          : 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center'
       }
     >
-      <div className={inline ? 'flex flex-col gap-4' : 'flex max-h-[92vh] w-full max-w-5xl flex-col gap-4 overflow-y-auto bg-white p-6 shadow-lg'}>
+      <div className={inline ? 'flex flex-col gap-4' : 'flex max-h-[92vh] w-full max-w-5xl flex-col gap-4 overflow-y-auto bg-white p-6 border-2 border-line-card'}>
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -907,7 +907,7 @@ function BookingDetailModal({
                 }}
                 rows={2}
                 placeholder="e.g. Client called off the shipment"
-                className="border border-slate-300 bg-white px-3 py-2 font-normal text-slate-900 focus:border-slate-500 focus:outline-none"
+                className="border border-line-control bg-white px-3 py-2 font-normal text-slate-900 focus:border-primary rounded-[2px] min-h-11"
               />
             </label>
             {cancelError && (
@@ -1007,7 +1007,7 @@ function BookingDetailModal({
             type="button"
             onClick={() => setShowDetails((v) => !v)}
             aria-expanded={showDetails}
-            className="flex w-full items-center justify-between border-2 border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+            className="flex w-full items-center justify-between border-2 border-line-control bg-white px-4 py-3 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
           >
             {showDetails ? 'Hide Booking Details' : 'Show Booking Details'}
             <span aria-hidden="true">{showDetails ? '▴' : '▾'}</span>
@@ -1016,7 +1016,7 @@ function BookingDetailModal({
         </div>
 
         {/* Trips */}
-        <section className="border-2 border-slate-300 bg-white">
+        <section className="border-2 border-line-card bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <h4 className="text-base font-semibold text-slate-900">Trips · {tripsTitle}</h4>
             {!isClosed && onChanged && (
@@ -1033,7 +1033,7 @@ function BookingDetailModal({
             <p className="px-4 pb-4 text-sm text-slate-500">This booking has no trips. It may need manual review.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm text-ink-metric">
                 <thead className="bg-slate-50 text-xs font-semibold tracking-wider text-slate-600 uppercase">
                   <tr>
                     <th className="px-4 py-3">Trip</th>
@@ -1142,8 +1142,8 @@ function BookingDetailModal({
                                 title={onChanged ? 'Documents' : 'View documents'}
                                 className={`flex h-10 w-10 items-center justify-center border-2 ${
                                   docsTripId === trip.itinerary_id
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                    ? 'border-primary bg-primary text-white'
+                                    : 'border-line-control text-ink-metric hover:bg-slate-50'
                                 }`}
                               >
                                 <Icon path={UPLOAD} />
@@ -1153,7 +1153,7 @@ function BookingDetailModal({
                                   {trip.document_count} {trip.document_count === 1 ? 'file' : 'files'}
                                 </span>
                               ) : trip.status === 'Delivered' ? (
-                                <span className="mt-1 inline-block bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900">
+                                <span className="mt-1 inline-block bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 rounded-[2px]">
                                   No DO yet
                                 </span>
                               ) : null}

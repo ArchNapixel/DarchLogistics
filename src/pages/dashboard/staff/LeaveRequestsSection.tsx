@@ -118,7 +118,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
   if (error) return <p className="text-red-700">{error}</p>
 
   return (
-    <div className="border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="border-2 border-line-card bg-white p-5">
       <h3 className="text-sm font-semibold text-slate-700">Leave Requests</h3>
 
       {actionError && <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
@@ -129,7 +129,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
       ) : (
         <div className="mt-3 grid gap-3">
           {paged.rows.map((request) => (
-            <div key={request.leave_id} className="border border-slate-200 p-4">
+            <div key={request.leave_id} className="border border-line p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
                   {request.employee_name} — {request.leave_type}
@@ -154,7 +154,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
                 <button
                   onClick={() => handleDecide(request, false)}
                   disabled={decidingId === request.leave_id}
-                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]"
                 >
                   Reject
                 </button>

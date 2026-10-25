@@ -155,7 +155,7 @@ function MaintenanceSection() {
           </button>
           <button
             onClick={() => setShowCostReport(true)}
-            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]"
           >
             Cost Report
           </button>
@@ -167,15 +167,15 @@ function MaintenanceSection() {
 
       {!loading && !error && (
         <>
-          <div className="mt-6 flex gap-2 border-b border-slate-200">
+          <div className="mt-6 flex flex-wrap gap-2">
             {TABS.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium ${
+                className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${
                   activeTab === tab
-                    ? 'border-b-2 border-slate-900 text-slate-900'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
                 }`}
               >
                 {tab}
@@ -199,23 +199,23 @@ function MaintenanceSection() {
                   No {activeTab.toLowerCase()} work orders.
                 </p>
               ) : (
-                <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
-                    <thead className="border-b border-slate-200 text-slate-500">
+                <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+                  <table className="w-full text-left text-sm text-ink-metric">
+                    <thead>
                       <tr>
-                        <th className="px-4 py-3 font-medium">Work Order</th>
-                        <th className="px-4 py-3 font-medium">Vehicle</th>
-                        <th className="px-4 py-3 font-medium">Mechanic</th>
-                        <th className="px-4 py-3 font-medium">Type</th>
-                        <th className="px-4 py-3 font-medium">Status</th>
-                        <th className="px-4 py-3 font-medium">Scheduled</th>
+                        <th className="px-4 py-2.5">Work Order</th>
+                        <th className="px-4 py-2.5">Vehicle</th>
+                        <th className="px-4 py-2.5">Mechanic</th>
+                        <th className="px-4 py-2.5">Type</th>
+                        <th className="px-4 py-2.5">Status</th>
+                        <th className="px-4 py-2.5">Scheduled</th>
                       </tr>
                     </thead>
                     <tbody>
                       {paged.rows.map((order) => (
                         <tr
                           key={order.work_order_id}
-                          className="border-b border-slate-100 last:border-0"
+                          className="border-b border-slate-200 last:border-0"
                         >
                           <td className="px-4 py-3">
                             <button
@@ -261,11 +261,11 @@ function MaintenanceSection() {
                   No mechanics found. Add one under Employees.
                 </p>
               ) : (
-                <div className="mt-3 overflow-hidden border border-slate-200 bg-white shadow-sm">
+                <div className="mt-3 overflow-hidden border-2 border-line-card bg-white">
                   {mechanics.map((mechanic) => (
                     <div
                       key={mechanic.employee_id}
-                      className="flex items-center justify-between border-b border-slate-100 px-4 py-3 last:border-0"
+                      className="flex items-center justify-between border-b border-slate-200 px-4 py-3 last:border-0"
                     >
                       <span className="text-sm text-slate-900">
                         {mechanic.full_name}

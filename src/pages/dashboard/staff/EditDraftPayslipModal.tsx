@@ -296,8 +296,8 @@ function EditDraftPayslipModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-bold text-slate-900">Edit Draft Payslip</h3>
@@ -348,7 +348,7 @@ function EditDraftPayslipModal({
                             aria-label="Line description"
                             value={item.description}
                             onChange={(e) => updateLine(index, { description: e.target.value })}
-                            className="min-w-0 flex-1 border border-slate-300 px-2 py-1 text-slate-900 focus:border-slate-500 focus:outline-none"
+                            className="min-w-0 flex-1 rounded-[2px] border border-line-control px-2 py-1 text-slate-900 focus:border-primary"
                           />
                         ) : (
                           <span className="flex-1 text-slate-600">
@@ -374,7 +374,7 @@ function EditDraftPayslipModal({
                           aria-label="Amount"
                           value={item.amount}
                           onChange={(e) => updateLine(index, { amount: e.target.value })}
-                          className="w-28 border border-slate-300 px-2 py-1 text-right font-medium text-slate-900 focus:border-slate-500 focus:outline-none"
+                          className="w-28 rounded-[2px] border border-line-control px-2 py-1 text-right font-medium text-slate-900 focus:border-primary"
                         />
                         {item.autoAmount === null && (
                           <button
@@ -436,7 +436,7 @@ function EditDraftPayslipModal({
                             onChange={(e) =>
                               setDeductionOverrides((overrides) => ({ ...overrides, [key]: e.target.value }))
                             }
-                            className={`w-full border px-2 py-1 text-right text-slate-900 focus:border-slate-500 focus:outline-none ${
+                            className={`w-full border px-2 py-1 text-right text-slate-900 focus:border-primary ${
                               deductions[key] !== roundPeso(autoDeductions[key])
                                 ? 'border-amber-400 bg-amber-50'
                                 : 'border-slate-300'
@@ -479,7 +479,7 @@ function EditDraftPayslipModal({
                   step="0.01"
                   value={deductAmount}
                   onChange={(e) => setDeductAmount(e.target.value)}
-                  className="border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                  className="border border-line-control bg-white px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
                 />
               </label>
             </div>

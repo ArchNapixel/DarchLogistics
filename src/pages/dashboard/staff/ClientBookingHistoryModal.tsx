@@ -185,17 +185,17 @@ function ClientBookingHistoryModal({
 
   function BookingTable({ rows }: { rows: ClientBooking[] }) {
     return (
-      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
+      <div className="overflow-x-auto border-2 border-line-card bg-white">
+        <table className="w-full text-left text-sm text-ink-metric">
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-medium">Date</th>
-              <th className="px-4 py-3 font-medium">Origin → Destination</th>
-              <th className="px-4 py-3 font-medium">Cargo</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Rate</th>
-              <th className="px-4 py-3 font-medium">Paid</th>
-              <th className="px-4 py-3 font-medium">Balance</th>
+              <th className="px-4 py-2.5">Date</th>
+              <th className="px-4 py-2.5">Origin → Destination</th>
+              <th className="px-4 py-2.5">Cargo</th>
+              <th className="px-4 py-2.5">Status</th>
+              <th className="px-4 py-2.5">Rate</th>
+              <th className="px-4 py-2.5">Paid</th>
+              <th className="px-4 py-2.5">Balance</th>
             </tr>
           </thead>
           <tbody>
@@ -203,7 +203,7 @@ function ClientBookingHistoryModal({
               <tr
                 key={booking.booking_id}
                 onClick={() => setSelectedBooking(booking)}
-                className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                className="cursor-pointer border-b border-slate-200 last:border-0 hover:bg-slate-50"
               >
                 <td className="px-4 py-3 text-slate-600">{formatDate(booking.date)}</td>
                 <td className="px-4 py-3 text-slate-600">
@@ -234,8 +234,8 @@ function ClientBookingHistoryModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-        <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white p-6 shadow-lg">
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+        <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">{client.client_name}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">

@@ -32,11 +32,11 @@ function MarkAbsentModal({
     onDone(people.find((p) => p.employee_id === Number(employeeId))?.full_name ?? 'They')
   }
 
-  const fieldClass = 'border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none'
+  const fieldClass = 'border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
         <h3 className="text-lg font-bold text-slate-900">Mark absent today</h3>
         <p className="mt-1 text-sm text-slate-500">
           They're treated as on (unpaid) leave for today, and their trips today appear under At-risk trips so you can replace them.

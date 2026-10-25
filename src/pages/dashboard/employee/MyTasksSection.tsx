@@ -11,7 +11,7 @@ function MyTasksSection() {
   const { role } = useAuth()
 
   return (
-    <div className="border border-slate-200 bg-white p-8 shadow-sm">
+    <div className="border-2 border-line-card bg-white p-8">
       <SectionHeader title="My Tasks" />
       <div>
         {role === 'Driver' && <DriverTasks crewRole="Driver" />}

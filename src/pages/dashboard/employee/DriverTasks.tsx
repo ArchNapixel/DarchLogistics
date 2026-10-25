@@ -275,7 +275,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             />
             <button
               onClick={() => setExpenseTripId(trip.itinerary_id)}
-              className="mt-3 border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="mt-3 border border-line-control px-4 py-2.5 text-sm font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]"
             >
               Add Expense
             </button>

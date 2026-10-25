@@ -74,9 +74,9 @@ function MyAttendanceSection() {
       <PageHeader title="My Attendance" subtitle="Your attendance as recorded by the admin." />
 
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">&larr; Previous week</button>
+        <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="border border-line-control px-3 py-2 text-sm text-ink-metric hover:bg-slate-50 rounded-[2px]">&larr; Previous week</button>
         <span className="text-sm font-medium text-slate-900">{formatShort(days[0])} – {formatShort(days[6])}, {days[6].slice(0, 4)}</span>
-        <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} disabled={weekStart >= thisWeekStart} className="border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next week &rarr;</button>
+        <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} disabled={weekStart >= thisWeekStart} className="border border-line-control px-3 py-2 text-sm text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]">Next week &rarr;</button>
         {weekStart !== thisWeekStart && <button onClick={() => setWeekStart(thisWeekStart)} className="text-sm font-medium text-slate-700 underline">This week</button>}
       </div>
 
@@ -98,13 +98,13 @@ function MyAttendanceSection() {
             <span className="font-semibold text-slate-900">{absentDays}</span>
           </p>
           <div className="mt-4 grid items-start gap-6 lg:grid-cols-2">
-          <div className="overflow-x-auto border border-slate-300 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
+          <div className="card overflow-x-auto">
+            <table className="w-full text-left text-sm text-ink-metric">
               <thead className="border-b border-slate-300 text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Day</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-2.5">Day</th>
+                  <th className="px-4 py-2.5">Date</th>
+                  <th className="px-4 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody>

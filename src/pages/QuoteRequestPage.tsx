@@ -81,7 +81,7 @@ function QuoteRequestPage() {
                   </Link>
                   <Link
                     to={loginLink('login')}
-                    className="border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="border border-line-control px-5 py-3 text-sm font-semibold text-ink-metric hover:bg-slate-50 rounded-[2px]"
                   >
                     Log in
                   </Link>
@@ -96,7 +96,7 @@ function QuoteRequestPage() {
             onDone={() => navigate('/dashboard')}
             aside={
               <>
-                <div className="border border-slate-300 bg-white p-5">
+                <div className="card p-5">
                   <p className="text-xs font-semibold tracking-[0.15em] text-brand-steel-dark uppercase">
                     Next Steps
                   </p>

@@ -105,7 +105,7 @@ export default function QuoteSummaryDrawer({
       />
 
       <aside
-        className={`absolute top-0 right-0 flex h-full w-full max-w-md flex-col border-l-2 border-slate-300 bg-slate-50 shadow-2xl transition-transform duration-300 ease-out ${
+        className={`absolute top-0 right-0 flex h-full w-full max-w-md flex-col border-l-2 border-line-card bg-slate-50 transition-transform duration-300 ease-out ${
           open && shown ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -118,7 +118,7 @@ export default function QuoteSummaryDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close summary"
-            className="flex h-8 w-8 items-center justify-center border-2 border-slate-300 text-slate-700 transition-colors hover:border-slate-500 hover:bg-slate-50"
+            className="flex h-8 w-8 items-center justify-center border-2 border-line-control text-ink-metric transition-colors hover:border-slate-500 hover:bg-slate-50"
           >
             ✕
           </button>
@@ -188,7 +188,7 @@ export default function QuoteSummaryDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 border-2 border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-500 hover:bg-slate-50"
+            className="flex-1 border-2 border-line-control px-4 py-2.5 text-sm font-medium text-ink-metric transition-colors hover:border-slate-500 hover:bg-slate-50"
           >
             Keep editing
           </button>

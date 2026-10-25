@@ -151,7 +151,7 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
           {reports.map((report) => (
             <div
               key={report.issue_report_id}
-              className="border border-slate-200 bg-white p-4 shadow-sm"
+              className="border-2 border-line-card bg-white p-4"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">
@@ -184,7 +184,7 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
                 <button
                   onClick={() => handleMarkWorkedOn(report)}
                   disabled={markingId === report.issue_report_id}
-                  className="border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]"
                 >
                   {markingId === report.issue_report_id ? 'Saving...' : 'Mark as Worked On'}
                 </button>

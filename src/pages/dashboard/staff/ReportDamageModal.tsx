@@ -23,7 +23,7 @@ function shortPlace(name: string | undefined) {
 }
 
 const fieldClasses =
-  'w-full min-w-0 border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'w-full min-w-0 border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex min-w-0 flex-col gap-1 text-sm font-medium text-slate-700'
 
 function ReportDamageModal({
@@ -118,8 +118,8 @@ function ReportDamageModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900">Report Damage</h3>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">

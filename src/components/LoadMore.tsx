@@ -17,7 +17,7 @@ export function LoadMore({
     <div className="mt-3 flex justify-center">
       <button
         onClick={onMore}
-        className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
       >
         Show more
       </button>

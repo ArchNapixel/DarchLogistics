@@ -28,69 +28,86 @@ type SidebarLink = {
 
 // Icon shown beside each sidebar tab, looked up by its label. Each value is
 // an SVG path drawn on a 24x24 grid (simple outline style, no icon library).
-const HOME = 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z'
-const CLOCK = 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2'
-const FILE =
-  'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8'
-const TAB_ICONS: Record<string, string> = {
-  Dashboard: HOME,
-  Home: HOME,
-  'My Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
-  Payments: 'M2 5h20v14H2zM2 10h20',
-  'My Quotes': FILE,
-  'My Requests': 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-  Reports: 'M18 20V10M12 20V4M6 20v-6',
-  'Payment Tracking': 'M2 5h20v14H2zM2 10h20',
-  'Bills Receivable': 'M2 5h20v14H2zM2 10h20',
-  'Trip Profitability': 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
-  Remittances:'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
-  Collections: 'M2 7h20v12H2zM16 13h.01M2 11h20M6 3h12',
-  'Revenue Reconciliation': 'M4 7h16M4 17h16M8 3l-4 4 4 4M16 13l4 4-4 4',
-  'Profit & Loss': 'M3 3v18h18M7 14l4-4 3 3 5-6',
-  'Money Summary': 'M3 3v18h18M7 14l4-4 3 3 5-6',
-  'Accounts Payable':'M2 5h20v14H2zM2 10h20M6 15h4',
-  Billing:'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
-  Statements:
-    'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
-  'AR Aging':'M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4',
-  'Client Quotations': FILE,
-  'Client Bookings': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
-  Quotations: FILE,
-  'Bookings & Trips': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
-  'Client Accounts':
-    'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
-  Clients:
-    'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
-  'Driver Schedule': 'M3 4h18M3 4v16M7 8h6M10 12h8M5 16h7',
-  'My Schedule': 'M3 4h18M3 4v16M7 8h6M10 12h8M5 16h7',
-  'Dispatch Board':
-    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
-  Employees: 'M2 7h20v14H2zM16 7V3H8v4',
-  'Employee List': 'M2 7h20v14H2zM16 7V3H8v4',
-  Attendance: CLOCK,
-  'My Attendance': CLOCK,
-  Payroll: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
-  'Payroll Master': 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
-  'Cash Advance': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-  'Cash Advances': 'M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-  'Truck Monitoring':
-    'M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-  'Fleet Master':
-    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
-  Fleet:
-    'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
-  Maintenance:
-    'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z',
-  Inventory: 'M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8',
-  'Damage Charges':
+// Same icon set as the redesign canvas on claude.ai.
+const ICON = {
+  home: 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z',
+  chart: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
+  doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M9 13h6 M9 17h6',
+  cal: 'M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4',
+  calCheck:
+    'M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4 M9 15l2 2 4-4',
+  users:
+    'M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  truck:
+    'M2 6h11v10H2z M13 9h5l4 4v3h-9z M6 18.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0 M16 18.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
+  list: 'M4 6h10 M8 12h12 M6 18h8',
+  case: 'M3 8h18v12H3z M8 8V5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3 M3 13h18',
+  clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v5l3 2',
+  history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+  dollar:
+    'M12 2v20 M17 6.5C16 5 14.3 4.5 12 4.5c-2.5 0-4.5 1.2-4.5 3.2 0 4.8 9.5 2.3 9.5 7 0 2-2 3.3-5 3.3-2.5 0-4.5-.8-5.5-2.5',
+  cash: 'M2 6h20v12H2z M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M6 12h.01 M18 12h.01',
+  trend: 'M3 17l6-6 4 4 8-8 M15 7h6v6',
+  receipt: 'M4 4h16v17l-3-2-2.5 2-2.5-2-2.5 2L7 19l-3 2z M8 9h8 M8 13h8',
+  wallet: 'M3 7a2 2 0 0 1 2-2h13v4 M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2z M16 14.5h.01',
+  bill: 'M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6',
+  stmt: 'M5 3h14v18H5z M9 8h6 M9 12h6 M9 16h4',
+  gauge: 'M4 18a9 9 0 1 1 16 0 M12 14l4-5',
+  wrench: 'M14.5 6.5a4 4 0 0 0 4.5 5L9 21.5a2 2 0 0 1-3-3l10-10 M14.5 6.5l3-3 2 2-3 3',
+  box: 'M3 8l9-5 9 5v8l-9 5-9-5z M3 8l9 5 9-5 M12 13v8',
+  chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  warning:
     'M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
-  'My Payslips': 'M4 2v20l3-2 3 2 3-2 3 2 3-2 2 2V2zM8 8h8M8 12h8',
-  'My Leave': 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4M9 16l2 2 4-4',
-  'My Profile': 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-  Settings:
-    'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
-  'My History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
-  'My Trips History': 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+  sliders: 'M4 6h10 M18 6h2 M4 12h2 M10 12h10 M4 18h12 M14 4v4 M8 10v4 M18 16v4',
+}
+const TAB_ICONS: Record<string, string> = {
+  // Admin
+  Dashboard: ICON.home,
+  Reports: ICON.chart,
+  Quotations: ICON.doc,
+  'Bookings & Trips': ICON.cal,
+  Clients: ICON.users,
+  'Dispatch Board': ICON.truck,
+  'Schedule Overview': ICON.list,
+  Employees: ICON.case,
+  Attendance: ICON.clock,
+  Payroll: ICON.dollar,
+  'Cash Advances': ICON.cash,
+  'Money Summary': ICON.trend,
+  'Bills Receivable': ICON.receipt,
+  Collections: ICON.wallet,
+  Billing: ICON.bill,
+  Statements: ICON.stmt,
+  'Truck Monitoring': ICON.gauge,
+  Fleet: ICON.truck,
+  Maintenance: ICON.wrench,
+  Inventory: ICON.box,
+  Settings: ICON.sliders,
+  // Dispatcher / employees
+  'Damage Charges': ICON.warning,
+  'My Schedule': ICON.list,
+  'My History': ICON.history,
+  'My Trips History': ICON.history,
+  'My Attendance': ICON.clock,
+  'My Leave': ICON.calCheck,
+  'My Payslips': ICON.bill,
+  'My Profile': ICON.user,
+  // Client portal
+  Home: ICON.home,
+  'My Quotes': ICON.doc,
+  'My Bookings': ICON.cal,
+  Payments: ICON.wallet,
+  'My Requests': ICON.chat,
+}
+
+// One sidebar row. The current page is filled steel blue.
+function navItemClass({ isActive }: { isActive: boolean }) {
+  return `flex h-10 items-center gap-2 rounded-[2px] px-2 text-sm ${
+    isActive
+      ? 'bg-primary font-semibold text-white'
+      : 'font-medium text-slate-200 hover:bg-white/12 hover:text-white'
+  }`
 }
 
 function TabIcon({ label }: { label: string }) {
@@ -104,7 +121,7 @@ function TabIcon({ label }: { label: string }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="mr-2 inline-block shrink-0"
+      className="shrink-0"
       aria-hidden="true"
     >
       <path d={TAB_ICONS[label] ?? 'M12 12h.01'} />
@@ -153,7 +170,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
     // The print: classes only matter when printing a page (Statements of
     // Account): hide the header/sidebar and let the page flow past one screen.
     <div className="flex h-dvh flex-col bg-slate-50 print:block print:h-auto">
-      <header className="flex items-center justify-between gap-2 border-b print:hidden border-slate-200 bg-white px-3 py-2.5 sm:px-6 sm:py-3">
+      <header className="flex min-h-[70px] items-center justify-between gap-2 border-b print:hidden border-slate-200 bg-white px-3 py-2 sm:px-6">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {sidebarLinks.length > 0 && (
             <button
@@ -161,7 +178,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               aria-label="Toggle navigation"
               aria-expanded={drawerOpen}
               aria-controls="dashboard-sidebar"
-              className="flex h-11 w-11 items-center justify-center border border-slate-300 text-slate-900 md:hidden"
+              className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control text-ink md:hidden"
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path
@@ -174,16 +191,16 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             </button>
           )}
           {/* Logo: square navy badge with a truck + two-tone wordmark */}
-          <Link to={homePath} className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center bg-navy text-white">
+          <Link to={homePath} aria-label="Darch Logistics home" className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-navy text-white">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d={TAB_ICONS.Fleet} />
+                <path d={ICON.truck} />
               </svg>
             </span>
             {/* Wordmark shrinks on phones; hidden on the tiniest screens so the
             header buttons always fit (the logo badge still links home). */}
-            <span className="hidden truncate font-display text-lg font-semibold uppercase tracking-wide text-slate-900 min-[400px]:inline sm:text-2xl">
-              Darch <span className="font-medium text-primary">Logistics</span>
+            <span className="hidden truncate font-display text-xl font-bold uppercase tracking-[0.01em] text-ink min-[400px]:inline sm:text-[28px] sm:leading-8">
+              Darch <span className="text-primary">Logistics</span>
             </span>
           </Link>
         </div>
@@ -197,7 +214,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </span>
           <button
             onClick={handleLogout}
-            className="btn-secondary px-3 py-2 text-sm font-medium sm:px-4"
+            className="btn-secondary h-11 px-3 text-sm font-medium text-ink-secondary sm:px-4"
           >
             Log Out
           </button>
@@ -211,41 +228,40 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             {drawerOpen && (
               <div
                 onClick={closeNav}
-                className="fixed inset-0 z-30 bg-black/40 md:hidden"
+                className="fixed inset-0 z-30 bg-slate-900/50 md:hidden"
               />
             )}
 
-            {/* Sidebar = the 30% structure color (navy) with light text.
-            The current page uses the 10% accent (primary steel blue),
-            so it stands out from the navy. Colors: index.css. */}
+            {/* Sidebar: navy with light text; the current page is filled
+            with the steel-blue accent. Colors: index.css. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-y-auto print:hidden bg-navy p-3 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col overflow-y-auto print:hidden bg-navy px-3 py-2 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >
               <nav aria-label="Dashboard" className="flex flex-1 flex-col gap-0.5">
                 {sidebarLinks.map((link) => {
                   if (!link.children) {
-                    return (
+                    const item = (
                       <NavLink
                         key={link.to}
                         to={link.to!}
                         end
                         onClick={closeNav}
-                        className={({ isActive }) =>
-                          `flex items-center px-2.5 py-1 text-sm font-medium ${
-                            link.bottom ? 'mt-auto border-t border-white/10 pt-2 ' : ''
-                          }${
-                            isActive
-                              ? 'bg-primary text-white'
-                              : 'text-slate-200 hover:bg-navy-hover hover:text-white'
-                          }`
-                        }
+                        className={navItemClass}
                       >
                         <TabIcon label={link.label} />
                         {link.label}
                       </NavLink>
+                    )
+                    // Pinned to the bottom, above a thin rule.
+                    return link.bottom ? (
+                      <div key={link.to} className="mt-auto border-t border-white/18 pt-2">
+                        {item}
+                      </div>
+                    ) : (
+                      item
                     )
                   }
 
@@ -258,8 +274,8 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                   ]
 
                   return (
-                    <div key={link.label} className="mt-2 flex flex-col gap-0.5">
-                      <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <div key={link.label} className="flex flex-col gap-0.5">
+                      <div className="px-2 pb-1 pt-3 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.06em] text-nav-ink-muted">
                         {link.label}
                       </div>
                       {tabs.map((child) => (
@@ -268,13 +284,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
                           to={child.to}
                           end
                           onClick={closeNav}
-                          className={({ isActive }) =>
-                            `flex items-center px-2.5 py-1 text-sm font-medium ${
-                              isActive
-                                ? 'bg-primary text-white'
-                                : 'text-slate-200 hover:bg-navy-hover hover:text-white'
-                            }`
-                          }
+                          className={navItemClass}
                         >
                           <TabIcon label={child.label} />
                           {child.label}
@@ -286,25 +296,18 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
               </nav>
 
               {isAdmin(role) && (
-                <NavLink
-                  to="/dashboard/settings"
-                  onClick={closeNav}
-                  className={({ isActive }) =>
-                    `mt-2 flex items-center border-t border-white/10 px-2.5 py-1 pt-2 text-sm font-medium ${
-                      isActive ? 'bg-primary text-white' : 'text-slate-300 hover:bg-navy-hover hover:text-white'
-                    }`
-                  }
-                >
-                  <TabIcon label="Settings" />
-                  Settings
-                </NavLink>
+                <div className="mt-2 border-t border-white/18 pt-2">
+                  <NavLink to="/dashboard/settings" onClick={closeNav} className={navItemClass}>
+                    <TabIcon label="Settings" />
+                    Settings
+                  </NavLink>
+                </div>
               )}
             </aside>
           </>
         )}
 
-        {/* Tighter top/bottom than sides so pages fit more on one screen. */}
-        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 print:overflow-visible print:p-0">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-5 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

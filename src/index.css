@@ -1,15 +1,17 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------
-   DASHBOARD DESIGN SYSTEM (60-30-10). Change colors HERE, not per page.
-   60% NEUTRAL  -- bg-slate-50 page background, bg-white cards/header.
-   30% STRUCTURE -- `navy`: the sidebar (DashboardLayout.tsx), plus
-                   slate borders and headings.
-   10% ACCENT   -- `primary` (steel blue). ONLY for: the main action
-                   button of a screen area (.btn-primary), the active
-                   sidebar item, numbers that need attention (unpaid
-                   balances, pending counts, expiring items) and
-                   "Needs action" count badges.
+   DASHBOARD DESIGN SYSTEM -- from the "Darch Logistics Dashboard Redesign"
+   canvas on claude.ai (2026-10-23). Change colors HERE, not per page.
+   - Page: bg-slate-50. Cards/panels: white with a 2px `line-card` border,
+     square corners, never a shadow (.card below).
+   - Sidebar: `navy`; the current page is `primary` (steel blue).
+   - `primary` is ONLY for: the main action button of a screen area
+     (.btn-primary), the active sidebar item, selected rows/tabs and
+     numbers that need attention.
+   - Buttons, inputs and badges get 2px corners (rounded-[2px]); cards 0.
+   - Text: `ink` titles, `ink-metric` numbers/table text, `ink-secondary`
+     labels, `ink-muted` subtitles and hints.
    Status colors (Paid/Approved green, Pending orange, Rejected red...)
    are semantic, not part of this system -- they live in one place,
    components/StatusBadge.tsx.
@@ -31,23 +33,66 @@
   --color-navy-hover: #1d3153;
   --color-primary: #3f6a8f;
   --color-primary-hover: #345a7a;
-  --color-primary-soft: #dee6ed;
+  --color-primary-soft: #eef3f8;
+  --color-nav-ink-muted: #90a1b9;
+
+  --color-ink: #0f172a;
+  --color-ink-metric: #1d1f20;
+  --color-ink-secondary: #314158;
+  --color-ink-muted: #62748e;
+
+  --color-line-card: #94a3b8; /* 2px card/panel/modal outline */
+  --color-line-control: #7b8ba3; /* buttons, inputs, selects */
+  --color-line: #cad5e2; /* rules inside a card (header/footer) */
 }
 
-/* Shared button styles -- color only, so each button still picks its own
-   size with px-/py-/text- utilities. Use exactly ONE .btn-primary per
+/* Shared button styles -- color plus the canvas's 44px minimum height (a
+   comfortable tap target), so each button still picks its own width and
+   text size with px-/text- utilities. Use exactly ONE .btn-primary per
    screen area; everything else (Cancel, Back, per-row actions) is
-   .btn-secondary; deleting/removing is .btn-danger. */
+   .btn-secondary; deleting/removing is .btn-danger (outlined red). */
 @layer components {
   .btn-primary {
-    @apply bg-primary text-white hover:bg-primary-hover disabled:opacity-50;
+    @apply min-h-11 rounded-[2px] border border-primary bg-primary font-semibold text-white hover:border-primary-hover hover:bg-primary-hover disabled:opacity-50;
   }
   .btn-secondary {
-    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50;
+    @apply min-h-11 rounded-[2px] border border-line-control bg-white text-ink-metric hover:bg-slate-50 disabled:border-line disabled:text-ink-muted;
   }
   .btn-danger {
-    @apply bg-red-600 text-white hover:bg-red-700 disabled:opacity-50;
+    @apply min-h-11 rounded-[2px] border border-red-700 bg-white font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50;
   }
+  /* A card / panel: white, 2px outline, square corners, no shadow. */
+  .card {
+    @apply border-2 border-line-card bg-white;
+  }
+}
+
+/* Keyboard focus: one steel-blue ring on everything you can tab to. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  tbody tr:hover {
+    background-color: var(--color-slate-50);
+  }
+}
+
+/* Table header row: grey strip, small uppercase labels. Deliberately NOT in
+   a layer, so it wins over each table's own text-slate-500 / font-medium
+   without editing every page. Padding and alignment stay per table. */
+thead th {
+  background-color: var(--color-slate-100);
+  color: var(--color-ink-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+thead tr {
+  border-bottom: 1px solid var(--color-line);
 }
 
 /* Public site redesign tokens (landing page + quote request page) --
@@ -103,11 +148,11 @@ html {
   --color-accent-900: #243342;
 }
 
-/* Stat card: white, flat, hairline border (class name kept so existing
-   usages keep working). */
+/* Stat card: same as .card -- white, 2px outline, no shadow (class name
+   kept so existing usages keep working). */
 .reports-blueprint-card {
   background-color: #fff;
-  border: 1px solid var(--color-reports-hairline);
+  border: 2px solid var(--color-line-card);
 }
 
 /* Modern feel: smooth hover/focus changes on every button and link. */

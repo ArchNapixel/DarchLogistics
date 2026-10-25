@@ -49,18 +49,18 @@ function WorkOrderAcceptanceLogSection() {
 
   return (
     <div>
-      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
+      <div className="overflow-x-auto border-2 border-line-card bg-white">
+        <table className="w-full text-left text-sm text-ink-metric">
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-medium">Work Order</th>
-              <th className="px-4 py-3 font-medium">Mechanic</th>
-              <th className="px-4 py-3 font-medium">Accepted At</th>
+              <th className="px-4 py-2.5">Work Order</th>
+              <th className="px-4 py-2.5">Mechanic</th>
+              <th className="px-4 py-2.5">Accepted At</th>
             </tr>
           </thead>
           <tbody>
             {entries.map((entry) => (
-              <tr key={entry.log_id} className="border-b border-slate-100 last:border-0">
+              <tr key={entry.log_id} className="border-b border-slate-200 last:border-0">
                 <td className="px-4 py-3 text-slate-900">{entry.work_order_number}</td>
                 <td className="px-4 py-3 text-slate-600">{entry.employee_name}</td>
                 <td className="px-4 py-3 text-slate-600">

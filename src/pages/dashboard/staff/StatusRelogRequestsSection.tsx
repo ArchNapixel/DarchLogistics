@@ -128,7 +128,7 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
           {requests.map((request) => (
             <div
               key={request.request_id}
-              className="border border-slate-200 bg-white p-4 shadow-sm"
+              className="border-2 border-line-card bg-white p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-900">{request.target_label}</p>

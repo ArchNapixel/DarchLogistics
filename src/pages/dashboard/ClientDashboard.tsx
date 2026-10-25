@@ -82,9 +82,9 @@ function ClientDashboard() {
         {summary.map((item) => (
           <div
             key={item.label}
-            className="border border-slate-200 bg-white p-5 shadow-sm"
+            className="border-2 border-line-card bg-white p-5"
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            <p className="text-sm font-medium text-neutral-500">
               {item.label}
             </p>
             <p className="mt-1 text-xl font-semibold text-slate-900">
@@ -95,7 +95,7 @@ function ClientDashboard() {
       </div>
 
       {/* Pending / Rejected quotes, above bookings */}
-      <div className="mt-8 border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mt-8 border-2 border-line-card bg-white p-6">
         <SectionHeader
           title="My Quote Requests"
           actions={<ViewAll to="/dashboard/quotes" />}
@@ -106,7 +106,7 @@ function ClientDashboard() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
-        <div className="min-w-0 border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 border-2 border-line-card bg-white p-6">
           <SectionHeader
             title="Active Bookings"
             actions={<ViewAll to="/dashboard/bookings" />}
@@ -116,7 +116,7 @@ function ClientDashboard() {
           </div>
         </div>
 
-        <div className="border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="border-2 border-line-card bg-white p-6">
           <SectionHeader
             title="Next Payments Due"
             actions={<ViewAll to="/dashboard/payments" />}

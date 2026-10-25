@@ -45,11 +45,11 @@ function VehicleDetailModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white p-6 shadow-lg"
+        className="w-full max-w-md bg-white p-6 border-2 border-line-card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -243,15 +243,15 @@ function FleetSection() {
         </div>
       )}
 
-      <div className="mt-4 flex gap-2 border-b border-slate-200">
+      <div className="mt-4 flex flex-wrap gap-2">
         {TABS.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium ${
+            className={`h-11 rounded-[2px] border px-5 text-sm font-semibold ${
               activeTab === tab
-                ? 'border-b-2 border-slate-900 text-slate-900'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {tab}
@@ -270,15 +270,15 @@ function FleetSection() {
       ) : activeTab === 'Trailers' && trailers.length === 0 ? (
         <EmptyState message="No trailers yet." hint='Use "Add Trailer" to add one.' className="mt-4" />
       ) : activeTab === 'Trucks' ? (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Plate Number</th>
-                <th className="px-4 py-3 font-medium">Model</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Last Service Date</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
+                <th className="px-4 py-2.5">Plate Number</th>
+                <th className="px-4 py-2.5">Model</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Last Service Date</th>
+                <th className="px-4 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -286,7 +286,7 @@ function FleetSection() {
                 <tr
                   key={truck.plate_number}
                   onClick={() => setViewingTruck(truck)}
-                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                  className="cursor-pointer border-b border-slate-200 last:border-0 hover:bg-slate-50"
                 >
                   <td className="px-4 py-3 text-slate-900">{truck.plate_number}</td>
                   <td className="px-4 py-3 text-slate-600">{truck.model || 'N/A'}</td>
@@ -314,14 +314,14 @@ function FleetSection() {
           <Pager {...pagedTrucks.pager} />
         </div>
       ) : (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Plate Number</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
+                <th className="px-4 py-2.5">Plate Number</th>
+                <th className="px-4 py-2.5">Type</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -329,7 +329,7 @@ function FleetSection() {
                 <tr
                   key={trailer.trailer_id}
                   onClick={() => setViewingTrailer(trailer)}
-                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                  className="cursor-pointer border-b border-slate-200 last:border-0 hover:bg-slate-50"
                 >
                   <td className="px-4 py-3 text-slate-900">
                     {trailer.plate_number || 'N/A'}

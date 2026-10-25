@@ -130,7 +130,7 @@ function InventorySection() {
           </button>
           <button
             onClick={() => setShowReport(true)}
-            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]"
           >
             Print Inventory Report
           </button>
@@ -150,23 +150,23 @@ function InventorySection() {
       )}
 
       {!loading && !error && items.length > 0 && (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">ID</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Quantity</th>
-                <th className="px-4 py-3 font-medium">Unit Price</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
+                <th className="px-4 py-2.5">ID</th>
+                <th className="px-4 py-2.5">Name</th>
+                <th className="px-4 py-2.5">Type</th>
+                <th className="px-4 py-2.5">Quantity</th>
+                <th className="px-4 py-2.5">Unit Price</th>
+                <th className="px-4 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody>
               {paged.rows.map((item) => (
                 <tr
                   key={item.item_id}
-                  className="border-b border-slate-100 last:border-0"
+                  className="border-b border-slate-200 last:border-0"
                 >
                   <td className="px-4 py-3 text-slate-900">#{item.item_id}</td>
                   <td className="px-4 py-3 text-slate-900">{item.name}</td>

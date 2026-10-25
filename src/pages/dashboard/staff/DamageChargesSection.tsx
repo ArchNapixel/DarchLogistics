@@ -198,21 +198,21 @@ function DamageChargesSection() {
         <EmptyState message="No delivery damage has been reported." hint="Use Report Damage above, or record it when marking a trip delivered on the Dispatch Board." className="mt-4" />
       )}
       {!loading && damageCharges.length > 0 && (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <div className="mt-4 overflow-x-auto border-2 border-line-card bg-white">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Booking</th>
-                <th className="px-4 py-3 font-medium">Client</th>
-                <th className="px-4 py-3 font-medium">Route</th>
-                <th className="px-4 py-3 font-medium">Damage</th>
-                <th className="px-4 py-3 font-medium">Estimated cost</th>
-                <th className="px-4 py-3 font-medium">Decision</th>
+                <th className="px-4 py-2.5">Booking</th>
+                <th className="px-4 py-2.5">Client</th>
+                <th className="px-4 py-2.5">Route</th>
+                <th className="px-4 py-2.5">Damage</th>
+                <th className="px-4 py-2.5">Estimated cost</th>
+                <th className="px-4 py-2.5">Decision</th>
               </tr>
             </thead>
             <tbody>
               {damageCharges.map((damage) => (
-                <tr key={damage.damage_id} className="border-b border-slate-100 last:border-0">
+                <tr key={damage.damage_id} className="border-b border-slate-200 last:border-0">
                   <td className="px-4 py-3 text-slate-900">#{damage.booking_id}</td>
                   <td className="px-4 py-3 text-slate-900">{damage.client_name}</td>
                   <td className="px-4 py-3 text-slate-600">{damage.route}</td>
@@ -224,7 +224,7 @@ function DamageChargesSection() {
                         type="button"
                         onClick={() => approveCharge(damage, 'Client')}
                         disabled={savingId === damage.damage_id}
-                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Client' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Client' ? 'bg-primary text-white' : 'border border-line-control text-ink-metric hover:bg-slate-50 rounded-[2px]'}`}
                       >
                         Client
                       </button>
@@ -232,7 +232,7 @@ function DamageChargesSection() {
                         type="button"
                         onClick={() => approveCharge(damage, 'Company')}
                         disabled={savingId === damage.damage_id}
-                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Company' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${damage.damage_status === 'Approved' && damage.charge_to === 'Company' ? 'bg-primary text-white' : 'border border-line-control text-ink-metric hover:bg-slate-50 rounded-[2px]'}`}
                       >
                         Company
                       </button>

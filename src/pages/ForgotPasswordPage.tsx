@@ -35,7 +35,7 @@ function ForgotPasswordPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border-2 border-line-card bg-white p-8">
         <h1 className="text-center text-xl font-bold text-slate-900">
           Reset your password
         </h1>
@@ -67,7 +67,7 @@ function ForgotPasswordPage() {
                 required
                 autoFocus
                 autoComplete="email"
-                className="w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
               />
             </label>
 

@@ -15,7 +15,7 @@ import ClientProfileSection, { useClientProfile } from './ClientProfileSection'
 import ClientAccountSection from './ClientAccountSection'
 import { NewQuoteButton } from './NewQuoteModal'
 
-const card = 'border border-slate-200 bg-white p-6 shadow-sm'
+const card = 'border-2 border-line-card bg-white p-6'
 
 export function ClientBookingsPage() {
   const { clientId } = useAuth()

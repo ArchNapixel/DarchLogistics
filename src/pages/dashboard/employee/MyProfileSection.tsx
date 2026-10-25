@@ -29,7 +29,7 @@ import { showToast } from '../../../components/Toast'
 import { formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
 function MyProfileSection() {
@@ -136,15 +136,15 @@ function MyProfileSection() {
 
       <div className="grid gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</p>
+          <p className="text-sm font-medium text-neutral-500">Name</p>
           <p className="text-slate-900">{profile.full_name}</p>
         </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Position</p>
+          <p className="text-sm font-medium text-neutral-500">Position</p>
           <p className="text-slate-900">{profile.position}</p>
         </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Hire date</p>
+          <p className="text-sm font-medium text-neutral-500">Hire date</p>
           <p className="text-slate-900">{formatDate(profile.hire_date)}</p>
         </div>
         <p className="text-xs text-slate-500 sm:col-span-3">

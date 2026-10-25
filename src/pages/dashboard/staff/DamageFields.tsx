@@ -6,7 +6,7 @@
 import type { DamageCondition, DamageInput } from '../../../lib/damageCharges'
 
 const fieldClasses =
-  'w-full min-w-0 border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none'
+  'w-full min-w-0 border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex min-w-0 flex-col gap-1 text-sm font-medium text-slate-700'
 
 const LOSS_LABELS: Record<Exclude<DamageCondition, 'Good'>, string> = {

@@ -13,8 +13,8 @@
 //   draft payslip. A draft doesn't change by itself, so after fixing a day
 //   to Absent/Leave, use Edit or Regenerate on that payslip.
 // - "All present" in a day's header marks that day's unmarked people Present.
-import { useCallback, useEffect, useState } from 'react'
-import Pager from '../../../components/Pager'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, saveAttendanceRecord, type AttendanceRecord, type AttendanceStatus } from '../../../lib/employeeAttendance'
@@ -46,6 +46,83 @@ function formatShort(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
+// "How days are counted" -- the side panel's rules (same as payroll's).
+const COUNT_RULES: [string, string][] = [
+  ['Present', 'Paid day'],
+  ['Leave (paid)', 'Paid -- uses the yearly leave balance'],
+  ['Unpaid Leave', 'Approved, not paid'],
+  ['Absent', 'Not paid'],
+  ['Not marked', 'Counts as Absent once the day is over'],
+]
+
+// Drivers aren't on this sheet (they're paid per trip) -- the panel lists
+// who has trips today instead.
+function DriversToday({ today }: { today: string }) {
+  const [rows, setRows] = useState<{ name: string; trips: number[] }[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const { data: trips } = await supabase
+        .from('itineraries')
+        .select('itinerary_id')
+        .eq('trip_date_from', today)
+        .neq('itinerary_status', 'Cancelled')
+      const tripIds = (trips ?? []).map((t) => t.itinerary_id)
+      const { data: crew } = tripIds.length
+        ? await supabase
+            .from('itinerary_crews')
+            .select('itinerary_id, employee_id')
+            .eq('crew_role', 'Driver')
+            .eq('is_active', true)
+            .in('itinerary_id', tripIds)
+        : { data: [] as { itinerary_id: number; employee_id: number }[] }
+      const ids = [...new Set((crew ?? []).map((c) => c.employee_id))]
+      const { data: people } = ids.length
+        ? await supabase.from('employees').select('employee_id, full_name').in('employee_id', ids)
+        : { data: [] as { employee_id: number; full_name: string }[] }
+      if (cancelled) return
+      setRows(
+        (people ?? [])
+          .map((p) => ({
+            name: p.full_name,
+            trips: (crew ?? []).filter((c) => c.employee_id === p.employee_id).map((c) => c.itinerary_id).sort((a, b) => a - b),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [today])
+
+  return (
+    <section>
+      <h2 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">Drivers today</h2>
+      {rows === null ? (
+        <p className="py-2 text-sm text-ink-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="py-2 text-sm text-ink-muted">No driver has a trip today.</p>
+      ) : (
+        rows.map((r) => (
+          <div key={r.name} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm">
+            <span className="text-ink-secondary">{r.name}</span>
+            <span className="font-semibold tabular-nums">
+              {r.trips.length === 1 ? 'Trip' : 'Trips'} {r.trips.map((id) => `#${id}`).join(', ')}
+            </span>
+          </div>
+        ))
+      )}
+      <Link to="/dashboard/schedule-overview" className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary hover:underline">
+        Open Schedule Overview
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M5 12h14 M13 6l6 6-6 6" />
+        </svg>
+      </Link>
+    </section>
+  )
+}
+
 function AttendanceSection() {
   const { employeeId: recorderId } = useAuth()
   const today = toManilaDate(new Date())
@@ -56,6 +133,7 @@ function AttendanceSection() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   const days = Array.from({ length: 7 }, (_, i) => shiftDate(weekStart, i))
   const weekEnd = days[6]
@@ -146,95 +224,105 @@ function AttendanceSection() {
   const paged = usePaged(employees, weekStart)
   return (
     <div>
-      <PageHeader title="Attendance" subtitle="Mark each employee Present, Leave or Absent for the week." />
+      <PageHeader
+        title="Attendance"
+        subtitle="Mark each employee Present, Leave or Absent. Drivers are paid per trip and aren't on this sheet."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setWeekStart(shiftDate(weekStart, -7))}
+              aria-label="Previous week"
+              className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+            {/* The week: click it to pick any date (no future dates). */}
+            <button
+              type="button"
+              onClick={() => {
+                const input = dateInputRef.current
+                if (!input) return
+                try {
+                  input.showPicker()
+                } catch {
+                  input.focus()
+                }
+              }}
+              className="flex h-11 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-ink hover:bg-slate-50"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary" aria-hidden="true">
+                <path d="M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4" />
+              </svg>
+              {weekStart === thisWeekStart ? 'This week · ' : ''}
+              {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
+            </button>
+            <input
+              ref={dateInputRef}
+              type="date"
+              aria-label="Jump to date"
+              max={today}
+              value={weekStart}
+              onChange={(e) => e.target.value && setWeekStart(weekStartOf(e.target.value))}
+              className="sr-only"
+            />
+            <button
+              onClick={() => setWeekStart(shiftDate(weekStart, 7))}
+              disabled={weekStart >= thisWeekStart}
+              aria-label="Next week"
+              className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-line disabled:text-ink-muted"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+            </button>
+            {weekStart !== thisWeekStart && (
+              <button onClick={() => setWeekStart(thisWeekStart)} className="btn-secondary px-4 text-sm font-medium">
+                This Week
+              </button>
+            )}
+          </div>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
-        {/* One joined control: [<] week label [>]. */}
-        <div className="inline-flex items-center overflow-hidden border border-slate-300 bg-white">
-          <button
-            onClick={() => setWeekStart(shiftDate(weekStart, -7))}
-            aria-label="Previous week"
-            title="Previous week"
-            className="px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-100"
-          >
-            &lsaquo;
-          </button>
-          <span className="min-w-44 border-x border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-900">
-            {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
-          </span>
-          <button
-            onClick={() => setWeekStart(shiftDate(weekStart, 7))}
-            disabled={weekStart >= thisWeekStart}
-            aria-label="Next week"
-            title="Next week"
-            className="px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
-          >
-            &rsaquo;
-          </button>
-        </div>
+      {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-        {/* Calendar: pick any date to jump straight to its week (no future dates). */}
-        <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-          Jump to date
-          <input
-            type="date"
-            max={today}
-            value={weekStart}
-            onChange={(e) => e.target.value && setWeekStart(weekStartOf(e.target.value))}
-            className="border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-          />
-        </label>
-
-        {weekStart !== thisWeekStart && (
-          <button
-            onClick={() => setWeekStart(thisWeekStart)}
-            className="border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-          >
-            This week
-          </button>
-        )}
-      </div>
-
-      {error && <p className="mt-3 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-
-      {/* Pending leave requests -- approving one marks its days as Leave below. */}
-      <div className="mt-4">
-        <LeaveRequestsSection onDecided={() => void load()} />
-      </div>
-
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
       {loading ? (
-        <p className="mt-4 text-slate-500">Loading attendance...</p>
+        <p className="text-ink-muted">Loading attendance...</p>
       ) : employees.length === 0 ? (
-        <EmptyState message="No active employees." className="mt-4" />
+        <EmptyState message="No active employees." />
       ) : (
-        <div className="mt-4 overflow-x-auto border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+        <section aria-label="Staff attendance" className="card flex min-h-[calc(100dvh-15rem)] flex-col">
+          <div className="flex-1 overflow-x-auto">
+          <table className="w-full text-left text-sm text-ink-metric">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
+                <th className="px-5 py-2.5">Employee</th>
                 {days.map((date, i) => (
-                  <th key={date} className="px-2 py-3 text-center font-medium">
-                    <div className={date === today ? 'text-slate-900' : ''}>{DAY_NAMES[i]} {formatShort(date).split(' ')[1]}</div>
+                  <th key={date} className="px-2 py-2.5 text-center">
+                    <div className={date === today ? 'text-primary' : ''}>{DAY_NAMES[i]} {formatShort(date).split(' ')[1]}</div>
                     {/* Not on Sundays: weekly salary pays (salary / 6) per
                         day present, so a whole-staff Sunday click would pay
                         everyone 7/6 of a week. A real Sunday shift can still
                         be marked per person. */}
                     {date <= today && i !== 0 && (
-                      <button onClick={() => void handleAllPresent(date)} disabled={busy} className="mt-1 text-xs font-normal text-slate-600 underline disabled:opacity-50">All present</button>
+                      <button onClick={() => void handleAllPresent(date)} disabled={busy} className="mt-1 text-xs font-medium tracking-normal text-primary normal-case underline disabled:opacity-50">All present</button>
                     )}
                   </th>
                 ))}
-                <th className="px-4 py-3 text-center font-medium">Days present</th>
+                <th className="px-5 py-2.5 text-center">Days present</th>
               </tr>
             </thead>
             <tbody>
               {paged.rows.map((e) => {
                 let presentDays = 0
                 return (
-                  <tr key={e.employee_id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="text-slate-900">{e.full_name}</div>
-                      <div className="text-xs text-slate-500">{e.position}</div>
+                  <tr key={e.employee_id} className="h-[60px] border-b border-slate-200">
+                    <td className="px-5 py-3">
+                      <div className="font-semibold text-ink">{e.full_name}</div>
+                      <div className="text-[13px] text-ink-muted">{e.position}</div>
                     </td>
                     {days.map((date) => {
                       const rec = records.get(`${e.employee_id}|${date}`)
@@ -247,7 +335,17 @@ function AttendanceSection() {
                             value={shown}
                             disabled={busy || date > today}
                             onChange={(event) => void handleMark(e.employee_id, date, event.target.value as AttendanceStatus)}
-                            className={`border px-1 py-1 text-sm disabled:opacity-60 ${shown === 'Present' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700'}`}
+                            className={`min-h-11 rounded-[2px] border px-1 py-1 text-sm font-medium disabled:opacity-60 ${
+                              shown === 'Present'
+                                ? 'border-primary bg-primary text-white'
+                                : shown === 'Absent'
+                                  ? 'border-red-300 bg-red-50 text-red-800'
+                                  : shown === 'Leave'
+                                    ? 'border-line-control bg-primary-soft text-primary'
+                                    : shown === 'Unpaid Leave'
+                                      ? 'border-amber-600 bg-amber-100 text-amber-900'
+                                      : 'border-line-control bg-white text-ink-metric'
+                            }`}
                           >
                             {shown === '' && <option value="">—</option>}
                             <option>Present</option>
@@ -258,15 +356,64 @@ function AttendanceSection() {
                         </td>
                       )
                     })}
-                    <td className="px-4 py-3 text-center text-slate-900">{presentDays}</td>
+                    <td className="px-5 py-3 text-center font-semibold tabular-nums">{presentDays}</td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-          <Pager {...paged.pager} />
-        </div>
+          </div>
+          <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
+            <span>
+              {employees.length} staff
+              {days.includes(today) &&
+                ` · ${employees.filter((e) => records.has(`${e.employee_id}|${today}`)).length} of ${employees.length} marked today`}
+            </span>
+            {paged.pager.pageCount > 1 && (
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page - 1)}
+                  disabled={paged.pager.page === 0}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  ‹ Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => paged.pager.onChange(paged.pager.page + 1)}
+                  disabled={paged.pager.page >= paged.pager.pageCount - 1}
+                  className="btn-secondary px-3.5 text-sm font-medium"
+                >
+                  Next ›
+                </button>
+              </span>
+            )}
+          </div>
+        </section>
       )}
+
+        <aside className="card flex flex-col gap-5 px-5 py-4">
+          <section>
+            <h2 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">How days are counted</h2>
+            {COUNT_RULES.map(([status, rule]) => (
+              <div key={status} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm">
+                <span className="text-ink-secondary">{status}</span>
+                <span className="text-right font-semibold">{rule}</span>
+              </div>
+            ))}
+            <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
+              Changes save as soon as you pick. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
+            </p>
+          </section>
+          <DriversToday today={today} />
+        </aside>
+      </div>
+
+      {/* Pending leave requests -- approving one marks its days as Leave above. */}
+      <div className="mt-6">
+        <LeaveRequestsSection onDecided={() => void load()} />
+      </div>
     </div>
   )
 }

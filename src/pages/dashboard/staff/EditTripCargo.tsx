@@ -19,7 +19,7 @@ import { MAX_WEIGHT_TONS, type TripCargo } from '../../../lib/quoteRequest'
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
 
 const inputClasses =
-  'border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500'
+  'rounded-[2px] border border-line-control bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-primary disabled:bg-slate-100 disabled:text-slate-500'
 
 function EditTripCargo({
   itineraryId,

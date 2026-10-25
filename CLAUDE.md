@@ -831,15 +831,43 @@ before creating it.
   "Load more"), Driver Schedule.
 - Hosting: `vercel.json` (Vite build to `dist`, every path rewritten to
   `index.html` so refreshing a `/dashboard/...` URL works on Vercel).
-- Design (as of 2026-10-19): the 2026-09-22 "sharp edges + blue
-  (brand-steel) sidebar" pass was **reverted** by the teammate —
-  Tailwind's normal rounded corners are back, the sidebar is white with a
-  slate-900 active item, the font is Inter everywhere (Barlow removed
-  from `index.html`/`index.css`), and `.reports-blueprint-card` is now a
-  plain white hairline card (class name kept). Number inputs have no
+- Design (2026-10-25): the whole app follows the claude.ai canvas
+  **"Darch Logistics Dashboard Redesign"**
+  (https://claude.ai/artifact/GqASavTXDwSNAA1mHaboSP, 19 Admin boards +
+  its "Darch Logistics" token file). Tokens live in `index.css` `@theme`:
+  `navy` sidebar, `primary` steel blue (active nav, selected tab/row, main
+  button), `ink` / `ink-metric` / `ink-secondary` / `ink-muted` text,
+  `line-card` (2px card/panel/modal outline), `line-control` (inputs,
+  buttons), `line` (rules inside a card). Rules: cards = `.card` (white,
+  2px outline, square, no shadow); buttons/inputs/badges 2px corners and
+  44px tall (`min-h-11` built into `.btn-*`); `.btn-danger` is outlined
+  red; tabs = outlined buttons, the chosen one filled `primary`, count
+  badge inside; selected list row = `bg-primary-soft` + 4px inset
+  `primary` bar; modal backdrop `bg-slate-900/50`. Table header rows are
+  styled globally (`thead th` in `index.css`, unlayered so it beats each
+  table's own classes). Tailwind v4's slate-500/700/300 already equal
+  ink-muted / ink-secondary / line, so those text classes are fine as is.
+  **Page layouts follow the boards too (2026-10-25).** Dispatch Board:
+  one day at a time (‹ date › arrows, 'all' = every trip not delivered),
+  five status tiles (click = filter), Status / Driver / Booking ID filters,
+  a flat trip table with Update Status (`staff/UpdateStatusModal.tsx`,
+  step list + "When did it happen?") and View (`TripPanel` in the same
+  file: crew/vehicle pickers, edit time, breakdown, correction, logs,
+  downpayment, "Use suggested crew"), "Resources Today" panel; a notice
+  links to unassigned trips on other days. Bookings & Trips: bookings
+  table + `staff/BookingSummaryPane.tsx` (Full Details opens
+  BookingDetailModal). Clients / Employees / Payroll / Billing: list +
+  detail panel. Schedule Overview: one Resources timeline (Drivers,
+  Helpers, Trucks, Trailers sections) + Trips / Bookings views. Cash
+  Advances: tiles + ledger + inline Issue form. Bills Receivable: owed
+  tiles (Payments Due rules) + Client/Terms filters + due-date panel;
+  `?pay=ID` opens Record payment (used by Bookings and Collections).
+  Board features the app doesn't have were left out on purpose: time
+  in/out + overtime (Attendance), per-trip editable rate / helper pay
+  (Payroll), Add / Edit Client, Add Charge (Billing), Export (Money
+  Summary), three medical exam types (Employees). Inter everywhere,
+  Oswald only for the DARCH LOGISTICS wordmark. Number inputs have no
   spinner arrows and ignore the mouse wheel (`index.css` + `main.tsx`).
-  The "60-30-10 color system" comment at the top of `index.css` is stale
-  (describes the old blue sidebar).
 
 - **Accounting module (2026-10-19, Admin only — no Accountant role).** A
   sidebar group below Human Resource, **labelled "Expenses" in the nav

@@ -114,7 +114,7 @@ function ClientReviewSection() {
         onChange={(e) => setComment(e.target.value)}
         rows={3}
         placeholder="Tell us about your experience (optional)"
-        className="mt-4 w-full border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+        className="mt-4 w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
       />
 
       {lastSavedAt && (

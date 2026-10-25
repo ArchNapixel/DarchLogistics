@@ -141,13 +141,13 @@ function TripsView({
                     const active = selected?.itinerary_id === t.itinerary_id
                     const storage = storageState({ deadline: t.storage_deadline, status: t.status, pickedUpAt: null, now })
                     return (
-                      <li key={t.itinerary_id} className="border-b border-slate-100 last:border-0">
+                      <li key={t.itinerary_id} className="border-b border-slate-200 last:border-0">
                         <button
                           type="button"
                           onClick={() => setSelectedId(t.itinerary_id)}
                           aria-current={active || undefined}
                           className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm ${
-                            active ? 'bg-slate-100' : 'hover:bg-slate-50'
+                            active ? 'bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]' : 'hover:bg-slate-50'
                           }`}
                         >
                           <span className="min-w-0">

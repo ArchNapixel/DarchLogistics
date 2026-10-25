@@ -33,7 +33,7 @@ export type SectionProps = {
 
 function inputClasses(hasError: boolean) {
   return `border-2 bg-white px-3 py-2 text-slate-900 transition-colors focus:outline-none ${
-    hasError ? 'border-red-400 hover:bg-red-50 focus:border-red-500' : 'border-slate-300 hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500'
+    hasError ? 'border-red-400 hover:bg-red-50 focus:border-red-500' : 'border-line-control hover:border-slate-500 hover:bg-slate-50 focus:border-primary'
   }`
 }
 
@@ -104,8 +104,8 @@ function ToggleGroup<T extends string>({
             onClick={() => onChange(option.value)}
             className={`flex-1 border-2 px-3 py-2 text-sm font-medium transition-colors [&:not(:first-child)]:-ml-px ${
               value === option.value
-                ? 'relative border-slate-900 bg-slate-900 text-white'
-                : 'border-slate-300 bg-white text-slate-700 hover:relative hover:border-slate-500 hover:bg-slate-50'
+                ? 'relative border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:relative hover:border-slate-500 hover:bg-slate-50'
             }`}
           >
             {option.label}
@@ -178,7 +178,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         return (
           <fieldset
             key={index}
-            className="col-span-full grid gap-3 border-2 border-slate-300 bg-white p-4 sm:grid-cols-2 sm:gap-x-4"
+            className="col-span-full grid gap-3 border-2 border-line-card bg-white p-4 sm:grid-cols-2 sm:gap-x-4"
           >
             <legend className="sr-only">Cargo line {index + 1}</legend>
             <div className="col-span-full flex items-center justify-between text-sm font-semibold text-slate-800">
@@ -326,7 +326,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         <button
           type="button"
           onClick={() => setField('cargoLines', [...lines, emptyCargoLine])}
-          className="border-2 border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500 hover:bg-slate-50"
+          className="border-2 border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:border-slate-500 hover:bg-slate-50"
         >
           + Add cargo line
         </button>

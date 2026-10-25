@@ -57,18 +57,18 @@ function PaymentsDueTab() {
         <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
-      <div className="overflow-x-auto border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
+      <div className="overflow-x-auto border-2 border-line-card bg-white">
+        <table className="w-full text-left text-sm text-ink-metric">
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-medium">Booking</th>
-              <th className="px-4 py-3 font-medium">Client</th>
-              <th className="px-4 py-3 font-medium">Route</th>
-              <th className="px-4 py-3 font-medium">Billable</th>
-              <th className="px-4 py-3 font-medium">Paid</th>
-              <th className="px-4 py-3 font-medium">Balance</th>
-              <th className="px-4 py-3 font-medium">Due</th>
-              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-2.5">Booking</th>
+              <th className="px-4 py-2.5">Client</th>
+              <th className="px-4 py-2.5">Route</th>
+              <th className="px-4 py-2.5">Billable</th>
+              <th className="px-4 py-2.5">Paid</th>
+              <th className="px-4 py-2.5">Balance</th>
+              <th className="px-4 py-2.5">Due</th>
+              <th className="px-4 py-2.5">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -84,7 +84,7 @@ function PaymentsDueTab() {
                 <Fragment key={row.booking_id}>
                   <tr
                     onClick={() => setOpenId(open ? null : row.booking_id)}
-                    className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                    className="cursor-pointer border-b border-slate-200 hover:bg-slate-50"
                   >
                     <td className="px-4 py-3 text-slate-900">#{row.booking_id}</td>
                     <td className="px-4 py-3 text-slate-900">{row.client_name}</td>
@@ -104,7 +104,7 @@ function PaymentsDueTab() {
                     </td>
                   </tr>
                   {open && (
-                    <tr className="border-b border-slate-100 bg-slate-50">
+                    <tr className="border-b border-slate-200 bg-slate-50">
                       <td colSpan={8} className="px-4 py-3">
                         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
                           <div>
@@ -274,7 +274,7 @@ function Overview({
         <button
           key={p.label}
           onClick={() => onOpen(p.group, p.label)}
-          className="border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400"
+          className="border-2 border-line-card bg-white p-4 text-left hover:border-slate-400"
         >
           <p className="text-2xl font-bold text-primary">{p.value}</p>
           <p className="mt-1 text-sm font-medium text-slate-700">{p.label}</p>
@@ -310,15 +310,15 @@ function ReportsSection() {
     <div>
       <PageHeader title="Reports" subtitle="Queues that need action, client standing, and activity logs." />
 
-      <div className="flex gap-2 border-b border-slate-200">
+      <div className="flex flex-wrap gap-2">
         {GROUPS.map((g) => (
           <button
             key={g.name}
             onClick={() => open(g.name, '')}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium ${
+            className={`flex items-center gap-2 h-11 rounded-[2px] border px-5 text-sm font-semibold ${
               groupName === g.name
-                ? 'border-b-2 border-slate-900 text-slate-900'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'border-primary bg-primary text-white'
+                : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
             }`}
           >
             {g.name}
@@ -335,7 +335,7 @@ function ReportsSection() {
               onClick={() => open(group.name, i.label)}
               className={`flex items-center gap-2 border px-3 py-1 text-sm ${
                 i.label === item.label
-                  ? 'border-slate-900 bg-slate-900 text-white'
+                  ? 'border-primary bg-primary text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-500'
               }`}
             >

@@ -139,8 +139,8 @@ function WorkOrderDetailModal({
   const isClosed = status === 'Completed' || status === 'Cancelled'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-bold text-slate-900">
             {order.work_order_number} — {order.vehicle_label}
@@ -180,7 +180,7 @@ function WorkOrderDetailModal({
               value={mechanicId ?? ''}
               disabled={saving || isClosed}
               onChange={(e) => handleReassign(e.target.value)}
-              className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+              className="border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
             >
               <option value="">Unassigned -- open on the Task Board</option>
               {mechanics.map((m) => (
@@ -204,7 +204,7 @@ function WorkOrderDetailModal({
                 value={status}
                 disabled={saving}
                 onChange={(e) => handleStatusChange(e.target.value)}
-                className="border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                className="border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
               >
                 {ALL_STATUSES.filter((s) => s !== 'Completed').map((s) => (
                   <option key={s} value={s}>
@@ -229,7 +229,7 @@ function WorkOrderDetailModal({
                   <p className="text-sm text-slate-900">
                     {part.item_name_text} × {part.quantity}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-[13px] text-ink-muted">
                     {part.employee_name} · {formatDateTime(part.used_at)}
                   </p>
                 </div>

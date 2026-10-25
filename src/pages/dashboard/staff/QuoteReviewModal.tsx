@@ -75,7 +75,7 @@ import type { CapacityResult } from '../../../lib/capacity'
 const MAX_HOURS_PER_TRIP = 72
 
 const fieldClasses =
-  'w-full border-2 border-slate-300 bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary focus:outline-none'
+  'w-full border-2 border-line-control bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary min-h-11'
 
 // Looks up a place by city+barangay (trimmed, case-insensitive) -- only to
 // preview whether a cached distance exists. Never creates a place; the
@@ -146,8 +146,8 @@ function pinLink(lat: number | null | undefined, lng: number | null | undefined)
 function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <dt className="text-[13px] text-slate-500">{label}</dt>
-      <dd className="text-[15px] text-slate-900">{children}</dd>
+      <dt className="text-[13px] font-medium text-ink-muted">{label}</dt>
+      <dd className="text-[15px] font-medium text-ink">{children}</dd>
     </div>
   )
 }
@@ -155,7 +155,7 @@ function Field({ label, children, className = '' }: { label: string; children: R
 // Small heading over each group in the left column, with a rule under it.
 function GroupHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-3 border-b border-slate-200 pb-2 text-[15px] font-semibold text-slate-900">{children}</h3>
+    <h3 className="mb-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink">{children}</h3>
   )
 }
 
@@ -875,22 +875,22 @@ function QuoteReviewModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="review-quote-title"
-        className="absolute inset-y-0 right-0 flex w-full max-w-[1100px] flex-col border-l-2 border-slate-300 bg-white transition-transform duration-200 ease-out starting:translate-x-full motion-reduce:transition-none"
+        className="absolute inset-y-0 right-0 flex w-full max-w-[1100px] flex-col border-l-2 border-line-card bg-white transition-transform duration-200 ease-out starting:translate-x-full motion-reduce:transition-none"
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-4 border-b-2 border-slate-200 px-7 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-7 py-4">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h2 id="review-quote-title" className="text-xl font-bold text-slate-900">
               Review Quote #{quote.quote_request_id}
             </h2>
             {quote.reference_code && (
-              <span className="font-mono text-xs font-semibold text-slate-600">{quote.reference_code}</span>
+              <span className="font-mono text-[13px] font-semibold tracking-[0.02em] text-ink-secondary">{quote.reference_code}</span>
             )}
-            <span className="bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+            <span className="bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 rounded-[2px]">
               {QUOTE_STATUS_LABELS[status] ?? status}
             </span>
             {pickupToday && (
-              <span className="flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+              <span className="flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 rounded-[2px]">
                 <Icon name="clock" size={12} />
                 Pickup Today
               </span>
@@ -900,7 +900,7 @@ function QuoteReviewModal({
             onClick={close}
             aria-label="Close review"
             data-autofocus
-            className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-slate-300 text-slate-700 hover:border-slate-500 hover:text-slate-900"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control text-ink-secondary hover:bg-slate-50"
           >
             <Icon name="close" size={18} />
           </button>
@@ -978,7 +978,7 @@ function QuoteReviewModal({
 
                 <section>
                   <GroupHeading>Client</GroupHeading>
-                  <dl className="grid grid-cols-2 gap-4">
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                     <Field label="Client name">
                       <span className="text-lg font-semibold">{quote.client_name}</span>
                     </Field>
@@ -1045,7 +1045,7 @@ function QuoteReviewModal({
                     <ol className="flex flex-col gap-3">
                       {cargoLines.map((line, index) => (
                         <li key={index} className="border border-slate-200 px-4 py-3">
-                          <p className="text-[15px] font-semibold text-slate-900">
+                          <p className="text-base font-semibold text-ink">
                             {line.quantity} × {tripCargoLabel(line)}
                           </p>
                           <ol className="mt-1 list-inside list-decimal text-[14px] text-slate-700">
@@ -1061,7 +1061,7 @@ function QuoteReviewModal({
 
                 <section>
                   <GroupHeading>Schedule</GroupHeading>
-                  <dl className="grid grid-cols-4 gap-4">
+                  <dl className="grid grid-cols-4 gap-x-6 gap-y-3">
                     <Field label="Number of deliveries">{String(deliveryCount)}</Field>
                     <Field label={urgent ? 'Last free storage day (pick up by)' : 'Preferred pickup date'}>
                       {quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}
@@ -1074,7 +1074,7 @@ function QuoteReviewModal({
 
                 <section>
                   <GroupHeading>Terms</GroupHeading>
-                  <dl className="grid grid-cols-2 gap-4">
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                     <Field label={countered ? "Client's counter-offer" : waitingOnClient ? 'Our offer' : 'Rate'}>
                       {quote.proposed_rate !== null && status !== 'Pending' ? (
                         <>
@@ -1101,7 +1101,7 @@ function QuoteReviewModal({
                         const mark = (isChanged: boolean | undefined) =>
                           isChanged ? 'bg-amber-200 px-1 font-semibold' : ''
                         return (
-                          <li key={h.offer_id} className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-slate-100 pb-2">
+                          <li key={h.offer_id} className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-slate-200 pb-2">
                             <span className="text-slate-900">
                               <span className="font-semibold">{offerActionLabel(h)}</span>
                               {h.rate != null && (
@@ -1136,7 +1136,7 @@ function QuoteReviewModal({
               {/* RIGHT: what the admin decides, then the result */}
               {showRejectForm ? (
                 <section className="self-start border-2 border-red-300 px-5 py-5">
-                  <h3 className="text-[17px] font-semibold text-slate-900">Reject this quote</h3>
+                  <h3 className="text-base font-semibold text-ink">Reject this quote</h3>
                   <p className="mt-1 text-[13px] text-slate-500">
                     The client sees the reason and can fix the quote and resubmit it.
                   </p>
@@ -1152,7 +1152,7 @@ function QuoteReviewModal({
                           className={`flex items-center gap-1.5 border-2 px-3 py-1.5 text-sm font-medium ${
                             rejectTag === tag
                               ? 'border-red-700 bg-red-700 text-white'
-                              : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                              : 'border-line-control text-ink-metric hover:bg-slate-50'
                           }`}
                         >
                           {rejectTag === tag && <Icon name="check" size={14} />}
@@ -1174,8 +1174,8 @@ function QuoteReviewModal({
                 </section>
               ) : waitingOnClient ? (
                 <div className="flex flex-col gap-4 self-start">
-                  <section className="border-2 border-slate-300 px-5 py-5">
-                    <h3 className="text-[17px] font-semibold text-slate-900">Waiting on the client</h3>
+                  <section className="border-2 border-line-card px-5 py-5">
+                    <h3 className="text-base font-semibold text-ink">Waiting on the client</h3>
                     <p className="mt-1 text-[13px] text-slate-500">
                       They can accept, counter (rate or dates) or decline from their portal.
                     </p>
@@ -1192,8 +1192,8 @@ function QuoteReviewModal({
                       {lastOurOffer?.note && <p className="mt-1 text-[13px] text-slate-600">Note sent: "{lastOurOffer.note}"</p>}
                     </div>
                   </section>
-                  <section className="border-2 border-slate-300 px-5 py-5">
-                    <h3 className="text-[15px] font-semibold text-slate-900">Client answered by phone or in person?</h3>
+                  <section className="border-2 border-line-card px-5 py-5">
+                    <h3 className="text-base font-semibold text-ink">Client answered by phone or in person?</h3>
                     <p className="mt-1 text-[13px] text-slate-500">
                       For clients without a portal login. Recorded as entered by staff.
                     </p>
@@ -1201,7 +1201,7 @@ function QuoteReviewModal({
                       <button type="button" onClick={() => handleRecordReply('accept')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
                         Client accepted
                       </button>
-                      <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="border-2 border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                      <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50">
                         Client countered…
                       </button>
                       <button type="button" onClick={() => handleRecordReply('decline')} disabled={submitting} className="border-2 border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
@@ -1222,8 +1222,8 @@ function QuoteReviewModal({
                 </div>
               ) : (
                 <div className="flex flex-col gap-4 self-start">
-                  <section className="border-2 border-slate-300 px-5 py-5">
-                    <h3 className="text-[17px] font-semibold text-slate-900">Price this quote</h3>
+                  <section className="border-2 border-line-card px-5 py-5">
+                    <h3 className="text-base font-semibold text-ink">Price this quote</h3>
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div>
                         <label htmlFor="review-distance" className="block text-sm font-semibold text-slate-900">
@@ -1365,8 +1365,8 @@ function QuoteReviewModal({
                   />
 
                   {(breakEvenRate !== null || fiftyLineRate !== null) && (
-                    <section className="border-2 border-slate-300 px-5 py-5">
-                      <h3 className="text-[17px] font-semibold text-slate-900">Pricing guide</h3>
+                    <section className="border-2 border-line-card px-5 py-5">
+                      <h3 className="text-base font-semibold text-ink">Pricing guide</h3>
                       <div className="mt-2 text-[15px]">
                         <CostRow
                           label="Break-even rate"
@@ -1414,9 +1414,9 @@ function QuoteReviewModal({
                     </section>
                   )}
 
-                  <section className="border-2 border-slate-300 px-5 py-5" aria-live="polite">
+                  <section className="border-2 border-line-card px-5 py-5" aria-live="polite">
                     <div className="flex items-baseline justify-between gap-3">
-                      <h3 className="text-[17px] font-semibold text-slate-900">Profitability Estimate</h3>
+                      <h3 className="text-base font-semibold text-ink">Profitability Estimate</h3>
                       <span className="text-[13px] text-slate-500">Updates as you type</span>
                     </div>
 
@@ -1504,7 +1504,7 @@ function QuoteReviewModal({
         </div>
 
         {/* Footer: Reject / Withdraw far left, Send offer / Accept far right */}
-        <div className="flex shrink-0 items-center justify-between gap-4 border-t-2 border-slate-200 px-7 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-4 min-h-[84px] border-t border-line px-7 py-4">
           {doneMessage !== null ? (
             <>
               <span />
@@ -1521,7 +1521,7 @@ function QuoteReviewModal({
                   setError(null)
                 }}
                 disabled={submitting}
-                className={`border-2 border-slate-300 text-slate-700 hover:bg-slate-50 ${footerButton}`}
+                className={`border-2 border-line-card text-slate-700 hover:bg-slate-50 ${footerButton}`}
               >
                 Back to review
               </button>
@@ -1551,7 +1551,7 @@ function QuoteReviewModal({
               <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
                 {error}
               </p>
-              <button onClick={close} className={`border-2 border-slate-300 text-slate-700 hover:bg-slate-50 ${footerButton}`}>
+              <button onClick={close} className={`border-2 border-line-card text-slate-700 hover:bg-slate-50 ${footerButton}`}>
                 Close
               </button>
             </>
