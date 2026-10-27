@@ -27,7 +27,7 @@ import { usePaged } from '../../../lib/usePaged'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import TripsView from './TripsView'
@@ -52,8 +52,9 @@ export type Booking = {
   // totals below exist so nothing has to re-guess "rate x how many?"
   // billable_amount is the EFFECTIVE amount due: amount_to_pay if staff
   // overrode it in Financial Records, otherwise computed_billable_amount
-  // (rate x completed trips) -- PLUS damage_charges (approved Client
-  // damage, lib/damageCharges.ts). (See src/lib/paymentDue.ts for the
+  // (rate x completed trips) -- PLUS damage_charges (EXTRA charges:
+  // approved Client damage + charges added on the Billing page,
+  // lib/bookingCharges.ts). (See src/lib/paymentDue.ts for the
   // same rule applied to the Payments Due report.)
   rate: number | null
   total_trips: number
@@ -283,7 +284,7 @@ function BookingsSection() {
 
     // Approved Client damage charges, added on top of the delivery amount.
     const { byBooking: damageByBooking, error: damageError } =
-      await loadClientDamageChargesByBooking(bookingIds)
+      await loadExtraChargesByBooking(bookingIds)
     if (damageError) {
       setError(damageError)
       setLoading(false)

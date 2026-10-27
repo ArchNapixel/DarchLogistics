@@ -27,7 +27,7 @@ import { toManilaDate } from '../../../lib/payslip'
 import { loadProfitLoss } from '../../../lib/profitLoss'
 import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
 import { gapByReason } from '../../../lib/revenueReconTotals'
-import { buildMoneySummary, monthLabel, shiftMonth, type MoneySummary } from '../../../lib/moneySummary'
+import { buildMoneySummary, buildMoneySummaryCsv, monthLabel, shiftMonth, type MoneySummary } from '../../../lib/moneySummary'
 import OperationalExpensesCard from './OperationalExpensesCard'
 import PayrollExpensesCard from './PayrollExpensesCard'
 import MaintenanceExpensesCard from './MaintenanceExpensesCard'
@@ -287,6 +287,20 @@ function MoneySummarySection() {
     }
   }, [month])
 
+  // Downloads the summary shown as money_summary_YYYY-MM.csv.
+  function handleExport() {
+    if (!summary) return
+    const blob = new Blob([buildMoneySummaryCsv(month, summary)], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `money_summary_${month}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   function go(delta: number) {
     setSummary(null)
     setGap(null)
@@ -327,6 +341,18 @@ function MoneySummarySection() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M9 6l6 6-6 6" />
               </svg>
+            </button>
+            {/* Export: this month's summary as a CSV file (opens in Excel). */}
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={!summary || tab !== 'summary'}
+              className="btn-secondary ml-2 flex items-center gap-2 px-4 text-sm font-medium"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12 M7 10l5 5 5-5 M5 21h14" />
+              </svg>
+              Export
             </button>
           </div>
         }

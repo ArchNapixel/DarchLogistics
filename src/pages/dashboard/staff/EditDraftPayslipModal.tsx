@@ -12,7 +12,7 @@
 // value that differs is shown as an admin override. Changed lines get
 // tagged in their description and changed deductions are listed in
 // deductions_note, so the payslip record shows what the admin changed.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   getOutstandingCashAdvance,
@@ -112,11 +112,6 @@ function EditDraftPayslipModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadDraft()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   async function loadDraft() {
     const [payslipResult, employeeResult, linesResult, advanceResult, earlierResult] = await Promise.all([
       supabase
@@ -171,6 +166,16 @@ function EditDraftPayslipModal({
     setDeductionOverrides(overrides)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadDraft()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   function updateLine(index: number, changes: Partial<EditableLine>) {
     setLineItems((lines) => lines.map((line, i) => (i === index ? { ...line, ...changes } : line)))

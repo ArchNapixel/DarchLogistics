@@ -1,6 +1,8 @@
 // ReportPayslipIssueModal: lets an employee flag a problem with one of
 // their own payslips. Lands in the admin Reports page's "Payslip
-// Issues" tab for staff to resolve.
+// Issues" tab for staff to resolve. Opened from a payslip line's "Report
+// an Issue" (My Payslips) -- that line is named at the top of the report
+// so staff know which one it's about. Still one report per payslip.
 import { useState } from 'react'
 import { reportPayslipIssue } from '../../../lib/payslipIssueReports'
 
@@ -8,12 +10,15 @@ function ReportPayslipIssueModal({
   employeeId,
   payrollId,
   period,
+  line,
   onClose,
   onReported,
 }: {
   employeeId: number
   payrollId: number
   period: string
+  // The payslip line it's about ("Trip #92 ...", "SSS"), if picked from one.
+  line?: string
   onClose: () => void
   onReported: () => void
 }) {
@@ -33,7 +38,7 @@ function ReportPayslipIssueModal({
     const { error: reportError } = await reportPayslipIssue({
       employeeId,
       payrollId,
-      description: description.trim(),
+      description: line ? `About "${line}": ${description.trim()}` : description.trim(),
     })
 
     setSubmitting(false)
@@ -48,43 +53,46 @@ function ReportPayslipIssueModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
-        <h3 className="text-lg font-bold text-slate-900">Report a Payslip Issue</h3>
-        <p className="mt-1 text-sm text-slate-500">Payslip: {period}</p>
-
-        {error && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+      <div role="dialog" aria-modal="true" aria-labelledby="payslip-issue-title" className="card w-full max-w-[560px]">
+        <header className="border-b border-line px-6 pt-5 pb-4">
+          <h2 id="payslip-issue-title" className="text-xl leading-7 font-bold text-ink">
+            Report a Payslip Issue
+          </h2>
+          <p className="mt-0.5 text-sm text-ink-secondary">
+            Payslip: {period}
+            {line && (
+              <>
+                {' · '}
+                <strong className="text-ink">{line}</strong>
+              </>
+            )}
           </p>
-        )}
+        </header>
 
-        <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-slate-700">
-          What's wrong?
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            placeholder="e.g. This is missing a trip I delivered on..."
-            className="border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
-          />
-        </label>
+        <div className="flex flex-col gap-4 px-6 py-5">
+          {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold text-ink">What's wrong?</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              maxLength={1000}
+              placeholder="e.g. This is missing a trip I delivered on..."
+              className="min-h-11 w-full resize-none rounded-[2px] border border-line-control bg-white px-3 py-2.5 text-sm text-ink-metric placeholder:text-ink-muted focus:border-primary"
+            />
+          </label>
+          <p className="text-[13px] text-ink-muted">Admin reviews it and replies under My Requests.</p>
+        </div>
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          >
+        <footer className="flex justify-end gap-3 border-t border-line px-6 py-4">
+          <button type="button" onClick={onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
+          <button type="button" onClick={() => void handleSubmit()} disabled={submitting} className="btn-primary px-6 text-sm">
             {submitting ? 'Sending...' : 'Send Report'}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   )

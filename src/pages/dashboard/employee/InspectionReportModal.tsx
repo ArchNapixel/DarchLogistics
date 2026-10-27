@@ -1,15 +1,17 @@
-// InspectionReportModal: a Driver's or Mechanic's issue report into
-// issue_reports -- either about a specific truck/trailer (saved as real
-// plate_number/trailer_id columns so staff's "Convert to Work Order" can
-// pre-select it) or a general issue with no vehicle. This replaced the
-// Driver's separate ReportIssueModal, which saved no vehicle at all.
+// InspectionReportModal: a Driver's, Helper's or Mechanic's issue report into
+// issue_reports (the canvas's "Report Issue" board) -- either about a
+// specific truck/trailer (saved as real plate_number/trailer_id columns so
+// staff's "Convert to Work Order" can pre-select it) or a general issue with
+// no vehicle. This replaced the Driver's separate ReportIssueModal, which
+// saved no vehicle at all.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { showToast } from '../../../components/Toast'
 
 const fieldClasses =
-  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
+const labelClasses = 'flex justify-between gap-2 text-sm font-semibold text-ink'
 
 type Severity = 'Minor' | 'Major'
 
@@ -20,17 +22,36 @@ type VehicleOption = {
   trailerId: number | null
 }
 
+function Required() {
+  return <span className="text-xs text-amber-800">Required</span>
+}
+
+// One of two big radio buttons ("A vehicle" / "A general issue", "Minor" / "Major").
+function Choice({ name, checked, onChange, children }: { name: string; checked: boolean; onChange: () => void; children: React.ReactNode }) {
+  return (
+    <label
+      className={`flex min-h-11 cursor-pointer items-center justify-center gap-2.5 px-3.5 text-sm font-semibold text-ink ${
+        checked ? 'border-2 border-primary bg-primary-soft' : 'border border-line-control'
+      }`}
+    >
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="h-[18px] w-[18px] accent-primary" />
+      {children}
+    </label>
+  )
+}
+
 function InspectionReportModal({ onClose }: { onClose: () => void }) {
-  const { employeeId } = useAuth()
-  const [vehicles, setVehicles] = useState<VehicleOption[]>([])
+  const { employeeId, role } = useAuth()
+  const [trucks, setTrucks] = useState<VehicleOption[]>([])
+  const [trailers, setTrailers] = useState<VehicleOption[]>([])
+  const [aboutVehicle, setAboutVehicle] = useState(true)
   const [vehicleKey, setVehicleKey] = useState('')
   const [findings, setFindings] = useState('')
-  const [severity, setSeverity] = useState<Severity>('Minor')
+  const [severity, setSeverity] = useState<Severity | ''>('')
   const [notes, setNotes] = useState('')
   const [loadingVehicles, setLoadingVehicles] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
 
   useEffect(() => {
     async function loadVehicles() {
@@ -39,40 +60,28 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
         supabase.from('trailers').select('trailer_id, plate_number, trailer_type').order('trailer_id'),
       ])
 
-      if (trucksResult.error) {
-        setError(trucksResult.error.message)
-        setLoadingVehicles(false)
-        return
-      }
-      if (trailersResult.error) {
-        setError(trailersResult.error.message)
+      if (trucksResult.error || trailersResult.error) {
+        setError((trucksResult.error ?? trailersResult.error)!.message)
         setLoadingVehicles(false)
         return
       }
 
-      const options = [
-        ...trucksResult.data.map((truck) => ({
+      setTrucks(
+        trucksResult.data.map((truck) => ({
           key: `truck-${truck.plate_number}`,
-          label: `Truck: ${truck.plate_number}${truck.model ? ` (${truck.model})` : ''}`,
+          label: `${truck.plate_number}${truck.model ? ` (${truck.model})` : ''}`,
           plateNumber: truck.plate_number,
           trailerId: null,
         })),
-        ...trailersResult.data.map((trailer) => ({
+      )
+      setTrailers(
+        trailersResult.data.map((trailer) => ({
           key: `trailer-${trailer.trailer_id}`,
-          label: `Trailer: ${trailer.plate_number ?? `#${trailer.trailer_id}`} (${trailer.trailer_type})`,
+          label: `${trailer.plate_number ?? `#${trailer.trailer_id}`} (${trailer.trailer_type})`,
           plateNumber: null,
           trailerId: trailer.trailer_id,
         })),
-        {
-          key: 'general',
-          label: 'General issue (no specific vehicle)',
-          plateNumber: null,
-          trailerId: null,
-        },
-      ]
-
-      setVehicles(options)
-      setVehicleKey(options[0]?.key ?? '')
+      )
       setLoadingVehicles(false)
     }
 
@@ -80,18 +89,22 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
   }, [])
 
   async function handleSubmit() {
-    const vehicle = vehicles.find((option) => option.key === vehicleKey)
+    const vehicle = [...trucks, ...trailers].find((option) => option.key === vehicleKey)
 
     if (!employeeId) {
       setError('Your account is not linked to an employee record.')
       return
     }
-    if (!vehicle) {
-      setError('Select the vehicle that was inspected.')
+    if (aboutVehicle && !vehicle) {
+      setError('Choose the truck or trailer this is about.')
       return
     }
     if (!findings.trim()) {
-      setError('Describe the inspection findings.')
+      setError('Describe what you found.')
+      return
+    }
+    if (!severity) {
+      setError('Pick how serious it is.')
       return
     }
 
@@ -102,12 +115,11 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
       employee_id: employeeId,
       // Stored as real columns too, so "Convert to Work Order" can
       // pre-select the vehicle (ConvertIssueToWorkOrderModal.tsx).
-      plate_number: vehicle.plateNumber,
-      trailer_id: vehicle.trailerId,
-      description:
-        vehicle.key === 'general'
-          ? findings.trim()
-          : `Inspection report for ${vehicle.label}: ${findings.trim()}`,
+      plate_number: aboutVehicle ? vehicle!.plateNumber : null,
+      trailer_id: aboutVehicle ? vehicle!.trailerId : null,
+      description: aboutVehicle
+        ? `Inspection report for ${vehicle!.plateNumber ? 'Truck' : 'Trailer'}: ${vehicle!.label}: ${findings.trim()}`
+        : findings.trim(),
       severity,
       notes: notes.trim() || null,
     })
@@ -119,67 +131,142 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
       return
     }
 
-    setDone(true)
+    showToast('Report sent. Staff can now review it.')
+    onClose()
   }
+
+  const title = role === 'Mechanic' ? 'Submit Inspection Report' : 'Report Issue'
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
-        {done ? (
-          <>
-            <h3 className="text-lg font-bold text-slate-900">Report submitted</h3>
-            <p className="mt-3 text-sm text-slate-600">Staff can now review your report.</p>
-            <div className="mt-6 flex justify-end">
-              <button onClick={onClose} className="btn-primary px-4 py-2 text-sm font-medium">Done</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Report Issue / Inspection</h3>
-              <button onClick={onClose} disabled={submitting} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
+      <div role="dialog" aria-modal="true" aria-labelledby="report-title" className="card w-full max-w-[600px]">
+        <header className="flex items-start justify-between gap-4 border-b border-line px-6 pt-5 pb-4">
+          <div>
+            <h2 id="report-title" className="text-xl leading-7 font-bold text-ink">
+              {title}
+            </h2>
+            <p className="mt-0.5 text-sm text-ink-secondary">
+              {role === 'Mechanic' ? 'Something you found during an inspection.' : 'About a vehicle or a general issue you noticed.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 6l12 12 M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
 
-            {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        <form
+          className="flex flex-col gap-4 px-6 py-5"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSubmit()
+          }}
+        >
+          {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-            {loadingVehicles ? (
-              <p className="mt-4 text-slate-500">Loading vehicles...</p>
-            ) : vehicles.length === 0 ? (
-              <p className="mt-4 text-slate-500">No trucks or trailers are available to inspect.</p>
-            ) : (
-              <div className="mt-4 grid gap-4">
-                <label className={labelClasses}>
-                  Vehicle
-                  <select value={vehicleKey} onChange={(event) => setVehicleKey(event.target.value)} className={fieldClasses}>
-                    {vehicles.map((vehicle) => <option key={vehicle.key} value={vehicle.key}>{vehicle.label}</option>)}
-                  </select>
-                </label>
-                <label className={labelClasses}>
-                  What did you find?
-                  <textarea value={findings} onChange={(event) => setFindings(event.target.value)} rows={3} className={fieldClasses} placeholder="Describe what you found" />
-                </label>
-                <label className={labelClasses}>
-                  Severity
-                  <select value={severity} onChange={(event) => setSeverity(event.target.value as Severity)} className={fieldClasses}>
-                    <option value="Minor">Minor</option>
-                    <option value="Major">Major</option>
-                  </select>
-                </label>
-                <label className={labelClasses}>
-                  Notes (optional)
-                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className={fieldClasses} />
-                </label>
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={onClose} disabled={submitting} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button onClick={handleSubmit} disabled={submitting || loadingVehicles || vehicles.length === 0} className="btn-primary px-4 py-2 text-sm font-medium">
-                {submitting ? 'Submitting...' : 'Submit Report'}
-              </button>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className={`${labelClasses} w-full pb-1.5`}>About</legend>
+            <div className="grid grid-cols-2 gap-2">
+              <Choice name="report-about" checked={aboutVehicle} onChange={() => setAboutVehicle(true)}>
+                A vehicle
+              </Choice>
+              <Choice name="report-about" checked={!aboutVehicle} onChange={() => setAboutVehicle(false)}>
+                A general issue
+              </Choice>
             </div>
-          </>
-        )}
+          </fieldset>
+
+          {aboutVehicle && (
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClasses}>
+                <span>Vehicle</span>
+                <Required />
+              </span>
+              <select value={vehicleKey} onChange={(e) => setVehicleKey(e.target.value)} disabled={loadingVehicles} className={fieldClasses}>
+                <option value="">{loadingVehicles ? 'Loading vehicles…' : 'Choose a truck or trailer'}</option>
+                {trucks.length > 0 && (
+                  <optgroup label="Trucks">
+                    {trucks.map((v) => (
+                      <option key={v.key} value={v.key}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {trailers.length > 0 && (
+                  <optgroup label="Trailers">
+                    {trailers.map((v) => (
+                      <option key={v.key} value={v.key}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+          )}
+
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClasses}>
+              <span>What did you find?</span>
+              <Required />
+            </span>
+            <textarea
+              value={findings}
+              onChange={(e) => setFindings(e.target.value)}
+              rows={3}
+              maxLength={1000}
+              className={`${fieldClasses} resize-none py-2.5`}
+            />
+          </label>
+
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className={`${labelClasses} w-full pb-1.5`}>
+              <span>Severity</span>
+              <Required />
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              <Choice name="report-severity" checked={severity === 'Minor'} onChange={() => setSeverity('Minor')}>
+                Minor
+              </Choice>
+              <Choice name="report-severity" checked={severity === 'Major'} onChange={() => setSeverity('Major')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3l10 18H2z M12 10v5 M12 18h.01" />
+                </svg>
+                Major
+              </Choice>
+            </div>
+          </fieldset>
+
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClasses}>
+              <span>
+                Notes <span className="font-normal text-ink-muted">(optional)</span>
+              </span>
+            </span>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} className={fieldClasses} />
+          </label>
+
+          <p className="border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">
+            Staff see it under Reports → Issue Reports and can turn it into a work order.
+          </p>
+        </form>
+
+        <footer className="flex justify-end gap-3 border-t border-line px-6 py-4">
+          <button type="button" onClick={onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
+            Cancel
+          </button>
+          <button type="button" onClick={() => void handleSubmit()} disabled={submitting} className="btn-primary px-6 text-sm">
+            {submitting ? 'Sending...' : 'Submit Report'}
+          </button>
+        </footer>
       </div>
     </div>
   )

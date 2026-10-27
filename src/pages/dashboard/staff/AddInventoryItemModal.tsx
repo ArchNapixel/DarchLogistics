@@ -6,12 +6,11 @@
 // before prices existed have none, so editing one forces a price in.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { ITEM_TYPES } from '../../../lib/inventoryItemTypes'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
-
-export const ITEM_TYPES = ['Tools', 'Parts', 'Supplies', 'Equipment', 'Other'] as const
 
 export type EditableInventoryItem = {
   item_id: number

@@ -8,34 +8,31 @@
 // always have it. Needs the quote_requests_select_own_client RLS policy
 // (client_id -> users.auth_user_id); without it this just shows empty.
 //
-// A Rejected quote has "Edit & resubmit": it loads the quote's shipment
-// fields, opens the same quote form pre-filled (NewQuoteModal), and
-// sending puts the same quote back to Pending for staff.
+// A Rejected quote has "Edit & Resubmit": it opens the New Quote Request
+// page with ?resubmit=<id>, which loads the quote pre-filled; sending puts
+// the same quote back to Pending for staff.
 //
-// Clients don't set a rate: staff send an offer (lib/quoteOffers.ts). An
-// Offered quote shows QuoteOfferCard -- Accept (booking created at once),
-// Counter-offer (own rate and/or dates) or Decline (with a reason).
-// Offers waiting for an answer are listed first.
-import { useEffect, useState } from 'react'
+// Clients don't set a rate: staff send an offer (lib/quoteOffers.ts).
+// Layout (the canvas's Client My Quotes board): "Needs your answer"
+// (Offered quotes, click one to show it) and "Other quotes" on the left;
+// the selected offer's panel (QuoteOfferCard -- Accept / Counter-offer… /
+// Decline…) on the right.
+import { useEffect, useEffectEvent, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
-import EmptyState from '../../../components/EmptyState'
-import NewQuoteModal from './NewQuoteModal'
 import QuoteOfferCard from './QuoteOfferCard'
 import { formatMoney } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { withdrawQuoteRequest } from '../../../lib/quoteOffers'
-import type { ResubmitTarget } from './ClientQuoteForm'
 import {
+  PAYMENT_TERMS_LABELS,
   REJECTION_TAGS,
-  SHIPMENT_COLUMNS,
   cargoSummary,
   parseCargoLines,
-  quoteToForm,
-  rejectionErrors,
   type RejectionTag,
 } from '../../../lib/quoteRequest'
 
@@ -62,6 +59,7 @@ type QuoteRow = {
   // Saved with our offer (the Capacity Check re-reads them when the client accepts).
   hours_per_trip: number | null
   is_last_day_of_port_storage: boolean | null
+  payment_terms: string | null
   decline_reason: string | null
   created_at: string
 }
@@ -81,17 +79,10 @@ function MyQuoteRequestsSection() {
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [resubmit, setResubmit] = useState<ResubmitTarget | null>(null)
-  const [openingId, setOpeningId] = useState<number | null>(null)
+  const navigate = useNavigate()
   const [withdrawingId, setWithdrawingId] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (clientId) {
-      load(clientId)
-    } else {
-      setLoading(false)
-    }
-  }, [clientId])
+  // The offer shown in the panel (null = the first one waiting).
+  const [selectedId, setSelectedId] = useState<number | null>(null)
 
   async function load(id: number) {
     setLoading(true)
@@ -99,7 +90,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, decline_reason, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, payment_terms, decline_reason, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -117,28 +108,19 @@ function MyQuoteRequestsSection() {
     setLoading(false)
   }
 
-  // Fetch the full shipment details of a rejected quote, then open the
-  // form with them.
-  async function openResubmit(quote: QuoteRow) {
-    setOpeningId(quote.quote_request_id)
-    const { data, error: loadError } = await supabase
-      .from('quote_requests')
-      .select(SHIPMENT_COLUMNS)
-      .eq('quote_request_id', quote.quote_request_id)
-      .maybeSingle()
-    setOpeningId(null)
-
-    if (loadError || !data) {
-      setError(loadError?.message ?? 'Could not open that quote. Refresh and try again.')
-      return
+  // Load when this opens and whenever clientId changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    if (clientId) {
+      load(clientId)
+    } else {
+      setLoading(false)
     }
-    setResubmit({
-      quoteId: quote.quote_request_id,
-      referenceCode: quote.reference_code,
-      form: quoteToForm(data),
-      errors: rejectionErrors(quote.rejection_tag, quote.rejection_reason),
-    })
-  }
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [clientId])
 
   if (loading) {
     return <p className="text-slate-500">Loading your quote requests...</p>
@@ -148,11 +130,6 @@ function MyQuoteRequestsSection() {
     return <p className="text-red-700">{error}</p>
   }
 
-  if (quotes.length === 0) {
-    return (
-      <EmptyState message="No open quote requests." hint="Approved quotes appear under My Bookings." />
-    )
-  }
 
   // Take back a quote that is still open (Pending / Offered / Countered).
   async function withdraw(quote: QuoteRow) {
@@ -171,108 +148,157 @@ function MyQuoteRequestsSection() {
     load(clientId)
   }
 
-  const offersWaiting = quotes.filter((q) => q.request_status === 'Offered').length
+  const offers = quotes.filter((q) => q.request_status === 'Offered')
+  const others = quotes.filter((q) => q.request_status !== 'Offered')
+  const selected = offers.find((q) => q.quote_request_id === selectedId) ?? offers[0] ?? null
+
+  const reference = (q: QuoteRow) => q.reference_code ?? `Quote #${q.quote_request_id}`
+  const route = (q: QuoteRow) => `${q.pickup_barangay}, ${q.pickup_city} → ${q.delivery_barangay}, ${q.delivery_city}`
+  const trips = (q: QuoteRow) => {
+    const n = q.delivery_order_count ?? 0
+    return `${n} ${n === 1 ? 'trip' : 'trips'}`
+  }
+  const terms = (q: QuoteRow) =>
+    q.payment_terms ? (PAYMENT_TERMS_LABELS[q.payment_terms as keyof typeof PAYMENT_TERMS_LABELS] ?? q.payment_terms) : '—'
+  const GROUP = 'px-5 pt-4 pb-2 text-xs font-semibold tracking-[0.04em] text-ink-secondary uppercase'
+
+  const withdrawButton = (quote: QuoteRow) =>
+    ['Pending', 'Offered', 'Countered'].includes(quote.request_status) && (
+      <button
+        type="button"
+        onClick={() => withdraw(quote)}
+        disabled={withdrawingId !== null}
+        className="btn-secondary px-3.5 text-sm font-medium"
+      >
+        {withdrawingId === quote.quote_request_id ? 'Withdrawing...' : 'Withdraw This Quote…'}
+      </button>
+    )
 
   return (
-    <div className="grid gap-3">
-      {offersWaiting > 0 && (
-        <p className="bg-slate-900 px-4 py-2.5 text-sm font-medium text-white">
-          You have {offersWaiting} {offersWaiting === 1 ? 'offer' : 'offers'} to answer.
-        </p>
-      )}
-      {quotes.map((quote) => (
-        <div
-          key={quote.quote_request_id}
-          className="border border-slate-200 p-4"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-medium text-slate-900">
-                {quote.pickup_barangay}, {quote.pickup_city} →{' '}
-                {quote.delivery_barangay}, {quote.delivery_city}
-              </p>
-              <p className="text-xs text-slate-500">
-                {quote.reference_code ?? `Quote #${quote.quote_request_id}`}
-                {' · '}
-                {cargoSummary(parseCargoLines(quote.cargo_lines))} · Pickup{' '}
-                {formatDate(quote.preferred_pickup_date)}
-              </p>
-            </div>
-            <StatusBadge
-              status={quote.request_status}
-              label={
-                quote.request_status === 'Pending' && quote.resubmit_count > 0
-                  ? 'Resubmitted'
-                  : CLIENT_STATUS_LABELS[quote.request_status]
-              }
-            />
+    <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_480px]' : ''} xl:items-start`}>
+      <section aria-label="Your quotes" className="card flex min-w-0 flex-col pb-2">
+        {quotes.length === 0 && (
+          <div className="px-5 py-8 text-center">
+            <p className="font-semibold text-ink">No open quote requests.</p>
+            <p className="mt-1 text-[13px] text-ink-muted">Send a New Quote Request. Accepted quotes move to My Bookings.</p>
           </div>
-          {quote.request_status === 'Offered' && clientId && (
-            <QuoteOfferCard
-              quote={quote}
-              onAnswered={(message) => {
-                showToast(message)
-                load(clientId)
-              }}
-            />
-          )}
-          {quote.request_status === 'Countered' && (
-            <p className="mt-2 bg-slate-50 p-3 text-sm text-slate-700">
-              You asked for {formatMoney(quote.proposed_rate ?? 0)} per trip. We'll reply here with a decision or a new offer.
-            </p>
-          )}
-          {quote.request_status === 'Declined' && quote.decline_reason && (
-            <p className="mt-2 bg-slate-50 p-3 text-sm text-slate-700">You declined: {quote.decline_reason}</p>
-          )}
-          {quote.request_status === 'Rejected' && quote.rejection_reason && (
-            <div className="mt-2 bg-slate-50 p-3">
-              <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                Reason
-                {quote.rejection_tag && quote.rejection_tag in REJECTION_TAGS && quote.rejection_tag !== 'Other' && (
-                  <span className="ml-2 bg-red-100 px-1.5 py-0.5 normal-case tracking-normal text-red-700">
-                    {REJECTION_TAGS[quote.rejection_tag as RejectionTag].label}
-                  </span>
-                )}
-              </p>
-              <p className="mt-1 text-sm text-slate-700">
-                {quote.rejection_reason}
-              </p>
-            </div>
-          )}
-          {['Pending', 'Offered', 'Countered'].includes(quote.request_status) && (
-            <button
-              type="button"
-              onClick={() => withdraw(quote)}
-              disabled={withdrawingId !== null}
-              className="mt-3 text-xs font-medium text-slate-500 underline hover:text-red-700 disabled:opacity-50"
-            >
-              {withdrawingId === quote.quote_request_id ? 'Withdrawing...' : 'Withdraw this quote'}
-            </button>
-          )}
-          {quote.request_status === 'Rejected' && (
-            <button
-              type="button"
-              onClick={() => openResubmit(quote)}
-              disabled={openingId !== null}
-              className="btn-primary mt-3 px-3 py-1.5 text-xs font-medium"
-            >
-              {openingId === quote.quote_request_id ? 'Opening...' : 'Edit & resubmit'}
-            </button>
-          )}
-        </div>
-      ))}
+        )}
 
-      {resubmit && clientId && (
-        <NewQuoteModal
-          // key: a fresh form for each quote opened
-          key={resubmit.quoteId}
-          clientId={clientId}
-          resubmit={resubmit}
-          onCreated={() => {
-            setResubmit(null)
-            load(clientId)
-          }}
-        />
+        {offers.length > 0 && (
+          <>
+            <h2 className={GROUP}>Needs your answer</h2>
+            <div className="flex flex-col gap-2 px-5">
+              {offers.map((quote) => {
+                const isSelected = quote.quote_request_id === selected?.quote_request_id
+                return (
+                  <article key={quote.quote_request_id} aria-label={`Quote ${reference(quote)} with an offer`}>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedId(quote.quote_request_id)}
+                      className={`flex w-full flex-col gap-1 px-4 py-3 text-left ${
+                        isSelected
+                          ? 'border-2 border-primary bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]'
+                          : 'border-2 border-amber-600 bg-amber-50 hover:bg-amber-100'
+                      }`}
+                    >
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-bold text-ink">{reference(quote)}</span>
+                        <span className="rounded-[2px] bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">Offer received</span>
+                        <span className="ml-auto text-sm font-semibold text-ink tabular-nums">{formatMoney(quote.proposed_rate ?? 0)} per trip</span>
+                      </span>
+                      <span className="text-sm text-ink-metric">
+                        {route(quote)} · {trips(quote)}
+                      </span>
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {others.length > 0 && (
+          <>
+            <h2 className={GROUP}>{offers.length > 0 ? 'Other quotes' : 'Your quotes'}</h2>
+            <div className="flex flex-col gap-2 px-5">
+              {others.map((quote) => (
+                <article key={quote.quote_request_id} aria-label={`Quote ${reference(quote)}`} className="flex flex-col gap-1.5 border border-line px-4 py-3">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-bold text-ink">{reference(quote)}</span>
+                    <StatusBadge
+                      status={quote.request_status}
+                      label={
+                        quote.request_status === 'Pending' && quote.resubmit_count > 0
+                          ? 'Resubmitted · waiting for our price'
+                          : CLIENT_STATUS_LABELS[quote.request_status]
+                      }
+                      icon
+                    />
+                  </span>
+                  <span className="text-sm text-ink-metric">{route(quote)}</span>
+                  <span className="text-[13px] text-ink-muted">
+                    {trips(quote)} · {cargoSummary(parseCargoLines(quote.cargo_lines))} · Pickup {formatDate(quote.preferred_pickup_date)}
+                  </span>
+
+                  {quote.request_status === 'Countered' && (
+                    <p className="bg-slate-50 px-3 py-2 text-sm text-ink-secondary">
+                      You asked for {formatMoney(quote.proposed_rate ?? 0)} per trip. We'll reply here with a decision or a new offer.
+                    </p>
+                  )}
+                  {quote.request_status === 'Declined' && quote.decline_reason && (
+                    <p className="bg-slate-50 px-3 py-2 text-sm text-ink-secondary">Your reason: {quote.decline_reason}</p>
+                  )}
+                  {quote.request_status === 'Rejected' && quote.rejection_reason && (
+                    <p className="bg-red-50 px-3 py-2 text-sm text-red-900">
+                      {quote.rejection_tag && quote.rejection_tag in REJECTION_TAGS && quote.rejection_tag !== 'Other' && (
+                        <span className="mr-2 rounded-[2px] bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-800">
+                          {REJECTION_TAGS[quote.rejection_tag as RejectionTag].label}
+                        </span>
+                      )}
+                      Our reason: {quote.rejection_reason}
+                    </p>
+                  )}
+
+                  {(['Pending', 'Countered'].includes(quote.request_status) || quote.request_status === 'Rejected') && (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {withdrawButton(quote)}
+                      {quote.request_status === 'Rejected' && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/dashboard/quotes/new?resubmit=${quote.quote_request_id}`)}
+                          className="btn-primary px-4 text-sm"
+                        >
+                          Edit &amp; Resubmit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      {selected && clientId && (
+        <div className="flex flex-col gap-3">
+          <QuoteOfferCard
+            // key: fresh state (mode, typed counter) per quote
+            key={selected.quote_request_id}
+            quote={selected}
+            reference={reference(selected)}
+            route={route(selected)}
+            cargo={cargoSummary(parseCargoLines(selected.cargo_lines))}
+            terms={terms(selected)}
+            onAnswered={(message) => {
+              showToast(message)
+              setSelectedId(null)
+              load(clientId)
+            }}
+          />
+          <div className="flex justify-end">{withdrawButton(selected)}</div>
+        </div>
       )}
     </div>
   )

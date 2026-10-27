@@ -1,6 +1,6 @@
 // cashAdvanceRequests: shared data access for employee-requested cash
 // advances -- used by the employee-side request form/list
-// (employee/MyCashAdvanceRequestsSection.tsx) and the staff-side
+// (employee/RequestCashAdvanceForm.tsx + MyRequestsSection.tsx) and the staff-side
 // approval view (staff/CashAdvanceRequestsSection.tsx).
 //
 // cash_advances now has a `status` column (added specifically for this

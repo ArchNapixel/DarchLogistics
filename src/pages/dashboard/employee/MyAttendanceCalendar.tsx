@@ -1,8 +1,10 @@
-// MyAttendanceCalendar: a month calendar next to the weekly table on the
-// "My Attendance" page. A day is highlighted green when the logged-in
-// employee was marked Present. Read-only; loads its own month of records.
+// MyAttendanceCalendar: a month calendar next to the week list on the
+// "My Attendance" page. Each finished day shows its status -- Present
+// (green), Leave (blue), Absent (red; also a finished day with nothing
+// recorded) -- and today is outlined. Read-only; loads its own month of
+// records, ‹ › to change month (not past this month).
 import { useEffect, useState } from 'react'
-import { loadAttendanceRecords } from '../../../lib/employeeAttendance'
+import { loadAttendanceRecords, type AttendanceStatus } from '../../../lib/employeeAttendance'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -13,21 +15,29 @@ function shiftMonth(month: string, by: number): string {
   return d.toISOString().slice(0, 7)
 }
 
+const CELL_STYLE: Record<string, string> = {
+  Present: 'bg-green-100 text-green-900',
+  Leave: 'bg-primary-soft text-primary',
+  'Unpaid Leave': 'bg-amber-100 text-amber-900',
+  Absent: 'bg-red-50 text-red-800',
+}
+
 function MyAttendanceCalendar({ employeeId, today }: { employeeId: number; today: string }) {
   const thisMonth = today.slice(0, 7)
   const [month, setMonth] = useState(thisMonth)
-  const [presentDates, setPresentDates] = useState<Set<string>>(new Set())
+  const [statusByDate, setStatusByDate] = useState<Map<string, AttendanceStatus>>(new Map())
 
   const first = new Date(`${month}-01T12:00:00Z`)
   const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
   const blanks = first.getUTCDay() // empty cells before the 1st (week starts Sunday)
+  const monthLabel = first.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       const { records } = await loadAttendanceRecords(`${month}-01`, `${month}-${String(daysInMonth).padStart(2, '0')}`, employeeId)
       if (cancelled) return
-      setPresentDates(new Set(records.filter((r) => r.attendance_status === 'Present').map((r) => r.attendance_date)))
+      setStatusByDate(new Map(records.map((r) => [r.attendance_date, r.attendance_status])))
     }
     void load()
     return () => {
@@ -35,39 +45,69 @@ function MyAttendanceCalendar({ employeeId, today }: { employeeId: number; today
     }
   }, [employeeId, month, daysInMonth])
 
+  const squareButton =
+    'flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-line disabled:text-ink-muted'
+
   return (
-    <div className="card p-4">
-      <div className="flex items-center justify-between">
-        <button onClick={() => setMonth(shiftMonth(month, -1))} className="border border-line-control px-3 py-1 text-sm text-ink-metric hover:bg-slate-50 rounded-[2px]">&larr;</button>
-        <span className="text-sm font-semibold text-slate-900">
-          {first.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
-        </span>
-        <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth} className="border border-line-control px-3 py-1 text-sm text-ink-metric hover:bg-slate-50 disabled:opacity-50 rounded-[2px]">&rarr;</button>
+    <section aria-labelledby="month-h" className="card flex flex-col">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+        <h2 id="month-h" className="text-base font-semibold text-ink">
+          {monthLabel}
+        </h2>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className={squareButton}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6" />
+            </svg>
+          </button>
+          <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth} aria-label="Next month" className={squareButton}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-sm">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="py-1 text-xs font-medium text-slate-500">{d}</div>
-        ))}
-        {Array.from({ length: blanks }, (_, i) => (
-          <div key={`b${i}`} />
-        ))}
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const date = `${month}-${String(i + 1).padStart(2, '0')}`
-          const present = presentDates.has(date)
-          return (
-            <div
-              key={date}
-              className={`py-2 ${
-                present ? 'bg-green-500 font-semibold text-white' : 'text-slate-700'
-              } ${date === today && !present ? 'border border-slate-900' : ''}`}
-            >
-              {i + 1}
+      <div className="px-5 py-4">
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {WEEKDAYS.map((d) => (
+            <div key={d} className="py-1 text-xs font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+              {d}
             </div>
-          )
-        })}
+          ))}
+        </div>
+        <div role="grid" aria-label={monthLabel} className="grid grid-cols-7 gap-1 text-center">
+          {Array.from({ length: blanks }, (_, i) => (
+            <div key={`b${i}`} className="min-h-14 bg-slate-50" />
+          ))}
+          {Array.from({ length: daysInMonth }, (_, i) => {
+            const date = `${month}-${String(i + 1).padStart(2, '0')}`
+            // Day over + no record = Absent, same rule as the week list.
+            const status = statusByDate.get(date) ?? (date < today ? 'Absent' : null)
+            const isToday = date === today
+            return (
+              <div
+                key={date}
+                role="gridcell"
+                aria-label={`${date}${status ? `: ${status}` : ''}`}
+                className={`flex min-h-14 flex-col items-center justify-center gap-0.5 border border-slate-200 ${
+                  status ? CELL_STYLE[status] : 'bg-white text-ink-muted'
+                } ${isToday ? 'outline-2 -outline-offset-2 outline-primary' : ''}`}
+              >
+                <span className={`text-sm ${isToday ? 'font-bold' : 'font-semibold'}`}>{i + 1}</span>
+                <span className="text-[11px] leading-[14px] font-medium">{isToday && !status ? 'Today' : (status ?? '')}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-ink-muted">
+          <span className="rounded-[2px] bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-900">Present</span>
+          <span className="rounded-[2px] bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">Leave</span>
+          <span className="rounded-[2px] bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-800">Absent</span>
+          <span>Today is outlined.</span>
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
 

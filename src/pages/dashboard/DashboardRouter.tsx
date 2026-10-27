@@ -27,6 +27,7 @@ import {
   ClientBookingsPage,
   ClientPaymentsPage,
   ClientQuotesPage,
+  ClientNewQuotePage,
   ClientRequestsPage,
   ClientProfilePage,
 } from './client/ClientPages'
@@ -103,46 +104,98 @@ const staffLinks = [
 ]
 
 // Client portal: one page per link (pages in client/ClientPages.tsx).
+// Two groups, "Shipping" and "Account" (the canvas's Client boards).
+// "Rate Us" lives on the My Profile page.
 const clientLinks = [
-  { label: 'Home', to: '/dashboard' },
-  { label: 'My Quotes', to: '/dashboard/quotes' },
-  { label: 'My Bookings', to: '/dashboard/bookings' },
-  { label: 'Payments', to: '/dashboard/payments' },
-  { label: 'My Requests', to: '/dashboard/requests' },
-  // "Rate Us" lives on the My Profile page.
-  { label: 'My Profile', to: '/dashboard/profile', bottom: true },
+  {
+    label: 'Shipping',
+    children: [
+      { label: 'Home', to: '/dashboard' },
+      { label: 'My Quotes', to: '/dashboard/quotes' },
+      { label: 'My Bookings', to: '/dashboard/bookings' },
+      { label: 'Payments', to: '/dashboard/payments' },
+      { label: 'My Requests', to: '/dashboard/requests' },
+    ],
+  },
+  {
+    label: 'Account',
+    children: [{ label: 'My Profile', to: '/dashboard/profile' }],
+  },
 ]
 
+// Dispatchers: "Operations" (their work pages) and "My Account" groups
+// (the canvas's Dispatcher boards).
 const dispatcherLinks = [
-  { label: 'Dispatch Board', to: '/dashboard/dispatch' },
-  { label: 'Schedule Overview', to: '/dashboard/schedule-overview' },
-  { label: 'Bookings & Trips', to: '/dashboard/bookings' },
-  { label: 'Damage Charges', to: '/dashboard/damage-charges' },
-  { label: 'Quotations', to: '/dashboard/quotations' },
-  { label: 'My Attendance', to: '/dashboard/attendance' },
-  { label: 'My Leave', to: '/dashboard/leave' },
-  { label: 'My Payslips', to: '/dashboard/payslips' },
-  { label: 'My Profile', to: '/dashboard/profile' },
+  {
+    label: 'Operations',
+    children: [
+      { label: 'Dispatch Board', to: '/dashboard/dispatch' },
+      { label: 'Schedule Overview', to: '/dashboard/schedule-overview' },
+      { label: 'Bookings & Trips', to: '/dashboard/bookings' },
+      { label: 'Damage Charges', to: '/dashboard/damage-charges' },
+      { label: 'Quotations', to: '/dashboard/quotations' },
+    ],
+  },
+  {
+    label: 'My Account',
+    children: [
+      { label: 'My Attendance', to: '/dashboard/attendance' },
+      { label: 'My Leave', to: '/dashboard/leave' },
+      { label: 'My Payslips', to: '/dashboard/payslips' },
+      { label: 'My Profile', to: '/dashboard/profile' },
+    ],
+  },
 ]
 
+// Mechanics: "Work" (Dashboard, My History) and "My Account" groups (the
+// canvas's Mechanic boards).
 const employeeLinks = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'My History', to: '/dashboard/history' },
-  { label: 'My Attendance', to: '/dashboard/attendance' },
-  { label: 'My Leave', to: '/dashboard/leave' },
-  { label: 'My Payslips', to: '/dashboard/payslips' },
-  { label: 'My Profile', to: '/dashboard/profile' },
+  {
+    label: 'Work',
+    children: [
+      { label: 'Dashboard', to: '/dashboard' },
+      { label: 'My History', to: '/dashboard/history' },
+    ],
+  },
+  {
+    label: 'My Account',
+    children: [
+      { label: 'My Attendance', to: '/dashboard/attendance' },
+      { label: 'My Leave', to: '/dashboard/leave' },
+      { label: 'My Payslips', to: '/dashboard/payslips' },
+      { label: 'My Profile', to: '/dashboard/profile' },
+    ],
+  },
 ]
-// Drivers and helpers also get "My Schedule" (their trips' time slots),
-// right after Dashboard. Mechanics aren't on trips.
-const scheduleLink = { label: 'My Schedule', to: '/dashboard/schedule' }
-const helperLinks = [employeeLinks[0], scheduleLink, ...employeeLinks.slice(1)]
+// Drivers and helpers: two sidebar groups, "Trips" (Dashboard, My Schedule
+// -- their trips' time slots -- and history) and "My Account" (the redesign
+// canvas's driver boards). Mechanics aren't on trips: employeeLinks above.
+const helperLinks = [
+  {
+    label: 'Trips',
+    children: [
+      { label: 'Dashboard', to: '/dashboard' },
+      { label: 'My Schedule', to: '/dashboard/schedule' },
+      { label: 'My History', to: '/dashboard/history' },
+    ],
+  },
+  {
+    label: 'My Account',
+    children: [
+      { label: 'My Attendance', to: '/dashboard/attendance' },
+      { label: 'My Leave', to: '/dashboard/leave' },
+      { label: 'My Payslips', to: '/dashboard/payslips' },
+      { label: 'My Profile', to: '/dashboard/profile' },
+    ],
+  },
+]
 // Drivers are paid per trip, so they have no attendance page
-const driverLinks = helperLinks
-  .filter((link) => link.to !== '/dashboard/attendance')
-  .map((link) =>
-    link.to === '/dashboard/history' ? { ...link, label: 'My Trips History' } : link,
-  )
+const driverLinks = helperLinks.map((group) => ({
+  ...group,
+  children: group.children
+    .filter((link) => link.to !== '/dashboard/attendance')
+    .map((link) => (link.to === '/dashboard/history' ? { ...link, label: 'My Trips History' } : link)),
+}))
 
 function CenteredMessage({ text }: { text: string }) {
   return (
@@ -256,6 +309,7 @@ function DashboardRouter() {
           <Route path="bookings" element={<ClientBookingsPage />} />
           <Route path="payments" element={<ClientPaymentsPage />} />
           <Route path="quotes" element={<ClientQuotesPage />} />
+          <Route path="quotes/new" element={<ClientNewQuotePage />} />
           <Route path="requests" element={<ClientRequestsPage />} />
           <Route path="profile" element={<ClientProfilePage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

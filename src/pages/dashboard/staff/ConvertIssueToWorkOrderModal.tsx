@@ -27,7 +27,7 @@
 // as it was. If step 3 fails after step 1 succeeded, the work order
 // already exists -- the error says so explicitly so staff don't
 // convert the same report twice.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
 import { formatDate } from '../../../lib/format'
@@ -86,10 +86,6 @@ function ConvertIssueToWorkOrderModal({
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadOptions()
-  }, [])
 
   async function loadOptions() {
     setLoadingOptions(true)
@@ -156,6 +152,16 @@ function ConvertIssueToWorkOrderModal({
     setMechanics(mechanicRows)
     setLoadingOptions(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadOptions()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleSubmit() {
     const selectedVehicle = vehicleOptions.find((v) => v.key === selectedVehicleKey)

@@ -9,14 +9,13 @@
 // for any mechanic to accept. The dropdown still lists every mechanic
 // (including whoever's creating this, if they're also listed as one)
 // for staff who'd rather assign it directly.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { MAINTENANCE_TYPES } from '../../../lib/maintenanceTypes'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
-
-export const MAINTENANCE_TYPES = ['Routine', 'Preventive', 'Predictive', 'Corrective'] as const
 
 type VehicleOption = {
   key: string
@@ -54,10 +53,6 @@ function CreateWorkOrderModal({
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadOptions()
-  }, [])
 
   async function loadOptions() {
     setLoadingOptions(true)
@@ -123,6 +118,16 @@ function CreateWorkOrderModal({
     setSelectedVehicleKey(preselectedKey ?? '')
     setLoadingOptions(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadOptions()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleSubmit() {
     const selectedVehicle = vehicleOptions.find((v) => v.key === selectedVehicleKey)

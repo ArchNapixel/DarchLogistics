@@ -16,6 +16,7 @@ import { loadBilling, type Billing } from '../../../lib/billing'
 import { loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
 import { usePaged } from '../../../lib/usePaged'
 import StatusBadge from '../../../components/StatusBadge'
+import BillingCharges from './BillingCharges'
 import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import { COMPANY } from '../../../lib/company'
@@ -29,9 +30,13 @@ function BillingPage() {
   // Every booking with what it's billed / owes (newest first) for the list.
   const [bookings, setBookings] = useState<PaymentDueRow[] | null>(null)
   const [search, setSearch] = useState('')
-  const [billing, setBilling] = useState<Billing | null>(null)
-  const [loading, setLoading] = useState(false)
+  // The loaded bill, tagged with the booking (and reload count) it's for --
+  // "loading" is just "no bill for the current pick yet".
+  const [billResult, setBillResult] = useState<{ key: string; billing: Billing | null; error: string | null } | null>(null)
+  // Loading the booking list failed.
   const [error, setError] = useState<string | null>(null)
+  // Bumped after a charge is added / voided, so the bill reloads its totals.
+  const [billReload, setBillReload] = useState(0)
 
   useEffect(() => {
     loadPaymentDueReport(undefined, { includeSettled: true }).then((result) => {
@@ -48,29 +53,25 @@ function BillingPage() {
   // Nothing picked yet: show the newest booking's bill.
   const bookingId = pickedBookingId || (bookings?.[0] ? String(bookings[0].booking_id) : '')
 
-  // The bill itself, whenever a booking is chosen.
+  // The bill itself, whenever a booking is chosen (or a charge changed it).
+  const billId = Number(bookingId)
+  const validId = Number.isInteger(billId) && billId > 0
+  const billKey = `${bookingId}|${billReload}`
   useEffect(() => {
-    const id = Number(bookingId)
-    if (!bookingId) {
-      setBilling(null)
-      return
-    }
-    if (!Number.isInteger(id) || id <= 0) {
-      setError("That isn't a valid booking number.")
-      return
-    }
+    if (!validId) return
     let ignore = false
-    setLoading(true)
-    loadBilling(id).then((result) => {
+    loadBilling(billId).then((result) => {
       if (ignore) return // a newer pick already replaced this one
-      setBilling(result.billing)
-      setError(result.error)
-      setLoading(false)
+      setBillResult({ key: billKey, billing: result.billing, error: result.error })
     })
     return () => {
       ignore = true
     }
-  }, [bookingId])
+  }, [billId, validId, billKey])
+  const currentBill = validId && billResult?.key === billKey ? billResult : null
+  const billing = currentBill?.billing ?? null
+  const loading = validId && !currentBill
+  const shownError = error ?? (bookingId && !validId ? "That isn't a valid booking number." : (currentBill?.error ?? null))
 
 
   // The statement's dated lines, with each trip not delivered yet slotted in
@@ -107,7 +108,7 @@ function BillingPage() {
         }
       />
 
-      {error && <p className="mb-4 text-red-700 print:hidden">{error}</p>}
+      {shownError && <p className="mb-4 text-red-700 print:hidden">{shownError}</p>}
 
       <div className="grid gap-4 xl:grid-cols-[480px_minmax(0,1fr)] xl:items-start print:block">
         <section aria-label="Bookings" className="card flex flex-col print:hidden">
@@ -297,6 +298,8 @@ function BillingPage() {
               )}
             </tbody>
           </table>
+
+          <BillingCharges bookingId={billing.booking_id} onChanged={() => setBillReload((k) => k + 1)} />
 
           <div className="mt-4 ml-auto w-full max-w-xs text-sm">
             <div className="flex justify-between py-1 text-slate-700">

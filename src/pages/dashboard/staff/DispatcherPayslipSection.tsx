@@ -9,7 +9,7 @@ import PageHeader from '../../../components/PageHeader'
 function DispatcherPayslipSection() {
   return (
     <div>
-      <PageHeader title="My Payslips" subtitle="Your finalized payslips." />
+      <PageHeader title="My Payslips" subtitle="Your finalized payslips. If a line looks wrong, report it and Admin will review it." />
       <MyPayslipSection />
     </div>
   )

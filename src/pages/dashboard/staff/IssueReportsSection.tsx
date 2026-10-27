@@ -6,7 +6,7 @@
 // either converted to a work order or dismissed as "worked on", it
 // drops off this list, but the row stays in issue_reports untouched
 // otherwise (worked_on flips to true, nothing is deleted).
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import ConvertIssueToWorkOrderModal, {
   type ConvertibleIssueReport,
@@ -28,10 +28,6 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [convertingReport, setConvertingReport] = useState<IssueReport | null>(null)
   const [markingId, setMarkingId] = useState<number | null>(null)
-
-  useEffect(() => {
-    load()
-  }, [])
 
 
   async function load() {
@@ -86,6 +82,16 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleMarkWorkedOn(report: IssueReport) {
     if (

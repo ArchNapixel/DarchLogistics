@@ -32,34 +32,41 @@ function EmployeeDashboard() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle={`Welcome, ${username} · ${new Date().toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        })}`}
+        subtitle={
+          role === 'Mechanic'
+            ? 'Your work orders, and new ones waiting to be taken.'
+            : `Welcome, ${username} · ${new Date().toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}`
+        }
         actions={<>
           <button
             onClick={() => setShowIssueRequest(true)}
-            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            className={`flex items-center gap-2 px-4 text-sm ${role === 'Mechanic' ? 'btn-primary' : 'btn-secondary font-medium'}`}
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14.5 6.5a4 4 0 0 0 4.5 5L9 21.5a2 2 0 0 1-3-3l10-10 M14.5 6.5l3-3 2 2-3 3" />
+            </svg>
             Issue Maintenance Request
           </button>
 
           {role === 'Mechanic' && (
-            <button
-              onClick={() => setShowScheduleMaintenance(true)}
-              className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
-            >
+            <button onClick={() => setShowScheduleMaintenance(true)} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4" />
+              </svg>
               Schedule Maintenance
             </button>
           )}
           {/* Every employee role can report an issue -- about a vehicle
               or general (InspectionReportModal covers both). */}
-          <button
-            onClick={() => setShowInspectionReport(true)}
-            className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-200 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
-          >
+          <button onClick={() => setShowInspectionReport(true)} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d={role === 'Mechanic' ? 'M9 5h6 M9 3h6v4H9z M6 5H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-1 M8 13l3 3 5-6' : 'M12 3l10 18H2z M12 10v5 M12 18h.01'} />
+            </svg>
             {role === 'Mechanic' ? 'Submit Inspection Report' : 'Report Issue'}
           </button>
         </>}
@@ -67,12 +74,14 @@ function EmployeeDashboard() {
 
 
 
-      <div className="mt-8">
+      {role === 'Mechanic' ? (
+        // My Tasks + Recently Completed on the left, the Task Board beside them.
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
+          <MyTasksSection key={tasksRefreshKey} />
+          <TaskBoard onAccepted={() => setTasksRefreshKey((key) => key + 1)} />
+        </div>
+      ) : (
         <MyTasksSection key={tasksRefreshKey} />
-      </div>
-
-      {role === 'Mechanic' && (
-        <TaskBoard onAccepted={() => setTasksRefreshKey((key) => key + 1)} />
       )}
 
       {showScheduleMaintenance && employeeId && (

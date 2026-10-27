@@ -28,11 +28,14 @@ import StatusWhenField from './StatusWhenField'
 function MarkDeliveredModal({
   itineraryId,
   currentStatus,
+  subtitle,
   onClose,
   onDelivered,
 }: {
   itineraryId: number
   currentStatus: string
+  // "Booking #48 · pickup → delivery", under the title.
+  subtitle?: string
   onClose: () => void
   onDelivered: () => void
 }) {
@@ -139,48 +142,67 @@ function MarkDeliveredModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
-        <h3 className="text-lg font-bold text-slate-900">Mark Trip #{itineraryId} Delivered</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          If any cargo arrived damaged, short or missing, record it here.
-        </p>
-
-        {error && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-        )}
-
-        <div className="mt-4 grid gap-4">
-          <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
-          <DamageFields value={damage} onChange={setDamage} allowGood />
-        </div>
-
-        {/* Optional: the signed DO usually comes back at delivery. Files
-            upload right away, on their own -- separate from the Save below. */}
-        <div className="mt-5">
-          <p className="mb-2 text-sm font-medium text-slate-700">
-            Attach DO / documents <span className="font-normal text-slate-400">(optional)</span>
-          </p>
-          <TripDocuments itineraryId={itineraryId} canEdit />
-        </div>
-
-        <div className="mt-6 flex justify-end gap-3">
+      <div role="dialog" aria-modal="true" aria-labelledby="md-title" className="card w-full max-w-[640px]">
+        <header className="flex items-start justify-between gap-4 border-b border-line px-6 pt-5 pb-4">
+          <div className="min-w-0">
+            <h2 id="md-title" className="text-xl leading-7 font-bold text-ink">
+              Mark Delivered · Trip #{itineraryId}
+            </h2>
+            {subtitle && <p className="mt-0.5 text-sm text-ink-secondary">{subtitle}</p>}
+          </div>
           <button
+            type="button"
             // Once the trip is Delivered, closing still has to move it to
             // the Completed table on the board.
             onClick={statusDone ? onDelivered : onClose}
             disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            aria-label="Close"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
           >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 6l12 12 M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+
+        <div className="flex flex-col gap-4 px-6 py-5">
+          {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+          {!statusDone && (
+            <div className="flex flex-col gap-1.5">
+              <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
+              <span className="text-[13px] leading-[18px] text-ink-muted">
+                Starts at the current time. The booking's later trips are re-timed from this.
+              </span>
+            </div>
+          )}
+
+          <DamageFields value={damage} onChange={setDamage} allowGood />
+
+          {/* Optional: the signed DO usually comes back at delivery. Files
+              upload right away, on their own -- separate from the button below. */}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm font-semibold text-ink">
+              Documents <span className="font-normal text-ink-muted">(optional)</span>
+            </p>
+            <span className="text-[13px] leading-[18px] text-ink-muted">Delivery receipt, waybill or photos. They upload as soon as you pick them.</span>
+            <TripDocuments itineraryId={itineraryId} canEdit />
+          </div>
+        </div>
+
+        <footer className="flex justify-end gap-3 border-t border-line px-6 py-4">
+          <button type="button" onClick={statusDone ? onDelivered : onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
             {statusDone ? 'Close' : 'Cancel'}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
-            {submitting ? 'Saving...' : statusDone ? 'Save damage report' : 'Mark Delivered'}
+          <button type="button" onClick={() => void handleSubmit()} disabled={submitting} className="btn-primary inline-flex items-center gap-2 px-6 text-sm">
+            {!statusDone && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12l5 5 9-10" />
+              </svg>
+            )}
+            {submitting ? 'Saving...' : statusDone ? 'Save Damage Report' : 'Mark Delivered'}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   )

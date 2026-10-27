@@ -7,6 +7,11 @@
 // log phone-in quotes on one page (NewQuoteRequestModal) with the same
 // field sections.
 //
+// Look (2026-10-27, the canvas's Client "New Quote Request" boards): a
+// step bar (done steps ticked "Done"), the step inside a card, a "Fix N
+// things before you continue" box listing that step's problems, and a
+// footer with Cancel (when onCancel is given), ‹ Back and "Next: <step> ›".
+//
 // The wizard owns only which step is showing. Form state/errors come
 // from the parent (useShipmentForm in lib/quoteRequest.ts), and the
 // parent does the actual insert in onSubmit, since each channel adds
@@ -44,6 +49,25 @@ const STEPS = [
 
 type StepId = (typeof STEPS)[number]['id']
 
+// Field names as the client reads them, for the "Fix N things" box.
+const FIELD_LABELS: Partial<Record<ShipmentField, string>> = {
+  pickup: 'Pickup',
+  delivery: 'Delivery',
+  cargoLines: 'Cargo',
+  preferredPickupDate: 'Pickup date',
+  isLastDayOfPortStorage: 'Last free storage day',
+  preferredDeliveryDate: 'Deadline',
+  paymentTerms: 'Payment terms',
+}
+
+// The heading inside each step's card.
+const STEP_HEADINGS: Record<StepId, string> = {
+  route: 'Where from, where to?',
+  cargo: 'What are we carrying?',
+  schedule: 'When?',
+  review: 'Check your request',
+}
+
 function QuoteWizard({
   form,
   setField,
@@ -57,6 +81,7 @@ function QuoteWizard({
   submitError,
   submitLabel,
   aside,
+  onCancel,
 }: SectionProps & {
   setErrors: (errors: FieldErrors) => void
   recentLocations?: RecentLocation[]
@@ -72,6 +97,8 @@ function QuoteWizard({
   // Extra content under the summary on wide screens (public page's
   // "what happens next" panel).
   aside?: ReactNode
+  // Shows a Cancel button in the footer (the portal's New Quote page).
+  onCancel?: () => void
 }) {
   // Opening with errors already set (a rejected quote sent back for
   // fixing): start on the first step with a highlighted field, and let
@@ -146,14 +173,21 @@ function QuoteWizard({
   }
 
   const sectionProps = { form, setField, errors }
+  // This step's problems, for the box at the top of the card.
+  const stepProblems = step.fields
+    .map((f: ShipmentField) => (errors[f] ? { field: f, message: errors[f] } : null))
+    .filter((p): p is { field: ShipmentField; message: string } => p !== null)
+  const next = STEPS[stepIndex + 1]
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <form onSubmit={handleSubmit} noValidate className="min-w-0">
-        <nav aria-label="Quote steps">
-          <ol className="flex flex-wrap gap-x-6 gap-y-2 border-b border-slate-200 pb-3">
+        <nav aria-label="Quote steps" className="mb-4">
+          <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {STEPS.map((s, index) => {
               const current = index === stepIndex
+              // Done = the client already got past it (Review is never "done").
+              const done = index < furthestStep && !current
               const reachable = index <= furthestStep && !current
               return (
                 <li key={s.id}>
@@ -162,26 +196,32 @@ function QuoteWizard({
                     onClick={() => goTo(index)}
                     disabled={!reachable}
                     aria-current={current ? 'step' : undefined}
-                    className={`flex items-center gap-2 text-sm ${
-                      current
-                        ? 'font-semibold text-slate-900'
-                        : reachable
-                          ? 'text-slate-600 hover:text-slate-900'
-                          : 'text-slate-400'
-                    }`}
+                    className={`flex min-h-14 w-full items-center gap-3 border px-3 text-left text-sm ${
+                      current ? 'border-2 border-primary bg-primary-soft' : 'border-line bg-white'
+                    } ${reachable ? 'hover:bg-slate-50' : ''}`}
                   >
                     <span
-                      className={`flex h-6 w-6 items-center justify-center text-xs font-semibold ${
+                      aria-hidden="true"
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center text-xs font-bold ${
                         current
                           ? 'bg-primary text-white'
-                          : reachable
-                            ? 'bg-slate-200 text-slate-800'
-                            : 'border border-slate-300 text-slate-400'
+                          : done
+                            ? 'bg-green-700 text-white'
+                            : 'border border-line-control text-ink-muted'
                       }`}
                     >
-                      {index + 1}
+                      {done ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 12l5 5 9-10" />
+                        </svg>
+                      ) : (
+                        index + 1
+                      )}
                     </span>
-                    {s.title}
+                    <span className="min-w-0">
+                      <span className={`block font-semibold ${current || done ? 'text-ink' : 'text-ink-muted'}`}>{s.title}</span>
+                      {done && <span className="block text-xs text-green-800">Done</span>}
+                    </span>
                   </button>
                 </li>
               )
@@ -189,68 +229,82 @@ function QuoteWizard({
           </ol>
         </nav>
 
-        <h3
-          ref={headingRef}
-          tabIndex={-1}
-          className="mt-6 scroll-mt-24 text-lg font-semibold text-slate-900 focus:outline-none"
-        >
-          {isReview ? 'Review' : step.title}
-        </h3>
+        <section className="card">
+          <h3
+            ref={headingRef}
+            tabIndex={-1}
+            className="scroll-mt-24 border-b border-line px-5 py-4 text-lg font-bold text-ink focus:outline-none"
+          >
+            {STEP_HEADINGS[step.id]}
+          </h3>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {step.id === 'route' && (
-            <RouteFields {...sectionProps} recentLocations={recentLocations} />
-          )}
-          {step.id === 'cargo' && <CargoFields {...sectionProps} />}
-          {step.id === 'schedule' && <ScheduleFields {...sectionProps} />}
-          {step.id === 'schedule' && <QuoteAvailabilityNote form={form} />}
-          {isReview && (
-            <>
-              <div className="col-span-full">{contactSection}</div>
-              <div className="col-span-full border-2 border-line-card bg-white p-4">
-                <QuoteSummary form={form} onEditStep={editStep} />
+          <div className="px-5 py-5">
+            {stepProblems.length > 0 && (
+              <div role="alert" className="mb-4 border-2 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900">
+                <p className="font-semibold">
+                  Fix {stepProblems.length === 1 ? '1 thing' : `${stepProblems.length} things`} before you continue
+                </p>
+                <ul className="mt-1 list-disc pl-5">
+                  {stepProblems.map((p) => (
+                    <li key={p.field}>
+                      <span className="font-semibold">{FIELD_LABELS[p.field] ?? p.field}</span>: {p.message}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </>
-          )}
-        </div>
+            )}
 
-        {isReview && submitError && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-            {submitError}
-          </p>
-        )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {step.id === 'route' && <RouteFields {...sectionProps} recentLocations={recentLocations} />}
+              {step.id === 'cargo' && <CargoFields {...sectionProps} />}
+              {step.id === 'schedule' && <ScheduleFields {...sectionProps} />}
+              {step.id === 'schedule' && <QuoteAvailabilityNote form={form} />}
+              {isReview && (
+                <>
+                  <div className="col-span-full">{contactSection}</div>
+                  <div className="col-span-full">
+                    <QuoteSummary form={form} onEditStep={editStep} />
+                  </div>
+                  <p className="col-span-full border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">
+                    After you send it, the quote shows "Waiting for our price" in My Quotes. You can withdraw it until we answer.
+                  </p>
+                </>
+              )}
+            </div>
 
-        <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
-          {stepIndex > 0 ? (
+            {isReview && submitError && (
+              <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                {submitError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
+            {onCancel && (
+              <button type="button" onClick={onCancel} disabled={submitting} className="btn-secondary px-4 text-sm font-medium">
+                Cancel
+              </button>
+            )}
+            <span className="flex-1" />
             <button
               type="button"
               onClick={() => goTo(stepIndex - 1)}
-              disabled={submitting}
-              className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+              disabled={submitting || stepIndex === 0}
+              className="btn-secondary px-4 text-sm font-medium"
             >
-              Back
+              ‹ Back
             </button>
-          ) : (
-            <span />
-          )}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="btn-primary px-5 py-2.5 text-sm font-medium"
-          >
-            {isReview
-              ? submitting
-                ? 'Sending…'
-                : submitLabel
-              : 'Next'}
-          </button>
-        </div>
+            <button type="submit" disabled={submitting} className="btn-primary px-5 text-sm">
+              {isReview ? (submitting ? 'Sending…' : submitLabel) : `Next: ${next?.title ?? ''} ›`}
+            </button>
+          </div>
+        </section>
       </form>
 
-      <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+      <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
         {!isReview && (
-          <div className="hidden border-2 border-line-card bg-white p-4 lg:block">
-            <p className="mb-3 text-sm font-semibold text-slate-900">Summary</p>
+          <div className="card hidden p-4 lg:block">
+            <p className="mb-3 text-sm font-semibold text-ink">Summary</p>
             <QuoteSummary form={form} />
           </div>
         )}

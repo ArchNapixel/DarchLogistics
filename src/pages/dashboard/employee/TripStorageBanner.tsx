@@ -29,13 +29,22 @@ function TripStorageBanner({ itineraryId }: { itineraryId: number }) {
   const missed = now > storageDeadlineEnd(deadline)
   return (
     <p
-      className={`mt-3 border px-3 py-2 text-sm font-semibold ${
-        missed ? 'border-red-300 bg-red-50 text-red-800' : 'border-amber-300 bg-amber-50 text-amber-900'
+      className={`flex items-center gap-2.5 border px-3.5 py-2.5 text-sm ${
+        missed ? 'border-red-700 bg-red-50 text-red-900' : 'border-amber-600 bg-amber-100 text-amber-900'
       }`}
     >
-      {missed
-        ? `🔴 Storage deadline passed (${formatDate(deadline)}) -- call dispatch`
-        : `⏰ Last free storage day: pick up from the port by 11:59 PM on ${formatDate(deadline)}`}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+        <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v5l3 2" />
+      </svg>
+      {missed ? (
+        <span>
+          <strong>Storage deadline passed</strong> ({formatDate(deadline)}) -- call dispatch
+        </span>
+      ) : (
+        <span>
+          <strong>Storage deadline:</strong> container must leave the port by 11:59 PM, {formatDate(deadline)}
+        </span>
+      )}
     </p>
   )
 }

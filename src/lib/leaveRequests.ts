@@ -1,5 +1,5 @@
 // leaveRequests: shared data access for employee leave -- used by the
-// employee page (employee/MyLeaveSection.tsx + RequestLeaveModal.tsx), the
+// employee page (employee/MyLeaveSection.tsx), the
 // Admin queue (staff/LeaveRequestsSection.tsx) and the Dispatch Board
 // (which greys out drivers/helpers who are on approved leave on a trip's
 // dates).

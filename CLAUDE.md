@@ -28,7 +28,7 @@ before creating it.
   into `client_reviews`, one per client — staff can "Feature" a review to
   the public landing page in `staff/ClientReviewsSection.tsx`, anonymized
   via the `count_bookings_for_clients` RPC so the public page never reads
-  `bookings` directly), and submitting a new quote (`NewQuoteModal.tsx`,
+  `bookings` directly), and submitting a new quote (the New Quote Request page, `ClientNewQuotePage` in `client/ClientPages.tsx`,
   uses the same `LocationPicker` as the public quote form).
 - Quotations (`/dashboard/quotations`, QuoteRequestsSection +
   QuoteReviewModal) — tabs Pending / Approved / Rejected (2026-10-22).
@@ -97,8 +97,8 @@ before creating it.
   orders, race-safe accept), and MechanicTasks (status dropdown) are all 
   wired to real Supabase data.
   Completing a work order (`employee/CompleteWorkOrderModal.tsx`, opened 
-  when a mechanic picks "Completed" in MechanicTasks.tsx's status dropdown 
-  instead of updating the status directly) requires filling in a form 
+  by the separate **Mark Complete** button -- on the task card and in the
+  Open Work Order panel; "Completed" isn't in the status dropdown) requires filling in a form 
   first: description of work done, a repeatable parts-used list, optional 
   labor hours/odometer reading/next service date/notes. Every part used 
   is linked to a real `inventory_items` row (`item_id`) — no free-text 
@@ -246,7 +246,7 @@ before creating it.
   via `delivery_damage_records_select_own_client`. **Reporting damage:**
   Dispatcher/Admin only — either "Mark delivered" (button on In Transit
   board rows, or Delivered in the dropdown → `MarkDeliveredModal`), or
-  "Report Damage" on the Damage Charges page (`ReportDamageModal`, any
+  "Report Damage" on the Damage Charges page (`ReportDamageForm`, any
   of the last 200 delivered trips). Both share `DamageFields.tsx` +
   `damageInputError`/`insertDamageRecord` in `lib/damageCharges.ts`.
   Fleet status changes go
@@ -519,9 +519,9 @@ before creating it.
   (`.eq('status', 'Pending')` in the update's WHERE). `employee/InspectionReportModal.tsx`
   covers the "inspection report" half of what used to be a combined gap.
   `staff/TruckMaintenanceMonitoringSection.tsx` (`/dashboard/maintenance-monitoring`,
-  its own top-level route, not a tab) layers two tabs on top: "Schedules"
-  (embeds `MaintenanceSchedulesSection` plus an "Assign Schedule" action
-  scoped to trucks only) and "Odometer Updates" — auto-suggests an
+  its own top-level route, not a tab; **rebuilt 2026-10-25, see below** —
+  the "Schedules" tab and Assign Schedule moved to the Maintenance page)
+  has "Confirm odometer readings" (was the "Odometer Updates" tab) — auto-suggests an
   odometer bump per truck by comparing its `truck_profiles.updated_at`
   against its most recent Delivered trip's distance
   (`bookings.estimated_distance_km`, one-way — what the diesel estimate
@@ -561,7 +561,7 @@ before creating it.
 - Location Picker (`components/LocationPicker.tsx`) — City/Barangay
   dropdowns sourced from `location_reference` (`lib/locationReference.ts`),
   used in the public `QuoteForm.tsx`, staff `NewQuoteRequestModal.tsx`,
-  and client `NewQuoteModal.tsx`. "Pick exact spot on map" shows a Leaflet +
+  and the client quote form (`ClientQuoteForm`). "Pick exact spot on map" shows a Leaflet +
   OpenStreetMap view (`react-leaflet`/`leaflet` — these are real npm
   deps, `npm install` needs to have been run after they were added, they
   aren't declared-but-missing anymore as of 2026-09-22); the clicked
@@ -798,7 +798,7 @@ before creating it.
   `/client-login?next=/quote-request[&mode=signup]`; ClientLoginPage
   honours `next`, same-site paths only) and `client/ClientQuoteForm.tsx`
   when logged in as a Client — the same form the portal's
-  `NewQuoteModal` now wraps. Rejected quotes get **Edit & resubmit** in
+  New Quote Request page (`/dashboard/quotes/new`) now shows. Rejected quotes get **Edit & resubmit** in
   `MyQuoteRequestsSection` (pre-filled via `quoteToForm()` /
   `SHIPMENT_COLUMNS` in `lib/quoteRequest.ts`) → RPC
   `resubmit_quote_request(p_quote_id, p_changes)` (SECURITY DEFINER,
@@ -862,10 +862,13 @@ before creating it.
   Advances: tiles + ledger + inline Issue form. Bills Receivable: owed
   tiles (Payments Due rules) + Client/Terms filters + due-date panel;
   `?pay=ID` opens Record payment (used by Bookings and Collections).
-  Board features the app doesn't have were left out on purpose: time
-  in/out + overtime (Attendance), per-trip editable rate / helper pay
-  (Payroll), Add / Edit Client, Add Charge (Billing), Export (Money
-  Summary), three medical exam types (Employees). Inter everywhere,
+  Board features left out on purpose: helper pay per trip (Payroll -- no
+  such module; a trip line's amount is already editable in Edit Payslip),
+  and on the Maintenance boards anything the app has no data for
+  (urgency / estimated cost on requests, labor rate, maintenance
+  templates, brand / OR-CR / registration expiry, reorder level, stock
+  adjustments, Acknowledge on alerts). The rest was built 2026-10-25 (see
+  "2026-10-25: board features" below). Inter everywhere,
   Oswald only for the DARCH LOGISTICS wordmark. Number inputs have no
   spinner arrows and ignore the mouse wheel (`index.css` + `main.tsx`).
 
@@ -1299,6 +1302,253 @@ extra charge; no-work days only block STARTING a trip). Phase A built:
   Money Summary notes estimated diesel / draft salaries, expiry bell skips
   inactive drivers and flags missing licences.
 
+## 2026-10-25: board features + Maintenance boards (SQL given in chat)
+- **Attendance time in / out + overtime.** `employee_attendance.time_in` /
+  `time_out` (time). Rules in `lib/attendanceHours.ts` (pure, self-check
+  `node scripts/check-attendance-hours.ts`): hours = out − in − 1 h lunch
+  (no lunch off a day of 5 h or less; out before in = past midnight),
+  overtime = hours above 8, paid (day rate ÷ 8) × 1.25 (weekly ÷ 6,
+  monthly ÷ 30 = day rate). Attendance page has a **Day** view
+  (`staff/AttendanceDayTable.tsx`: Time In / Time Out via TimeInput12,
+  Total Hours, Overtime, Status, one Save Attendance) next to the Week
+  view; a Present day with no times = 8 h, no overtime; the week view
+  keeps a day's times when Present is re-picked and shows "X h · OT Y".
+  Payroll: `sumPaidOvertimeHours()` (`lib/employeeAttendance.ts`) adds an
+  "Overtime" line to Daily / Weekly / Monthly payslips and an "Overtime
+  premium" (the extra 0.25) to Hourly ones; draft top-up picks it up for
+  new days. Drivers still aren't on the sheet.
+- **Add / Edit Client** (`staff/AddClientModal.tsx`, Clients page header +
+  panel): name, contact person, email, phone (same 09 rule), address,
+  notes; warns on a duplicate name / phone / email. Needs a staff UPDATE
+  policy on `clients`.
+- **Add Charge on a bill** (`staff/BillingCharges.tsx` on Billing,
+  `lib/bookingCharges.ts`): table `booking_charges` (description, amount
+  > 0, voidable with a reason). `loadExtraChargesByBooking()` = approved
+  Client damage + non-voided charges and replaced
+  `loadClientDamageChargesByBooking` in paymentDue.ts, BookingsSection,
+  ClientBookingHistoryModal and FinancialSection -- so every balance,
+  Payments Due, Statement adjustment, Billing and the client portal
+  include them. The field is still called `damage_charges` (now "extra
+  charges"). `amount_to_pay` stays the delivery amount.
+- **Money Summary Export** -- CSV of the month (`buildMoneySummaryCsv` in
+  `lib/moneySummary.ts`).
+- **Three medical exams** (`lib/medicalExams.ts`): Physical (the old
+  `medical_exam_date` / `medical_exam_expiry_date` + `physical_exam_result`),
+  Drug Test (`drug_test_*`), Psychological (`psych_exam_*`), each date +
+  expiry + result Passed/Failed. Drivers only, in AddEmployeeModal and the
+  Employees panel; the header bell warns on each expiry (30 days) and on a
+  Failed result. Queries list the columns literally (typed select).
+- **Maintenance boards rebuilt with existing data only.** Truck Monitoring:
+  tiles, Trucks table (status, odometer, last 2 trips, next maintenance =
+  next service date or earliest pending schedule), Alerts (truck / trailer
+  not operational, service date within 14 days, schedule due within 14
+  days, Created/Scheduled work order past its date) with Open Work Order /
+  Create Work Order / Open Schedules, and Confirm odometer readings (new
+  reading optional, must be higher than current; same optimistic guard).
+  Maintenance: tiles (requests waiting, in progress, trucks not
+  operational, parts cost this month), tabs Requests / Work Orders (Show:
+  open or completed & cancelled) / Schedules, each with a side panel
+  (Approve / Reject…, Open Work Order -> WorkOrderDetailModal, Mark Done);
+  Assign Schedule (`staff/AssignScheduleModal.tsx`, trucks only) lives on
+  the Schedules tab; `?tab=Requests|Schedules|Completed` and `?wo=ID`.
+  Fleet: Trucks / Trailers tabs with counts + plate search, side panel
+  (details, open work orders + pending schedules, last 5 trips with
+  driver), Delete… / Create Work Order / Assign Schedule / Edit.
+  Inventory: tiles (items, out of stock, stock value, parts cost this
+  month), Type / Stock / Search filters, side panel (details, last
+  completed work orders it was used on), Delete… / Edit.
+  `MaintenanceRequestsSection` / `MaintenanceSchedulesSection` are now
+  only used by Reports. `PendingMaintenanceSchedule` gained
+  `plate_number` / `trailer_id`.
+
+## 2026-10-27: Driver / Helper portal redesign (canvas driver boards)
+Rebuilt to the canvas's Driver boards with existing data only (no schema).
+- Sidebar: Driver/Helper links are two groups, **Trips** (Dashboard, My
+  Schedule, My Trips History / My History) and **My Account** (My
+  Attendance -- Helpers only, My Leave, My Payslips, My Profile)
+  (`helperLinks` / `driverLinks` in DashboardRouter.tsx). Mechanic links
+  unchanged (flat `employeeLinks`).
+- Dashboard (`DriverTasks.tsx`, no box around it any more): "On the road"
+  wide cards, "Upcoming" two per row (Trip # · Booking #, route, slot,
+  truck · trailer, cargo, your expenses, storage / payment banners --
+  restyled, no emoji), side panels "Trip steps" and "Recent trips" (last 2
+  delivered). **Mark as X** opens `StatusStepsModal` (in
+  UpdateStatusControl.tsx: Done / Now / Next / Later steps) instead of a
+  plain confirm; "+ Add Expense" sits next to it (`children` prop).
+- Pop-ups restyled: AddExpenseModal (amount via lib/amountInput, category
+  radios, still no default; closes with a toast), InspectionReportModal
+  ("About: A vehicle / A general issue", severity radios, now required),
+  IssueMaintenanceRequestModal (type now required, "Send Request"),
+  ReportPayslipIssueModal (optional `line` -- the payslip line it's about
+  is prefixed to the description; still one report per payslip).
+- My Schedule: table grouped by day (Time Slot, Trip · Booking, Route,
+  Truck · Trailer, Status) + "Trip updates" panel. The bell's loader moved
+  to `lib/tripNotifications.ts` (`fetchNotifications`, `message`).
+- My Trips History: Status filter (All / Delivered / Cancelled), paged
+  table, TripDetailModal restyled (expenses show category). Mechanic
+  history keeps its simple table.
+- My Leave: table (Dates, Type, Days, Reason / Admin note, Status) + an
+  inline Request Leave form (RequestLeaveModal.tsx deleted); drivers see
+  "no leave balance", others their paid balance.
+- My Payslips: payslip list (6 per page) + selected payslip (earnings,
+  deductions, net, "Report an Issue" per line) in MyPayslipSection (also
+  the Dispatcher's page) + aside `RequestCashAdvanceForm.tsx` (was
+  MyCashAdvanceRequestsSection + RequestCashAdvanceModal) and
+  `MyRequestsSection.tsx` (cash advances + payslip reports in one list;
+  was MyPayslipIssueReportsSection).
+- My Profile: Employment card + Contact / Emergency contact / Government
+  IDs cards, Discard Changes + Save Changes (shared by all employee roles).
+- Left out (no such data): the board's emergency-contact "Relationship".
+  The welcome line still shows the username, not the employee's name.
+
+## 2026-10-27: Mechanic portal redesign (canvas Mech boards)
+Same rules as the driver redesign: existing data only, no schema.
+- Sidebar: `employeeLinks` (Mechanic) = groups **Work** (Dashboard, My
+  History) and **My Account** (My Attendance, My Leave, My Payslips, My
+  Profile).
+- Dashboard: header buttons Issue Maintenance Request (primary for
+  Mechanics), Schedule Maintenance, Submit Inspection Report. Left:
+  MechanicTasks -- "My Tasks · n open" cards two per row (type, problem,
+  scheduled, Open Work Order / Mark Complete) and a **Recently Completed**
+  table (work done + completed date from `work_order_completions`,
+  Request Correction / Correction Requested). Right: **TaskBoard** is now a
+  panel beside them (was a slide-out drawer), opens by itself when there's
+  work, Hide / Show.
+- Open Work Order (AccessWorkOrderModal): a right-hand panel -- details,
+  Status dropdown, three columns Inventory (+ Log 1 / Out of stock) / Used
+  (↩ Return 1) / Notes (Add Note), footer Close / Mark Complete. Same logic.
+- Mark Complete (CompleteWorkOrderModal, also Admin's): two columns --
+  description, "Truck only" odometer / next service, notes | parts already
+  logged, other parts used (Part / Qty rows, + Add new inventory item,
+  + Add Part). New optional `subtitle` prop. Submit steps unchanged.
+- Schedule Maintenance: vehicle optgroups, "What's needed?" (SCHEDULE_TYPES,
+  now required, no default), Due in radios (default 3 months), "Save Schedule".
+- Inspection pop-up subtitle differs for Mechanics.
+- My History (Mechanic): Status (All / Completed / Cancelled) + Search,
+  paged table Work Order / Vehicle / Maintenance Type / Work Done /
+  Completed On / Status.
+- My Attendance (Mechanic, Helper, Dispatcher): month tiles (Present /
+  Leave / Absent so far), the week as a list (time in / out, hours, OT when
+  recorded), month calendar with each day's status + legend.
+- My Leave (non-drivers): three balance tiles instead of the banner.
+  My Payslips: "Paid weekly by attendance" / "Paid per delivered trip".
+
+## 2026-10-27: Dispatcher redesign (canvas Dispatcher boards)
+The Dispatcher's Dispatch Board, Schedule Overview, Bookings & Trips and
+Quotations are the Admin pages (already rebuilt 2026-10-25); My Attendance /
+Leave / Payslips / Profile are the employee pages. Changed for this pass,
+existing data only:
+- Sidebar: `dispatcherLinks` = groups **Operations** (Dispatch Board,
+  Schedule Overview, Bookings & Trips, Damage Charges, Quotations) and
+  **My Account** (My Attendance, My Leave, My Payslips, My Profile).
+- Dispatch Board: **My Correction Requests** is a side panel above
+  Resources Today (Dispatcher only, always shown, empty state). The trip
+  panel (View) has a **Ready to dispatch?** checklist for Awaiting trips:
+  time slot, driver, truck, trailer, downpayment (only when the booking has
+  one), crew not out on another trip -- the same rules as
+  `blockedReasonFor` / `crewOnRoadReason`, display only.
+- Mark Delivered (`MarkDeliveredModal`, new optional `subtitle`): canvas
+  layout, cargo condition as radio choices (Good / Damaged / Partial /
+  Missing -- all four kept), amber damage box, documents. Same save steps.
+- `DamageFields` no longer asks "Charge to": who pays is decided on Damage
+  Charges (a new record is 'Reported' and its pre-set `charge_to` was never
+  read before approval). Cost uses `filterAmountInput`; `damageInputError`
+  rejects a lone ".".
+- Damage Charges: table (Booking + Trip # · date, Client, Route, Damage,
+  Est. Cost, Who Pays Client | Company segmented -- picking approves, "Not
+  decided yet" until then), search by booking # / client, 10 per page;
+  side panel **Report Damage** form (`ReportDamageForm.tsx`, was
+  ReportDamageModal; photos / documents via TripDocuments once a trip is
+  picked) + a "Who pays" explainer.
+
+## 2026-10-27: Client portal redesign (canvas Client boards)
+Existing features only, no schema. Every page is shared by all clients.
+- Sidebar: `clientLinks` = groups **Shipping** (Home, My Quotes, My
+  Bookings, Payments, My Requests) and **Account** (My Profile).
+- Data loaders moved to `lib/clientPortal.ts` (`loadClientBookings` -- now
+  also trip_start_at / trip_end_at and the quote reference via
+  `bookings.quote_request_id`; `loadClientPaymentCards` -- Payments Due rows
+  incl. settled ones + downpayment + state; `loadOpenQuoteCounts`;
+  `isActiveBooking`, `billableTrips`, `bookingDownpayment`). Payment state
+  words in `lib/clientPaymentState.ts` (Downpayment due / Downpayment paid
+  / Overdue / Paid in full; self-check
+  `node scripts/check-client-payment-state.ts`).
+- Home: welcome line with the date, tiles (active bookings, balance due,
+  next payment due), "n offers to answer" banner, Active bookings and Next
+  payments due previews (the quote list is no longer on Home).
+- My Quotes: "Needs your answer" (Offered, click to show) + "Other quotes"
+  cards; the selected offer's panel (`QuoteOfferCard`, new props
+  reference / route / cargo / terms) with **Decline…** and
+  **Counter-offer…** as pop-ups, **Accept Offer**. Same RPC logic.
+- New Quote Request is a page now: `/dashboard/quotes/new`
+  (`ClientNewQuotePage` in ClientPages.tsx); `?resubmit=<id>` = Edit &
+  Resubmit (only while Rejected). `NewQuoteModal.tsx` became
+  `NewQuoteButton.tsx` (a link). QuoteWizard (also the public
+  /quote-request page): step bar with "Done", step card, "Fix N things
+  before you continue" box, footer Cancel (portal only) / ‹ Back / "Next:
+  <step> ›"; Review shows Route / Cargo / Schedule boxes with Edit;
+  QuoteSubmitted = "Quote request sent" (+ optional second button).
+  Kept on purpose although the canvas doesn't show them: several cargo
+  lines, last-free-storage-day, the live summary panel. Left out: the
+  canvas's "Your price / proposed rate" (clients don't set a rate since
+  the offer flow).
+- My Bookings: Active / Past tabs with counts, booking rows (ref, route,
+  date, rate, trips, total, Payment state), Show trips -> trips table
+  (date, time window, cargo, status, **Ask About This Trip** =
+  ClientStatusRequestModal restyled, now takes date / timeWindow). The
+  canvas's Driver column is left out (clients can't read the crew, on
+  purpose).
+- Payments: tiles (balance due, next payment due, paid in full n of n) +
+  one card per booking with its state and due line.
+- My Requests: question cards with Dispatch's answer ("Waiting for
+  Dispatch" until answered) and a note on where to ask.
+- My Profile: three cards -- Contact details (always editable, now incl.
+  the existing `clients.address`; Discard / Save Changes), Login & Security
+  (username and password forms always open), Rate Us (star buttons).
+- Client Login: public NavBar, "Your shipments, in one place" panel, Log In
+  / Sign Up tabs. Sign-up field order kept as before (Username first), not
+  the canvas order.
+
+## 2026-10-27: Lint is at zero -- keep it there
+`npx eslint src scripts` reports 0 problems (was 68). New code must not add
+any. The patterns used to get there:
+- **Loading data in an effect.** React's lint forbids setting state
+  synchronously inside an effect and calling a function before it's
+  declared. Pages load like this, placed AFTER the loader function and
+  before any early `return`:
+  ```ts
+  const loadNow = useEffectEvent(() => { void load() })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [deps])
+  ```
+  `useEffectEvent` (React 19.2) always calls the latest `load` (so it isn't
+  a dependency); the 0 ms timer moves load()'s state updates out of the
+  effect's own run. Buttons that refresh still call `load()` directly.
+  Simple one-off fetches can instead set state inside `.then(...)` with a
+  `cancelled` flag (MyStatusRequestsSection, useClientProfile).
+- **"Loading" derived, not set.** When an effect re-fetches on a pick
+  (Billing, Statements, CapacityCard, QuoteAvailabilityNote), the result
+  is stored with the key it was loaded for; loading = "no result for the
+  current key yet". No `setLoading(true)` / reset inside the effect.
+- **Opening a form from a URL link** (Employees `?employee=`, Bills
+  Receivable `?downpayment=` / `?pay=`): done while rendering, once per
+  link (`openedLink` state); the effect only clears the URL.
+- **Component files export only components.** Shared constants/helpers
+  live in lib: `lib/mechanicWorkOrders.ts` (WorkOrder, WORK_ORDER_COLUMNS,
+  ALL_STATUSES, withVehicleLabels -- were in MechanicTasks),
+  `lib/driverTripStatus.ts` (DRIVER_TRIP_STATUS_LABELS -- the driver
+  wording, was TRIP_STATUS_LABELS in UpdateStatusControl; staff wording
+  stays in lib/tripList.ts), `lib/employeeRateTypes.ts` (RATE_TYPES),
+  `lib/inventoryItemTypes.ts` (ITEM_TYPES), `lib/maintenanceTypes.ts`
+  (MAINTENANCE_TYPES), `client/useClientProfile.ts`. The auth provider is
+  `context/AuthProvider.tsx`; `context/AuthContext.tsx` keeps the context,
+  `useAuth()` and `logOut()` (imports of useAuth are unchanged).
+- No components declared inside other components (ClientBookingHistoryModal's
+  BookingTable is at file level), and no helper named `use...` unless it's
+  a hook.
+
 ## Currently in progress
 Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
 now), awaiting user testing (6a SQL has been run). Not built: payment history in the client
@@ -1583,6 +1833,6 @@ went on, but almost certainly needs a policy:**
 - After asking a confirming question or stating a plan, stop and wait
   for my explicit go-ahead before editing files — don't answer your own
   question and start implementing.
-- Match existing codebase conventions/patterns exactly (including
-  pre-existing lint warnings) instead of introducing a "more correct"
-  novel pattern in just the new file.
+- Match existing codebase conventions/patterns exactly instead of
+  introducing a "more correct" novel pattern in just the new file. Lint
+  is at 0 problems since 2026-10-27 -- keep it there (see that section).

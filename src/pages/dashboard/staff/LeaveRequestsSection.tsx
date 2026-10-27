@@ -1,9 +1,9 @@
 // LeaveRequestsSection: pending leave requests from employees
-// (employee/RequestLeaveModal.tsx) with Approve/Reject, shown on the
+// (employee/MyLeaveSection.tsx) with Approve/Reject, shown on the
 // Attendance page (Admin only). Approving a non-driver's request marks
 // those days as Leave in the attendance sheet; if the person is already
 // crewed on a trip in those dates, Admin gets a warning to reassign it.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
@@ -36,8 +36,14 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
     setLoading(false)
   }
 
-  useEffect(() => {
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
     void load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
   }, [])
 
   async function handleDecide(request: PendingLeaveRequest, approve: boolean) {

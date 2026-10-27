@@ -1,8 +1,9 @@
 // ClientQuoteForm: the quote form for a logged-in client -- the shared
 // step-by-step QuoteWizard (fields/validation/column mapping in
 // lib/quoteRequest.ts) plus the confirmation screen. Used in three places:
-// the /quote-request page, the portal's NewQuoteModal, and "Edit &
-// resubmit" on a rejected quote (also via NewQuoteModal).
+// the /quote-request page, the portal's New Quote Request page
+// (ClientNewQuotePage in ClientPages.tsx), and "Edit & resubmit" on a
+// rejected quote (the same page with ?resubmit=<quote id>).
 //
 // It does NOT ask for client name/contact number/email -- the client
 // already has these on file (`clients`, looked up via clientId). They're
@@ -52,6 +53,9 @@ function ClientQuoteForm({
   aside,
   actionLabel,
   onDone,
+  secondaryLabel,
+  onSecondary,
+  onCancel,
 }: {
   clientId: number
   resubmit?: ResubmitTarget
@@ -61,6 +65,11 @@ function ClientQuoteForm({
   // Button on the confirmation screen, and what it does.
   actionLabel: string
   onDone: () => void
+  // Optional second button on the confirmation screen ("Back to Home").
+  secondaryLabel?: string
+  onSecondary?: () => void
+  // Cancel button in the form's footer (portal page only).
+  onCancel?: () => void
 }) {
   const { form, setField, errors, setErrors } = useShipmentForm(resubmit?.form, resubmit?.errors)
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null)
@@ -172,6 +181,8 @@ function ClientQuoteForm({
         nextSteps={nextSteps}
         actionLabel={actionLabel}
         onAction={onDone}
+        secondaryLabel={secondaryLabel}
+        onSecondary={onSecondary}
       />
     )
   }
@@ -187,14 +198,15 @@ function ClientQuoteForm({
       onSubmit={handleSubmit}
       submitting={submitting}
       submitError={submitError}
-      submitLabel={resubmit ? 'Resubmit' : 'Send'}
+      submitLabel={resubmit ? 'Resubmit Quote Request' : 'Send Quote Request'}
       aside={aside}
+      onCancel={onCancel}
       contactSection={
-        <p className="border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+        <p className="border border-line bg-white px-4 py-3 text-sm text-ink-secondary">
           {contactInfo ? (
             <>
               Sending as{' '}
-              <span className="font-medium text-slate-900">{contactInfo.clientName}</span>
+              <span className="font-medium text-ink">{contactInfo.clientName}</span>
               {' · '}
               {contactInfo.contactNumber}
               {contactInfo.contactEmail ? ` · ${contactInfo.contactEmail}` : ''}

@@ -14,7 +14,9 @@ import type { ShipmentForm } from '../lib/quoteRequest'
 // Wait for typing to settle before asking the database.
 const TYPING_DELAY_MS = 600
 
-type Note = { tone: 'ok' | 'later'; text: string }
+// `forKey` = the inputs it was worked out for; a note for older inputs isn't
+// shown (instead of clearing it in the effect, which React's lint forbids).
+type Note = { tone: 'ok' | 'later'; text: string; forKey: string }
 
 function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
   const [note, setNote] = useState<Note | null>(null)
@@ -25,9 +27,9 @@ function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
     form.cargoLines.map((l) => ({ trailer_type: l.trailerType, quantity: Number(l.quantity) || 1 })),
   )
   const storage = form.isLastDayOfPortStorage === 'Yes'
+  const inputsKey = [cargoKey, form.preferredPickupDate, form.preferredDeliveryDate, storage].join('|')
 
   useEffect(() => {
-    setNote(null)
     if (!form.preferredPickupDate) return
     let cancelled = false
     const timer = setTimeout(async () => {
@@ -45,13 +47,14 @@ function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
       if (demand.trips.length === 0) return
       const result = checkCapacity(demand, inputs.resources)
       if (result.status === 'fits') {
-        setNote({ tone: 'ok', text: 'This date looks available. We confirm the final date in our offer.' })
+        setNote({ tone: 'ok', text: 'This date looks available. We confirm the final date in our offer.', forKey: inputsKey })
       } else if (result.status === 'none') {
-        setNote({ tone: 'later', text: "We're fully booked around this date. Send the request anyway and we'll offer you the closest date we can." })
+        setNote({ tone: 'later', text: "We're fully booked around this date. Send the request anyway and we'll offer you the closest date we can.", forKey: inputsKey })
       } else {
         setNote({
           tone: 'later',
           text: `Earliest available start for your trips: ${formatDate(toManilaDate(new Date(result.start)))}. You can still send the request and we'll confirm a date in our offer.`,
+          forKey: inputsKey,
         })
       }
     }, TYPING_DELAY_MS)
@@ -59,9 +62,9 @@ function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [form.preferredPickupDate, form.preferredDeliveryDate, cargoKey, storage])
+  }, [form.preferredPickupDate, form.preferredDeliveryDate, cargoKey, storage, inputsKey])
 
-  if (!note) return null
+  if (!note || note.forKey !== inputsKey) return null
   return (
     <p
       className={`col-span-full border px-4 py-3 text-sm ${

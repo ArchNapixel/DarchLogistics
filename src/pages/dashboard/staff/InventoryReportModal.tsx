@@ -3,7 +3,7 @@
 // previews a CSV of current stock levels plus everything used out of
 // stock that week, and lets staff download it. See
 // lib/inventoryReport.ts for how "used stock" is sourced.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadReportWeekOptions,
   loadInventoryReport,
@@ -29,15 +29,6 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const usageTotals = summarizeUsageByItem(usedStock)
 
-  useEffect(() => {
-    loadWeeks()
-  }, [])
-
-  useEffect(() => {
-    if (selectedWeek) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWeek])
-
   async function loadWeeks() {
     setLoadingWeeks(true)
     const { weeks, error: weeksError } = await loadReportWeekOptions()
@@ -52,6 +43,16 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
     setSelectedWeek(weeks[0] ?? null)
     setLoadingWeeks(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadWeeks()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function load() {
     if (!selectedWeek) return
@@ -74,6 +75,16 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load when this opens and whenever selectedWeek changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow2 = useEffectEvent(() => {
+    if (selectedWeek) load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow2, 0)
+    return () => clearTimeout(timer)
+  }, [selectedWeek])
 
   function handleDownload() {
     if (!selectedWeek) return

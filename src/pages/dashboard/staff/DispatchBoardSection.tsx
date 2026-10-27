@@ -828,6 +828,29 @@ function TripPanel({
   const downpaymentDue =
     row.downpayment && !tripsMayStart(row.downpayment) && bookingTrips.some((r) => r.status === 'Awaiting') ? row.downpayment : null
   const canUpdate = ctx.canEditStatus && (!done || ctx.canFreelyEditStatus)
+  // "Ready to dispatch?" -- the same rules that keep a trip in Awaiting
+  // (isFullyAssigned, the downpayment, crew out on another trip).
+  const onRoadReason = crewOnRoadReason(row, ctx.allRows)
+  const readyChecks = [
+    { label: 'Time slot set', ok: row.trip_start_at !== null },
+    { label: 'Driver assigned', ok: row.assigned_employee_id !== null },
+    { label: 'Truck assigned', ok: row.plate_number !== null },
+    { label: 'Trailer assigned', ok: row.trailer_id !== null },
+    // Older bookings have no downpayment rule (downpayment null).
+    ...(row.downpayment
+      ? [
+          {
+            label: row.downpayment.waived
+              ? 'Downpayment waived'
+              : row.downpayment.met
+                ? 'Downpayment paid'
+                : `Downpayment paid · ${formatMoney(row.downpayment.missing)} to go`,
+            ok: tripsMayStart(row.downpayment),
+          },
+        ]
+      : []),
+    { label: onRoadReason ? `Crew not out on another trip · ${onRoadReason}` : 'Crew not out on another trip', ok: !onRoadReason },
+  ]
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -911,6 +934,31 @@ function TripPanel({
                   Record Downpayment
                 </Link>
               )}
+            </section>
+          )}
+
+          {row.status === 'Awaiting' && (
+            <section aria-labelledby="ready-h" className="border-2 border-line-card px-4 py-3">
+              <h3 id="ready-h" className="mb-1 text-sm font-semibold text-ink">
+                Ready to dispatch?
+              </h3>
+              <ul className="text-sm">
+                {readyChecks.map((check) => (
+                  <li key={check.label} className="flex min-h-10 items-center gap-2.5 border-b border-slate-200 last:border-0">
+                    {check.ok ? (
+                      <Icon name="check" className="text-green-700" />
+                    ) : (
+                      <Icon name="clock" className="text-ink-muted" />
+                    )}
+                    <span className="sr-only">{check.ok ? 'Done:' : 'Missing:'}</span>
+                    <span className={check.ok ? 'text-ink' : 'text-ink-secondary'}>{check.label}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[13px] text-ink-muted">
+                The trip can't leave Awaiting until every item is ticked.
+                {row.downpayment ? ' Admin can waive the downpayment.' : ''}
+              </p>
             </section>
           )}
 
@@ -2625,34 +2673,43 @@ function DispatchBoardSection() {
           </section>
         </div>
 
-        <ResourcesPanel day={shownDay} isToday={shownDay === today} dayRows={isAllDays ? rows.filter((r) => tripDay(r) === today) : dayRows} ctx={ctx} />
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* Dispatcher: their own requests to move a trip back a status,
+              beside the board (the canvas's Dispatcher board). */}
+          {isDispatcher(role) && (
+            <aside aria-labelledby="cr-h" className="card flex flex-col px-5 py-4">
+              <h2 id="cr-h" className="text-base font-semibold text-ink">
+                My Correction Requests
+              </h2>
+              <p className="mb-1 border-b border-line pb-2 text-[13px] text-ink-muted">Requests to move a trip back a status. Admin decides.</p>
+              {myRequests.length === 0 ? (
+                <p className="py-3 text-sm text-ink-muted">None yet. Use Request Correction in a trip's View.</p>
+              ) : (
+                <ul className="text-sm">
+                  {myRequests.map((request) => (
+                    <li key={request.request_id} className="flex flex-col gap-1 border-b border-slate-200 py-3 last:border-0">
+                      <span className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold text-ink">
+                          Trip #{request.itinerary_id} · {STATUS_LABELS[request.current_status] ?? request.current_status} →{' '}
+                          {STATUS_LABELS[request.requested_status] ?? request.requested_status}
+                        </span>
+                        <StatusBadge status={request.status} icon />
+                      </span>
+                      <span className="text-[13px] text-ink-muted">
+                        Sent {formatDate(request.created_at)}
+                        {request.status === 'Pending' ? ' · waiting for Admin' : ''}
+                      </span>
+                      <span className="text-[13px] text-ink-secondary">Reason: {request.reason}</span>
+                      {request.resolution_note && <span className="text-[13px] text-ink-secondary">Admin note: {request.resolution_note}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </aside>
+          )}
+          <ResourcesPanel day={shownDay} isToday={shownDay === today} dayRows={isAllDays ? rows.filter((r) => tripDay(r) === today) : dayRows} ctx={ctx} />
+        </div>
       </div>
-
-      {isDispatcher(role) && myRequests.length > 0 && (
-        <section className="card mt-6 px-5 py-4">
-          <h3 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">My Correction Requests</h3>
-          <ul className="text-sm">
-            {myRequests.map((request) => {
-              const bookingId = rows.find((r) => r.itinerary_id === request.itinerary_id)?.booking_id
-              return (
-                <li key={request.request_id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-slate-200 py-3 last:border-0">
-                  <span className="text-ink">
-                    {bookingId !== undefined ? `Booking #${bookingId}` : `Trip #${request.itinerary_id}`}:{' '}
-                    {STATUS_LABELS[request.current_status] ?? request.current_status} →{' '}
-                    {STATUS_LABELS[request.requested_status] ?? request.requested_status}
-                  </span>
-                  <StatusBadge status={request.status} />
-                  <span className="text-[13px] text-ink-muted">{formatDate(request.created_at)}</span>
-                  <span className="w-full text-[13px] text-ink-secondary">Reason: {request.reason}</span>
-                  {request.resolution_note && (
-                    <span className="w-full text-[13px] text-ink-secondary">Admin note: {request.resolution_note}</span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
 
       {panelRow && (
         <TripPanel
@@ -2769,6 +2826,7 @@ function DispatchBoardSection() {
         <MarkDeliveredModal
           itineraryId={deliveryRow.itinerary_id}
           currentStatus={deliveryRow.status}
+          subtitle={`Booking #${deliveryRow.booking_id} · ${deliveryRow.pickup_location} → ${deliveryRow.delivery_location}`}
           onClose={() => setDeliveryRow(null)}
           onDelivered={() => {
             const itineraryId = deliveryRow.itinerary_id

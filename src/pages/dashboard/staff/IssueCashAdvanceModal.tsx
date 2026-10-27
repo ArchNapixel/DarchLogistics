@@ -6,7 +6,7 @@
 // With `inline` it is the Cash Advances page's side panel (the canvas's
 // "Issue Cash Advance" card) instead of a pop-up: no close button, and the
 // form clears itself after each advance.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 
@@ -35,10 +35,6 @@ function IssueCashAdvanceModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadEmployees()
-  }, [])
-
   async function loadEmployees() {
     setLoadingOptions(true)
 
@@ -60,6 +56,16 @@ function IssueCashAdvanceModal({
     }
     setLoadingOptions(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadEmployees()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleSubmit() {
     // Same amount rules as the payment forms (lib/amountInput.ts):

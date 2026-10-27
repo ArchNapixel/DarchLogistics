@@ -39,26 +39,28 @@ type View = { result: CapacityResult; requestedStart: number; hasHolds: boolean;
 function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineDate, storage, onResult, onUseStart, onReject }: Props) {
   const [view, setView] = useState<View | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  // The inputs of the last finished check -- "loading" = not the current ones.
+  const [checkedKey, setCheckedKey] = useState<string | null>(null)
 
   const hours = Number(hoursPerTrip)
   const ready = hours > 0 && pickupDate !== ''
+  const inputsKey = JSON.stringify([cargoLines, hours, pickupDate, deadlineDate, storage, quoteId])
+  const loading = ready && checkedKey !== inputsKey
 
   useEffect(() => {
+    // Not ready: the card shows "Enter the hours..." (view isn't read).
     if (!ready) {
-      setView(null)
       onResult(null)
       return
     }
     let cancelled = false
-    setLoading(true)
     const timer = setTimeout(async () => {
       const args = { cargoLines, hours, pickupDate, deadlineDate: deadlineDate || null, storage }
       // The default start time is only known once loaded; the first demand
       // (6 AM) is just for how far to read, then it's rebuilt with the real one.
       const { inputs, error: loadError } = await loadCapacityInputs(buildDemand({ ...args, defaultStartMinutes: 360 }), quoteId)
       if (cancelled) return
-      setLoading(false)
+      setCheckedKey(inputsKey)
       if (!inputs) {
         setError(loadError)
         setView(null)
@@ -82,13 +84,13 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
     }
     // onResult is a state setter from the modal -- stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, cargoLines, hours, pickupDate, deadlineDate, storage, quoteId])
+  }, [ready, cargoLines, hours, pickupDate, deadlineDate, storage, quoteId, inputsKey])
 
   const dayOf = (ms: number) => toManilaDate(new Date(ms))
   const unique = (labels: string[]) => [...new Set(labels)].join(', ')
 
   let tone = 'border-slate-300'
-  let body: React.ReactNode = null
+  let body: React.ReactNode
   if (!ready) {
     body = <p className="text-sm text-slate-500">Enter the hours per trip and pickup date to check availability.</p>
   } else if (error) {
@@ -101,7 +103,8 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
     const needs = result.status === 'fits' || result.status === 'later' || result.status === 'late' ? result.placements : []
     const crew = unique(needs.map((p) => p.driver.label))
     const vehicles = unique(needs.map((p) => `${p.truck.label} / ${p.trailer.label}`))
-    const useButton = (label: string) =>
+    // (Not a hook -- a plain helper that draws the button.)
+    const pickDateButton = (label: string) =>
       result.status === 'later' || result.status === 'late' ? (
         <button
           type="button"
@@ -139,7 +142,7 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
             deadline.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {useButton(`Use ${formatDate(dayOf(result.start))} as the pickup date`)}
+            {pickDateButton(`Use ${formatDate(dayOf(result.start))} as the pickup date`)}
             {rejectButton}
           </div>
         </>
@@ -154,7 +157,7 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
             <span className="font-semibold">{formatDate(dayOf(result.start))}</span> ({crew}), after the client's deadline.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {useButton(`Offer ${formatDate(dayOf(result.start))} instead`)}
+            {pickDateButton(`Offer ${formatDate(dayOf(result.start))} instead`)}
             {rejectButton}
           </div>
         </>

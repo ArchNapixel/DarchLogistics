@@ -732,7 +732,7 @@ function BookingDetailModal({
         />
         <Figure label="Amount Paid" value={formatMoney(booking.amount_paid)} />
         <Figure label="Balance Due" value={formatMoney(booking.balance_due)} />
-        {booking.damage_charges > 0 && <Figure label="Incl. Damage Charges" value={formatMoney(booking.damage_charges)} />}
+        {booking.damage_charges > 0 && <Figure label="Incl. Extra Charges" value={formatMoney(booking.damage_charges)} />}
       </div>
       <p className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
         <span>

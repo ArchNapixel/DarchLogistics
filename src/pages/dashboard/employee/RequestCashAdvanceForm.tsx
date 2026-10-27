@@ -1,127 +1,116 @@
-// MyCashAdvanceRequestsSection: "Request Cash Advance" button + the
-// employee's own request history (Driver/Mechanic/Helper -- mounted
-// only from MyPayslipPage.tsx, not the Dispatcher's payslip page).
+// RequestCashAdvanceForm: the "Request Cash Advance" card on My Payslips
+// (Driver/Mechanic/Helper -- not the Dispatcher's payslip page). Amount +
+// reason, inserted into cash_advances with status 'Pending' -- staff then
+// Approve/Reject it on the Cash Advance page (staff/CashAdvanceRequestsSection.tsx).
+// Doesn't touch the admin's direct-issue flow (IssueCashAdvanceModal.tsx),
+// which still creates an already-approved row with no request step. Also
+// says what the employee still owes and how much each payslip deducts.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import {
-  loadCashAdvanceRequestsForEmployee,
-  type CashAdvanceRequest,
-} from '../../../lib/cashAdvanceRequests'
-import {
-  getOutstandingCashAdvance,
-  loadCashAdvanceDeductionRate,
-  DEFAULT_CASH_ADVANCE_DEDUCTION_RATE,
-} from '../../../lib/payslip'
-import RequestCashAdvanceModal from './RequestCashAdvanceModal'
-import StatusBadge from '../../../components/StatusBadge'
+import { requestCashAdvance } from '../../../lib/cashAdvanceRequests'
+import { getOutstandingCashAdvance, loadCashAdvanceDeductionRate, DEFAULT_CASH_ADVANCE_DEDUCTION_RATE } from '../../../lib/payslip'
+import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { showToast } from '../../../components/Toast'
-import { formatMoney, formatDate } from '../../../lib/format'
-import EmptyState from '../../../components/EmptyState'
+import { formatMoney } from '../../../lib/format'
 
+const fieldClasses =
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
 
-function MyCashAdvanceRequestsSection() {
+function RequestCashAdvanceForm({ onRequested }: { onRequested: () => void }) {
   const { employeeId } = useAuth()
-  const [requests, setRequests] = useState<CashAdvanceRequest[]>([])
-  const [loading, setLoading] = useState(true)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showRequestModal, setShowRequestModal] = useState(false)
   // What the employee still owes (counts finalized payslips only -- they
-  // can't see drafts).
+  // can't see drafts), and the share of each payslip that pays it off.
   const [owed, setOwed] = useState(0)
   const [rate, setRate] = useState(DEFAULT_CASH_ADVANCE_DEDUCTION_RATE)
 
   useEffect(() => {
-    if (employeeId) {
-      load(employeeId)
-    } else {
-      setLoading(false)
+    if (!employeeId) return
+    let cancelled = false
+    void Promise.all([getOutstandingCashAdvance(employeeId), loadCashAdvanceDeductionRate()]).then(([o, r]) => {
+      if (cancelled) return
+      setOwed(o.outstanding)
+      setRate(r)
+    })
+    return () => {
+      cancelled = true
     }
   }, [employeeId])
 
-  async function load(id: number) {
-    setLoading(true)
-    const { requests: loaded, error: loadError } =
-      await loadCashAdvanceRequestsForEmployee(id)
-
-    if (loadError) {
-      setError(loadError)
-      setLoading(false)
+  async function handleSubmit() {
+    const parsed = parseAmount(amount)
+    if (parsed.value === null) {
+      setError(parsed.error ?? 'Enter a valid amount.')
+      return
+    }
+    if (!reason.trim()) {
+      setError('Enter a reason for this request.')
+      return
+    }
+    if (!employeeId) {
+      setError('Could not determine your employee record. Contact an admin.')
       return
     }
 
-    setRequests(loaded)
-    setOwed((await getOutstandingCashAdvance(id)).outstanding)
-    setRate(await loadCashAdvanceDeductionRate())
+    setSubmitting(true)
     setError(null)
-    setLoading(false)
+    const { error: requestError } = await requestCashAdvance({ employeeId, amount: parsed.value, reason: reason.trim() })
+    setSubmitting(false)
+    if (requestError) {
+      setError(requestError)
+      return
+    }
+
+    setAmount('')
+    setReason('')
+    showToast('Your cash advance request was submitted.')
+    onRequested()
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-end">
-        <button
-          onClick={() => setShowRequestModal(true)}
-          className="btn-primary px-4 py-2 text-sm font-medium"
-        >
-          Request Cash Advance
-        </button>
-      </div>
-
-      {owed > 0 && (
-        <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          You still owe <span className="font-semibold text-primary">{formatMoney(owed)}</span>. {rate}% of your gross pay is deducted from each weekly payslip until it's paid off.
+    <section aria-labelledby="cash-advance-h" className="card flex flex-col">
+      <h2 id="cash-advance-h" className="border-b border-line px-5 py-4 text-base font-semibold text-ink">
+        Request Cash Advance
+      </h2>
+      <form
+        className="flex flex-col gap-3.5 px-5 py-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void handleSubmit()
+        }}
+      >
+        {error && <p className="bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {owed > 0 && (
+          <p className="bg-slate-50 px-3 py-2 text-sm text-ink-secondary">
+            You still owe <span className="font-semibold text-primary">{formatMoney(owed)}</span>.
+          </p>
+        )}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold text-ink">Amount (₱)</span>
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(filterAmountInput(e.target.value))}
+            placeholder="0.00"
+            className={`${fieldClasses} tabular-nums`}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold text-ink">Reason</span>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Emergency" className={fieldClasses} />
+        </label>
+        <p className="text-[13px] leading-[18px] text-ink-muted">
+          Once Admin approves, {rate}% of each payslip's gross pay is deducted until it's paid off.
         </p>
-      )}
-
-
-      {loading && <p className="mt-4 text-slate-500">Loading your requests...</p>}
-      {!loading && error && <p className="mt-4 text-red-700">{error}</p>}
-
-      {!loading && !error && requests.length === 0 && (
-        <EmptyState message="No cash advance requests yet." className="mt-4" />
-      )}
-
-      {!loading && !error && requests.length > 0 && (
-        <div className="mt-4 grid gap-3">
-          {requests.map((request) => (
-            <div
-              key={request.cash_advance_id}
-              className="border border-slate-200 p-4"
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900">
-                  {formatMoney(request.amount)}
-                </p>
-                <StatusBadge status={request.status} />
-              </div>
-              {request.note && (
-                <p className="mt-1 text-sm text-slate-600">{request.note}</p>
-              )}
-              <p className="mt-1 text-sm text-slate-500">
-                Requested {formatDate(request.created_at)}
-              </p>
-              {request.status === 'Rejected' && request.rejection_reason && (
-                <p className="mt-2 text-sm text-red-700">
-                  Reason: {request.rejection_reason}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showRequestModal && (
-        <RequestCashAdvanceModal
-          onClose={() => setShowRequestModal(false)}
-          onRequested={() => {
-            setShowRequestModal(false)
-            showToast('Your cash advance request was submitted.')
-            if (employeeId) load(employeeId)
-          }}
-        />
-      )}
-    </div>
+        <button type="submit" disabled={submitting} className="btn-primary px-5 text-sm">
+          {submitting ? 'Sending...' : 'Send Request'}
+        </button>
+      </form>
+    </section>
   )
 }
 
-export default MyCashAdvanceRequestsSection
+export default RequestCashAdvanceForm

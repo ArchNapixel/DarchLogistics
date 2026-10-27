@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
+import { WORK_ORDER_COLUMNS, withVehicleLabels, type WorkOrder } from '../../../lib/mechanicWorkOrders'
 import { changeWorkOrderStatus } from '../../../lib/workOrderStatusLog'
 import { loadMyPendingWorkOrderRelogIds } from '../../../lib/statusRelogRequests'
 import CompleteWorkOrderModal from './CompleteWorkOrderModal'
@@ -35,72 +36,12 @@ import EmptyState from '../../../components/EmptyState'
 
 const REOPEN_STATUS_OPTIONS = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 
-export type WorkOrder = {
-  work_order_id: number
-  work_order_number: string
-  plate_number: string | null
-  trailer_id: number | null
-  vehicle_label: string
-  work_order_status: string
-  maintenance_type: string
-  work_description: string | null
-  scheduled_start_date: string | null
-}
-
-export const WORK_ORDER_COLUMNS =
-  'work_order_id, work_order_number, plate_number, trailer_id, work_order_status, maintenance_type, work_description, scheduled_start_date'
-
-// A free-choice dropdown, not a fixed progression -- the mechanic picks
-// whatever status actually applies (including going back to "On Hold"
-// or jumping straight to "Cancelled"), rather than being forced through
-// one status at a time. "Completed" is kept in this list (other screens
-// use it for labels), but the dropdowns leave it out -- completing is
-// the separate "Mark Complete" button.
-export const ALL_STATUSES = [
-  'Created',
-  'Scheduled',
-  'In Progress',
-  'On Hold',
-  'Completed',
-  'Cancelled',
-]
-
-// Adds the "Truck ABC-123" / "Trailer XYZ-789" label -- trailers need a
-// lookup, since work_orders only stores trailer_id for them. Also used by
-// TaskBoard.tsx.
-export async function withVehicleLabels(
-  rows: Omit<WorkOrder, 'vehicle_label'>[],
-): Promise<{ orders: WorkOrder[]; error: string | null }> {
-  const trailerIds = Array.from(
-    new Set(rows.filter((o) => o.trailer_id != null).map((o) => o.trailer_id)),
-  )
-
-  const { data: trailers, error } =
-    trailerIds.length > 0
-      ? await supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
-      : { data: [], error: null }
-
-  if (error) {
-    return { orders: [], error: error.message }
-  }
-
-  const trailerPlateById = new Map(trailers.map((t) => [t.trailer_id, t.plate_number]))
-
-  return {
-    orders: rows.map((order) => ({
-      ...order,
-      vehicle_label: order.plate_number
-        ? `Truck ${order.plate_number}`
-        : `Trailer ${trailerPlateById.get(order.trailer_id) ?? `#${order.trailer_id}`}`,
-    })),
-    error: null,
-  }
-}
-
 function MechanicTasks() {
   const { employeeId } = useAuth()
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [recentlyCompleted, setRecentlyCompleted] = useState<WorkOrder[]>([])
+  // work_order_id -> its latest completion (date + what was done).
+  const [completionById, setCompletionById] = useState<Map<number, { completed_at: string; description: string | null }>>(new Map())
   const [pendingRelogIds, setPendingRelogIds] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -167,6 +108,17 @@ function MechanicTasks() {
 
     const labelled = await withVehicleLabels(data)
     if (!labelled.error) setRecentlyCompleted(labelled.orders)
+
+    // When each was completed and what was done (latest completion wins --
+    // a reopened job can have more than one).
+    const ids = data.map((o) => o.work_order_id)
+    if (ids.length === 0) return
+    const { data: completions } = await supabase
+      .from('work_order_completions')
+      .select('work_order_id, completed_at, description')
+      .in('work_order_id', ids)
+      .order('completed_at', { ascending: true })
+    setCompletionById(new Map((completions ?? []).map((c) => [c.work_order_id, c])))
   }
 
   async function handleStatusChange(order: WorkOrder, newStatus: string) {
@@ -220,105 +172,110 @@ function MechanicTasks() {
     if (employeeId) loadRecentlyCompleted(employeeId)
   }
 
-  if (loading) {
-    return <p className="text-slate-500">Loading your work orders...</p>
-  }
-
-  if (error) {
-    return <p className="text-red-700">{error}</p>
-  }
+  const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
+  const TD = 'px-2 py-2 first:pl-5 last:pr-5'
 
   return (
-    <div>
-      <p className="mb-4 text-sm text-slate-500">
-        {orders.length} active work order{orders.length === 1 ? '' : 's'} assigned to you
-      </p>
-
-      {actionError && (
-        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {actionError}
-        </p>
-      )}
-
-      {orders.length === 0 ? (
-        <EmptyState
-          message="No work orders assigned to you."
-          hint="Accept one from the Task Board to get started."
-        />
-      ) : (
-        <div className="grid gap-4">
-          {orders.map((order) => (
-            <div
-              key={order.work_order_id}
-              className="border border-slate-200 p-5"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold text-slate-900">
-                  {order.work_order_number} — {order.vehicle_label}
-                </p>
-                <StatusBadge status={order.work_order_status} />
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{order.maintenance_type}</p>
-              {order.work_description && (
-                <p className="mt-1 text-sm text-slate-600">
-                  {order.work_description}
-                </p>
-              )}
-              {order.scheduled_start_date && (
-                <p className="mt-1 text-sm text-slate-500">
-                  Scheduled: {formatDate(order.scheduled_start_date)}
-                </p>
-              )}
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setAccessingOrderId(order.work_order_id)}
-                  className="border border-line-control px-3 py-1.5 text-xs font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]"
-                >
-                  Open Work Order
-                </button>
-                <button
-                  onClick={() => startCompleting(order)}
-                  className="btn-primary px-3 py-1.5 text-xs font-medium"
-                >
-                  Mark Complete
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {recentlyCompleted.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-sm font-semibold text-slate-700">Recently Completed</h3>
-          <div className="mt-3 grid gap-3">
-            {recentlyCompleted.map((order) => (
-              <div
-                key={order.work_order_id}
-                className="flex items-center justify-between border border-slate-200 p-4"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {order.work_order_number} — {order.vehicle_label}
-                  </p>
-                  <StatusBadge status={order.work_order_status} />
+    <div className="flex min-w-0 flex-col gap-4">
+      <section aria-labelledby="my-tasks-h" className="card flex flex-col gap-3 px-5 pt-3.5 pb-5">
+        <h2 id="my-tasks-h" className="text-base font-semibold text-ink">
+          My Tasks <span className="font-medium text-ink-muted">· {orders.length} open</span>
+        </h2>
+        {actionError && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
+        {loading ? (
+          <p className="text-ink-muted">Loading your work orders...</p>
+        ) : error ? (
+          <p className="text-red-700">{error}</p>
+        ) : orders.length === 0 ? (
+          <EmptyState message="No work orders assigned to you." hint="Accept one from the Task Board to get started." />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {orders.map((order) => (
+              <article key={order.work_order_id} aria-label={`Work order ${order.work_order_number}`} className="flex flex-col gap-2 border border-line bg-white px-4 py-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[15px] font-bold text-ink">
+                    {order.work_order_number} · {order.vehicle_label}
+                  </span>
+                  <StatusBadge status={order.work_order_status} icon />
                 </div>
-                {pendingRelogIds.includes(order.work_order_id) ? (
-                  <span className="text-[13px] text-ink-muted">Correction requested</span>
-                ) : (
-                  <button
-                    onClick={() => setReopeningOrder(order)}
-                    className="border border-line-control px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-[2px]"
-                  >
-                    Request correction
+                <dl className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+                  <dt className="text-[13px] text-ink-muted">Type</dt>
+                  <dd className="m-0 text-ink-secondary">{order.maintenance_type}</dd>
+                  <dt className="text-[13px] text-ink-muted">Problem</dt>
+                  <dd className="m-0 text-ink-secondary">{order.work_description || '—'}</dd>
+                  <dt className="text-[13px] text-ink-muted">Scheduled</dt>
+                  <dd className="m-0 text-ink-secondary">{order.scheduled_start_date ? formatDate(order.scheduled_start_date) : '—'}</dd>
+                </dl>
+                <div className="mt-1 flex gap-2">
+                  <button type="button" onClick={() => setAccessingOrderId(order.work_order_id)} className="btn-secondary flex-1 px-3 text-sm font-medium">
+                    Open Work Order
                   </button>
-                )}
-              </div>
+                  <button type="button" onClick={() => startCompleting(order)} className="btn-secondary flex-1 px-3 text-sm font-medium">
+                    Mark Complete
+                  </button>
+                </div>
+              </article>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </section>
+
+      <section aria-labelledby="recent-h" className="card flex flex-col">
+        <h2 id="recent-h" className="px-5 py-3.5 text-base font-semibold text-ink">
+          Recently Completed
+        </h2>
+        {recentlyCompleted.length === 0 ? (
+          <p className="px-5 pb-4 text-sm text-ink-muted">Nothing completed yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm text-ink-metric">
+              <thead>
+                <tr>
+                  <th className={TH}>Work Order</th>
+                  <th className={TH}>Vehicle · Work Done</th>
+                  <th className={TH}>Completed</th>
+                  <th className={TH}>Status</th>
+                  <th className={TH}>
+                    <span className="sr-only">Correction</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentlyCompleted.map((order) => {
+                  const completion = completionById.get(order.work_order_id)
+                  const requested = pendingRelogIds.includes(order.work_order_id)
+                  return (
+                    <tr key={order.work_order_id} className="h-[60px] border-b border-slate-200">
+                      <td className={`${TD} font-semibold text-ink`}>{order.work_order_number}</td>
+                      <td className={TD}>
+                        {order.vehicle_label}
+                        {completion?.description && <span className="text-ink-muted"> · {completion.description}</span>}
+                      </td>
+                      <td className={TD}>{completion ? formatDate(completion.completed_at) : '—'}</td>
+                      <td className={TD}>
+                        <StatusBadge status={order.work_order_status} icon />
+                      </td>
+                      <td className={TD}>
+                        <button
+                          type="button"
+                          onClick={() => setReopeningOrder(order)}
+                          disabled={requested}
+                          className="btn-secondary w-48 px-3 text-sm font-medium"
+                        >
+                          {requested ? 'Correction Requested' : 'Request Correction'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="border-t border-line px-5 py-3 text-sm text-ink-secondary">
+          Marked complete by mistake? Request a correction and Admin will reopen it.
+        </p>
+      </section>
 
       {completingOrder && (
         <CompleteWorkOrderModal
@@ -327,6 +284,7 @@ function MechanicTasks() {
           plateNumber={completingOrder.plate_number}
           trailerId={completingOrder.trailer_id}
           previousStatus={completingOrder.work_order_status}
+          subtitle={`${completingOrder.vehicle_label} · ${completingOrder.maintenance_type}`}
           onClose={() => setCompletingOrder(null)}
           onCompleted={handleWorkOrderCompleted}
         />

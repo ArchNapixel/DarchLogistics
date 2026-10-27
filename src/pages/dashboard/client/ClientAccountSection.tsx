@@ -1,5 +1,6 @@
-// ClientAccountSection: "Login & security" in the client portal -- the
-// client changes their own username or password.
+// ClientAccountSection: the "Login & Security" card on My Profile (the
+// canvas's Client My Profile board) -- the client changes their own
+// username or password. Both forms are always showing.
 //
 // Username: clients can't edit `users` directly (RLS), so it goes through
 // the change_my_username() database function (SQL given in chat), which
@@ -18,188 +19,151 @@ import { showToast } from '../../../components/Toast'
 import { ACCOUNT_MAX, filterUsername, passwordError, usernameError } from '../../../lib/clientAccount'
 
 const fieldClasses =
-  'w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
+const labelClasses = 'flex flex-col gap-1.5'
+const labelText = 'text-sm font-semibold text-ink'
 
 function ClientAccountSection() {
   const { username, session } = useAuth()
   // The name shown after a change (AuthContext only re-reads it on the next login).
   const [shownUsername, setShownUsername] = useState(username)
-  const [editing, setEditing] = useState<'username' | 'password' | null>(null)
 
   const [newUsername, setNewUsername] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  function open(which: 'username' | 'password') {
-    setEditing(which)
-    setError(null)
-    setNewUsername(shownUsername ?? '')
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-  }
+  const [saving, setSaving] = useState<'username' | 'password' | null>(null)
+  const [usernameProblem, setUsernameProblem] = useState<string | null>(null)
+  const [passwordProblem, setPasswordProblem] = useState<string | null>(null)
 
   async function saveUsername(e: FormEvent) {
     e.preventDefault()
     const wanted = newUsername.trim()
     const problem = usernameError(wanted)
-    if (problem) return setError(problem)
-    if (wanted === shownUsername) return setEditing(null)
+    if (problem) return setUsernameProblem(problem)
+    if (wanted === shownUsername) return setUsernameProblem("That's already your username.")
 
-    setSaving(true)
-    setError(null)
+    setSaving('username')
+    setUsernameProblem(null)
     const { error: rpcError } = await supabase.rpc('change_my_username', { p_username: wanted })
-    setSaving(false)
+    setSaving(null)
     if (rpcError) {
       // The function's own messages ("That username is already taken.") are written for people.
-      return setError(rpcError.message)
+      return setUsernameProblem(rpcError.message)
     }
     setShownUsername(wanted)
-    setEditing(null)
+    setNewUsername('')
     showToast('Username changed. Use the new one next time you log in.')
   }
 
   async function savePassword(e: FormEvent) {
     e.preventDefault()
+    if (!currentPassword) return setPasswordProblem('Enter your current password.')
     const problem = passwordError(newPassword, confirmPassword)
-    if (problem) return setError(problem)
+    if (problem) return setPasswordProblem(problem)
     const email = session?.user.email
-    if (!email) return setError('Your login email could not be read. Log out and back in, then try again.')
+    if (!email) return setPasswordProblem('Your login email could not be read. Log out and back in, then try again.')
 
-    setSaving(true)
-    setError(null)
+    setSaving('password')
+    setPasswordProblem(null)
     const { error: checkError } = await supabase.auth.signInWithPassword({ email, password: currentPassword })
     if (checkError) {
-      setSaving(false)
-      return setError('Your current password is not correct.')
+      setSaving(null)
+      return setPasswordProblem('Your current password is not correct.')
     }
     const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
-    setSaving(false)
+    setSaving(null)
     if (updateError) {
-      return setError(
+      return setPasswordProblem(
         updateError.message.toLowerCase().includes('different')
           ? 'Pick a password different from your current one.'
           : updateError.message,
       )
     }
-    setEditing(null)
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
     showToast('Password changed.')
   }
 
+  const required = <span className="text-xs text-amber-800">Required</span>
+
   return (
-    <div>
-      {editing === null && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="text-sm font-medium text-neutral-500">Username</p>
-            <p className="mt-0.5 text-slate-900">{shownUsername ?? '—'}</p>
-            <button
-              type="button"
-              onClick={() => open('username')}
-              className="mt-1 text-sm font-medium text-slate-600 hover:text-slate-900"
-            >
-              Change username
-            </button>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-neutral-500">Password</p>
-            <p className="mt-0.5 text-slate-900">••••••••</p>
-            <button
-              type="button"
-              onClick={() => open('password')}
-              className="mt-1 text-sm font-medium text-slate-600 hover:text-slate-900"
-            >
-              Change password
-            </button>
-          </div>
+    <section aria-labelledby="pf-s" className="card flex flex-col">
+      <h2 id="pf-s" className="border-b border-line px-5 py-4 text-base font-semibold text-ink">
+        Login &amp; Security
+      </h2>
+
+      <form onSubmit={saveUsername} className="flex flex-col gap-3 border-b border-line px-5 py-4">
+        <p className="text-sm font-semibold text-ink">
+          Username <span className="font-normal text-ink-muted">· now {shownUsername ?? '—'}</span>
+        </p>
+        <label className={labelClasses}>
+          <span className={labelText}>New username</span>
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(e) => setNewUsername(filterUsername(e.target.value))}
+            maxLength={ACCOUNT_MAX.username}
+            placeholder={shownUsername ?? ''}
+            autoComplete="username"
+            className={fieldClasses}
+          />
+          <span className="text-[13px] text-ink-muted">3–{ACCOUNT_MAX.username} letters, numbers, dot, underscore or dash.</span>
+        </label>
+        {usernameProblem && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{usernameProblem}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={saving !== null || !newUsername.trim()} className="btn-secondary px-4 text-sm font-medium">
+            {saving === 'username' ? 'Saving...' : 'Change Username'}
+          </button>
         </div>
-      )}
+      </form>
 
-      {editing === 'username' && (
-        <form onSubmit={saveUsername} className="flex max-w-sm flex-col gap-4">
-          <label className={labelClasses}>
-            New username
-            <input
-              type="text"
-              value={newUsername}
-              onChange={(e) => setNewUsername(filterUsername(e.target.value))}
-              maxLength={ACCOUNT_MAX.username}
-              autoComplete="username"
-              required
-              className={fieldClasses}
-            />
-            <span className="text-xs font-normal text-slate-500">
-              3–{ACCOUNT_MAX.username} letters, numbers, dot, underscore or dash.
-            </span>
-          </label>
-          {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-          <div className="flex gap-3">
-            <button type="button" onClick={() => setEditing(null)} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">
-              {saving ? 'Saving...' : 'Save username'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {editing === 'password' && (
-        <form onSubmit={savePassword} className="flex max-w-sm flex-col gap-4">
-          {/* Hidden username field so password managers file the new password under the right account. */}
-          <input type="text" autoComplete="username" value={shownUsername ?? ''} readOnly hidden />
-          <label className={labelClasses}>
-            Current password
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              maxLength={ACCOUNT_MAX.password}
-              autoComplete="current-password"
-              required
-              className={fieldClasses}
-            />
-          </label>
-          <label className={labelClasses}>
-            New password
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              maxLength={ACCOUNT_MAX.password}
-              autoComplete="new-password"
-              required
-              className={fieldClasses}
-            />
-          </label>
-          <label className={labelClasses}>
-            Confirm new password
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              maxLength={ACCOUNT_MAX.password}
-              autoComplete="new-password"
-              required
-              className={fieldClasses}
-            />
-          </label>
-          {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-          <div className="flex gap-3">
-            <button type="button" onClick={() => setEditing(null)} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn-primary px-4 py-2 text-sm font-medium">
-              {saving ? 'Saving...' : 'Save password'}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
+      <form onSubmit={savePassword} className="flex flex-col gap-3 px-5 py-4">
+        <p className="text-sm font-semibold text-ink">Password</p>
+        {/* Hidden username field so password managers file the new password under the right account. */}
+        <input type="text" autoComplete="username" value={shownUsername ?? ''} readOnly hidden />
+        <label className={labelClasses}>
+          <span className={`${labelText} flex justify-between gap-2`}>Current password {required}</span>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            maxLength={ACCOUNT_MAX.password}
+            autoComplete="current-password"
+            className={fieldClasses}
+          />
+        </label>
+        <label className={labelClasses}>
+          <span className={`${labelText} flex justify-between gap-2`}>New password {required}</span>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            maxLength={ACCOUNT_MAX.password}
+            autoComplete="new-password"
+            className={fieldClasses}
+          />
+        </label>
+        <label className={labelClasses}>
+          <span className={`${labelText} flex justify-between gap-2`}>Confirm new password {required}</span>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            maxLength={ACCOUNT_MAX.password}
+            autoComplete="new-password"
+            className={fieldClasses}
+          />
+        </label>
+        {passwordProblem && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{passwordProblem}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={saving !== null} className="btn-secondary px-4 text-sm font-medium">
+            {saving === 'password' ? 'Saving...' : 'Change Password'}
+          </button>
+        </div>
+      </form>
+    </section>
   )
 }
 

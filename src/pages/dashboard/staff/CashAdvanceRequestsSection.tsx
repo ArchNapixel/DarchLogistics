@@ -1,9 +1,9 @@
 // CashAdvanceRequestsSection: pending cash-advance requests submitted
-// by employees (employee/RequestCashAdvanceModal.tsx), with Approve/
+// by employees (employee/RequestCashAdvanceForm.tsx), with Approve/
 // Reject actions. Separate from IssueCashAdvanceModal's direct-issue
 // path -- that keeps working exactly as it does now for advances staff
 // give proactively, without a request.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
@@ -25,10 +25,6 @@ function CashAdvanceRequestsSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [decidingId, setDecidingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     const { requests: loaded, error: loadError } = await loadPendingCashAdvanceRequests()
@@ -43,6 +39,16 @@ function CashAdvanceRequestsSection() {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleDecide(request: PendingCashAdvanceRequest, approve: boolean) {
     if (!employeeId) {

@@ -52,7 +52,7 @@ export async function loadClientDamageChargesByBooking(bookingIds: number[]): Pr
 }
 
 // ---- Reporting damage (MarkDeliveredModal on the Dispatch Board, and
-// ReportDamageModal on the Damage Charges page) ----
+// the Report Damage form (ReportDamageForm) on the Damage Charges page) ----
 
 export type DamageCondition = 'Good' | 'Damaged' | 'Partial' | 'Missing'
 
@@ -76,7 +76,10 @@ export function damageInputError(input: DamageInput): string | null {
   if (!input.description.trim() || !input.cost) {
     return 'Describe the problem and enter an estimated cost.'
   }
-  if (Number(input.cost) < 0) return "Estimated cost can't be negative."
+  // Number('.') is NaN -- the typing filter allows a lone dot.
+  const cost = Number(input.cost)
+  if (!Number.isFinite(cost)) return 'Enter a valid estimated cost.'
+  if (cost < 0) return "Estimated cost can't be negative."
   return null
 }
 

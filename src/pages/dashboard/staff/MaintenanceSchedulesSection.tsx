@@ -3,7 +3,7 @@
 // e.g. "oil change due in 3 months". Shared between the Reports page
 // and the Maintenance page so staff can see it from either place. Mark
 // Done clears it once the actual maintenance happens.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
@@ -24,10 +24,6 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
   const [actionError, setActionError] = useState<string | null>(null)
   const [completingId, setCompletingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     const { schedules: loaded, error: loadError } = await loadPendingMaintenanceSchedules()
@@ -42,6 +38,16 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleMarkDone(schedule: PendingMaintenanceSchedule) {
     if (!employeeId) {

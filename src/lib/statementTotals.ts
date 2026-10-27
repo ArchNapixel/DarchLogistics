@@ -121,9 +121,10 @@ export function buildStatement(
         a.booking_id - b.booking_id ||
         a.id - b.id,
     )
-    .map(({ id: _id, ...e }) => {
+    .map((e) => {
       running = cents(running + e.amount)
-      return { ...e, amount: cents(e.amount), balance: running }
+      // The internal sort id isn't part of a statement line.
+      return { date: e.date, kind: e.kind, booking_id: e.booking_id, description: e.description, amount: cents(e.amount), balance: running }
     })
 
   const billed = cents(lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0))

@@ -86,12 +86,12 @@ const TAB_ICONS: Record<string, string> = {
   Settings: ICON.sliders,
   // Dispatcher / employees
   'Damage Charges': ICON.warning,
-  'My Schedule': ICON.list,
+  'My Schedule': ICON.cal,
   'My History': ICON.history,
   'My Trips History': ICON.history,
   'My Attendance': ICON.clock,
   'My Leave': ICON.calCheck,
-  'My Payslips': ICON.bill,
+  'My Payslips': ICON.receipt,
   'My Profile': ICON.user,
   // Client portal
   Home: ICON.home,

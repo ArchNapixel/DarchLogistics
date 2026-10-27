@@ -3,7 +3,7 @@
 // order status) -- see RequestStatusRelogModal.tsx. Admin-only:
 // Approve actually applies the status change and logs it; Reject just
 // closes the request out with a reason.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import {
   loadPendingRelogRequests,
@@ -23,10 +23,6 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     const { requests: loaded, error: loadError } = await loadPendingRelogRequests()
@@ -41,6 +37,16 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleApprove(request: PendingRelogRequest) {
     if (!employeeId) {

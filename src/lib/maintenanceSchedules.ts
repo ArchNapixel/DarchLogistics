@@ -61,6 +61,8 @@ export async function createMaintenanceSchedule({
 
 export type PendingMaintenanceSchedule = {
   schedule_id: number
+  plate_number: string | null
+  trailer_id: number | null
   vehicle_label: string
   maintenance_type: string
   notes: string | null
@@ -113,6 +115,8 @@ export async function loadPendingMaintenanceSchedules(): Promise<{
   return {
     schedules: rows.map((row) => ({
       schedule_id: row.schedule_id,
+      plate_number: row.plate_number,
+      trailer_id: row.trailer_id,
       vehicle_label: row.plate_number
         ? `Truck: ${row.plate_number}`
         : `Trailer: ${trailerPlateById.get(row.trailer_id as number) ?? `#${row.trailer_id}`}`,

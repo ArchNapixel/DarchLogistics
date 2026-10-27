@@ -22,6 +22,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { fetchAll } from '../../../lib/dashboardExpenses'
 import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
+import AddClientModal, { type EditableClient } from './AddClientModal'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
 import { confirmDialog, promptDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
@@ -36,6 +37,9 @@ type Client = {
   client_name: string
   email: string | null
   phone_number: string | null
+  contact_person: string | null
+  address: string | null
+  notes: string | null
   deactivated_at: string | null
   deactivation_reason: string | null
 }
@@ -97,6 +101,8 @@ function ClientsSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [viewingClient, setViewingClient] = useState<Client | null>(null)
+  // Add Client (true) / Edit Client (that client) form.
+  const [clientForm, setClientForm] = useState<EditableClient | true | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('Active')
   const [bookingsByClient, setBookingsByClient] = useState<Map<number, ClientBooking[]>>(new Map())
@@ -117,7 +123,7 @@ function ClientsSection() {
     const { rows: clientRows, error: clientError } = await fetchAll<Client>((from, to) =>
       supabase
         .from('clients')
-        .select('client_id, client_name, email, phone_number, deactivated_at, deactivation_reason')
+        .select('client_id, client_name, email, phone_number, contact_person, address, notes, deactivated_at, deactivation_reason')
         .order('client_name', { ascending: true })
         .order('client_id', { ascending: true })
         .range(from, to),
@@ -321,7 +327,18 @@ function ClientsSection() {
 
   return (
     <div>
-      <PageHeader title="Clients" subtitle="Client accounts, their bookings and what they owe." />
+      <PageHeader
+        title="Clients"
+        subtitle="Client accounts, their bookings and what they owe."
+        actions={
+          <button onClick={() => setClientForm(true)} className="btn-primary flex items-center gap-2 px-5 text-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14 M5 12h14" />
+            </svg>
+            Add Client
+          </button>
+        }
+      />
 
       {actionError && (
         <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>
@@ -512,13 +529,21 @@ function ClientsSection() {
                   {delinquentClientIds.has(paneClient.client_id) && <StatusBadge status="Delinquent" />}
                   {paneClient.deactivated_at && <StatusBadge status="Deactivated" />}
                 </div>
-                {/* Only with no users row at all -- a "Login pending" client
-                    already has one, and the Edge Function would add a second. */}
-                {paneAccount === undefined && !paneClient.deactivated_at && (
-                  <button onClick={() => setSelectedClient(paneClient)} className="btn-secondary px-4 text-sm font-medium">
-                    Set Up Account
+                <div className="flex flex-wrap gap-2">
+                  {/* Only with no users row at all -- a "Login pending" client
+                      already has one, and the Edge Function would add a second. */}
+                  {paneAccount === undefined && !paneClient.deactivated_at && (
+                    <button onClick={() => setSelectedClient(paneClient)} className="btn-secondary px-4 text-sm font-medium">
+                      Set Up Account
+                    </button>
+                  )}
+                  <button onClick={() => setClientForm(paneClient)} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
+                    </svg>
+                    Edit Client
                   </button>
-                )}
+                </div>
               </div>
 
               <div className="flex flex-col gap-5 px-5 py-4">
@@ -533,6 +558,20 @@ function ClientsSection() {
                       <dt className={LABEL}>Email Address</dt>
                       <dd className={`${VALUE} break-words`}>{paneClient.email ?? '—'}</dd>
                     </div>
+                    <div>
+                      <dt className={LABEL}>Contact Person</dt>
+                      <dd className={paneClient.contact_person ? VALUE : `${VALUE} text-ink-muted`}>{paneClient.contact_person ?? '—'}</dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className={LABEL}>Address</dt>
+                      <dd className={paneClient.address ? VALUE : `${VALUE} text-ink-muted`}>{paneClient.address ?? '—'}</dd>
+                    </div>
+                    {paneClient.notes && (
+                      <div className="col-span-2">
+                        <dt className={LABEL}>Notes</dt>
+                        <dd className={`${VALUE} whitespace-pre-line`}>{paneClient.notes}</dd>
+                      </div>
+                    )}
                     <div>
                       <dt className={LABEL}>Portal Login</dt>
                       <dd className={VALUE}>
@@ -657,6 +696,20 @@ function ClientsSection() {
             </aside>
           )}
         </div>
+      )}
+
+      {clientForm && (
+        <AddClientModal
+          client={clientForm === true ? undefined : clientForm}
+          existing={clients}
+          onClose={() => setClientForm(null)}
+          onSaved={(clientId) => {
+            showToast(clientForm === true ? 'Client added.' : 'Client details saved.')
+            setClientForm(null)
+            setPaneId(clientId)
+            loadClients()
+          }}
+        />
       )}
 
       {selectedClient && (

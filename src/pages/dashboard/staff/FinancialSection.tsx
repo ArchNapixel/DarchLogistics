@@ -25,7 +25,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import { supabase } from '../../../lib/supabaseClient'
-import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import {
   PAYMENT_METHODS,
@@ -571,7 +571,7 @@ function FinancialActionModal({
     }
     if (total + booking.damage_charges < booking.amount_paid) {
       setError(
-        `Amount to pay (plus damage charges) can't be less than what's already been paid (${formatMoney(booking.amount_paid)}).`,
+        `Amount to pay (plus extra charges) can't be less than what's already been paid (${formatMoney(booking.amount_paid)}).`,
       )
       return
     }
@@ -656,7 +656,7 @@ function FinancialActionModal({
             </p>
             {booking.damage_charges > 0 && (
               <p className="text-xs text-slate-500">
-                incl. {formatMoney(booking.damage_charges)} damage charges
+                incl. {formatMoney(booking.damage_charges)} extra charges (damage, added charges)
               </p>
             )}
           </div>
@@ -688,7 +688,7 @@ function FinancialActionModal({
           <h4 className="font-medium text-slate-900">Override amount to pay</h4>
           <p className="mt-1 text-xs text-slate-500">
             Defaults to rate x trips completed ({formatMoney(booking.computed_billable_amount)}).
-            This is the delivery amount only -- approved damage charges
+            This is the delivery amount only -- extra charges (approved damage, added charges)
             ({formatMoney(booking.damage_charges)}) are always added on top.
             Override this for a discount or special arrangement -- it stays
             fixed at your override even as more trips complete, until you
@@ -766,7 +766,7 @@ const TAB_LABELS: Record<Tab, string> = {
   cancelled: 'Cancelled',
 }
 
-// Everything the client owes in total: delivery + damage charges.
+// Everything the client owes in total: delivery + extra charges (damage, added charges).
 function getPaymentTarget(booking: Booking): number {
   return getDeliveryTarget(booking) + booking.damage_charges
 }
@@ -816,13 +816,19 @@ function FinancialSection() {
   const [searchParams, setSearchParams] = useSearchParams()
   const downpaymentParam = Number(searchParams.get('downpayment'))
   const payParam = Number(searchParams.get('pay'))
-  useEffect(() => {
-    if ((!downpaymentParam && !payParam) || loading) return
+  // Opened while rendering (React's "adjust state when a prop changes"
+  // pattern) -- once per link; the effect below only clears the URL.
+  const linkKey = downpaymentParam || payParam ? `${downpaymentParam}|${payParam}` : null
+  const [openedLink, setOpenedLink] = useState<string | null>(null)
+  if (linkKey && linkKey !== openedLink && !loading) {
+    setOpenedLink(linkKey)
     const booking = bookings.find((b) => b.booking_id === (downpaymentParam || payParam))
     if (booking && downpaymentParam && downpaymentById.get(booking.booking_id)) setDownpaymentBooking(booking)
     if (booking && payParam) setPartialBooking(booking)
-    setSearchParams({}, { replace: true })
-  }, [downpaymentParam, payParam, loading, bookings, downpaymentById, setSearchParams])
+  }
+  useEffect(() => {
+    if (linkKey && !loading) setSearchParams({}, { replace: true })
+  }, [linkKey, loading, setSearchParams])
 
   async function loadBookings() {
     setLoading(true)
@@ -894,9 +900,9 @@ function FinancialSection() {
     }
 
 
-    // Approved Client damage charges, added on top of the delivery amount.
+    // Extra charges (approved Client damage + added charges), on top of the delivery amount.
     const { byBooking: damageByBooking, error: damageError } =
-      await loadClientDamageChargesByBooking(bookingIds)
+      await loadExtraChargesByBooking(bookingIds)
     if (damageError) {
       setError(damageError)
       setLoading(false)

@@ -25,20 +25,24 @@ function Section({
   onEdit?: () => void
   children: ReactNode
 }) {
-  return (
-    <div className="border-t border-slate-200 py-3 first:border-t-0 first:pt-0">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</p>
-        {onEdit && (
-          <button
-            type="button"
-            onClick={onEdit}
-            className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
-          >
+  // With an Edit button (the Review step) each part is its own box, as on
+  // the canvas; otherwise a compact list (side summary, sent screen).
+  if (onEdit) {
+    return (
+      <section aria-label={title} className="mb-3 border border-line last:mb-0">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-slate-50 px-4 py-2">
+          <p className="text-sm font-semibold text-ink">{title}</p>
+          <button type="button" onClick={onEdit} aria-label={`Edit ${title}`} className="btn-secondary px-3.5 text-sm font-medium">
             Edit
           </button>
-        )}
-      </div>
+        </div>
+        <div className="flex flex-col gap-1 px-4 py-3 text-sm text-ink-metric">{children}</div>
+      </section>
+    )
+  }
+  return (
+    <div className="border-t border-slate-200 py-3 first:border-t-0 first:pt-0">
+      <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</p>
       <div className="mt-1.5 flex flex-col gap-1 text-sm text-slate-800">{children}</div>
     </div>
   )
@@ -141,7 +145,9 @@ export function QuoteSummary({
   )
 }
 
-// The screen shown in place of the form once a quote is in.
+// The screen shown in place of the form once a quote is in (the canvas's
+// "Quote request sent" board): the reference code, "Waiting for our
+// price", the route and trips, what happens next, and one or two buttons.
 export function QuoteSubmitted({
   referenceCode,
   form,
@@ -149,6 +155,8 @@ export function QuoteSubmitted({
   nextSteps,
   actionLabel,
   onAction,
+  secondaryLabel,
+  onSecondary,
 }: {
   referenceCode: string
   form: ShipmentForm
@@ -157,64 +165,69 @@ export function QuoteSubmitted({
   nextSteps: string[]
   actionLabel: string
   onAction: () => void
+  // Optional second (outlined) button, e.g. "Back to Home".
+  secondaryLabel?: string
+  onSecondary?: () => void
 }) {
+  const trips = totalTrips(form.cargoLines)
   return (
-    <div className="border border-slate-200 bg-white p-6 sm:p-8" role="status">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="flex h-8 w-8 shrink-0 items-center justify-center bg-green-600 text-white"
-        >
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-            <path
-              fillRule="evenodd"
-              d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z"
-              clipRule="evenodd"
-            />
+    <section aria-labelledby="sent-h" className="card mx-auto max-w-[760px]" role="status">
+      <div className="flex items-start gap-3 border-b border-line px-6 py-5">
+        <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center bg-green-700 text-white">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12l5 5 9-10" />
           </svg>
         </span>
         <div>
-          <h3 className="text-xl font-semibold text-slate-900">Quote received</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Reference{' '}
-            <span className="font-mono text-base font-semibold tracking-wider text-slate-900">
-              {referenceCode}
-            </span>
-          </p>
+          <h3 id="sent-h" className="text-xl leading-7 font-bold text-ink">
+            Quote request sent
+          </h3>
+          <p className="mt-0.5 text-sm text-ink-secondary">We'll send our price to My Quotes. Keep the reference code if you call us.</p>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 md:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            Next
+      <div className="flex flex-col gap-5 px-6 py-5">
+        <div className="border border-line bg-slate-50 px-4 py-3">
+          <p className="text-[13px] font-medium text-ink-muted">Your reference</p>
+          <p className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-2xl font-bold tracking-wider text-ink">{referenceCode}</span>
+            <span className="rounded-[2px] bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Waiting for our price</span>
           </p>
-          <ol className="mt-2 flex flex-col gap-2 text-sm text-slate-700">
+          <p className="mt-2 text-sm text-ink-metric">
+            {formatLocationDisplay(form.pickup)} → {formatLocationDisplay(form.delivery)}
+          </p>
+          <p className="text-[13px] text-ink-muted">
+            {trips} {trips === 1 ? 'trip' : 'trips'}
+            {form.preferredPickupDate ? ` · Pickup ${formatDate(form.preferredPickupDate)}` : ''}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold text-ink">What happens next</p>
+          <ol className="mt-2 flex flex-col gap-2 text-sm text-ink-secondary">
             {nextSteps.map((step, index) => (
               <li key={step} className="flex gap-2">
-                <span className="font-semibold text-slate-900">{index + 1}.</span>
+                <span className="font-semibold text-ink">{index + 1}.</span>
                 <span>{step}</span>
               </li>
             ))}
           </ol>
-          <p className="mt-4 text-sm text-slate-600">
-            Contact: <span className="font-medium text-slate-900">{contactLine}</span>.
+          <p className="mt-3 text-sm text-ink-secondary">
+            We'll contact you at <span className="font-medium text-ink">{contactLine}</span>.
           </p>
-        </div>
-        <div className="border border-slate-200 bg-slate-50 p-4">
-          <QuoteSummary form={form} />
         </div>
       </div>
 
-      <div className="mt-6 border-t border-slate-200 pt-4">
-        <button
-          type="button"
-          onClick={onAction}
-          className="btn-primary px-5 py-2.5 text-sm font-medium"
-        >
+      <div className="flex flex-wrap justify-end gap-3 border-t border-line px-6 py-4">
+        {secondaryLabel && onSecondary && (
+          <button type="button" onClick={onSecondary} className="btn-secondary px-5 text-sm font-medium">
+            {secondaryLabel}
+          </button>
+        )}
+        <button type="button" onClick={onAction} className="btn-primary px-5 text-sm">
           {actionLabel}
         </button>
       </div>
-    </div>
+    </section>
   )
 }

@@ -7,7 +7,7 @@
 // request queues in this app (e.g. CashAdvanceRequestsSection.tsx).
 // Approve/Reject are Admin-only -- Dispatchers can see this page (it's
 // shared with them via the Maintenance/Reports tabs) but can't act here.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
@@ -32,10 +32,6 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [decidingId, setDecidingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     const { requests: loaded, error: loadError } = await loadPendingMaintenanceRequests()
@@ -50,6 +46,16 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleApprove(request: PendingMaintenanceRequest) {
     if (!employeeId) {

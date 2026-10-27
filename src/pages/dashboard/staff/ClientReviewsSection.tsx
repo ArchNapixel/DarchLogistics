@@ -4,7 +4,7 @@
 // a growing feed. "Feature" publishes a review to the public landing
 // page (anonymized -- see clientReviews.ts's loadFeaturedReviews) --
 // staff picks which reviews go public, nothing shows there by default.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadAllReviews,
   setReviewFeatured,
@@ -31,10 +31,6 @@ function ClientReviewsSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    load()
-  }, [])
-
   async function load() {
     setLoading(true)
     const { reviews: loaded, error: loadError } = await loadAllReviews()
@@ -49,6 +45,16 @@ function ClientReviewsSection() {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   async function handleToggleFeatured(review: AdminClientReview) {
     setSavingId(review.review_id)

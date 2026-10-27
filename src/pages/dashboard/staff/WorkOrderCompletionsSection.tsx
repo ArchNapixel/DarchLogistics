@@ -1,7 +1,7 @@
 // WorkOrderCompletionsSection: admin read-only view of finished work
 // (src/lib/workOrderCompletions.ts) -- description, parts
 // used, and any odometer/next-service info recorded at completion.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { LoadMore, LOG_PAGE_SIZE } from '../../../components/LoadMore'
 import {
   loadWorkOrderCompletions,
@@ -17,10 +17,6 @@ function WorkOrderCompletionsSection() {
 
   const [limit, setLimit] = useState(LOG_PAGE_SIZE)
 
-  useEffect(() => {
-    load(limit)
-  }, [limit])
-
   // No setLoading(true) here: "Show more" keeps the table on screen.
   async function load(rowLimit: number) {
     const { completions: loaded, error: loadError } = await loadWorkOrderCompletions(rowLimit)
@@ -35,6 +31,16 @@ function WorkOrderCompletionsSection() {
     setError(null)
     setLoading(false)
   }
+
+  // Load when this opens and whenever limit changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load(limit)
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [limit])
 
   if (loading) {
     return <p className="text-slate-500">Loading completed work orders...</p>

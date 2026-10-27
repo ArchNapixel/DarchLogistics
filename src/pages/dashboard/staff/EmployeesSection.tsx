@@ -7,12 +7,14 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
-import AddEmployeeModal, { RATE_TYPES, type EditableEmployee } from './AddEmployeeModal'
+import AddEmployeeModal, { type EditableEmployee } from './AddEmployeeModal'
+import { RATE_TYPES } from '../../../lib/employeeRateTypes'
 import SetUpStaffAccountModal from './SetUpStaffAccountModal'
 import EmployeeDetailModal from './EmployeeDetailModal'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import { showToast } from '../../../components/Toast'
 import { toManilaDate } from '../../../lib/payslip'
+import { MEDICAL_EXAMS, NO_NEW_EXAM_VALUES, examValuesOf, isMissingExamColumns } from '../../../lib/medicalExams'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
@@ -209,19 +211,47 @@ function EmployeePanel({
         {employee.position === 'Driver' && (
           <section>
             <h3 className={GROUP}>
-              <span>Driver License &amp; Medical Exam</span>
+              <span>Driver License</span>
+              <button type="button" onClick={onEdit} className="font-semibold text-primary hover:underline">
+                Update
+              </button>
+            </h3>
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+              <Field label="License No.">{info.driver_license_number}</Field>
+              <Field label="Expires">
+                <span className={expiryClass(info.driver_license_expiry_date)}>{expiryLabel(info.driver_license_expiry_date)}</span>
+              </Field>
+            </dl>
+          </section>
+        )}
+
+        {employee.position === 'Driver' && (
+          <section>
+            <h3 className={GROUP}>
+              <span>Medical Exams</span>
               <button type="button" onClick={onEdit} className="font-semibold text-primary hover:underline">
                 Update
               </button>
             </h3>
             <dl className="grid grid-cols-3 gap-x-5 gap-y-3">
-              <Field label="License No.">{info.driver_license_number}</Field>
-              <Field label="License Expires">
-                <span className={expiryClass(info.driver_license_expiry_date)}>{expiryLabel(info.driver_license_expiry_date)}</span>
-              </Field>
-              <Field label="Medical Exam Expires">
-                <span className={expiryClass(info.medical_exam_expiry_date)}>{expiryLabel(info.medical_exam_expiry_date)}</span>
-              </Field>
+              {MEDICAL_EXAMS.map((exam) => {
+                const result = info[exam.result]
+                const expiry = info[exam.expiry] ?? null
+                return (
+                  <Field key={exam.key} label={exam.label}>
+                    {result || expiry ? (
+                      <span className="flex flex-col">
+                        <span className={result === 'Failed' ? 'font-semibold text-red-700' : result === 'Passed' ? 'text-green-800' : 'text-ink-muted'}>
+                          {result ?? 'No result'}
+                        </span>
+                        <span className={`text-[13px] ${expiryClass(expiry)}`}>{expiryLabel(expiry)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-ink-muted">Not recorded</span>
+                    )}
+                  </Field>
+                )
+              })}
             </dl>
           </section>
         )}
@@ -314,11 +344,16 @@ function EmployeesSection() {
   // that employee's edit form once the list has loaded, then clears the link.
   const [searchParams, setSearchParams] = useSearchParams()
   const linkedEmployeeId = Number(searchParams.get('employee')) || null
-  useEffect(() => {
-    if (!linkedEmployeeId || employees.length === 0) return
+  // Opened while rendering (React's "adjust state when a prop changes"
+  // pattern) -- once per link; the effect below only clears the URL.
+  const [openedLink, setOpenedLink] = useState<number | null>(null)
+  if (linkedEmployeeId && linkedEmployeeId !== openedLink && employees.length > 0) {
+    setOpenedLink(linkedEmployeeId)
     const match = employees.find((e) => e.employee_id === linkedEmployeeId)
     if (match) setEditingEmployee(match)
-    setSearchParams({}, { replace: true })
+  }
+  useEffect(() => {
+    if (linkedEmployeeId && employees.length > 0) setSearchParams({}, { replace: true })
   }, [linkedEmployeeId, employees, setSearchParams])
 
   async function handleSetStatus(employee: Employee, statusName: 'Deactivated' | 'Active') {
@@ -445,12 +480,25 @@ function EmployeesSection() {
   async function loadEmployees() {
     setLoading(true)
 
-    const { data: employeeRows, error: employeeError } = await supabase
+    const first = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, medical_exam_date, medical_exam_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result',
       )
       .order('full_name', { ascending: true })
+    let employeeRows = first.data
+    let employeeError = first.error
+    if (employeeError && isMissingExamColumns(employeeError.message)) {
+      // Exam SQL not run yet: load without the new exam columns.
+      const second = await supabase
+        .from('employees')
+        .select(
+          'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date',
+        )
+        .order('full_name', { ascending: true })
+      employeeRows = second.data ? second.data.map((row) => ({ ...row, ...NO_NEW_EXAM_VALUES })) : null
+      employeeError = second.error
+    }
 
     if (employeeError) {
       setError(employeeError.message)
@@ -489,7 +537,7 @@ function EmployeesSection() {
     )
 
     setEmployees(
-      employeeRows.map((row) => ({
+      (employeeRows ?? []).map((row) => ({
         employee_id: row.employee_id,
         name: row.full_name,
         position: row.position,
@@ -506,8 +554,9 @@ function EmployeesSection() {
           is_minimum_wage_earner: row.is_minimum_wage_earner,
           driver_license_number: row.driver_license_number,
           driver_license_expiry_date: row.driver_license_expiry_date,
-          medical_exam_date: row.medical_exam_date,
-          medical_exam_expiry_date: row.medical_exam_expiry_date,
+          // Physical / Drug Test / Psychological (lib/medicalExams.ts) --
+          // includes medical_exam_date / medical_exam_expiry_date.
+          ...examValuesOf(row),
           middle_name: row.middle_name,
           phone_number: row.phone_number,
           date_of_birth: row.date_of_birth,

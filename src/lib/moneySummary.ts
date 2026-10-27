@@ -62,6 +62,35 @@ export function buildMoneySummary(input: MoneySummaryInput): MoneySummary {
   }
 }
 
+// One CSV cell: quoted when it holds a comma, quote or line break.
+function csvCell(value: string | number): string {
+  const text = String(value)
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+// The Money Summary page as a CSV file ("Export"): the totals, how the net
+// is worked out, and revenue per client. Amounts are plain numbers (no ₱ or
+// commas) so a spreadsheet can add them up.
+export function buildMoneySummaryCsv(month: string, summary: MoneySummary): string {
+  const rows: (string | number)[][] = [
+    [`Darch Logistics Money Summary - ${monthLabel(month)}`],
+    [],
+    ['Totals', 'Amount'],
+    ['Revenue', summary.earned],
+    ['Collected', summary.collected],
+    ['Expenses', summary.spent],
+    [summary.left < 0 ? 'Net loss' : 'Net profit', summary.left],
+    ['Delivered trips', summary.tripCount],
+    [],
+    ['Expenses breakdown', 'Amount'],
+    ...summary.spending.map((s) => [s.label, s.amount]),
+    [],
+    ['Revenue by client', 'Amount'],
+    ...summary.revenueByClient.map((r) => [r.label, r.amount]),
+  ]
+  return rows.map((cells) => cells.map(csvCell).join(',')).join('\n')
+}
+
 // "2026-10" moved by `delta` months -> "2026-11" / "2026-09".
 export function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split('-').map(Number)

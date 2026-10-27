@@ -1,13 +1,24 @@
-// DamageFields: the cargo-condition part of a damage report -- condition,
-// then (for anything but Good) what happened, estimated cost, and who
-// pays. Shared by MarkDeliveredModal (Dispatch Board) and
-// ReportDamageModal (Damage Charges page). The form state and the save
+// DamageFields: the cargo-condition part of a damage report -- condition
+// (big radio choices), then for anything but Good what happened and the
+// estimated cost. Shared by MarkDeliveredModal (Dispatch Board) and the
+// Report Damage form (Damage Charges page). The form state and the save
 // live in lib/damageCharges.ts.
+//
+// Who pays isn't asked here: it's decided on the Damage Charges page
+// (Client / Company). A new record is saved as 'Reported' until then.
 import type { DamageCondition, DamageInput } from '../../../lib/damageCharges'
+import { filterAmountInput } from '../../../lib/amountInput'
 
 const fieldClasses =
-  'w-full min-w-0 border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex min-w-0 flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
+const labelClasses = 'text-sm font-semibold text-ink'
+
+const CONDITIONS: { value: DamageCondition; label: string }[] = [
+  { value: 'Good', label: 'Good' },
+  { value: 'Damaged', label: 'Damaged' },
+  { value: 'Partial', label: 'Partial (short)' },
+  { value: 'Missing', label: 'Missing' },
+]
 
 const LOSS_LABELS: Record<Exclude<DamageCondition, 'Good'>, string> = {
   Damaged: 'What was damaged?',
@@ -25,60 +36,61 @@ function DamageFields({
   // false on the Report Damage form -- there's always something to report.
   allowGood: boolean
 }) {
+  const choices = CONDITIONS.filter((c) => allowGood || c.value !== 'Good')
+
   return (
     <>
-      <label className={labelClasses}>
-        Cargo condition
-        <select
-          value={value.condition}
-          onChange={(e) => onChange({ ...value, condition: e.target.value as DamageCondition })}
-          className={fieldClasses}
-        >
-          {allowGood && <option value="Good">Good -- no problems</option>}
-          <option value="Damaged">Damaged</option>
-          <option value="Partial">Partial (short)</option>
-          <option value="Missing">Missing</option>
-        </select>
-      </label>
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className={`${labelClasses} pb-1.5`}>Cargo condition</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {choices.map((choice) => (
+            <label
+              key={choice.value}
+              className={`flex min-h-11 cursor-pointer items-center gap-2.5 px-3.5 text-sm font-semibold text-ink ${
+                value.condition === choice.value ? 'border-2 border-primary bg-primary-soft' : 'border border-line-control'
+              }`}
+            >
+              <input
+                type="radio"
+                name="cargo-condition"
+                checked={value.condition === choice.value}
+                onChange={() => onChange({ ...value, condition: choice.value })}
+                className="h-[18px] w-[18px] accent-primary"
+              />
+              {choice.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       {value.condition !== 'Good' && (
-        <>
-          <label className={labelClasses}>
-            {LOSS_LABELS[value.condition]}
+        <div className="flex flex-col gap-3.5 border border-orange-700 bg-orange-50 px-4 py-3.5">
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClasses}>{LOSS_LABELS[value.condition]}</span>
             <textarea
               value={value.description}
               onChange={(e) => onChange({ ...value, description: e.target.value })}
-              rows={3}
-              className={fieldClasses}
+              rows={2}
+              maxLength={500}
+              placeholder="Describe the problem"
+              className={`${fieldClasses} resize-none py-2.5`}
             />
           </label>
-
-          <label className={labelClasses}>
-            Estimated cost
+          <label className="flex max-w-[280px] flex-col gap-1.5">
+            <span className={labelClasses}>Estimated cost (₱)</span>
             <input
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={value.cost}
-              onChange={(e) => onChange({ ...value, cost: e.target.value })}
-              className={fieldClasses}
+              onChange={(e) => onChange({ ...value, cost: filterAmountInput(e.target.value) })}
+              placeholder="0.00"
+              className={`${fieldClasses} text-right tabular-nums`}
             />
           </label>
-
-          <label className={labelClasses}>
-            Charge to
-            <select
-              value={value.chargeTo}
-              onChange={(e) =>
-                onChange({ ...value, chargeTo: e.target.value as 'Client' | 'Company' })
-              }
-              className={fieldClasses}
-            >
-              <option value="Client">Client</option>
-              <option value="Company">Company</option>
-            </select>
-          </label>
-        </>
+          <p className="text-[13px] leading-[18px] text-orange-900">
+            This goes to Damage Charges, where you choose whether the client or the company pays.
+          </p>
+        </div>
       )}
     </>
   )

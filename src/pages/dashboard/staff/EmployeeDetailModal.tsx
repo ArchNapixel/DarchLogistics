@@ -9,7 +9,7 @@
 // order statuses) rather than exporting from those files, to stay
 // entirely within this new file -- same values, so badges look
 // identical wherever they appear.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import type { EditableEmployee } from './AddEmployeeModal'
 import StatusBadge from '../../../components/StatusBadge'
@@ -67,10 +67,6 @@ function DriverHelperDetail({
   const [trips, setTrips] = useState<TripRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    load()
-  }, [])
 
   async function load() {
     setLoading(true)
@@ -142,6 +138,16 @@ function DriverHelperDetail({
     setLoading(false)
   }
 
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
   if (loading) {
     return <p className="text-slate-500">Loading trip history...</p>
   }
@@ -207,10 +213,6 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
   const [completions, setCompletions] = useState<CompletionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    load()
-  }, [])
 
   async function vehicleLabelFor(plateNumber: string | null, trailerId: number | null) {
     if (plateNumber) return `Truck: ${plateNumber}`
@@ -326,6 +328,16 @@ function MechanicDetail({ employeeId }: { employeeId: number }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   if (loading) {
     return <p className="text-slate-500">Loading work order history...</p>

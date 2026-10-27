@@ -2,7 +2,7 @@
 // pick a month, see what the fleet's maintenance cost in parts (per
 // vehicle, then per work order), and download it as a CSV. See
 // lib/maintenanceCostReport.ts for how costs are counted.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadMaintenanceCostReport,
   summarizeCostByVehicle,
@@ -26,11 +26,6 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
   const fleetTotal = vehicles.reduce((sum, v) => sum + v.parts_cost, 0)
   const unpricedTotal = vehicles.reduce((sum, v) => sum + v.unpriced_lines, 0)
 
-  useEffect(() => {
-    if (month) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month])
-
   async function load() {
     setLoading(true)
     const { workOrders: loaded, error: loadError } = await loadMaintenanceCostReport(month)
@@ -45,6 +40,16 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
     setError(null)
     setLoading(false)
   }
+
+  // Load when this opens and whenever month changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    if (month) load()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [month])
 
   function handleDownload() {
     const csv = buildMaintenanceCostCsv(month, workOrders)

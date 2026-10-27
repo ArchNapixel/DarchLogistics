@@ -1,62 +1,29 @@
-// ClientProfileSection: view/edit form for the logged-in client's own
-// contact info (clients.client_name/email/phone_number). Profile state
-// and loading/error come from useClientProfile() (below) in the parent
+// ClientProfileSection: the "Contact details" card on My Profile (the
+// canvas's Client My Profile board) -- the logged-in client's own contact
+// info (clients.client_name / phone_number / email / address), always
+// editable, with Discard Changes and Save Changes. Profile state
+// and loading/error come from useClientProfile() (useClientProfile.ts) in the parent
 // page, since the Home page's welcome banner also needs client_name --
 // this component just renders what it's given and reports back the
 // updated row on save, via onSaved.
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import type { ClientProfile } from './useClientProfile'
 import { phoneDigits, phoneError, phoneInput as formatPhone } from '../../../lib/quoteRequest'
-
-export type ClientProfile = {
-  client_name: string
-  email: string | null
-  phone_number: string | null
-}
-
-// Loads the client's own profile row. Used by the Home page (welcome
-// banner) and the My Profile page.
-export function useClientProfile(clientId: number | null) {
-  const [profile, setProfile] = useState<ClientProfile | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!clientId) {
-      setLoading(false)
-      return
-    }
-    supabase
-      .from('clients')
-      .select('client_name, email, phone_number')
-      .eq('client_id', clientId)
-      .maybeSingle()
-      .then(({ data, error: loadError }) => {
-        if (loadError) {
-          setError(loadError.message)
-        } else {
-          setProfile(data)
-          setError(null)
-        }
-        setLoading(false)
-      })
-  }, [clientId])
-
-  return { profile, loading, error, setProfile }
-}
+import { showToast } from '../../../components/Toast'
 
 const fieldClasses =
-  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
 
-function Field({ label, value }: { label: string; value: string }) {
+function Label({ text, required }: { text: string; required?: boolean }) {
   return (
-    <div>
-      <p className="text-sm font-medium text-neutral-500">
-        {label}
-      </p>
-      <p className="mt-0.5 text-slate-900">{value}</p>
-    </div>
+    <span className="flex justify-between gap-2 text-sm font-semibold text-ink">
+      <span>
+        {text}
+        {!required && <span className="font-normal text-ink-muted"> (optional)</span>}
+      </span>
+      {required && <span className="text-xs text-amber-800">Required</span>}
+    </span>
   )
 }
 
@@ -73,23 +40,35 @@ function ClientProfileSection({
   error: string | null
   onSaved: (profile: ClientProfile) => void
 }) {
-  const [editing, setEditing] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [emailInput, setEmailInput] = useState('')
   const [phoneInput, setPhoneInput] = useState('')
+  const [addressInput, setAddressInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  function startEditing() {
-    if (!profile) {
-      return
-    }
-    setNameInput(profile.client_name)
-    setEmailInput(profile.email ?? '')
-    setPhoneInput(formatPhone(profile.phone_number ?? ''))
+  // Fill the form from what's on file (and again after Discard / Save).
+  function reset(from: ClientProfile) {
+    setNameInput(from.client_name)
+    setEmailInput(from.email ?? '')
+    setPhoneInput(formatPhone(from.phone_number ?? ''))
+    setAddressInput(from.address ?? '')
     setSaveError(null)
-    setEditing(true)
   }
+
+  // Loaded once by the page; fill the form when it arrives.
+  const [filledFrom, setFilledFrom] = useState<ClientProfile | null>(null)
+  if (profile && profile !== filledFrom) {
+    setFilledFrom(profile)
+    reset(profile)
+  }
+
+  const changed =
+    !!profile &&
+    (nameInput !== profile.client_name ||
+      emailInput !== (profile.email ?? '') ||
+      phoneDigits(phoneInput) !== (profile.phone_number ?? '') ||
+      addressInput !== (profile.address ?? ''))
 
   async function handleSave() {
     if (!nameInput.trim()) {
@@ -116,9 +95,10 @@ function ClientProfileSection({
         client_name: nameInput.trim(),
         email: emailInput.trim() || null,
         phone_number: phoneDigits(phoneInput),
+        address: addressInput.trim() || null,
       })
       .eq('client_id', clientId)
-      .select('client_name, email, phone_number')
+      .select('client_name, email, phone_number, address')
       .single()
 
     setSaving(false)
@@ -129,98 +109,73 @@ function ClientProfileSection({
     }
 
     onSaved(data)
-    setEditing(false)
-  }
-
-  if (loading) {
-    return <p className="text-slate-500">Loading your profile...</p>
-  }
-
-  if (error) {
-    return <p className="text-red-700">{error}</p>
-  }
-
-  if (!profile) {
-    return <p className="text-slate-500">No profile information on file yet.</p>
-  }
-
-  if (!editing) {
-    return (
-      <div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Client name" value={profile.client_name} />
-          <Field label="Email" value={profile.email ?? '—'} />
-          <Field label="Phone number" value={profile.phone_number ?? '—'} />
-        </div>
-        <button
-          onClick={startEditing}
-          className="mt-4 text-sm font-medium text-slate-600 hover:text-slate-900"
-        >
-          Edit profile
-        </button>
-      </div>
-    )
+    showToast('Contact details saved.')
   }
 
   return (
-    <div>
-      {saveError && (
-        <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {saveError}
-        </p>
+    <section aria-labelledby="pf-c" className="card flex flex-col">
+      <h2 id="pf-c" className="border-b border-line px-5 py-4 text-base font-semibold text-ink">
+        Contact details
+      </h2>
+      {loading ? (
+        <p className="px-5 py-4 text-ink-muted">Loading your profile...</p>
+      ) : error ? (
+        <p className="px-5 py-4 text-red-700">{error}</p>
+      ) : !profile ? (
+        <p className="px-5 py-4 text-ink-muted">No profile information on file yet.</p>
+      ) : (
+        <>
+          <form
+            className="flex flex-col gap-4 px-5 py-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleSave()
+            }}
+          >
+            {saveError && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+            <label className="flex flex-col gap-1.5">
+              <Label text="Name or company" required />
+              <input type="text" value={nameInput} maxLength={150} onChange={(e) => setNameInput(e.target.value)} autoComplete="organization" className={fieldClasses} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <Label text="Phone" required />
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={13}
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(formatPhone(e.target.value))}
+                placeholder="09XX XXX XXXX"
+                autoComplete="tel"
+                className={fieldClasses}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <Label text="Email" />
+              <input type="email" value={emailInput} maxLength={150} onChange={(e) => setEmailInput(e.target.value)} autoComplete="email" className={fieldClasses} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <Label text="Address" />
+              <textarea
+                value={addressInput}
+                maxLength={250}
+                rows={3}
+                onChange={(e) => setAddressInput(e.target.value)}
+                className={`${fieldClasses} resize-none py-2.5`}
+              />
+            </label>
+          </form>
+          <div className="mt-auto flex justify-end gap-3 border-t border-line px-5 py-4">
+            <button type="button" onClick={() => reset(profile)} disabled={saving || !changed} className="btn-secondary px-4 text-sm font-medium">
+              Discard Changes
+            </button>
+            <button type="button" onClick={() => void handleSave()} disabled={saving || !changed} className="btn-primary px-5 text-sm">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </>
       )}
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <label className={labelClasses}>
-          Client name
-          <input
-            type="text"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            className={fieldClasses}
-          />
-        </label>
-
-        <label className={labelClasses}>
-          Email
-          <input
-            type="email"
-            value={emailInput}
-            onChange={(e) => setEmailInput(e.target.value)}
-            className={fieldClasses}
-          />
-        </label>
-
-        <label className={labelClasses}>
-          Phone number
-          <input
-            type="tel"
-            inputMode="numeric"
-            maxLength={13}
-            value={phoneInput}
-            onChange={(e) => setPhoneInput(formatPhone(e.target.value))}
-            className={fieldClasses}
-          />
-        </label>
-      </div>
-
-      <div className="mt-4 flex gap-3">
-        <button
-          onClick={() => setEditing(false)}
-          disabled={saving}
-          className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary px-4 py-2 text-sm font-medium"
-        >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-      </div>
-    </div>
+    </section>
   )
 }
 

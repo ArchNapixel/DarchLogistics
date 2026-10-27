@@ -19,13 +19,15 @@ import { Link } from 'react-router-dom'
 import { isAdmin, isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
+import { MEDICAL_EXAMS, examValuesOf, isMissingExamColumns } from '../lib/medicalExams'
 
 type ComplianceRow = {
   employee_id: number
   full_name: string
   driver_license_expiry_date: string | null
-  medical_exam_expiry_date: string | null
   employment_status_id: number | null
+  // Plus the three medical exams' columns (lib/medicalExams.ts).
+  [examColumn: string]: unknown
 }
 
 type OverdueTrip = {
@@ -43,10 +45,13 @@ const overdueKey = (t: OverdueTrip) => `trip-${t.tripId}`
 type ExpiryAlert = {
   employeeId: number
   employeeName: string
-  kind: 'Driver license' | 'Medical exam'
+  // 'Driver license', or a medical exam ("Drug Test exam").
+  kind: string
   // null = no licence on record at all (shown as "not on record").
   date: string | null
   daysRemaining: number
+  // The exam's result is Failed (shown instead of the expiry).
+  failed?: boolean
 }
 
 function daysUntil(date: string) {
@@ -153,7 +158,10 @@ function ComplianceExpiryAlerts() {
 
     let query = supabase
       .from('employees')
-      .select('employee_id, full_name, driver_license_expiry_date, medical_exam_expiry_date, employment_status_id')
+      .select(
+        // + the three medical exams (lib/medicalExams.ts)
+        'employee_id, full_name, driver_license_expiry_date, employment_status_id, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result',
+      )
       .eq('position', 'Driver')
 
     if (role === 'Driver') {
@@ -164,10 +172,23 @@ function ComplianceExpiryAlerts() {
       query = query.eq('employee_id', employeeId)
     }
 
-    const [{ data, error }, statuses] = await Promise.all([
+    const [first, statuses] = await Promise.all([
       query,
       supabase.from('employment_status').select('status_id, status_name'),
     ])
+    let data: ComplianceRow[] | null = first.data
+    let error = first.error
+    if (error && isMissingExamColumns(error.message)) {
+      // Exam SQL not run yet: load without the new exam columns.
+      let fallback = supabase
+        .from('employees')
+        .select('employee_id, full_name, driver_license_expiry_date, employment_status_id, medical_exam_date, medical_exam_expiry_date')
+        .eq('position', 'Driver')
+      if (role === 'Driver' && employeeId) fallback = fallback.eq('employee_id', employeeId)
+      const second = await fallback
+      data = second.data
+      error = second.error
+    }
     if (error || !data) {
       setAlerts([])
       return
@@ -204,16 +225,19 @@ function ComplianceExpiryAlerts() {
           })
         }
       }
-      if (row.medical_exam_expiry_date) {
-        const daysRemaining = daysUntil(row.medical_exam_expiry_date)
-        if (daysRemaining <= 30) {
-          nextAlerts.push({
-            employeeId: row.employee_id,
-            employeeName: row.full_name,
-            kind: 'Medical exam',
-            date: row.medical_exam_expiry_date,
-            daysRemaining,
-          })
+      // Each medical exam (Physical / Drug Test / Psychological): a Failed
+      // result, or an expiry within 30 days.
+      const exams = examValuesOf(row)
+      for (const exam of MEDICAL_EXAMS) {
+        const expiry = exams[exam.expiry]
+        const kind = `${exam.label} exam`
+        if (exams[exam.result] === 'Failed') {
+          nextAlerts.push({ employeeId: row.employee_id, employeeName: row.full_name, kind, date: expiry, daysRemaining: -Infinity, failed: true })
+        } else if (expiry) {
+          const daysRemaining = daysUntil(expiry)
+          if (daysRemaining <= 30) {
+            nextAlerts.push({ employeeId: row.employee_id, employeeName: row.full_name, kind, date: expiry, daysRemaining })
+          }
         }
       }
     })
@@ -331,7 +355,9 @@ function ComplianceExpiryAlerts() {
                         {alert.employeeName}
                       </p>
                       <p className="text-orange-800">
-                        {alert.date === null ? (
+                        {alert.failed ? (
+                          <>{alert.kind} result: Failed</>
+                        ) : alert.date === null ? (
                           <>{alert.kind} not on record -- add it on the Employees page</>
                         ) : (
                           <>

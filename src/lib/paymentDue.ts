@@ -16,7 +16,8 @@
 //   bookings.amount_to_pay if staff has manually overridden it in
 //   Financial Records (FinancialSection.tsx -- e.g. a discount or
 //   special arrangement), otherwise computed_billable_amount -- PLUS
-//   damage_charges (approved Client damage, lib/damageCharges.ts)
+//   damage_charges = EXTRA charges: approved Client damage + charges
+//   added on the Billing page (lib/bookingCharges.ts)
 // - balance_due = billable_amount - amount_paid (what's currently owed)
 // Payments themselves are recorded in Financial Records, not here --
 // this module only computes what's owed and when; it doesn't write
@@ -46,7 +47,7 @@
 // whether that's because nothing's billable yet, or because more will
 // become billable as remaining trips complete.
 import { supabase } from './supabaseClient'
-import { loadClientDamageChargesByBooking } from './damageCharges'
+import { loadExtraChargesByBooking } from './bookingCharges'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { toManilaDate } from './payslip'
 
@@ -194,7 +195,7 @@ export async function loadPaymentDueReport(
             .neq('itinerary_status', 'Cancelled')
             .range(from, to),
       ),
-      loadClientDamageChargesByBooking(bookingIds),
+      loadExtraChargesByBooking(bookingIds),
     ])
 
   if (clientsResult.error) {

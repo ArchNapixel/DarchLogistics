@@ -25,23 +25,14 @@ import {
 import { phoneInput } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import { formatMoney } from '../../../lib/format'
+import { EXAM_RESULTS, MEDICAL_EXAMS, type MedicalExamColumn, type MedicalExamValues } from '../../../lib/medicalExams'
+import { RATE_TYPES } from '../../../lib/employeeRateTypes'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
 const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
 
-// Commission Per Trip has no column of its own -- a Driver's per-trip
-// pay comes entirely from the company-wide Settings (commission % +
-// per-trip fee), so there's no per-employee amount to store.
-export const RATE_TYPES = [
-  { value: 'Daily Fixed', label: 'Daily rate', column: 'daily_rate' },
-  { value: 'Weekly Salary', label: 'Weekly salary', column: 'weekly_salary' },
-  { value: 'Commission Per Trip', label: 'Commission per trip', column: null },
-  { value: 'Monthly Salary', label: 'Monthly salary', column: 'monthly_salary' },
-  { value: 'Hourly', label: 'Hourly rate', column: 'hourly_rate' },
-] as const
-
-export type EditableEmployee = {
+export type EditableEmployee = Partial<MedicalExamValues> & {
   employee_id: number
   first_name: string
   last_name: string
@@ -129,8 +120,16 @@ function AddEmployeeModal({
   const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
   const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
   const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
-  const [medicalExamDate, setMedicalExamDate] = useState(employee?.medical_exam_date ?? '')
-  const [medicalExamExpiryDate, setMedicalExamExpiryDate] = useState(employee?.medical_exam_expiry_date ?? '')
+  // The three medical exams (Physical / Drug Test / Psychological): date,
+  // expiry and result each, keyed by column name (lib/medicalExams.ts).
+  const [exams, setExams] = useState<Record<MedicalExamColumn, string>>(() => {
+    const start = {} as Record<MedicalExamColumn, string>
+    for (const e of MEDICAL_EXAMS) {
+      for (const col of [e.date, e.expiry, e.result] as const) start[col] = employee?.[col] ?? ''
+    }
+    return start
+  })
+  const setExam = (col: MedicalExamColumn, value: string) => setExams((prev) => ({ ...prev, [col]: value }))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -208,6 +207,12 @@ function AddEmployeeModal({
     // the "Edit Information" button.
     if (isEditing && position === 'Driver' && (!licenseNumber.trim() || !licenseExpiryDate)) {
       setError('Enter the driver license number and expiry date.')
+      return
+    }
+    // A medical exam can't expire before it was taken.
+    const badExam = MEDICAL_EXAMS.find((e) => exams[e.date] && exams[e.expiry] && exams[e.expiry] < exams[e.date])
+    if (position === 'Driver' && badExam) {
+      setError(`The ${badExam.label} exam's expiry is before the date it was taken.`)
       return
     }
 
@@ -289,8 +294,10 @@ function AddEmployeeModal({
         : {}),
       driver_license_number: position === 'Driver' ? licenseNumber.trim() || null : null,
       driver_license_expiry_date: position === 'Driver' ? licenseExpiryDate || null : null,
-      medical_exam_date: position === 'Driver' ? medicalExamDate || null : null,
-      medical_exam_expiry_date: position === 'Driver' ? medicalExamExpiryDate || null : null,
+      // Drivers only: the three medical exams.
+      ...Object.fromEntries(
+        (Object.keys(exams) as MedicalExamColumn[]).map((col) => [col, position === 'Driver' ? exams[col] || null : null]),
+      ),
     }
 
     const { error: saveError } = isEditing
@@ -531,14 +538,38 @@ function AddEmployeeModal({
                 Driver license expiry
                 <input type="date" value={licenseExpiryDate} onChange={(e) => setLicenseExpiryDate(e.target.value)} className={fieldClasses} />
               </label>
-              <label className={labelClasses}>
-                Medical exam date (optional)
-                <input type="date" value={medicalExamDate} onChange={(e) => setMedicalExamDate(e.target.value)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Medical exam expiry (optional)
-                <input type="date" value={medicalExamExpiryDate} onChange={(e) => setMedicalExamExpiryDate(e.target.value)} className={fieldClasses} />
-              </label>
+              {/* Medical exams (optional): one row each -- date taken, expiry, result. */}
+              <div className="grid gap-x-4 gap-y-3 border-t border-slate-200 pt-3 sm:col-span-2 lg:col-span-4">
+                <p className="text-sm font-semibold text-ink">Medical exams (optional)</p>
+                {MEDICAL_EXAMS.map((exam) => (
+                  <div key={exam.key} className="grid items-end gap-x-4 gap-y-2 sm:grid-cols-[9rem_1fr_1fr_1fr]">
+                    <span className="pb-3 text-sm font-medium text-ink-secondary">{exam.label}</span>
+                    <label className={labelClasses}>
+                      Date taken
+                      <input type="date" value={exams[exam.date]} onChange={(e) => setExam(exam.date, e.target.value)} className={fieldClasses} />
+                    </label>
+                    <label className={labelClasses}>
+                      Expires
+                      <input
+                        type="date"
+                        value={exams[exam.expiry]}
+                        min={exams[exam.date] || undefined}
+                        onChange={(e) => setExam(exam.expiry, e.target.value)}
+                        className={fieldClasses}
+                      />
+                    </label>
+                    <label className={labelClasses}>
+                      Result
+                      <select value={exams[exam.result]} onChange={(e) => setExam(exam.result, e.target.value)} className={fieldClasses}>
+                        <option value="">Not recorded</option>
+                        {EXAM_RESULTS.map((r) => (
+                          <option key={r}>{r}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ))}
+              </div>
             </>
           )}
 

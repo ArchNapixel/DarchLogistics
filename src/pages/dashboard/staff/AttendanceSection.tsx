@@ -13,6 +13,10 @@
 //   draft payslip. A draft doesn't change by itself, so after fixing a day
 //   to Absent/Leave, use Edit or Regenerate on that payslip.
 // - "All present" in a day's header marks that day's unmarked people Present.
+// Day view (the canvas's board): one day, with Time In / Time Out per person.
+// Hours = out - in - 1 h lunch, overtime above 8 (lib/attendanceHours.ts);
+// payroll pays that overtime. A Present day with no times still counts as 8
+// hours, no overtime. The week view keeps a day's times when re-picking Present.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
@@ -24,6 +28,8 @@ import LeaveRequestsSection from './LeaveRequestsSection'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import AttendanceDayTable, { type DayChange } from './AttendanceDayTable'
+import { minutesToTime, overtimeHours, workedHours } from '../../../lib/attendanceHours'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
@@ -48,7 +54,9 @@ function formatShort(date: string): string {
 
 // "How days are counted" -- the side panel's rules (same as payroll's).
 const COUNT_RULES: [string, string][] = [
-  ['Present', 'Paid day'],
+  ['Present', 'Paid day (8 hours if no times)'],
+  ['Hours', 'Time out − time in − 1 h lunch'],
+  ['Overtime', 'Hours above 8, paid × 1.25'],
   ['Leave (paid)', 'Paid -- uses the yearly leave balance'],
   ['Unpaid Leave', 'Approved, not paid'],
   ['Absent', 'Not paid'],
@@ -127,7 +135,16 @@ function AttendanceSection() {
   const { employeeId: recorderId } = useAuth()
   const today = toManilaDate(new Date())
   const thisWeekStart = weekStartOf(today)
-  const [weekStart, setWeekStart] = useState(thisWeekStart)
+  const [view, setView] = useState<'day' | 'week'>('day')
+  // The day the Day view shows; the loaded week is always the one holding it.
+  const [day, setDayState] = useState(today)
+  const [weekStart, setWeekStartState] = useState(thisWeekStart)
+  function setDay(date: string) {
+    setDayState(date)
+    setWeekStartState(weekStartOf(date))
+  }
+  // Week arrows move the day by a week (never past today).
+  const setWeekStart = (start: string) => setDay(start >= thisWeekStart ? today : start)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -170,14 +187,27 @@ function AttendanceSection() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  // Present saves 8 hours quietly -- hours aren't entered by hand any more,
-  // legacy Hourly payslips still read them.
-  function save(employeeId: number, date: string, status: AttendanceStatus) {
+  // Present with no times saves 8 hours; with times, the worked hours
+  // (minus lunch). Picking Present in the week view keeps a day's saved times.
+  function save(employeeId: number, date: string, status: AttendanceStatus, times?: { timeIn: number | null; timeOut: number | null }) {
+    const rec = records.get(`${employeeId}|${date}`)
+    const timeIn = times ? (times.timeIn === null ? null : minutesToTime(times.timeIn)) : (rec?.time_in ?? null)
+    const timeOut = times ? (times.timeOut === null ? null : minutesToTime(times.timeOut)) : (rec?.time_out ?? null)
+    const hasTimes = timeIn !== null && timeOut !== null
     return saveAttendanceRecord({
       employeeId,
       attendanceDate: date,
       status,
-      hoursWorked: status === 'Present' ? DEFAULT_HOURS : null,
+      hoursWorked:
+        status !== 'Present'
+          ? null
+          : !hasTimes
+            ? DEFAULT_HOURS
+            : times
+              ? workedHours(times.timeIn!, times.timeOut!)
+              : (rec?.hours_worked ?? DEFAULT_HOURS),
+      timeIn: hasTimes ? timeIn : null,
+      timeOut: hasTimes ? timeOut : null,
       notes: null,
       recordedBy: recorderId!,
     })
@@ -215,6 +245,25 @@ function AttendanceSection() {
     return runSaves(recorderId ? [save(employeeId, date, status)] : [])
   }
 
+  // Day view's "Save Attendance": every changed row in one go.
+  async function handleSaveDay(changes: DayChange[]) {
+    if (changes.length === 0) return
+    const onPayslip = changes.filter((c) => records.get(`${c.employeeId}|${day}`)?.paid_payroll_id != null)
+    if (onPayslip.length > 0) {
+      const ok = await confirmDialog({
+        title: onPayslip.length === 1 ? 'One of these days is already on a payslip' : `${onPayslip.length} of these days are already on a payslip`,
+        message:
+          "Changing them won't change the payslip that already paid them. " +
+          'If that payslip is still a draft, use Regenerate on the Payroll page afterwards; ' +
+          'if it is finalized, correct the pay by hand.',
+        confirmLabel: 'Save anyway',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    return runSaves(recorderId ? changes.map((c) => save(c.employeeId, day, c.status, c)) : [])
+  }
+
   function handleAllPresent(date: string) {
     const unmarked = employees.filter((e) => !records.has(`${e.employee_id}|${date}`))
     return runSaves(recorderId ? unmarked.map((e) => save(e.employee_id, date, 'Present')) : [])
@@ -226,12 +275,27 @@ function AttendanceSection() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Mark each employee Present, Leave or Absent. Drivers are paid per trip and aren't on this sheet."
+        subtitle="Record time in / out or mark Present, Leave or Absent. Drivers are paid per trip and aren't on this sheet."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <div role="group" aria-label="View" className="flex gap-2">
+              {(['day', 'week'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v}
+                  onClick={() => setView(v)}
+                  className={`min-h-11 rounded-[2px] border-2 px-4 text-sm font-semibold ${
+                    view === v ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-secondary hover:bg-slate-50'
+                  }`}
+                >
+                  {v === 'day' ? 'Day' : 'Week'}
+                </button>
+              ))}
+            </div>
             <button
-              onClick={() => setWeekStart(shiftDate(weekStart, -7))}
-              aria-label="Previous week"
+              onClick={() => (view === 'day' ? setDay(shiftDate(day, -1)) : setWeekStart(shiftDate(weekStart, -7)))}
+              aria-label={view === 'day' ? 'Previous day' : 'Previous week'}
               className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -255,31 +319,40 @@ function AttendanceSection() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary" aria-hidden="true">
                 <path d="M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4" />
               </svg>
-              {weekStart === thisWeekStart ? 'This week · ' : ''}
-              {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
+              {view === 'day' ? (
+                <>
+                  {day === today ? 'Today · ' : ''}
+                  {new Date(`${day}T12:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
+                </>
+              ) : (
+                <>
+                  {weekStart === thisWeekStart ? 'This week · ' : ''}
+                  {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
+                </>
+              )}
             </button>
             <input
               ref={dateInputRef}
               type="date"
               aria-label="Jump to date"
               max={today}
-              value={weekStart}
-              onChange={(e) => e.target.value && setWeekStart(weekStartOf(e.target.value))}
+              value={view === 'day' ? day : weekStart}
+              onChange={(e) => e.target.value && setDay(e.target.value)}
               className="sr-only"
             />
             <button
-              onClick={() => setWeekStart(shiftDate(weekStart, 7))}
-              disabled={weekStart >= thisWeekStart}
-              aria-label="Next week"
+              onClick={() => (view === 'day' ? setDay(shiftDate(day, 1)) : setWeekStart(shiftDate(weekStart, 7)))}
+              disabled={view === 'day' ? day >= today : weekStart >= thisWeekStart}
+              aria-label={view === 'day' ? 'Next day' : 'Next week'}
               className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-line disabled:text-ink-muted"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M9 6l6 6-6 6" />
               </svg>
             </button>
-            {weekStart !== thisWeekStart && (
-              <button onClick={() => setWeekStart(thisWeekStart)} className="btn-secondary px-4 text-sm font-medium">
-                This Week
+            {(view === 'day' ? day !== today : weekStart !== thisWeekStart) && (
+              <button onClick={() => setDay(today)} className="btn-secondary px-4 text-sm font-medium">
+                {view === 'day' ? 'Today' : 'This Week'}
               </button>
             )}
           </div>
@@ -293,6 +366,17 @@ function AttendanceSection() {
         <p className="text-ink-muted">Loading attendance...</p>
       ) : employees.length === 0 ? (
         <EmptyState message="No active employees." />
+      ) : view === 'day' ? (
+        // Remounted per day and after each reload, so unsaved edits start clean.
+        <AttendanceDayTable
+          key={`${day}|${records.size}|${[...records.values()].map((r) => r.attendance_id).join(',')}`}
+          date={day}
+          today={today}
+          employees={employees}
+          records={records}
+          busy={busy}
+          onSave={(changes) => void handleSaveDay(changes)}
+        />
       ) : (
         <section aria-label="Staff attendance" className="card flex min-h-[calc(100dvh-15rem)] flex-col">
           <div className="flex-1 overflow-x-auto">
@@ -329,6 +413,7 @@ function AttendanceSection() {
                       // Day over + no record = Absent; today/future + no record = blank.
                       const shown: AttendanceStatus | '' = rec?.attendance_status ?? (date < today ? 'Absent' : '')
                       if (shown === 'Present') presentDays += 1
+                      const ot = rec?.time_in && rec.time_out ? overtimeHours(rec.hours_worked) : 0
                       return (
                         <td key={date} className="px-2 py-3 text-center">
                           <select
@@ -353,6 +438,11 @@ function AttendanceSection() {
                             <option>Unpaid Leave</option>
                             <option>Absent</option>
                           </select>
+                          {shown === 'Present' && rec?.time_in && rec.time_out && (
+                            <div className="mt-0.5 text-xs text-ink-muted tabular-nums">
+                              {rec.hours_worked} h{ot > 0 && <span className="font-semibold text-primary"> · OT {ot}</span>}
+                            </div>
+                          )}
                         </td>
                       )
                     })}
@@ -403,7 +493,7 @@ function AttendanceSection() {
               </div>
             ))}
             <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
-              Changes save as soon as you pick. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
+              Day view saves with Save Attendance; the week view saves as soon as you pick. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
             </p>
           </section>
           <DriversToday today={today} />

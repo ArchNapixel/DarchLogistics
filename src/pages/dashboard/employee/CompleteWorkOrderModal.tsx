@@ -1,5 +1,6 @@
-// CompleteWorkOrderModal: shown when a mechanic sets a work order's
-// status to "Completed" in MechanicTasks.tsx. Marking a work order
+// CompleteWorkOrderModal (the canvas's "Mark Complete" board): shown when
+// a mechanic clicks "Mark Complete" in MechanicTasks.tsx / the Open Work
+// Order panel (or Admin on WorkOrderDetailModal). Marking a work order
 // complete isn't allowed to happen silently -- the mechanic must first
 // describe what was done and list any parts used, so every part used is
 // traceable back to a real inventory_items row (no free-text parts).
@@ -44,7 +45,7 @@
 // completion are copied in -- the older ones are already on the earlier
 // completion, and copying them again would double-count them in the
 // maintenance cost report.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { logWorkOrderStatusChange } from '../../../lib/workOrderStatusLog'
@@ -54,11 +55,12 @@ import {
   loadWorkOrderPartsLog,
   type LoggedPart,
 } from '../../../lib/workOrderPartsLog'
-import { ITEM_TYPES } from '../staff/AddInventoryItemModal'
+import { ITEM_TYPES } from '../../../lib/inventoryItemTypes'
 
 const fieldClasses =
-  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary disabled:bg-slate-50 disabled:text-ink-muted'
+const labelClasses = 'flex flex-col gap-1.5 text-sm font-semibold text-ink'
+const SECTION_TITLE = 'mb-2 text-sm font-semibold text-ink'
 
 type InventoryItemOption = {
   item_id: number
@@ -113,6 +115,7 @@ function CompleteWorkOrderModal({
   plateNumber,
   trailerId,
   previousStatus,
+  subtitle,
   onClose,
   onCompleted,
 }: {
@@ -121,6 +124,8 @@ function CompleteWorkOrderModal({
   plateNumber: string | null
   trailerId: number | null
   previousStatus: string
+  // "Truck ABC 123 · Routine", shown under the title.
+  subtitle?: string
   onClose: () => void
   onCompleted: () => void
 }) {
@@ -146,11 +151,6 @@ function CompleteWorkOrderModal({
     decrementedRowKeys: new Set<number>(),
     statusDone: false,
   })
-
-  useEffect(() => {
-    loadInventory()
-    loadAlreadyLoggedParts()
-  }, [workOrderId])
 
   async function loadAlreadyLoggedParts() {
     const [{ parts: logged, error }, { data: lastCompletion }] = await Promise.all([
@@ -184,6 +184,17 @@ function CompleteWorkOrderModal({
     }
     setLoadingInventory(false)
   }
+
+  // Load when this opens and whenever workOrderId changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadInventory()
+    loadAlreadyLoggedParts()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [workOrderId])
 
   function updateRow(key: number, patch: Partial<PartRow>) {
     setParts((prev) =>
@@ -621,21 +632,34 @@ function CompleteWorkOrderModal({
     setSuccess(true)
   }
 
+  const closeButton = (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={submitting}
+      aria-label="Close"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6 6l12 12 M18 6L6 18" />
+      </svg>
+    </button>
+  )
+
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-        <div className="w-full max-w-md bg-white p-6 text-center border-2 border-line-card">
-          <p className="text-3xl">✅</p>
-          <h3 className="mt-2 text-lg font-bold text-slate-900">
+        <div role="dialog" aria-modal="true" aria-labelledby="wo-done-title" className="card w-full max-w-md px-6 py-6 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center bg-green-100 text-green-800">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12l5 5 9-10" />
+            </svg>
+          </span>
+          <h2 id="wo-done-title" className="mt-3 text-lg font-bold text-ink">
             Work Order Completed
-          </h3>
-          <p className="mt-2 text-sm text-slate-600">
-            {workOrderNumber} has been marked complete and inventory was updated.
-          </p>
-          <button
-            onClick={onCompleted}
-            className="btn-primary mt-6 px-4 py-2 text-sm font-medium"
-          >
+          </h2>
+          <p className="mt-2 text-sm text-ink-secondary">{workOrderNumber} has been marked complete and inventory was updated.</p>
+          <button type="button" onClick={onCompleted} className="btn-primary mt-6 px-6 text-sm">
             Done
           </button>
         </div>
@@ -645,326 +669,279 @@ function CompleteWorkOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white p-6 border-2 border-line-card">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">
-            Complete {workOrderNumber}
-          </h3>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="text-slate-400 hover:text-slate-700 disabled:opacity-50"
-          >
-            ✕
-          </button>
-        </div>
-
-        {formError && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {formError}
-          </p>
-        )}
-
-        <div className="mt-4 grid gap-4">
-          <label className={labelClasses}>
-            Description of work done
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className={fieldClasses}
-            />
-          </label>
-
+      <div role="dialog" aria-modal="true" aria-labelledby="wo-complete-title" className="card flex max-h-[94vh] w-full max-w-[1000px] flex-col">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 pt-5 pb-4">
           <div>
-            <p className="text-sm font-medium text-slate-700">Parts / products used</p>
+            <h2 id="wo-complete-title" className="text-xl leading-7 font-bold text-ink">
+              Mark Complete · Work Order {workOrderNumber}
+            </h2>
+            <p className="mt-0.5 text-sm text-ink-secondary">
+              {subtitle ? `${subtitle}. ` : ''}Required before the job counts as Completed.
+            </p>
+          </div>
+          {closeButton}
+        </header>
 
-            {alreadyLoggedParts.length > 0 && (
-              <div className="mt-2 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-500">
-                  Already logged during the job -- no need to re-enter these:
-                </p>
-                <ul className="mt-1 grid gap-0.5 text-sm text-slate-700">
-                  {alreadyLoggedParts.map((p) => (
-                    <li key={p.log_id}>
-                      {p.item_name_text} × {p.quantity}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {formError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</p>}
 
-            {loadingInventory && (
-              <p className="mt-2 text-sm text-slate-500">Loading inventory...</p>
-            )}
+          <div className="grid gap-x-7 gap-y-5 lg:grid-cols-2">
+            <div className="flex flex-col gap-4">
+              <label className={labelClasses}>
+                <span className="flex justify-between gap-2">
+                  <span>Description of work done</span>
+                  <span className="text-xs text-amber-800">Required</span>
+                </span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  placeholder="What you did"
+                  className={`${fieldClasses} resize-none py-2.5`}
+                />
+              </label>
 
-            <div className="mt-2 grid gap-3">
-              {parts.map((row) => {
-                const matches = matchesFor(row)
-                const showAddNew =
-                  !row.itemId &&
-                  !row.addingNew &&
-                  row.dropdownOpen &&
-                  row.search.trim().length > 0 &&
-                  matches.length === 0
-
-                return (
-                  <div
-                    key={row.key}
-                    className="border border-slate-200 p-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="relative flex-1">
+              <div className="border border-line bg-slate-50 px-4 py-3.5">
+                <h3 className={SECTION_TITLE}>
+                  Truck only <span className="font-normal text-ink-muted">· optional</span>
+                </h3>
+                {plateNumber ? (
+                  <>
+                    <div className="grid gap-3.5 sm:grid-cols-2">
+                      <label className={labelClasses}>
+                        Odometer reading (km)
                         <input
-                          type="text"
-                          value={row.search}
-                          placeholder="Search inventory..."
-                          disabled={row.addingNew}
-                          onChange={(e) =>
-                            updateRow(row.key, {
-                              search: e.target.value,
-                              itemId: null,
-                              dropdownOpen: true,
-                            })
-                          }
-                          onFocus={() => updateRow(row.key, { dropdownOpen: true })}
-                          onBlur={() =>
-                            setTimeout(
-                              () => updateRow(row.key, { dropdownOpen: false }),
-                              120,
-                            )
-                          }
-                          className={`${fieldClasses} w-full ${row.addingNew ? 'bg-slate-100 text-slate-500' : ''}`}
+                          inputMode="numeric"
+                          value={odometerReading}
+                          onChange={(e) => setOdometerReading(e.target.value.replace(/[^\d]/g, ''))}
+                          className={`${fieldClasses} tabular-nums`}
                         />
-
-                        {row.dropdownOpen && !row.addingNew && row.search.trim() && (
-                          <div className="absolute z-10 mt-1 w-full border-2 border-line-card bg-white">
-                            {matches.map((item) => (
-                              <button
-                                key={item.item_id}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  selectItem(row.key, item)
-                                }}
-                                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50"
-                              >
-                                <span className="text-sm font-medium text-slate-900">
-                                  {item.name}
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {item.item_type} — {item.quantity} in stock
-                                </span>
-                              </button>
-                            ))}
-
-                            {showAddNew && (
-                              <button
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  startAddingNew(row.key, row.search.trim())
-                                }}
-                                className="w-full border-t border-slate-100 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
-                              >
-                                + Add "{row.search.trim()}" as a new inventory item
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.key)}
-                        className="mt-2 text-slate-400 hover:text-red-600"
-                      >
-                        ✕
-                      </button>
+                      </label>
+                      <label className={labelClasses}>
+                        Suggested next service
+                        <input type="date" value={nextServiceDate} onChange={(e) => setNextServiceDate(e.target.value)} className={fieldClasses} />
+                      </label>
                     </div>
+                    <p className="mt-2 text-[13px] text-ink-muted">The reading must be higher than the truck's current one.</p>
+                  </>
+                ) : (
+                  <p className="text-[13px] text-ink-muted">Not applicable -- this work order is for a trailer.</p>
+                )}
+              </div>
 
-                    {row.addingNew && !row.newItemConfirmed && (
-                      <div className="mt-3 grid gap-3 bg-slate-50 p-3 sm:grid-cols-2">
-                        <label className={labelClasses}>
-                          Item type
-                          <select
-                            value={row.newItemType}
-                            onChange={(e) =>
-                              updateRow(row.key, { newItemType: e.target.value })
-                            }
-                            className={fieldClasses}
-                          >
-                            {ITEM_TYPES.map((type) => (
-                              <option key={type} value={type}>
-                                {type}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className={labelClasses}>
-                          Starting quantity
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={row.newItemQuantity}
-                            onChange={(e) =>
-                              updateRow(row.key, { newItemQuantity: e.target.value })
-                            }
-                            className={fieldClasses}
-                          />
-                        </label>
-
-                        <label className={labelClasses}>
-                          Unit price (₱)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={row.newItemUnitCost}
-                            onChange={(e) =>
-                              updateRow(row.key, { newItemUnitCost: e.target.value })
-                            }
-                            className={fieldClasses}
-                          />
-                        </label>
-
-                        <div className="flex items-end gap-2 sm:col-span-2">
-                          <button
-                            type="button"
-                            onClick={() => confirmNewItem(row)}
-                            className="btn-primary px-3 py-1.5 text-sm font-medium"
-                          >
-                            Add "{row.search}" as new item
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateRow(row.key, {
-                                addingNew: false,
-                                search: '',
-                                error: null,
-                              })
-                            }
-                            className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {row.addingNew && row.newItemConfirmed && (
-                      <p className="mt-2 text-xs text-slate-500">
-                        New item — {row.newItemType}, starting stock{' '}
-                        {row.newItemQuantity}, ₱{row.newItemUnitCost} each.{' '}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateRow(row.key, { newItemConfirmed: false })
-                          }
-                          className="font-medium text-slate-700 underline"
-                        >
-                          Change
-                        </button>
-                      </p>
-                    )}
-
-                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                      Quantity used
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={row.quantityUsed}
-                        onChange={(e) =>
-                          updateRow(row.key, { quantityUsed: e.target.value })
-                        }
-                        className={`${fieldClasses} w-28`}
-                      />
-                    </label>
-
-                    {row.error && (
-                      <p className="mt-2 text-xs text-red-700">{row.error}</p>
-                    )}
-                  </div>
-                )
-              })}
+              <label className={labelClasses}>
+                <span>
+                  Additional notes <span className="font-normal text-ink-muted">(optional)</span>
+                </span>
+                <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} className={fieldClasses} />
+              </label>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setParts((prev) => [...prev, makeEmptyRow()])}
-              className="mt-3 text-sm font-medium text-slate-700 hover:text-slate-900"
-            >
-              + Add another part
-            </button>
+            <div className="flex flex-col gap-3.5">
+              <section aria-labelledby="wo-logged">
+                <h3 id="wo-logged" className={SECTION_TITLE}>
+                  Parts already logged
+                </h3>
+                {alreadyLoggedParts.length === 0 ? (
+                  <p className="text-sm text-ink-muted">None logged during the job.</p>
+                ) : (
+                  <>
+                    <ul className="flex flex-col gap-1.5 text-sm text-ink-secondary">
+                      {alreadyLoggedParts.map((p) => (
+                        <li key={p.log_id} className="flex justify-between border border-slate-200 bg-slate-50 px-3 py-2">
+                          <span>{p.item_name_text}</span>
+                          <span className="tabular-nums">× {p.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-[13px] text-ink-muted">Already taken out of stock. Don't enter them again.</p>
+                  </>
+                )}
+              </section>
+
+              <section aria-labelledby="wo-other" className="flex flex-col gap-2">
+                <h3 id="wo-other" className="text-sm font-semibold text-ink">
+                  Other parts used
+                </h3>
+                {loadingInventory && <p className="text-sm text-ink-muted">Loading inventory...</p>}
+                {parts.length > 0 && (
+                  <div className="grid grid-cols-[minmax(0,1fr)_110px_44px] gap-2 text-xs font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+                    <span>Part</span>
+                    <span>Qty</span>
+                    <span />
+                  </div>
+                )}
+                {parts.map((row, index) => {
+                  const matches = matchesFor(row)
+                  const showAddNew =
+                    !row.itemId && !row.addingNew && row.dropdownOpen && row.search.trim().length > 0 && matches.length === 0
+
+                  return (
+                    <div key={row.key} className="flex flex-col gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_110px_44px] items-center gap-2">
+                        <div className="relative">
+                          <input
+                            type="search"
+                            value={row.search}
+                            placeholder="Search inventory"
+                            aria-label={`Part ${index + 1}`}
+                            disabled={row.addingNew}
+                            onChange={(e) =>
+                              updateRow(row.key, {
+                                search: e.target.value,
+                                itemId: null,
+                                dropdownOpen: true,
+                              })
+                            }
+                            onFocus={() => updateRow(row.key, { dropdownOpen: true })}
+                            onBlur={() => setTimeout(() => updateRow(row.key, { dropdownOpen: false }), 120)}
+                            className={fieldClasses}
+                          />
+
+                          {row.dropdownOpen && !row.addingNew && row.search.trim() && (
+                            <div className="absolute z-10 mt-1 w-full border-2 border-line-card bg-white">
+                              {matches.map((item) => (
+                                <button
+                                  key={item.item_id}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    selectItem(row.key, item)
+                                  }}
+                                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50"
+                                >
+                                  <span className="text-sm font-medium text-ink">{item.name}</span>
+                                  <span className="text-xs text-ink-muted">
+                                    {item.item_type} — {item.quantity} in stock
+                                  </span>
+                                </button>
+                              ))}
+                              {showAddNew && (
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    startAddingNew(row.key, row.search.trim())
+                                  }}
+                                  className="w-full border-t border-slate-100 px-3 py-2 text-left text-sm font-semibold text-primary hover:bg-slate-50"
+                                >
+                                  + Add "{row.search.trim()}" as a new inventory item
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          inputMode="numeric"
+                          value={row.quantityUsed}
+                          placeholder="0"
+                          aria-label={`Quantity for part ${index + 1}`}
+                          onChange={(e) => updateRow(row.key, { quantityUsed: e.target.value.replace(/[^\d]/g, '') })}
+                          className={`${fieldClasses} text-right tabular-nums`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeRow(row.key)}
+                          aria-label={`Remove part ${index + 1}`}
+                          className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50 hover:text-red-700"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M6 6l12 12 M18 6L6 18" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {row.addingNew && !row.newItemConfirmed && (
+                        <div className="flex flex-col gap-2 border border-dashed border-line-control px-3.5 py-3">
+                          <span className="text-sm font-semibold text-primary">+ Add "{row.search}" as a new inventory item</span>
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <label className="flex flex-col gap-1 text-[13px] font-medium text-ink-secondary">
+                              Item type
+                              <select value={row.newItemType} onChange={(e) => updateRow(row.key, { newItemType: e.target.value })} className={fieldClasses}>
+                                {ITEM_TYPES.map((type) => (
+                                  <option key={type} value={type}>
+                                    {type}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col gap-1 text-[13px] font-medium text-ink-secondary">
+                              Starting quantity
+                              <input
+                                inputMode="numeric"
+                                value={row.newItemQuantity}
+                                onChange={(e) => updateRow(row.key, { newItemQuantity: e.target.value.replace(/[^\d]/g, '') })}
+                                className={`${fieldClasses} tabular-nums`}
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 text-[13px] font-medium text-ink-secondary">
+                              Unit price (₱)
+                              <input
+                                inputMode="decimal"
+                                value={row.newItemUnitCost}
+                                onChange={(e) => updateRow(row.key, { newItemUnitCost: e.target.value.replace(/[^\d.]/g, '') })}
+                                className={`${fieldClasses} tabular-nums`}
+                              />
+                            </label>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => confirmNewItem(row)} className="btn-secondary px-4 text-sm font-semibold text-primary">
+                              Add "{row.search}" as new item
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateRow(row.key, { addingNew: false, search: '', error: null })}
+                              className="btn-secondary px-4 text-sm font-medium"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {row.addingNew && row.newItemConfirmed && (
+                        <p className="text-[13px] text-ink-muted">
+                          New item — {row.newItemType}, starting stock {row.newItemQuantity}, ₱{row.newItemUnitCost} each.{' '}
+                          <button
+                            type="button"
+                            onClick={() => updateRow(row.key, { newItemConfirmed: false })}
+                            className="font-semibold text-primary underline"
+                          >
+                            Change
+                          </button>
+                        </p>
+                      )}
+
+                      {row.error && <p className="text-[13px] text-red-700">{row.error}</p>}
+                    </div>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => setParts((prev) => [...prev, makeEmptyRow()])}
+                  className="btn-secondary self-start px-4 text-sm font-medium"
+                >
+                  + Add {parts.length > 0 ? 'Another ' : ''}Part
+                </button>
+              </section>
+            </div>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className={labelClasses}>
-              Odometer reading (optional)
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={odometerReading}
-                onChange={(e) => setOdometerReading(e.target.value)}
-                className={fieldClasses}
-                disabled={!plateNumber}
-              />
-              {!plateNumber && (
-                <span className="text-[13px] text-ink-muted">
-                  Not applicable — this work order is for a trailer.
-                </span>
-              )}
-            </label>
-
-            <label className={labelClasses}>
-              Suggested next service date (optional)
-              <input
-                type="date"
-                value={nextServiceDate}
-                onChange={(e) => setNextServiceDate(e.target.value)}
-                className={fieldClasses}
-                disabled={!plateNumber}
-              />
-              {!plateNumber && (
-                <span className="text-[13px] text-ink-muted">
-                  Not applicable — this work order is for a trailer.
-                </span>
-              )}
-            </label>
-          </div>
-
-          <label className={labelClasses}>
-            Additional notes (optional)
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              className={fieldClasses}
-            />
-          </label>
         </div>
 
-        <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
-          >
+        <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-6 py-4">
+          <span className="mr-auto text-[13px] text-ink-muted">
+            Saves the record, takes parts out of stock, frees the vehicle and updates the odometer.
+          </span>
+          <button type="button" onClick={onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
+          <button type="button" onClick={handleSubmit} disabled={submitting} className="btn-primary flex items-center gap-2 px-6 text-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12l5 5 9-10" />
+            </svg>
             {submitting ? 'Saving...' : 'Mark Complete'}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   )

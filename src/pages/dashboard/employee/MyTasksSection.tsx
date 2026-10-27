@@ -5,21 +5,16 @@
 import { useAuth } from '../../../context/AuthContext'
 import DriverTasks from './DriverTasks'
 import MechanicTasks from './MechanicTasks'
-import { SectionHeader } from '../../../components/PageHeader'
 
 function MyTasksSection() {
   const { role } = useAuth()
 
-  return (
-    <div className="border-2 border-line-card bg-white p-8">
-      <SectionHeader title="My Tasks" />
-      <div>
-        {role === 'Driver' && <DriverTasks crewRole="Driver" />}
-        {role === 'Helper' && <DriverTasks crewRole="Helper" />}
-        {role === 'Mechanic' && <MechanicTasks />}
-      </div>
-    </div>
-  )
+  // Drivers and helpers: DriverTasks lays out its own cards and side
+  // panels (the canvas's Driver Dashboard).
+  if (role === 'Driver' || role === 'Helper') return <DriverTasks crewRole={role} />
+
+  // Mechanics: MechanicTasks draws its own My Tasks / Recently Completed cards.
+  return role === 'Mechanic' ? <MechanicTasks /> : null
 }
 
 export default MyTasksSection

@@ -29,8 +29,9 @@ import { showToast } from '../../../components/Toast'
 import { formatDate } from '../../../lib/format'
 
 const fieldClasses =
-  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
+const labelClasses = 'flex flex-col gap-1.5 text-sm font-semibold text-ink'
+const CARD_TITLE = 'mb-3 border-b border-line pb-2 text-base font-semibold text-ink'
 
 function MyProfileSection() {
   const [profile, setProfile] = useState<MyProfile | null>(null)
@@ -69,7 +70,7 @@ function MyProfileSection() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  if (loading) return <p className="text-slate-500">Loading your profile...</p>
+  if (loading) return <p className="text-ink-muted">Loading your profile...</p>
   if (!profile || !form || !baseline) {
     return (
       <p className={error ? 'text-red-700' : 'text-slate-500'}>
@@ -79,9 +80,9 @@ function MyProfileSection() {
   }
 
   // One text input bound to a form field.
-  function field(key: EditableKey, label: string, type = 'text', wide = false) {
+  function field(key: EditableKey, label: string, type = 'text', placeholder?: string) {
     return (
-      <label className={`${labelClasses} ${wide ? 'sm:col-span-2' : ''}`}>
+      <label className={labelClasses}>
         {label}
         <input
           type={type}
@@ -91,6 +92,7 @@ function MyProfileSection() {
           min={key === 'date_of_birth' ? MIN_BIRTH_DATE : undefined}
           max={key === 'date_of_birth' ? today : undefined}
           inputMode={type === 'tel' ? 'tel' : undefined}
+          placeholder={placeholder}
           onChange={(e) => {
             // Typed or pasted characters the field can't hold are dropped here.
             setForm({ ...form!, [key]: filterInput(key, e.target.value) })
@@ -131,61 +133,85 @@ function MyProfileSection() {
   }
 
   return (
-    <form onSubmit={handleSave} className="max-w-2xl">
-      <PageHeader title="My Profile" subtitle="Keep your contact details and government IDs up to date." />
+    <form onSubmit={handleSave}>
+      <PageHeader title="My Profile" subtitle="Keep your contact and government ID details up to date." />
 
-      <div className="grid gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
-        <div>
-          <p className="text-sm font-medium text-neutral-500">Name</p>
-          <p className="text-slate-900">{profile.full_name}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-neutral-500">Position</p>
-          <p className="text-slate-900">{profile.position}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-neutral-500">Hire date</p>
-          <p className="text-slate-900">{formatDate(profile.hire_date)}</p>
-        </div>
-        <p className="text-xs text-slate-500 sm:col-span-3">
-          To change your name or position, ask an admin.
-        </p>
+      <section aria-labelledby="employment-h" className="card mb-4 px-5 py-4">
+        <h2 id="employment-h" className="mb-3 text-base font-semibold text-ink">
+          Employment <span className="font-medium text-ink-muted">· set by Admin</span>
+        </h2>
+        <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-[13px] font-medium text-ink-muted">Name</dt>
+            <dd className="m-0 text-[15px] font-semibold text-ink">{profile.full_name}</dd>
+          </div>
+          <div>
+            <dt className="text-[13px] font-medium text-ink-muted">Position</dt>
+            <dd className="m-0 text-[15px] font-semibold text-ink">{profile.position}</dd>
+          </div>
+          <div>
+            <dt className="text-[13px] font-medium text-ink-muted">Hire date</dt>
+            <dd className="m-0 text-[15px] font-semibold text-ink">{formatDate(profile.hire_date)}</dd>
+          </div>
+        </dl>
+        <p className="mt-2 text-[13px] text-ink-muted">To change your name or position, ask an admin. Only your phone is required below.</p>
+      </section>
+
+      {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+      <div className="grid gap-4 xl:grid-cols-3 xl:items-start">
+        <section aria-labelledby="contact-h" className="card flex flex-col gap-3.5 px-5 py-4">
+          <h2 id="contact-h" className={CARD_TITLE}>
+            Contact
+          </h2>
+          {field('phone_number', 'Phone', 'tel', '09XX XXX XXXX')}
+          {field('email', 'Personal email', 'email', 'name@example.com')}
+          {field('date_of_birth', 'Birthday', 'date')}
+          {field('address', 'Address')}
+          <div className="grid grid-cols-2 gap-3">
+            {field('city', 'City')}
+            {field('province', 'Province')}
+          </div>
+          {field('zip_code', 'Zip code')}
+        </section>
+
+        <section aria-labelledby="emergency-h" className="card flex flex-col gap-3.5 px-5 py-4">
+          <h2 id="emergency-h" className={CARD_TITLE}>
+            Emergency contact
+          </h2>
+          {field('emergency_contact_name', 'Name')}
+          {field('emergency_contact_number', 'Phone', 'tel', '09XX XXX XXXX')}
+          <p className="text-[13px] text-ink-muted">Optional. Who we call if something happens on the job.</p>
+        </section>
+
+        <section aria-labelledby="ids-h" className="card flex flex-col gap-3.5 px-5 py-4">
+          <h2 id="ids-h" className={CARD_TITLE}>
+            Government IDs
+          </h2>
+          {field('sss_number', 'SSS no.')}
+          {field('philhealth_number', 'PhilHealth no.')}
+          {field('pagibig_number', 'Pag-IBIG no.')}
+          {field('tin_number', 'TIN')}
+        </section>
       </div>
 
-      {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-
-      <h3 className="mt-6 text-sm font-semibold text-slate-700">Contact</h3>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
-        {field('phone_number', 'Phone number', 'tel')}
-        {field('email', 'Personal email (optional)', 'email')}
-        {field('date_of_birth', 'Date of birth (optional)', 'date')}
-        <span className="hidden sm:block" />
-        {field('address', 'Address (optional)', 'text', true)}
-        {field('city', 'City (optional)')}
-        {field('province', 'Province (optional)')}
-        {field('zip_code', 'Zip code (optional)')}
-      </div>
-
-      <h3 className="mt-6 text-sm font-semibold text-slate-700">Emergency contact</h3>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
-        {field('emergency_contact_name', 'Name (optional)')}
-        {field('emergency_contact_number', 'Phone number (optional)', 'tel')}
-      </div>
-
-      <h3 className="mt-6 text-sm font-semibold text-slate-700">Government IDs</h3>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
-        {field('tin_number', 'TIN (optional)')}
-        {field('sss_number', 'SSS number (optional)')}
-        {field('philhealth_number', 'PhilHealth number (optional)')}
-        {field('pagibig_number', 'Pag-IBIG number (optional)')}
-      </div>
-
-      <div className="mt-6 flex justify-end">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+        {dirty && <span className="mr-auto text-sm text-ink-muted">You have unsaved changes.</span>}
         <button
-          type="submit"
-          disabled={saving}
-          className="btn-primary px-4 py-2 text-sm font-medium"
+          type="button"
+          onClick={() => {
+            setForm(baseline)
+            setError(null)
+          }}
+          disabled={saving || !dirty}
+          className="btn-secondary px-5 text-sm font-medium"
         >
+          Discard Changes
+        </button>
+        <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 px-6 text-sm">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12l5 5 9-10" />
+          </svg>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>

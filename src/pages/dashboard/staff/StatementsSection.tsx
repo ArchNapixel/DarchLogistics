@@ -18,8 +18,10 @@ function StatementsSection() {
   const [clientId, setClientId] = useState('')
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`)
   const [to, setTo] = useState(today)
-  const [statement, setStatement] = useState<Statement | null>(null)
-  const [loading, setLoading] = useState(false)
+  // The built statement, tagged with the client + dates it's for --
+  // "loading" is just "nothing built for the current pick yet".
+  const [result, setResult] = useState<{ key: string; statement: Statement | null; error: string | null } | null>(null)
+  // Loading the client list failed.
   const [error, setError] = useState<string | null>(null)
 
   // Client choices (everyone, A-Z). Loaded once.
@@ -35,29 +37,24 @@ function StatementsSection() {
   }, [])
 
   // Rebuild whenever the client or dates change (and all three are filled).
+  const ready = !!clientId && !!from && !!to && from <= to
+  const key = `${clientId}|${from}|${to}`
   useEffect(() => {
-    if (!clientId || !from || !to) {
-      setStatement(null)
-      return
-    }
-    if (from > to) {
-      setError('"From" is after "To".')
-      setStatement(null)
-      return
-    }
-
+    if (!ready) return
     let ignore = false
-    setLoading(true)
-    loadStatement(Number(clientId), from, to).then((result) => {
+    loadStatement(Number(clientId), from, to).then((loaded) => {
       if (ignore) return // a newer pick already replaced this one
-      setStatement(result.statement)
-      setError(result.error)
-      setLoading(false)
+      setResult({ key, statement: loaded.statement, error: loaded.error })
     })
     return () => {
       ignore = true
     }
-  }, [clientId, from, to])
+  }, [ready, key, clientId, from, to])
+  const current = ready && result?.key === key ? result : null
+  const statement = current?.statement ?? null
+  const loading = ready && !current
+  const shownError =
+    error ?? (clientId && from && to && from > to ? '"From" is after "To".' : (current?.error ?? null))
 
   const clientName = clients.find((c) => String(c.client_id) === clientId)?.client_name ?? ''
   const fieldClass =
@@ -116,7 +113,7 @@ function StatementsSection() {
         </label>
       </div>
 
-      {error && <p className="mb-4 text-red-700 print:hidden">{error}</p>}
+      {shownError && <p className="mb-4 text-red-700 print:hidden">{shownError}</p>}
       {!clientId && <p className="text-ink-muted print:hidden">Choose a client to see their statement.</p>}
       {loading && <p className="text-ink-muted print:hidden">Building statement...</p>}
 

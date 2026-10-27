@@ -11,9 +11,9 @@
 // that's a per-booking field, not a client-level one, so it isn't shown
 // in the header; client name/email/phone are passed in from
 // ClientsSection's already-loaded data instead of being refetched here.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import { loadClientDamageChargesByBooking } from '../../../lib/damageCharges'
+import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
 import BookingDetailModal from './BookingDetailModal'
 import { type Booking } from './BookingsSection'
@@ -24,6 +24,57 @@ import EmptyState from '../../../components/EmptyState'
 type ClientBooking = Booking & { cargo: string }
 
 const ONGOING_STATUSES = new Set(['Draft', 'Confirmed', 'InProgress'])
+
+// One table of bookings (Ongoing or Past); clicking a row opens its details.
+// Outside the modal so React doesn't treat it as a new component every render.
+function BookingTable({ rows, onSelect }: { rows: ClientBooking[]; onSelect: (booking: ClientBooking) => void }) {
+  return (
+    <div className="overflow-x-auto border-2 border-line-card bg-white">
+      <table className="w-full text-left text-sm text-ink-metric">
+        <thead>
+          <tr>
+            <th className="px-4 py-2.5">Date</th>
+            <th className="px-4 py-2.5">Origin → Destination</th>
+            <th className="px-4 py-2.5">Cargo</th>
+            <th className="px-4 py-2.5">Status</th>
+            <th className="px-4 py-2.5">Rate</th>
+            <th className="px-4 py-2.5">Paid</th>
+            <th className="px-4 py-2.5">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((booking) => (
+            <tr
+              key={booking.booking_id}
+              onClick={() => onSelect(booking)}
+              className="cursor-pointer border-b border-slate-200 last:border-0 hover:bg-slate-50"
+            >
+              <td className="px-4 py-3 text-slate-600">{formatDate(booking.date)}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {booking.pickup_location} → {booking.delivery_location}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {booking.cargo}
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge status={booking.status} />
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatMoney(booking.rate)}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatMoney(booking.amount_paid)}
+              </td>
+              <td className="px-4 py-3 font-medium text-slate-900">
+                {formatMoney(booking.balance_due)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 function ClientBookingHistoryModal({
   client,
@@ -41,10 +92,6 @@ function ClientBookingHistoryModal({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<ClientBooking | null>(null)
-
-  useEffect(() => {
-    loadBookings()
-  }, [])
 
   async function loadBookings() {
     setLoading(true)
@@ -99,7 +146,7 @@ function ClientBookingHistoryModal({
 
     // Approved Client damage charges, added on top of the delivery amount.
     const { byBooking: damageByBooking, error: damageError } =
-      await loadClientDamageChargesByBooking(bookingIds)
+      await loadExtraChargesByBooking(bookingIds)
     if (damageError) {
       setError(damageError)
       setLoading(false)
@@ -180,57 +227,18 @@ function ClientBookingHistoryModal({
     setLoading(false)
   }
 
+  // Load once, when this opens.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    loadBookings()
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
   const ongoing = bookings.filter((b) => ONGOING_STATUSES.has(b.status))
   const past = bookings.filter((b) => !ONGOING_STATUSES.has(b.status))
-
-  function BookingTable({ rows }: { rows: ClientBooking[] }) {
-    return (
-      <div className="overflow-x-auto border-2 border-line-card bg-white">
-        <table className="w-full text-left text-sm text-ink-metric">
-          <thead>
-            <tr>
-              <th className="px-4 py-2.5">Date</th>
-              <th className="px-4 py-2.5">Origin → Destination</th>
-              <th className="px-4 py-2.5">Cargo</th>
-              <th className="px-4 py-2.5">Status</th>
-              <th className="px-4 py-2.5">Rate</th>
-              <th className="px-4 py-2.5">Paid</th>
-              <th className="px-4 py-2.5">Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((booking) => (
-              <tr
-                key={booking.booking_id}
-                onClick={() => setSelectedBooking(booking)}
-                className="cursor-pointer border-b border-slate-200 last:border-0 hover:bg-slate-50"
-              >
-                <td className="px-4 py-3 text-slate-600">{formatDate(booking.date)}</td>
-                <td className="px-4 py-3 text-slate-600">
-                  {booking.pickup_location} → {booking.delivery_location}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {booking.cargo}
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={booking.status} />
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {formatMoney(booking.rate)}
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {formatMoney(booking.amount_paid)}
-                </td>
-                <td className="px-4 py-3 font-medium text-slate-900">
-                  {formatMoney(booking.balance_due)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
 
   return (
     <>
@@ -264,7 +272,7 @@ function ClientBookingHistoryModal({
                     Ongoing ({ongoing.length})
                   </h4>
                   <div className="mt-2">
-                    <BookingTable rows={ongoing} />
+                    <BookingTable rows={ongoing} onSelect={setSelectedBooking} />
                   </div>
                 </div>
               )}
@@ -275,7 +283,7 @@ function ClientBookingHistoryModal({
                     Past ({past.length})
                   </h4>
                   <div className="mt-2">
-                    <BookingTable rows={past} />
+                    <BookingTable rows={past} onSelect={setSelectedBooking} />
                   </div>
                 </div>
               )}

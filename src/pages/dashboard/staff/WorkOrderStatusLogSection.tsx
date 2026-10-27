@@ -1,7 +1,7 @@
 // WorkOrderStatusLogSection: read-only history of every work order
 // status change -- who changed it, from what, to what, and when.
 // Backed by work_order_status_log.
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { LoadMore, LOG_PAGE_SIZE } from '../../../components/LoadMore'
 import {
   loadWorkOrderStatusLog,
@@ -17,10 +17,6 @@ function WorkOrderStatusLogSection() {
 
   const [limit, setLimit] = useState(LOG_PAGE_SIZE)
 
-  useEffect(() => {
-    load(limit)
-  }, [limit])
-
   // No setLoading(true) here: "Show more" keeps the table on screen.
   async function load(rowLimit: number) {
     const { entries: loaded, error: loadError } = await loadWorkOrderStatusLog(rowLimit)
@@ -35,6 +31,16 @@ function WorkOrderStatusLogSection() {
     setError(null)
     setLoading(false)
   }
+
+  // Load when this opens and whenever limit changes.
+  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
+  const loadNow = useEffectEvent(() => {
+    load(limit)
+  })
+  useEffect(() => {
+    const timer = setTimeout(loadNow, 0)
+    return () => clearTimeout(timer)
+  }, [limit])
 
   if (loading) {
     return <p className="text-slate-500">Loading status log...</p>

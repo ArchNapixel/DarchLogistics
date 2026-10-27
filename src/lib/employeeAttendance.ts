@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { overtimeHours } from './attendanceHours'
 
 // 'Leave' = PAID leave (payroll pays it like Present). 'Unpaid Leave' =
 // approved leave beyond the yearly paid balance (lib/leaveRequests.ts) --
@@ -12,9 +13,20 @@ export type AttendanceRecord = {
   attendance_date: string
   attendance_status: AttendanceStatus
   hours_worked: number | null
+  // Time in / time out ("HH:MM:SS", Manila) when they were recorded; then
+  // hours_worked = out − in − lunch (lib/attendanceHours.ts).
+  time_in: string | null
+  time_out: string | null
   notes: string | null
   // Set once a payslip used this day -- the daily roster locks such rows.
   paid_payroll_id: number | null
+}
+
+// True when the error is "time_in / time_out columns don't exist yet" (the
+// time in / out SQL hasn't been run). Attendance then still loads and saves,
+// just without times, instead of breaking the Attendance pages.
+function isMissingTimeColumns(message: string) {
+  return /time_(in|out)/.test(message) && message.includes('does not exist')
 }
 
 export async function loadAttendanceRecords(
@@ -25,12 +37,26 @@ export async function loadAttendanceRecords(
 ): Promise<{ records: AttendanceRecord[]; error: string | null }> {
   let query = supabase
     .from('employee_attendance')
-    .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, notes, paid_payroll_id')
+    .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, time_in, time_out, notes, paid_payroll_id')
     .gte('attendance_date', startDate)
     .lte('attendance_date', endDate)
     .order('attendance_date', { ascending: false })
   if (onlyEmployeeId !== undefined) query = query.eq('employee_id', onlyEmployeeId)
-  const { data: rows, error } = await query
+  let { data: rows, error } = await query
+
+  if (error && isMissingTimeColumns(error.message)) {
+    // Same query without the time columns (see isMissingTimeColumns).
+    let fallback = supabase
+      .from('employee_attendance')
+      .select('attendance_id, employee_id, attendance_date, attendance_status, hours_worked, notes, paid_payroll_id')
+      .gte('attendance_date', startDate)
+      .lte('attendance_date', endDate)
+      .order('attendance_date', { ascending: false })
+    if (onlyEmployeeId !== undefined) fallback = fallback.eq('employee_id', onlyEmployeeId)
+    const result = await fallback
+    rows = (result.data ?? []).map((row) => ({ ...row, time_in: null, time_out: null }))
+    error = result.error
+  }
 
   if (error) return { records: [], error: error.message }
   if (!rows || rows.length === 0) return { records: [], error: null }
@@ -59,6 +85,8 @@ export async function saveAttendanceRecord({
   attendanceDate,
   status,
   hoursWorked,
+  timeIn = null,
+  timeOut = null,
   notes,
   recordedBy,
 }: {
@@ -66,20 +94,38 @@ export async function saveAttendanceRecord({
   attendanceDate: string
   status: AttendanceStatus
   hoursWorked: number | null
+  // "HH:MM" -- only for a Present day with times recorded.
+  timeIn?: string | null
+  timeOut?: string | null
   notes: string | null
   recordedBy: number
 }): Promise<{ error: string | null }> {
+  const row = {
+    employee_id: employeeId,
+    attendance_date: attendanceDate,
+    attendance_status: status,
+    hours_worked: hoursWorked,
+    notes,
+    recorded_by: recordedBy,
+  }
   const { error } = await supabase.from('employee_attendance').upsert(
-    {
-      employee_id: employeeId,
-      attendance_date: attendanceDate,
-      attendance_status: status,
-      hours_worked: hoursWorked,
-      notes,
-      recorded_by: recordedBy,
-    },
+    { ...row, time_in: status === 'Present' ? timeIn : null, time_out: status === 'Present' ? timeOut : null },
     { onConflict: 'employee_id,attendance_date' },
   )
+
+  if (error && isMissingTimeColumns(error.message)) {
+    // No time columns yet: save the day without them.
+    const { error: retryError } = await supabase
+      .from('employee_attendance')
+      .upsert(row, { onConflict: 'employee_id,attendance_date' })
+    if (retryError) return { error: retryError.message }
+    return {
+      error:
+        timeIn !== null || timeOut !== null
+          ? 'Saved, but without the time in / out: the time_in and time_out columns are missing in Supabase (run the attendance SQL first).'
+          : null,
+    }
+  }
 
   return { error: error?.message ?? null }
 }
@@ -128,6 +174,27 @@ export async function sumPaidAttendanceHours(
 
   const hours = data.reduce((sum, row) => sum + (row.hours_worked ?? 0), 0)
   return { hours, error: null }
+}
+
+// Overtime on the same unpaid days (Present only -- leave has no overtime):
+// each day's hours above 8 (lib/attendanceHours.ts), summed. A Present day
+// marked without times stores 8 hours, so it adds nothing.
+export async function sumPaidOvertimeHours(
+  employeeId: number,
+  startDate: string,
+  endDate: string,
+): Promise<{ hours: number; error: string | null }> {
+  const { data, error } = await supabase
+    .from('employee_attendance')
+    .select('hours_worked')
+    .eq('employee_id', employeeId)
+    .gte('attendance_date', startDate)
+    .lte('attendance_date', endDate)
+    .eq('attendance_status', 'Present')
+    .is('paid_payroll_id', null)
+  if (error) return { hours: 0, error: error.message }
+  const hours = data.reduce((sum, row) => sum + overtimeHours(row.hours_worked), 0)
+  return { hours: Math.round(hours * 100) / 100, error: null }
 }
 
 // Called by issuePayslip() right after a Daily Fixed / Monthly Salary /
