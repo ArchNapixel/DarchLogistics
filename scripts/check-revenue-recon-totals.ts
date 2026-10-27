@@ -8,14 +8,14 @@ import { buildStatement } from '../src/lib/statementTotals.ts'
 // Same ledger as the statement check: October 2026 for three bookings.
 const input = {
   bookings: [
-    { booking_id: 1, booking_date: '2026-09-01', route: 'A -> B', rate: 10_000, billable_amount: 21_500 },
-    { booking_id: 2, booking_date: '2026-09-10', route: 'C -> D', rate: 5_000, billable_amount: 4_000 },
-    { booking_id: 3, booking_date: '2026-10-05', route: 'E -> F', rate: 8_000, billable_amount: 8_000 },
+    { booking_id: 1, booking_date: '2026-09-01', route: 'A -> B', billable_amount: 21_500 },
+    { booking_id: 2, booking_date: '2026-09-10', route: 'C -> D', billable_amount: 4_000 },
+    { booking_id: 3, booking_date: '2026-10-05', route: 'E -> F', billable_amount: 8_000 },
   ],
   trips: [
-    { itinerary_id: 11, booking_id: 1, delivered_on: '2026-09-05' },
-    { itinerary_id: 12, booking_id: 1, delivered_on: '2026-10-03' },
-    { itinerary_id: 21, booking_id: 2, delivered_on: '2026-09-15' },
+    { itinerary_id: 11, booking_id: 1, delivered_on: '2026-09-05', rate: 10_000 },
+    { itinerary_id: 12, booking_id: 1, delivered_on: '2026-10-03', rate: 10_000 },
+    { itinerary_id: 21, booking_id: 2, delivered_on: '2026-09-15', rate: 5_000 },
   ],
   payments: [
     { payment_id: 1, booking_id: 1, amount: 10_000, paid_on: '2026-09-20', method: 'Cash', reference_no: null, or_number: null },

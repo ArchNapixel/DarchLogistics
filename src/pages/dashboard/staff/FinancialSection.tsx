@@ -46,6 +46,7 @@ import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpayment'
+import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
 import { deliveryAmountFor, loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 
@@ -630,7 +631,7 @@ function FinancialActionModal({
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
           <div>
             <p className="text-[13px] text-ink-muted">Rate / trip</p>
-            <p className="font-semibold text-slate-900">{formatMoney(booking.rate)}</p>
+            <p className="font-semibold text-slate-900">{bookingRateLabel(booking.trip_rates, booking.rate)}</p>
           </div>
           <div>
             <p className="text-[13px] text-ink-muted">Trips completed</p>
@@ -874,10 +875,10 @@ function FinancialSection() {
       fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
         supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
       ),
-      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+      fetchIn<{ booking_id: number; itinerary_status: string | null; trip_rate: number | string | null }>(bookingIds, (chunk, from, to) =>
         supabase
           .from('itineraries')
-          .select('booking_id, itinerary_status')
+          .select('booking_id, itinerary_status, trip_rate')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -937,21 +938,20 @@ function FinancialSection() {
       }
     })
 
-    // Downpayment counts only non-cancelled trips.
-    const liveTripsByBooking = new Map<number, number>()
-    itinerariesResult.rows.forEach((it) => {
-      if (it.itinerary_status !== 'Cancelled') {
-        liveTripsByBooking.set(it.booking_id, (liveTripsByBooking.get(it.booking_id) ?? 0) + 1)
-      }
-    })
+    // Every trip's own rate (cargo lines can be priced differently). The
+    // downpayment counts only non-cancelled trips.
+    const tripRatesByBooking = groupTripRates(
+      itinerariesResult.rows,
+      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
+    )
     setDownpaymentById(
       new Map(
         bookingRows.map((b) => [
           b.booking_id,
           downpaymentStatus({
-            ratePerTrip: b.rate_of_delivery_service,
+            contract: sumRates(tripRatesByBooking.get(b.booking_id)?.live ?? []),
             costPerTrip: b.cost_per_trip,
-            trips: liveTripsByBooking.get(b.booking_id) ?? 0,
+            trips: tripRatesByBooking.get(b.booking_id)?.live.length ?? 0,
             amountPaid: b.amount_paid,
             waivedAt: b.downpayment_waived_at,
           }),
@@ -961,10 +961,10 @@ function FinancialSection() {
 
     setBookings(
       bookingRows.map((b) => {
-        const rate = b.rate_of_delivery_service ?? 0
+        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = rate * completedTrips
+        const computedBillableAmount = sumRates(tripRates.delivered)
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
         // Any cancellation: only delivered trips are billable (same cap as getDeliveryTarget).
         const deliveryAmount = deliveryAmountFor({
@@ -983,9 +983,10 @@ function FinancialSection() {
           date: b.booking_date,
           status: b.booking_status ?? 'Draft',
           rate: b.rate_of_delivery_service,
+          trip_rates: tripRates.live,
           total_trips: totalTrips,
           completed_trips: completedTrips,
-          total_contract_value: rate * totalTrips,
+          total_contract_value: sumRates(tripRates.live),
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
           damage_charges: damageCharges,

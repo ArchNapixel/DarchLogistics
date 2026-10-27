@@ -606,7 +606,7 @@ function ClientsSection() {
                           {paneQuotes[0].reference_code ?? `#${paneQuotes[0].quote_request_id}`}
                         </span>
                         {paneQuotes[0].proposed_rate !== null && paneQuotes[0].request_status === 'Countered' && (
-                          <> · {formatMoney(paneQuotes[0].proposed_rate)} counter-offer</>
+                          <> · counter-offer, {formatMoney(paneQuotes[0].proposed_rate)} per trip on average</>
                         )}
                         {paneQuotes[0].delivery_order_count !== null && (
                           <> · {paneQuotes[0].delivery_order_count} {paneQuotes[0].delivery_order_count === 1 ? 'trip' : 'trips'}</>

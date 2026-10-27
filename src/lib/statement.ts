@@ -33,16 +33,17 @@ export async function loadLedgerInputs(clientId?: number): Promise<{
     booking_id: r.booking_id,
     booking_date: r.booking_date,
     route: `${r.pickup_place_name} → ${r.delivery_place_name}`,
-    rate: r.rate_per_trip ?? 0,
     billable_amount: r.billable_amount,
   }))
   const bookingDateById = new Map(bookings.map((b) => [b.booking_id, b.booking_date]))
+  // A trip saved without its own rate bills the booking's.
+  const bookingRateById = new Map(report.rows.map((r) => [r.booking_id, r.rate_per_trip ?? 0]))
 
   const [trips, payments] = await Promise.all([
-    fetchIn<{ itinerary_id: number; booking_id: number }>(bookingIds, (chunk, a, b) =>
+    fetchIn<{ itinerary_id: number; booking_id: number; trip_rate: number | string | null }>(bookingIds, (chunk, a, b) =>
       supabase
         .from('itineraries')
-        .select('itinerary_id, booking_id')
+        .select('itinerary_id, booking_id, trip_rate')
         .in('booking_id', chunk)
         .eq('itinerary_status', 'Delivered')
         .range(a, b),
@@ -78,7 +79,9 @@ export async function loadLedgerInputs(clientId?: number): Promise<{
   })
 
   const statementTrips: StatementTrip[] = trips.rows.map((t) => ({
-    ...t,
+    itinerary_id: t.itinerary_id,
+    booking_id: t.booking_id,
+    rate: Number(t.trip_rate ?? bookingRateById.get(t.booking_id) ?? 0),
     // A delivered trip with no Delivered log (shouldn't happen) is dated
     // its booking's date rather than dropped.
     delivered_on: deliveredOn.get(t.itinerary_id) ?? bookingDateById.get(t.booking_id) ?? '',

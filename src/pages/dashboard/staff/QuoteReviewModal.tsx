@@ -38,7 +38,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
-import { estimateTripCosts } from '../../../lib/tripCost'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
@@ -54,14 +53,25 @@ import {
   tripCargoLabel,
   type RejectionTag,
 } from '../../../lib/quoteRequest'
-import { downpaymentFor } from '../../../lib/downpayment'
+import { downpaymentForContract } from '../../../lib/downpayment'
 import { rateForCostShare } from '../../../lib/quotePricing'
+import { filterAmountInput } from '../../../lib/amountInput'
+import {
+  averageRate,
+  contractTotal,
+  estimateLineCosts,
+  lineRateError,
+  parseLineRates,
+  rateLabel,
+  ratesDiffer,
+} from '../../../lib/lineRates'
 import {
   QUOTE_STATUS_LABELS,
   isProposal,
   loadQuoteOffers,
   offerActionLabel,
   offerChanges,
+  offerLineRates,
   previousProposal,
   type QuoteOfferRow,
 } from '../../../lib/quoteOffers'
@@ -159,6 +169,32 @@ function GroupHeading({ children }: { children: React.ReactNode }) {
   )
 }
 
+// The cargo lines of a quote with the rate each one is priced at, e.g. in the
+// "waiting on client" panel and next to a counter-offer. Lines are 1-based.
+function LineRateList({
+  lines,
+  rates,
+}: {
+  lines: ReturnType<typeof parseCargoLines>
+  rates: number[]
+}) {
+  return (
+    <ol className="flex flex-col gap-1.5 text-[14px]">
+      {lines.map((line, index) => (
+        <li key={index} className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <span className="text-slate-700">
+            {lines.length > 1 ? `Line ${index + 1}: ` : ''}
+            {line.quantity} × {tripCargoLabel(line)}
+          </span>
+          <span className="font-semibold tabular-nums text-slate-900">
+            {formatMoney(rates[index] ?? 0)} <span className="font-normal text-slate-500">per trip</span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 // One row of the profitability panel: label (+ optional hint) and amount.
 function CostRow({ label, hint, value, strong = false }: { label: string; hint?: string; value: string; strong?: boolean }) {
   return (
@@ -223,9 +259,17 @@ function QuoteReviewModal({
   const status = quote.request_status
   const waitingOnClient = status === 'Offered'
   const countered = status === 'Countered'
-  // What staff offer: rate per trip + dates, prefilled with what's on the
-  // quote now (the client's counter, or an old quote's own rate).
-  const [rateInput, setRateInput] = useState(quote.proposed_rate != null ? String(quote.proposed_rate) : '')
+  // What staff offer: a rate per trip for EACH cargo line + dates, prefilled
+  // with what's on the quote now (the client's counter, or an old quote's
+  // single rate on every line).
+  const [rateInputs, setRateInputs] = useState<string[]>(() =>
+    parseLineRates(quote.line_rates, parseCargoLines(quote.cargo_lines).length, quote.proposed_rate).map((r) =>
+      r > 0 ? String(r) : '',
+    ),
+  )
+  // Phone / walk-in counter (Offered view): the client's rate for each line.
+  const [replyRateInputs, setReplyRateInputs] = useState<string[]>([])
+  const [showReplyCounter, setShowReplyCounter] = useState(false)
   const [offerPickupDate, setOfferPickupDate] = useState(quote.preferred_pickup_date ?? '')
   const [offerDeadline, setOfferDeadline] = useState(quote.preferred_delivery_date ?? '')
   const [offerNote, setOfferNote] = useState('')
@@ -439,15 +483,13 @@ function QuoteReviewModal({
 
   // Checks staff's price before it goes out. Returns the numbers, or null
   // (the problem is already shown).
-  async function checkOffer(): Promise<{ rate: number; distance: number; hours: number } | null> {
-    const rate = Number(rateInput)
-    if (!rateInput || !(rate > 0)) {
-      setError('Enter the rate per trip to offer.')
-      return null
-    }
-    if (!/^\d+(\.\d{1,2})?$/.test(rateInput)) {
-      setError('Rate per trip: max 2 decimals.')
-      return null
+  async function checkOffer(): Promise<{ rates: number[]; distance: number; hours: number } | null> {
+    for (let i = 0; i < rateInputs.length; i++) {
+      const problem = lineRateError(rateInputs[i], i + 1, rateInputs.length)
+      if (problem) {
+        setError(`Rate per trip — ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`)
+        return null
+      }
     }
     const distance = Number(estimatedDistanceKm)
     if (!estimatedDistanceKm || !(distance > 0)) {
@@ -499,7 +541,7 @@ function QuoteReviewModal({
     ) {
       return null
     }
-    return { rate, distance, hours: Number(hoursPerTrip) }
+    return { rates: rateInputs.map(Number), distance, hours: Number(hoursPerTrip) }
   }
 
   // Pending / Countered -> Offered. The client then answers it.
@@ -526,7 +568,7 @@ function QuoteReviewModal({
     setError(null)
     const { error: rpcError } = await supabase.rpc('send_quote_offer', {
       p_quote_id: quote.quote_request_id,
-      p_rate: offer.rate,
+      p_line_rates: offer.rates,
       p_pickup_date: offerPickupDate,
       p_deadline_date: offerDeadline || null,
       p_distance_km: offer.distance,
@@ -540,14 +582,13 @@ function QuoteReviewModal({
       return
     }
     setDoneMessage(
-      `Offer sent: ${formatMoney(offer.rate)} per trip × ${deliveryCount} = ${formatMoney(offer.rate * deliveryCount)}. ` +
+      `Offer sent: ${rateLabel(offer.rates)} per trip × ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} = ${formatMoney(contractTotal(cargoLines, offer.rates))}. ` +
         'The client can accept it, counter it or decline it from their portal. It is now under "Waiting on client".',
     )
   }
 
   // Countered: take the client's rate and dates -> the booking is created.
   async function handleAcceptCounter() {
-    const counterRate = quote.proposed_rate ?? 0
     const distance = Number(estimatedDistanceKm)
     const hoursMessage = hoursProblem(hoursPerTrip)
     if (!(distance > 0)) {
@@ -564,8 +605,8 @@ function QuoteReviewModal({
       return
     }
     const ok = await confirmDialog({
-      title: `Accept ${formatMoney(counterRate)} per trip?`,
-      message: `This creates the booking now: ${deliveryCount} trips, contract ${formatMoney(counterRate * deliveryCount)}, pickup ${
+      title: `Accept ${rateLabel(savedRates)} per trip?`,
+      message: `This creates the booking now: ${deliveryCount} trips, contract ${formatMoney(contractTotal(cargoLines, savedRates))}, pickup ${
         quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'
       }.`,
       confirmLabel: 'Accept and create booking',
@@ -623,20 +664,18 @@ function QuoteReviewModal({
   // Offered: a phone / walk-in client answered -- staff enter it for them
   // (same database function the client portal uses; logged as by staff).
   async function handleRecordReply(action: 'accept' | 'counter' | 'decline') {
-    let rate: number | null = null
+    let counterRates: number[] | null = null
     let note: string | null = null
     if (action === 'counter') {
-      const typed = await promptDialog({
-        title: "Client's rate per trip",
-        message: 'What rate per trip did the client ask for? (Dates: change them below the offer if they asked for other dates.)',
-        confirmLabel: 'Record counter-offer',
-      })
-      if (typed === null) return
-      rate = Number(typed.replace(/[^\d.]/g, ''))
-      if (!(rate > 0)) {
-        setError('Enter the rate the client asked for.')
-        return
+      // The per-line boxes in the "answered by phone" panel.
+      for (let i = 0; i < replyRateInputs.length; i++) {
+        const problem = lineRateError(replyRateInputs[i], i + 1, replyRateInputs.length)
+        if (problem) {
+          setError(`Client's rate per trip — ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`)
+          return
+        }
       }
+      counterRates = replyRateInputs.map(Number)
     } else if (action === 'decline') {
       note = await promptDialog({
         title: 'Client declined',
@@ -652,7 +691,7 @@ function QuoteReviewModal({
     } else if (
       !(await confirmDialog({
         title: 'Client accepted?',
-        message: `Record that the client accepted ${formatMoney(quote.proposed_rate ?? 0)} per trip. This creates the booking now.`,
+        message: `Record that the client accepted ${rateLabel(savedRates)} per trip. This creates the booking now.`,
         confirmLabel: 'Client accepted -- create booking',
       }))
     ) {
@@ -664,7 +703,7 @@ function QuoteReviewModal({
     const { data: bookingId, error: rpcError } = await supabase.rpc('respond_to_quote_offer', {
       p_quote_id: quote.quote_request_id,
       p_action: action,
-      p_rate: rate,
+      p_line_rates: counterRates,
       // A counter can also move the dates (the date boxes below the offer).
       p_pickup_date: action === 'counter' ? offerPickupDate || null : null,
       p_deadline_date: action === 'counter' ? offerDeadline || null : null,
@@ -679,7 +718,7 @@ function QuoteReviewModal({
       action === 'accept'
         ? `Recorded. Booking #${bookingId} was created with ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} (status "Awaiting").`
         : action === 'counter'
-          ? `Counter-offer recorded (${formatMoney(rate ?? 0)} per trip). It is back under "Needs pricing".`
+          ? `Counter-offer recorded (${rateLabel(counterRates ?? [])} per trip). It is back under "Needs pricing".`
           : 'Decline recorded. The quote is closed.',
     )
   }
@@ -735,36 +774,38 @@ function QuoteReviewModal({
     onResolved(quote.quote_request_id)
   }
 
-  // rateInput/estimatedDistanceKm are PER TRIP -- a booking with
+  // The rates typed are PER TRIP, one per cargo line -- a booking with
   // delivery_order_count deliveries runs that many separate truck trips,
   // each with its own diesel burn, driver commission, and per-trip fee.
   // The estimate below is for the whole contract (all deliveries), not
-  // just one, so every cost is multiplied by deliveryCount alongside the
-  // revenue side (rateForCalc x deliveryCount) -- otherwise the % of
-  // rate would compare a full-contract revenue against only one trip's
-  // costs and look far more profitable than it really is.
+  // just one, so every cost is counted for every trip of every line
+  // alongside the revenue side (each line's rate x its trips) -- otherwise
+  // the % of rate would compare a full-contract revenue against only one
+  // trip's costs and look far more profitable than it really is.
   const deliveryCount = tripCargo.length > 0 ? tripCargo.length : (quote.delivery_order_count ?? 1)
-  const rateForCalc = Number(rateInput)
+  const typedRates = rateInputs.map((r) => Number(r) || 0)
+  // What's saved on the quote now (our offer, or the client's counter).
+  const savedRates = parseLineRates(quote.line_rates, cargoLines.length, quote.proposed_rate)
   const distanceForCalc = Number(estimatedDistanceKm)
   const settingsLoaded =
     dieselPricePerLiter !== null &&
     driverCommissionRate !== null &&
     driverPerTripFee !== null
-  const canCalculateProfitability =
-    settingsLoaded && rateForCalc > 0 && distanceForCalc > 0
+  const allLinesPriced = typedRates.length > 0 && typedRates.every((r) => r > 0)
+  const canCalculateProfitability = settingsLoaded && allLinesPriced && distanceForCalc > 0
 
-  const totalContractValue = rateForCalc * deliveryCount
+  const totalContractValue = contractTotal(cargoLines, typedRates)
   // Formula lives in lib/tripCost.ts (shared with the Admin dashboard).
   const estimated = canCalculateProfitability
-    ? estimateTripCosts(
+    ? estimateLineCosts(
         {
           dieselPricePerLiter: dieselPricePerLiter!,
           driverCommissionRate: driverCommissionRate!,
           driverPerTripFee: driverPerTripFee!,
         },
-        rateForCalc,
+        cargoLines,
+        typedRates,
         distanceForCalc,
-        deliveryCount,
       )
     : { diesel: 0, commission: 0, perTripFee: 0, total: 0 }
   const dieselCost = estimated.diesel
@@ -778,7 +819,9 @@ function QuoteReviewModal({
   // Sent with the offer (quote_requests.cost_per_trip) and copied to the
   // booking; the client's downpayment comes from it.
   const costPerTrip = Math.round((totalCost / deliveryCount) * 100) / 100
-  const downpayment = canCalculateProfitability ? downpaymentFor(rateForCalc, costPerTrip, deliveryCount) : null
+  const downpayment = canCalculateProfitability
+    ? downpaymentForContract(totalContractValue, costPerTrip, deliveryCount)
+    : null
 
   // Pricing guide (lib/quotePricing.ts) and "what if" at any rate -- same
   // cost formula as the panel. Null until Settings + distance are known.
@@ -791,10 +834,10 @@ function QuoteReviewModal({
     : null
   const breakEvenRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 1) : null
   const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 0.5) : null
-  function profitAt(rate: number) {
-    if (!costSettings || !(distanceForCalc > 0) || !(rate > 0)) return null
-    const costs = estimateTripCosts(costSettings, rate, distanceForCalc, deliveryCount)
-    const contract = rate * deliveryCount
+  function profitAt(rates: number[]) {
+    if (!costSettings || !(distanceForCalc > 0) || rates.length === 0 || !rates.every((r) => r > 0)) return null
+    const costs = estimateLineCosts(costSettings, cargoLines, rates, distanceForCalc)
+    const contract = contractTotal(cargoLines, rates)
     return {
       contract,
       total: costs.total,
@@ -803,13 +846,15 @@ function QuoteReviewModal({
       costPerTrip: Math.round((costs.total / deliveryCount) * 100) / 100,
     }
   }
-  // On a counter: our last offer vs the client's rate (quote.proposed_rate).
-  const ourOfferAt = countered && lastOurOffer?.rate ? profitAt(lastOurOffer.rate) : null
-  const counterAt = countered ? profitAt(quote.proposed_rate ?? 0) : null
+  // On a counter: our last offer vs the client's rates (what's saved on the quote).
+  const ourOfferRates = lastOurOffer ? offerLineRates(lastOurOffer) : []
+  const ourOfferAt =
+    countered && ourOfferRates.length === cargoLines.length ? profitAt(ourOfferRates) : null
+  const counterAt = countered ? profitAt(savedRates) : null
   // The offer the client is looking at (Offered): its downpayment.
   const offeredDownpayment =
     waitingOnClient && quote.cost_per_trip != null
-      ? downpaymentFor(quote.proposed_rate, quote.cost_per_trip, deliveryCount)
+      ? downpaymentForContract(contractTotal(cargoLines, savedRates), quote.cost_per_trip, deliveryCount)
       : null
 
   const estimatedProfit = totalContractValue - totalCost
@@ -929,7 +974,7 @@ function QuoteReviewModal({
                 {countered && (
                   <div className="border-2 border-sky-300 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
                     <p className="font-semibold">
-                      Client countered: {formatMoney(quote.proposed_rate ?? 0)} per trip
+                      Client countered: {rateLabel(savedRates)} per trip
                     </p>
                     {/* What they changed from our last offer, highlighted. */}
                     {lastOurOffer && lastClientMove ? (
@@ -1077,10 +1122,14 @@ function QuoteReviewModal({
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                     <Field label={countered ? "Client's counter-offer" : waitingOnClient ? 'Our offer' : 'Rate'}>
                       {quote.proposed_rate !== null && status !== 'Pending' ? (
-                        <>
-                          <span className="text-2xl font-bold tabular-nums">{formatMoney(quote.proposed_rate)}</span>{' '}
-                          <span className="text-[13px] text-slate-500">per trip</span>
-                        </>
+                        ratesDiffer(savedRates) ? (
+                          <LineRateList lines={cargoLines} rates={savedRates} />
+                        ) : (
+                          <>
+                            <span className="text-2xl font-bold tabular-nums">{formatMoney(savedRates[0] ?? quote.proposed_rate)}</span>{' '}
+                            <span className="text-[13px] text-slate-500">per trip</span>
+                          </>
+                        )
                       ) : (
                         'Not priced yet'
                       )}
@@ -1107,7 +1156,7 @@ function QuoteReviewModal({
                               {h.rate != null && (
                                 <>
                                   {' · '}
-                                  <span className={mark(changed?.rate)}>{formatMoney(h.rate)}</span> per trip
+                                  <span className={mark(changed?.rate)}>{rateLabel(offerLineRates(h))}</span> per trip
                                 </>
                               )}
                               {h.pickup_date && (
@@ -1180,10 +1229,15 @@ function QuoteReviewModal({
                       They can accept, counter (rate or dates) or decline from their portal.
                     </p>
                     <div className="mt-3 text-[15px]">
+                      {ratesDiffer(savedRates) && (
+                        <div className="mb-2 border-b border-slate-200 pb-2">
+                          <LineRateList lines={cargoLines} rates={savedRates} />
+                        </div>
+                      )}
                       <CostRow
                         label="Our offer"
-                        hint={`${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${formatMoney(quote.proposed_rate ?? 0)}`}
-                        value={formatMoney((quote.proposed_rate ?? 0) * deliveryCount)}
+                        hint={`${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${rateLabel(savedRates)}`}
+                        value={formatMoney(contractTotal(cargoLines, savedRates))}
                         strong
                       />
                       {offeredDownpayment !== null && (
@@ -1201,13 +1255,57 @@ function QuoteReviewModal({
                       <button type="button" onClick={() => handleRecordReply('accept')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
                         Client accepted
                       </button>
-                      <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Start from our offer; the client's changes go on top.
+                          setReplyRateInputs(savedRates.map((r) => (r > 0 ? String(r) : '')))
+                          setShowReplyCounter(true)
+                          setError(null)
+                        }}
+                        disabled={submitting}
+                        aria-expanded={showReplyCounter}
+                        className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50"
+                      >
                         Client countered…
                       </button>
                       <button type="button" onClick={() => handleRecordReply('decline')} disabled={submitting} className="border-2 border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
                         Client declined…
                       </button>
                     </div>
+                    {showReplyCounter && (
+                      <div className="mt-3 border-2 border-line-control px-3 py-3">
+                        <p className="text-sm font-semibold text-slate-900">Client's rate per trip, for each line</p>
+                        <ol className="mt-2 flex flex-col gap-2">
+                          {cargoLines.map((line, index) => (
+                            <li key={index}>
+                              <label htmlFor={`reply-rate-${index}`} className="block text-[13px] text-slate-700">
+                                {cargoLines.length > 1 ? `Line ${index + 1}: ` : ''}
+                                {line.quantity} × {tripCargoLabel(line)}
+                              </label>
+                              <input
+                                id={`reply-rate-${index}`}
+                                type="text"
+                                inputMode="decimal"
+                                value={replyRateInputs[index] ?? ''}
+                                onChange={(e) =>
+                                  setReplyRateInputs((prev) => prev.map((v, i) => (i === index ? filterAmountInput(e.target.value) : v)))
+                                }
+                                className={`${fieldClasses} mt-1 tabular-nums`}
+                              />
+                            </li>
+                          ))}
+                        </ol>
+                        <div className="mt-3 flex gap-2">
+                          <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
+                            Record counter-offer
+                          </button>
+                          <button type="button" onClick={() => setShowReplyCounter(false)} disabled={submitting} className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <label className="flex flex-col gap-1 text-[13px] font-medium text-slate-600">
                         Counter: pickup date
@@ -1290,18 +1388,55 @@ function QuoteReviewModal({
                         )}
                       </div>
                       <div className="col-span-2">
-                        <label htmlFor="offer-rate" className="block text-sm font-semibold text-slate-900">
-                          Rate per trip to offer (PHP)
-                        </label>
-                        <input
-                          id="offer-rate"
-                          type="text"
-                          inputMode="decimal"
-                          value={rateInput}
-                          onChange={(e) => setRateInput(e.target.value.replace(/[^\d.]/g, ''))}
-                          placeholder={fiftyLineRate ? `e.g. ${fiftyLineRate}` : 'e.g. 15000'}
-                          className={`${fieldClasses} mt-1.5 tabular-nums`}
-                        />
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="block text-sm font-semibold text-slate-900">
+                            Rate per trip to offer (PHP){cargoLines.length > 1 ? ', for each cargo line' : ''}
+                          </span>
+                          {cargoLines.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Copy the first filled-in rate to every line.
+                                const first = rateInputs.find((r) => r !== '') ?? ''
+                                setRateInputs(rateInputs.map(() => first))
+                              }}
+                              className="text-[13px] font-medium text-primary underline"
+                            >
+                              Same rate for all lines
+                            </button>
+                          )}
+                        </div>
+                        <ol className="mt-1.5 flex flex-col gap-2">
+                          {cargoLines.map((line, index) => (
+                            <li key={index} className="border border-slate-200 px-3 py-2">
+                              <label
+                                htmlFor={`offer-rate-${index}`}
+                                className="flex flex-wrap items-baseline justify-between gap-x-3 text-[13px] text-slate-700"
+                              >
+                                <span>
+                                  {cargoLines.length > 1 ? `Line ${index + 1}: ` : ''}
+                                  {line.quantity} × {tripCargoLabel(line)}
+                                </span>
+                                {typedRates[index] > 0 && (
+                                  <span className="tabular-nums text-slate-500">
+                                    {formatMoney(typedRates[index] * line.quantity)} for the line
+                                  </span>
+                                )}
+                              </label>
+                              <input
+                                id={`offer-rate-${index}`}
+                                type="text"
+                                inputMode="decimal"
+                                value={rateInputs[index] ?? ''}
+                                onChange={(e) =>
+                                  setRateInputs((prev) => prev.map((v, i) => (i === index ? filterAmountInput(e.target.value) : v)))
+                                }
+                                placeholder={fiftyLineRate ? `e.g. ${fiftyLineRate}` : 'e.g. 15000'}
+                                className={`${fieldClasses} mt-1.5 tabular-nums`}
+                              />
+                            </li>
+                          ))}
+                        </ol>
                       </div>
                       <div>
                         <label htmlFor="offer-pickup" className="block text-sm font-semibold text-slate-900">
@@ -1379,10 +1514,10 @@ function QuoteReviewModal({
                         {fiftyLineRate !== null && (
                           <button
                             type="button"
-                            onClick={() => setRateInput(String(fiftyLineRate))}
+                            onClick={() => setRateInputs(cargoLines.map(() => String(fiftyLineRate)))}
                             className="mt-1 text-sm font-medium text-primary underline"
                           >
-                            Use {formatMoney(fiftyLineRate)} as the rate
+                            Use {formatMoney(fiftyLineRate)} as the rate{cargoLines.length > 1 ? ' on every line' : ''}
                           </button>
                         )}
                       </div>
@@ -1391,8 +1526,8 @@ function QuoteReviewModal({
                           <thead className="text-left text-[13px] text-slate-500">
                             <tr>
                               <th className="py-1 font-medium" />
-                              <th className="py-1 text-right font-medium">Our offer {formatMoney(lastOurOffer!.rate!)}</th>
-                              <th className="py-1 text-right font-medium">Client's {formatMoney(quote.proposed_rate ?? 0)}</th>
+                              <th className="py-1 text-right font-medium">Our offer {rateLabel(ourOfferRates)}</th>
+                              <th className="py-1 text-right font-medium">Client's {rateLabel(savedRates)}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1424,15 +1559,21 @@ function QuoteReviewModal({
                       <p className="mt-3 text-sm text-slate-600">
                         Set diesel price and driver commission rate under Settings to see this estimate.
                       </p>
-                    ) : rateForCalc <= 0 ? (
-                      <p className="mt-3 text-sm text-slate-600">Enter a rate per trip to see the profit.</p>
+                    ) : !allLinesPriced ? (
+                      <p className="mt-3 text-sm text-slate-600">
+                        Enter a rate per trip {cargoLines.length > 1 ? 'for every cargo line ' : ''}to see the profit.
+                      </p>
                     ) : distanceForCalc <= 0 ? (
                       <p className="mt-3 text-sm text-slate-600">Enter the estimated distance to see the costs.</p>
                     ) : (
                       <div className="mt-2 text-[15px]">
                         <CostRow
                           label="Contract value"
-                          hint={`${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${formatMoney(rateForCalc)}`}
+                          hint={
+                            ratesDiffer(typedRates)
+                              ? `${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'}, average ${formatMoney(averageRate(cargoLines, typedRates))} per trip`
+                              : `${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} × ${formatMoney(typedRates[0])}`
+                          }
                           value={formatMoney(totalContractValue)}
                           strong
                         />
@@ -1578,7 +1719,7 @@ function QuoteReviewModal({
                   className={`border-2 border-primary text-primary hover:bg-slate-50 ${footerButton}`}
                 >
                   <Icon name="check" />
-                  Accept client's {formatMoney(quote.proposed_rate ?? 0)}
+                  Accept client's {rateLabel(savedRates)}
                 </button>
               )}
               <button onClick={handleSendOffer} disabled={submitting} className={`btn-primary ${footerButton}`}>

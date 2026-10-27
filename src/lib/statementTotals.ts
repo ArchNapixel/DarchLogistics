@@ -4,9 +4,9 @@
 //
 // A statement is a dated ledger of what ONE client was billed and what they
 // paid. Positive = the client owes more, negative = they paid.
-//   - Each delivered trip bills the booking's rate on its delivery date.
+//   - Each delivered trip bills its own rate on its delivery date.
 //   - Adjustment: whatever else makes the booking's billable amount differ
-//     from rate x delivered trips -- approved client damage charges, a
+//     from the delivered trips' rates added up -- approved client damage charges, a
 //     manual discount (amount_to_pay override), or an advance lock at the
 //     full contract. One line per booking, dated its latest delivery (or
 //     the booking date if nothing is delivered yet).
@@ -21,11 +21,11 @@ export type StatementBooking = {
   booking_id: number
   booking_date: string
   route: string
-  rate: number
   billable_amount: number // delivery (override or computed) + client damage
 }
 
-export type StatementTrip = { itinerary_id: number; booking_id: number; delivered_on: string }
+// `rate` is this trip's own rate (cargo lines of a booking can be priced differently).
+export type StatementTrip = { itinerary_id: number; booking_id: number; delivered_on: string; rate: number }
 
 export type StatementPayment = {
   payment_id: number
@@ -75,13 +75,13 @@ export function buildStatement(
       kind: 'Trip',
       booking_id: t.booking_id,
       description: `Trip #${t.itinerary_id} delivered: ${booking.route}`,
-      amount: booking.rate,
+      amount: t.rate,
     })
   })
 
   input.bookings.forEach((b) => {
     const trips = tripsByBooking.get(b.booking_id) ?? []
-    const adjustment = cents(b.billable_amount - b.rate * trips.length)
+    const adjustment = cents(b.billable_amount - trips.reduce((sum, t) => sum + t.rate, 0))
     if (adjustment === 0) return
     const lastDelivery = trips.map((t) => t.delivered_on).sort().pop()
     events.push({

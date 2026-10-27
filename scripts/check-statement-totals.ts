@@ -7,16 +7,16 @@ import { buildStatement } from '../src/lib/statementTotals.ts'
 const input = {
   bookings: [
     // 2 trips delivered at 10,000, +1,500 client damage on top: billable 21,500.
-    { booking_id: 1, booking_date: '2026-09-01', route: 'A -> B', rate: 10_000, billable_amount: 21_500 },
+    { booking_id: 1, booking_date: '2026-09-01', route: 'A -> B', billable_amount: 21_500 },
     // 1 trip delivered at 5,000 but a discount override of 4,000: adjustment -1,000.
-    { booking_id: 2, booking_date: '2026-09-10', route: 'C -> D', rate: 5_000, billable_amount: 4_000 },
+    { booking_id: 2, booking_date: '2026-09-10', route: 'C -> D', billable_amount: 4_000 },
     // Nothing delivered, but paid in full in advance (locked at 8,000): adjustment on the booking date.
-    { booking_id: 3, booking_date: '2026-10-05', route: 'E -> F', rate: 8_000, billable_amount: 8_000 },
+    { booking_id: 3, booking_date: '2026-10-05', route: 'E -> F', billable_amount: 8_000 },
   ],
   trips: [
-    { itinerary_id: 11, booking_id: 1, delivered_on: '2026-09-05' },
-    { itinerary_id: 12, booking_id: 1, delivered_on: '2026-10-03' },
-    { itinerary_id: 21, booking_id: 2, delivered_on: '2026-09-15' },
+    { itinerary_id: 11, booking_id: 1, delivered_on: '2026-09-05', rate: 10_000 },
+    { itinerary_id: 12, booking_id: 1, delivered_on: '2026-10-03', rate: 10_000 },
+    { itinerary_id: 21, booking_id: 2, delivered_on: '2026-09-15', rate: 5_000 },
   ],
   payments: [
     { payment_id: 1, booking_id: 1, amount: 10_000, paid_on: '2026-09-20', method: 'Cash', reference_no: null, or_number: 'OR-1' },
@@ -60,5 +60,22 @@ assert.equal(all.closing, 21_500 + 4_000 + 8_000 - (10_000 + 8_000 - 500 + 99))
 const quiet = buildStatement(input, '2026-12-01', '2026-12-31')
 assert.equal(quiet.lines.length, 0)
 assert.equal(quiet.closing, quiet.opening)
+
+// Cargo lines priced differently: each delivered trip bills its OWN rate and
+// the billable amount (5,500 + 8,000) leaves no adjustment.
+const mixed = buildStatement(
+  {
+    bookings: [{ booking_id: 9, booking_date: '2026-10-01', route: 'G -> H', billable_amount: 13_500 }],
+    trips: [
+      { itinerary_id: 91, booking_id: 9, delivered_on: '2026-10-02', rate: 5_500 },
+      { itinerary_id: 92, booking_id: 9, delivered_on: '2026-10-03', rate: 8_000 },
+    ],
+    payments: [],
+  },
+  '2026-10-01',
+  '2026-10-31',
+)
+assert.deepEqual(mixed.lines.map((l) => [l.kind, l.amount]), [['Trip', 5_500], ['Trip', 8_000]])
+assert.equal(mixed.closing, 13_500)
 
 console.log('ok')

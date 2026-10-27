@@ -4,14 +4,16 @@
 // and the client portal (their own bookings only, via the clientId
 // filter).
 //
-// Billing rule (from the business owner): rate_of_delivery_service is
-// the rate PER TRIP (per itinerary/deliverable), not the booking's flat
-// total -- a booking with delivery_order_count 10 at ₱5,500/trip is a
-// ₱55,000 contract, but the business can only actually bill for
-// itineraries the driver has marked Delivered. So each booking tracks:
-// - total_contract_value = rate x total itineraries (the full contract)
-// - computed_billable_amount = rate x itineraries actually Delivered so
-//   far (what the trips alone justify, always auto-calculated)
+// Billing rule (from the business owner): the rate is PER TRIP (per
+// itinerary/deliverable), not the booking's flat total -- a booking with
+// delivery_order_count 10 at ₱5,500/trip is a ₱55,000 contract, but the
+// business can only actually bill for itineraries the driver has marked
+// Delivered. Each trip carries its own rate (itineraries.trip_rate: cargo
+// lines of one quote can be priced differently; bookings.
+// rate_of_delivery_service is only their average). So each booking tracks:
+// - total_contract_value = the sum of its live trips' rates (the full contract)
+// - computed_billable_amount = the sum of the rates of the trips actually
+//   Delivered so far (what the trips alone justify, always auto-calculated)
 // - billable_amount = the EFFECTIVE amount currently due:
 //   bookings.amount_to_pay if staff has manually overridden it in
 //   Financial Records (FinancialSection.tsx -- e.g. a discount or
@@ -50,6 +52,7 @@ import { supabase } from './supabaseClient'
 import { loadExtraChargesByBooking } from './bookingCharges'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { toManilaDate } from './payslip'
+import { groupTripRates, sumRates } from './lineRates'
 
 // One row of the bookings / quote queries in loadPaymentDueReport().
 type DueBookingRow = {
@@ -67,15 +70,15 @@ type DueBookingRow = {
 }
 
 // What a booking's DELIVERY amount is (damage is added on top elsewhere).
-// Normally staff's locked/overridden amount_to_pay, else rate x delivered
-// trips. Once a booking had ANY cancellation -- fully Cancelled, or
+// Normally staff's locked/overridden amount_to_pay, else the delivered
+// trips' rates added up. Once a booking had ANY cancellation -- fully Cancelled, or
 // cancelled partway and ended Delivered -- it's only billed for trips
 // actually delivered, so an earlier lock at the full contract value is
 // capped. Shared by Payments Due, Bills Receivable, Bookings and the
 // client booking history so they can't disagree.
 export function deliveryAmountFor(args: {
   amountToPay: number | null
-  computedBillable: number // rate x delivered trips
+  computedBillable: number // sum of the delivered trips' rates
   hadCancellation: boolean // booking_status Cancelled OR cancelled_at set
 }): number {
   return args.hadCancellation
@@ -90,7 +93,10 @@ export type PaymentDueRow = {
   client_name: string
   pickup_place_name: string
   delivery_place_name: string
+  // Average per trip; trip_rates = each live trip's own rate (cargo lines
+  // can be priced differently -- the contract / billed amounts add these up).
   rate_per_trip: number | null
+  trip_rates: number[]
   total_trips: number
   completed_trips: number
   total_contract_value: number
@@ -182,12 +188,12 @@ export async function loadPaymentDueReport(
       fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
         supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
       ),
-      fetchIn<{ itinerary_id: number; booking_id: number; itinerary_status: string }>(
+      fetchIn<{ itinerary_id: number; booking_id: number; itinerary_status: string; trip_rate: number | string | null }>(
         bookingIds,
         (chunk, from, to) =>
           supabase
             .from('itineraries')
-            .select('itinerary_id, booking_id, itinerary_status')
+            .select('itinerary_id, booking_id, itinerary_status, trip_rate')
             .in('booking_id', chunk)
             // Cancelled trips aren't billed and don't count toward the
             // contract -- otherwise a partly cancelled booking could never
@@ -247,6 +253,12 @@ export async function loadPaymentDueReport(
     (deliveredLogRows ?? []).map((r) => [r.itinerary_id, r.status_changed_at as string]),
   )
 
+  // Every trip's own rate (cargo lines can be priced differently).
+  const tripRatesByBooking = groupTripRates(
+    itinerariesResult.rows,
+    new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
+  )
+
   const itinerariesByBooking = new Map<
     number,
     { itinerary_id: number; itinerary_status: string }[]
@@ -266,9 +278,9 @@ export async function loadPaymentDueReport(
       const totalTrips = itineraries.length
       const completedTrips = deliveredItineraries.length
 
-      const rate = booking.rate_of_delivery_service ?? 0
-      const totalContractValue = rate * totalTrips
-      const computedBillableAmount = rate * completedTrips
+      const tripRates = tripRatesByBooking.get(booking.booking_id) ?? { live: [], delivered: [] }
+      const totalContractValue = sumRates(tripRates.live)
+      const computedBillableAmount = sumRates(tripRates.delivered)
       const damageCharges = damageByBooking.get(booking.booking_id) ?? 0
       // Any cancellation: only delivered trips are billable (deliveryAmountFor).
       const deliveryAmount = deliveryAmountFor({
@@ -311,6 +323,7 @@ export async function loadPaymentDueReport(
         delivery_place_name:
           placeNameById.get(booking.place_of_delivery_id) ?? '—',
         rate_per_trip: booking.rate_of_delivery_service,
+        trip_rates: tripRates.live,
         total_trips: totalTrips,
         completed_trips: completedTrips,
         total_contract_value: totalContractValue,

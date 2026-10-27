@@ -1509,6 +1509,62 @@ Existing features only, no schema. Every page is shared by all clients.
   / Sign Up tabs. Sign-up field order kept as before (Username first), not
   the canvas order.
 
+## 2026-10-27: Rates are PER CARGO LINE (SQL run by user, all 5 phases built)
+A quote prices each cargo line on its own; **everything that used to be
+"rate x trips" now adds up each trip's own rate.** This supersedes every
+older line above that says the booking has one rate per trip.
+- **Data.** `itineraries.trip_rate` (a trip's own rate; trips of one cargo
+  line share it; backfilled from the booking, and a BEFORE INSERT trigger
+  `itinerary_trip_rate_default` fills a missing one),
+  `quote_requests.line_rates` and `quote_rate_offers.line_rates` (jsonb
+  array, one rate per cargo line in `cargo_lines` order; backfilled only for
+  Pending / Offered / Countered quotes -- closed quotes keep just
+  `proposed_rate`). `quote_requests.proposed_rate` and
+  `bookings.rate_of_delivery_service` are now only the AVERAGE rate per trip
+  (`quote_average_rate(cargo_lines, line_rates)` in SQL, `averageRate()` in
+  `lib/lineRates.ts` -- change both together); screens that show one number
+  use it, or a "₱A – ₱B" range via `rateLabel` / `bookingRateLabel`.
+  `bookings.cost_per_trip` is still total cost / trips (average), so after
+  cancelling trips of a mixed-cost booking the downpayment is approximate.
+- **SQL functions** (run by hand, no migration file): `send_quote_offer`,
+  `respond_to_quote_offer` take `p_line_rates jsonb` (an old `p_rate` alone
+  is still accepted = the same rate on every line);
+  `accept_quote_counter`, `create_booking_from_quote` (writes `trip_rate`
+  per trip, booking rate = average), `booking_downpayment` (contract = sum
+  of live trips' `trip_rate`), `get_trip_payment_status`,
+  `get_trip_client_and_rate` (returns the trip's own rate, same column
+  name). `record_booking_payment` never computed the contract -- the app
+  passes it (`getDeliveryTarget` in FinancialSection).
+- **App rules live in `lib/lineRates.ts`** (self-check
+  `node scripts/check-line-rates.ts`): `parseLineRates`, `contractTotal`,
+  `expandLineRates`, `estimateLineCosts` (commission follows each line's
+  rate), `lineRateError`, and for booking money `groupTripRates` /
+  `sumRates` (contract = sum of live trips' rates, billed so far = sum of
+  delivered trips' rates). `downpayment.ts` gained `downpaymentForContract`;
+  `downpaymentStatus` takes `contract` (not `ratePerTrip`).
+- **Screens.** Review Quote (QuoteReviewModal): one rate box per cargo line
+  + "Same rate for all lines"; profitability, downpayment and offer messages
+  sum across lines; a phone / walk-in counter has per-line boxes (the old
+  `promptDialog` is gone). Client side: QuoteOfferCard shows per-line rates
+  and its Counter-offer pop-up has one box per line;
+  `respondToQuoteOffer({ lineRates })`. `OfferComparison` compares line by
+  line when lines differ. Money: `paymentDue.ts` (`PaymentDueRow.trip_rates`),
+  Bookings, Client Booking History, Bills Receivable, Billing / Statements
+  (`StatementTrip.rate` -- each delivered trip bills its own rate; the
+  "adjustment" = billable - delivered trips' rates), client My Bookings /
+  Payments, Dispatch Board downpayment, BookingDetailModal (Rate column in
+  the trips table), `payslip.ts` driver commission, `tripProfit.ts`,
+  Today's Deliveries. Revenue Reconciliation / P&L / Money Summary read
+  through those loaders (no change of their own).
+- Not done: re-pricing an already-booked quote (a booking keeps the rates it
+  was made with); a Statement for a client with closed-quote history shows
+  the average (those quotes have no `line_rates`).
+- Other 2026-10-27 changes: the Bookings & Trips side panel no longer
+  shows each trip's driver / helper / truck / trailer (and no longer loads
+  them); `booking_charges` SQL (table + RLS: staff / own-client SELECT,
+  Admin INSERT / UPDATE) was run -- it had been missing, so Add Charge on
+  Billing failed until now.
+
 ## 2026-10-27: Lint is at zero -- keep it there
 `npx eslint src scripts` reports 0 problems (was 68). New code must not add
 any. The patterns used to get there:

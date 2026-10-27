@@ -36,6 +36,7 @@ import DispatchStatusLogSection from './DispatchStatusLogSection'
 import WorkOrderStatusLogSection from './WorkOrderStatusLogSection'
 import PageHeader, { SectionHeader } from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
+import { bookingRateLabel } from '../../../lib/lineRates'
 import EmptyState from '../../../components/EmptyState'
 
 // ---------- Layout: groups and their chips ----------
@@ -110,7 +111,7 @@ function PaymentsDueTab() {
                           <div>
                             <dt className="text-xs text-slate-500">Rate / trip</dt>
                             <dd className="text-slate-900">
-                              {row.rate_per_trip != null ? formatMoney(row.rate_per_trip) : '—'}
+                              {bookingRateLabel(row.trip_rates, row.rate_per_trip)}
                             </dd>
                           </div>
                           <div>

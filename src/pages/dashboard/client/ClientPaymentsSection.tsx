@@ -13,6 +13,7 @@ import { PAYMENT_STATE_STYLES } from '../../../lib/clientPaymentState'
 import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { formatDaysUntilDue } from '../../../lib/paymentDue'
 import { formatMoney, formatDate } from '../../../lib/format'
+import { bookingRateLabel } from '../../../lib/lineRates'
 
 const termsLabel = (terms: string) => PAYMENT_TERMS_LABELS[terms as keyof typeof PAYMENT_TERMS_LABELS] ?? terms
 
@@ -106,11 +107,11 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
                   </div>
                   <div>
                     <dt className="text-[13px] font-medium text-ink-muted">Rate per trip</dt>
-                    <dd className="font-semibold text-ink tabular-nums">{formatMoney(row.rate_per_trip)}</dd>
+                    <dd className="font-semibold text-ink tabular-nums">{bookingRateLabel(row.trip_rates, row.rate_per_trip)}</dd>
                   </div>
                   <div>
                     <dt className="text-[13px] font-medium text-ink-muted">Total</dt>
-                    {/* rate x trips; the balance below is what's billed so far */}
+                    {/* every trip's rate added up; the balance below is what's billed so far */}
                     <dd className="font-semibold text-ink tabular-nums">{formatMoney(row.total_contract_value)}</dd>
                   </div>
                   <div className="col-span-2 border-t border-slate-200 pt-3">

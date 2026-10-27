@@ -28,6 +28,7 @@ import { usePaged } from '../../../lib/usePaged'
 // Rows per page on every tab (Pending, Approved, Rejected).
 const QUOTES_PER_PAGE = 10
 import { REJECTION_TAGS, cargoSummary, parseCargoLines, type RejectionTag } from '../../../lib/quoteRequest'
+import { parseLineRates, rateLabel } from '../../../lib/lineRates'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -70,7 +71,9 @@ export type QuoteRequest = {
   container_type: string | null
   trailer_type: string | null
   payment_terms: string
+  // Average per trip; line_rates = one rate per cargo line (lib/lineRates.ts).
   proposed_rate: number | null
+  line_rates: number[] | null
   preferred_pickup_date: string | null
   // "Deadline date" on screen: the latest day the client needs the cargo.
   // Null on urgent quotes from before 2026-10-23 (it wasn't asked then).
@@ -452,7 +455,9 @@ function QuoteRequestsSection() {
                   {quote.request_status === 'Pending' ? (
                     <span className="text-ink-muted">Not priced</span>
                   ) : (
-                    <span className="font-semibold tabular-nums">{formatMoney(quote.proposed_rate ?? 0)}</span>
+                    <span className="font-semibold tabular-nums">
+                      {rateLabel(parseLineRates(quote.line_rates, parseCargoLines(quote.cargo_lines).length, quote.proposed_rate))}
+                    </span>
                   )}
                   {quote.delivery_order_count != null && (
                     <span className={SUB}>× {plural(quote.delivery_order_count, 'trip')}</span>

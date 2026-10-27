@@ -5,7 +5,7 @@
 //
 //   cost     = cost_per_trip x trips (diesel + driver commission + per-trip
 //              fee, saved on the booking at approval)
-//   contract = rate x trips
+//   contract = the sum of the trips' rates (rate x trips when all the same)
 //   downpayment = cost + 25% x (contract - cost)
 //
 // Cancelled trips don't count. A booking with no saved cost_per_trip (made
@@ -17,15 +17,25 @@ export const DOWNPAYMENT_SHARE_OF_REMAINING = 0.25
 
 const cents = (n: number) => Math.round(n * 100) / 100
 
+// `contract` = the sum of the trips' own rates (they can differ per cargo line).
+export function downpaymentForContract(
+  contract: number | null,
+  costPerTrip: number | null,
+  trips: number,
+): number | null {
+  if (costPerTrip === null || contract === null) return null
+  const cost = costPerTrip * trips
+  const remaining = Math.max(contract - cost, 0)
+  return cents(cost + DOWNPAYMENT_SHARE_OF_REMAINING * remaining)
+}
+
+// Every trip at the same rate.
 export function downpaymentFor(
   ratePerTrip: number | null,
   costPerTrip: number | null,
   trips: number,
 ): number | null {
-  if (costPerTrip === null || ratePerTrip === null) return null
-  const cost = costPerTrip * trips
-  const remaining = Math.max(ratePerTrip * trips - cost, 0)
-  return cents(cost + DOWNPAYMENT_SHARE_OF_REMAINING * remaining)
+  return downpaymentForContract(ratePerTrip === null ? null : ratePerTrip * trips, costPerTrip, trips)
 }
 
 export type DownpaymentStatus = {
@@ -38,14 +48,16 @@ export type DownpaymentStatus = {
 }
 
 // null = this booking has no downpayment requirement.
+// `contract` = the sum of the live (not cancelled) trips' own rates; `trips`
+// = how many live trips there are (cost_per_trip x trips).
 export function downpaymentStatus(args: {
-  ratePerTrip: number | null
+  contract: number | null
   costPerTrip: number | null
   trips: number
   amountPaid: number | null
   waivedAt: string | null
 }): DownpaymentStatus | null {
-  const required = downpaymentFor(args.ratePerTrip, args.costPerTrip, args.trips)
+  const required = downpaymentForContract(args.contract, args.costPerTrip, args.trips)
   if (required === null) return null
   const paid = args.amountPaid ?? 0
   const missing = cents(Math.max(required - paid, 0))

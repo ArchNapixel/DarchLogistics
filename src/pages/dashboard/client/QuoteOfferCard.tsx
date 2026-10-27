@@ -11,10 +11,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { filterAmountInput } from '../../../lib/amountInput'
 import { formatDate, formatMoney } from '../../../lib/format'
-import { downpaymentFor } from '../../../lib/downpayment'
+import { downpaymentForContract } from '../../../lib/downpayment'
+import { contractTotal, lineRateError, parseLineRates, rateLabel, ratesDiffer } from '../../../lib/lineRates'
 import { loadQuoteOffers, respondToQuoteOffer, type QuoteOfferRow } from '../../../lib/quoteOffers'
 import OfferComparison from '../../../components/OfferComparison'
-import { todayDateString } from '../../../lib/quoteRequest'
+import { parseCargoLines, todayDateString, tripCargoLabel } from '../../../lib/quoteRequest'
 import { offerTiming } from '../../../lib/offerTiming'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { checkCapacity } from '../../../lib/capacity'
@@ -25,7 +26,9 @@ const inputClasses =
 
 export type OfferQuote = {
   quote_request_id: number
+  // Average per trip; line_rates = one rate per cargo line (lib/lineRates.ts).
   proposed_rate: number | null
+  line_rates: number[] | null
   delivery_order_count: number | null
   cost_per_trip: number | null
   preferred_pickup_date: string | null
@@ -99,17 +102,21 @@ function QuoteOfferCard({
   // Called with a message for the client once they've answered.
   onAnswered: (message: string) => void
 }) {
-  const rate = quote.proposed_rate ?? 0
+  // Each cargo line has its own rate per trip (old offers: one rate on every line).
+  const cargoLines = parseCargoLines(quote.cargo_lines)
+  const rates = parseLineRates(quote.line_rates, cargoLines.length, quote.proposed_rate)
+  const contract = contractTotal(cargoLines, rates)
   // Past its pickup date the offer can't be accepted (the trips would start in the past).
   const timing = offerTiming(quote.preferred_pickup_date, todayDateString())
   const trips = quote.delivery_order_count ?? 1
-  const downpayment = quote.cost_per_trip != null ? downpaymentFor(rate, quote.cost_per_trip, trips) : null
+  const downpayment = quote.cost_per_trip != null ? downpaymentForContract(contract, quote.cost_per_trip, trips) : null
   const [note, setNote] = useState<string | null>(null)
   // On a new offer after the client's counter: their counter and our offer,
   // compared (changes highlighted). Null on a first offer.
   const [compare, setCompare] = useState<{ before: QuoteOfferRow; now: QuoteOfferRow } | null>(null)
   const [mode, setMode] = useState<'view' | 'counter' | 'decline'>('view')
-  const [counterRate, setCounterRate] = useState('')
+  // The counter's rate for each line, starting from our offer.
+  const [counterRates, setCounterRates] = useState<string[]>(() => rates.map((r) => (r > 0 ? String(r) : '')))
   const [pickupDate, setPickupDate] = useState(quote.preferred_pickup_date ?? '')
   const [deadline, setDeadline] = useState(quote.preferred_delivery_date ?? '')
   const [reason, setReason] = useState('')
@@ -149,8 +156,8 @@ function QuoteOfferCard({
 
   async function accept() {
     const ok = await confirmDialog({
-      title: `Accept ${formatMoney(rate)} per trip?`,
-      message: `${trips} ${trips === 1 ? 'trip' : 'trips'}, ${formatMoney(rate * trips)} in total. Your booking is created right away${
+      title: `Accept ${rateLabel(rates)} per trip?`,
+      message: `${trips} ${trips === 1 ? 'trip' : 'trips'}, ${formatMoney(contract)} in total. Your booking is created right away${
         downpayment !== null ? `; trips start once the ${formatMoney(downpayment)} downpayment is paid` : ''
       }.`,
       confirmLabel: 'Accept offer',
@@ -172,9 +179,11 @@ function QuoteOfferCard({
   }
 
   async function sendCounter() {
-    const value = Number(counterRate)
-    if (!counterRate || !(value > 0)) return setError('Enter your rate per trip.')
-    if (!/^\d+(\.\d{1,2})?$/.test(counterRate)) return setError('Rate: max 2 decimals.')
+    for (let i = 0; i < counterRates.length; i++) {
+      const problem = lineRateError(counterRates[i], i + 1, counterRates.length)
+      if (problem) return setError(`Your rate per trip — ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`)
+    }
+    const counter = counterRates.map(Number)
     if (!pickupDate) return setError('Enter a pickup date.')
     if (pickupDate < todayDateString()) return setError('The pickup date is in the past.')
     if (deadline && deadline < pickupDate) return setError('The deadline is before the pickup date.')
@@ -183,7 +192,7 @@ function QuoteOfferCard({
     const { error: rpcError } = await respondToQuoteOffer({
       quoteId: quote.quote_request_id,
       action: 'counter',
-      rate: value,
+      lineRates: counter,
       // Only send dates that changed.
       pickupDate: pickupDate !== quote.preferred_pickup_date ? pickupDate : null,
       deadlineDate: deadline && deadline !== quote.preferred_delivery_date ? deadline : null,
@@ -191,7 +200,7 @@ function QuoteOfferCard({
     })
     setSaving(false)
     if (rpcError) return setError(rpcError)
-    onAnswered(`Counter-offer sent (${formatMoney(value)} per trip). We'll reply here.`)
+    onAnswered(`Counter-offer sent (${rateLabel(counter)} per trip). We'll reply here.`)
   }
 
   async function decline() {
@@ -249,15 +258,32 @@ function QuoteOfferCard({
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-primary/30 pb-3">
             <div>
               <p className={KV}>Rate per trip</p>
-              <p className="text-[28px] leading-9 font-bold text-ink tabular-nums">{formatMoney(rate)}</p>
+              <p className={`${ratesDiffer(rates) ? 'text-xl leading-8' : 'text-[28px] leading-9'} font-bold text-ink tabular-nums`}>
+                {rateLabel(rates)}
+              </p>
             </div>
             <div className="text-right">
               <p className={KV}>
-                Total <span className="font-normal">· {trips} {trips === 1 ? 'trip' : 'trips'} × rate</span>
+                Total <span className="font-normal">· {trips} {trips === 1 ? 'trip' : 'trips'}</span>
               </p>
-              <p className="text-lg font-bold text-ink tabular-nums">{formatMoney(rate * trips)}</p>
+              <p className="text-lg font-bold text-ink tabular-nums">{formatMoney(contract)}</p>
             </div>
           </div>
+          {/* Lines priced differently: show each line's own rate. */}
+          {ratesDiffer(rates) && (
+            <ol className="flex flex-col gap-1.5 border-b border-primary/30 py-3 text-sm">
+              {cargoLines.map((line, index) => (
+                <li key={index} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <span className="text-ink-metric">
+                    Line {index + 1}: {line.quantity} × {tripCargoLabel(line)}
+                  </span>
+                  <span className="font-semibold text-ink tabular-nums">
+                    {formatMoney(rates[index])} <span className="font-normal text-ink-muted">per trip</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
           <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 text-sm">
             {downpayment !== null && (
               <div className="col-span-2">
@@ -332,7 +358,7 @@ function QuoteOfferCard({
       {mode === 'counter' && (
         <Dialog
           title="Counter-offer"
-          subtitle={`Our offer: ${formatMoney(rate)} per trip · pickup ${quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}`}
+          subtitle={`Our offer: ${rateLabel(rates)} per trip · pickup ${quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'}`}
           onClose={close}
           footer={
             <>
@@ -346,19 +372,32 @@ function QuoteOfferCard({
           }
         >
           {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>}
-          <label className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3">
             <span className="flex justify-between gap-2 text-sm font-semibold text-ink">
-              Your rate per trip (₱) <Required />
+              Your rate per trip (₱){cargoLines.length > 1 ? ', for each cargo line' : ''} <Required />
             </span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={counterRate}
-              onChange={(e) => setCounterRate(filterAmountInput(e.target.value))}
-              placeholder="0.00"
-              className={`${inputClasses} text-right tabular-nums`}
-            />
-          </label>
+            {cargoLines.map((line, index) => (
+              <label key={index} className="flex flex-col gap-1.5">
+                <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-[13px] text-ink-secondary">
+                  <span>
+                    {cargoLines.length > 1 ? `Line ${index + 1}: ` : ''}
+                    {line.quantity} × {tripCargoLabel(line)}
+                  </span>
+                  <span className="tabular-nums">Our offer {formatMoney(rates[index])}</span>
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={counterRates[index] ?? ''}
+                  onChange={(e) =>
+                    setCounterRates((prev) => prev.map((v, i) => (i === index ? filterAmountInput(e.target.value) : v)))
+                  }
+                  placeholder="0.00"
+                  className={`${inputClasses} text-right tabular-nums`}
+                />
+              </label>
+            ))}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-semibold text-ink">
@@ -388,7 +427,7 @@ function QuoteOfferCard({
       {mode === 'decline' && (
         <Dialog
           title="Decline this offer?"
-          subtitle={`${reference} · ${formatMoney(rate)} per trip`}
+          subtitle={`${reference} · ${rateLabel(rates)} per trip`}
           onClose={close}
           footer={
             <>

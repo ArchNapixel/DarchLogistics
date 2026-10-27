@@ -77,11 +77,13 @@ import { formatDate, formatMoney, formatSlot, slotLines } from '../../../lib/for
 import StatusBadge from '../../../components/StatusBadge'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
+import { groupTripRates, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
 import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
 import {
   SUGGESTED_COUNT,
+  isOutNow,
   isOverdue,
   lateEarlierTrip,
   rankCandidates,
@@ -1100,6 +1102,8 @@ type ResourceLine = { key: string; name: string; sub: string; chip: { label: str
 const RESOURCE_CHIP = {
   available: { label: 'Available', icon: 'check' as const, className: 'bg-green-100 text-green-800' },
   onTrip: { label: 'On a trip', icon: 'truck' as const, className: 'bg-orange-100 text-orange-800' },
+  // On another day than today: it has a trip that day (not out on the road now).
+  scheduled: { label: 'Scheduled', icon: 'calendar' as const, className: 'bg-primary-soft text-primary' },
   down: { label: 'Not operational', icon: 'wrench' as const, className: 'bg-amber-100 text-amber-900' },
   leave: { label: 'On leave', icon: 'user' as const, className: 'bg-amber-100 text-amber-900' },
 }
@@ -1139,7 +1143,9 @@ function tripList(ids: number[], noneText: string): string {
 
 // Resources Today: every truck, trailer, driver and helper with the trips
 // they have on the day shown and whether they can work (in the shop, on
-// leave, out on another trip right now).
+// leave). "On a trip" is about RIGHT NOW (isOutNow), so it only shows when
+// the day shown is today; on another day a resource with a trip that day
+// shows "Scheduled" instead.
 function ResourcesPanel({
   day,
   isToday,
@@ -1153,30 +1159,34 @@ function ResourcesPanel({
   ctx: BoardContext
 }) {
   const noTrips = isToday ? 'No trips today' : 'No trips this day'
-  const onRoadNow = ctx.allRows.filter((r) => ON_ROAD.includes(r.status))
+  const outNow = isToday ? ctx.allRows.filter((r) => isOutNow(r, ctx.now)) : []
   const isDown = (status: string | null) => status === 'Under Maintenance' || status === 'Out of Service'
+  // Today: out on the road at this moment. Another day: has a trip that day.
+  const busyChip = isToday ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.scheduled
+  const isBusy = (matches: (r: DispatchRow) => boolean) =>
+    isToday ? outNow.some(matches) : dayRows.some((r) => r.status !== 'Cancelled' && matches(r))
 
   const truckLines: ResourceLine[] = ctx.trucks.map((t) => {
     const ids = dayRows.filter((r) => r.plate_number === t.plate_number).map((r) => r.itinerary_id)
     const down = isDown(t.current_status)
-    const busy = onRoadNow.some((r) => r.plate_number === t.plate_number)
+    const busy = isBusy((r) => r.plate_number === t.plate_number)
     return {
       key: t.plate_number,
       name: t.plate_number,
       sub: down && ids.length === 0 ? `${t.current_status} · see Truck Monitoring` : tripList(ids, noTrips),
-      chip: down ? RESOURCE_CHIP.down : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+      chip: down ? RESOURCE_CHIP.down : busy ? busyChip : RESOURCE_CHIP.available,
       muted: down,
     }
   })
   const trailerLines: ResourceLine[] = ctx.trailers.map((t) => {
     const ids = dayRows.filter((r) => r.trailer_id === t.trailer_id).map((r) => r.itinerary_id)
     const down = isDown(t.current_status)
-    const busy = onRoadNow.some((r) => r.trailer_id === t.trailer_id)
+    const busy = isBusy((r) => r.trailer_id === t.trailer_id)
     return {
       key: String(t.trailer_id),
       name: `${t.plate_number ?? `#${t.trailer_id}`}${t.trailer_type ? ` · ${t.trailer_type}` : ''}`,
       sub: down && ids.length === 0 ? `${t.current_status} · see Truck Monitoring` : tripList(ids, noTrips),
-      chip: down ? RESOURCE_CHIP.down : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+      chip: down ? RESOURCE_CHIP.down : busy ? busyChip : RESOURCE_CHIP.available,
       muted: down,
     }
   })
@@ -1185,12 +1195,12 @@ function ResourcesPanel({
       const crewId = (r: DispatchRow) => (helper ? r.assigned_helper_employee_id : r.assigned_employee_id)
       const ids = dayRows.filter((r) => crewId(r) === p.employee_id).map((r) => r.itinerary_id)
       const onLeave = (ctx.leaveByEmployee.get(p.employee_id) ?? []).some((l) => l.start_date <= day && day <= l.end_date)
-      const busy = onRoadNow.some((r) => crewId(r) === p.employee_id)
+      const busy = isBusy((r) => crewId(r) === p.employee_id)
       return {
         key: String(p.employee_id),
         name: p.full_name,
         sub: tripList(ids, noTrips),
-        chip: onLeave ? RESOURCE_CHIP.leave : busy ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.available,
+        chip: onLeave ? RESOURCE_CHIP.leave : busy ? busyChip : RESOURCE_CHIP.available,
         muted: onLeave,
       }
     })
@@ -1215,13 +1225,13 @@ function ResourcesPanel({
       />
       <ResourceGroup
         title="Drivers"
-        summary={`${count(driverLines, [RESOURCE_CHIP.leave, RESOURCE_CHIP.onTrip])} of ${driverLines.length} available`}
+        summary={`${count(driverLines, [RESOURCE_CHIP.leave, busyChip])} of ${driverLines.length} available`}
         lines={driverLines}
       />
       {helperLines.length > 0 && (
         <ResourceGroup
           title="Helpers"
-          summary={`${count(helperLines, [RESOURCE_CHIP.leave, RESOURCE_CHIP.onTrip])} of ${helperLines.length} available`}
+          summary={`${count(helperLines, [RESOURCE_CHIP.leave, busyChip])} of ${helperLines.length} available`}
           lines={helperLines}
         />
       )}
@@ -1422,10 +1432,10 @@ function DispatchBoardSection() {
           .in('booking_id', chunk)
           .range(from, to),
       ),
-      fetchIn<{ booking_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+      fetchIn<{ booking_id: number; itinerary_status: string | null; trip_rate: number | string | null }>(bookingIds, (chunk, from, to) =>
         supabase
           .from('itineraries')
-          .select('booking_id, itinerary_status')
+          .select('booking_id, itinerary_status, trip_rate')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1443,20 +1453,18 @@ function DispatchBoardSection() {
     const hoursPerTripByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.hours_per_trip as number | null]),
     )
-    // Downpayment per booking: trips = ALL its non-cancelled itineraries.
-    const tripCountByBooking = new Map<number, number>()
-    bookingTripsResult.rows
-      .filter((it) => it.itinerary_status !== 'Cancelled')
-      .forEach((it) =>
-        tripCountByBooking.set(it.booking_id, (tripCountByBooking.get(it.booking_id) ?? 0) + 1),
-      )
+    // Downpayment per booking: ALL its non-cancelled itineraries, each at its own rate.
+    const tripRatesByBooking = groupTripRates(
+      bookingTripsResult.rows,
+      new Map(bookingTypeRows.map((b) => [b.booking_id as number, b.rate_of_delivery_service])),
+    )
     const downpaymentByBooking = new Map(
       bookingTypeRows.map((b) => [
         b.booking_id as number,
         downpaymentStatus({
-          ratePerTrip: b.rate_of_delivery_service,
+          contract: b.rate_of_delivery_service === null ? null : sumRates(tripRatesByBooking.get(b.booking_id)?.live ?? []),
           costPerTrip: b.cost_per_trip,
-          trips: tripCountByBooking.get(b.booking_id) ?? 0,
+          trips: tripRatesByBooking.get(b.booking_id)?.live.length ?? 0,
           amountPaid: b.amount_paid,
           waivedAt: b.downpayment_waived_at,
         }),
@@ -2140,12 +2148,14 @@ function DispatchBoardSection() {
 
   // Day view (the canvas board): the trips on one day -- by slot start,
   // Manila time -- plus, on today, every trip still on the road whenever it
-  // started. 'all' = every trip not delivered yet, any day.
+  // started (a Dispatched trip only once its slot has started: one dispatched
+  // early for a later day stays on its own day). 'all' = every trip not
+  // delivered yet, any day.
   const today = toManilaDate(new Date(now))
   const isAllDays = day === 'all'
   const shownDay = isAllDays ? today : day
   const onDay = (r: DispatchRow) =>
-    isAllDays ? r.status !== 'Delivered' : tripDay(r) === day || (day === today && ON_ROAD.includes(r.status))
+    isAllDays ? r.status !== 'Delivered' : tripDay(r) === day || (day === today && isOutNow(r, now))
   const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
   const dayRows = rows.filter(onDay).sort((a, b) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id)
   // Planned trips that may not happen as assigned (leave, shop, late trip,

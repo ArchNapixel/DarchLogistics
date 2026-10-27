@@ -22,6 +22,7 @@ import { toManilaDate } from '../../../lib/payslip'
 import { COMPANY } from '../../../lib/company'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
+import { bookingRateLabel } from '../../../lib/lineRates'
 
 function BillingPage() {
   // Set when opened from a booking's "Billing" link.
@@ -162,7 +163,7 @@ function BillingPage() {
                       <td className="px-2 py-2 text-right tabular-nums">
                         <span className="block font-semibold">{formatMoney(b.billable_amount)}</span>
                         <span className="block text-[13px] text-ink-muted">
-                          {b.completed_trips} × {b.rate_per_trip !== null ? formatMoney(b.rate_per_trip) : '—'}
+                          {b.completed_trips} × {bookingRateLabel(b.trip_rates, b.rate_per_trip)}
                         </span>
                       </td>
                       <td className="px-2 py-2 last:pr-5">

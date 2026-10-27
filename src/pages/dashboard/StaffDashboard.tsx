@@ -509,7 +509,7 @@ function StaffDashboard() {
       const { data: itineraryRows, error: itineraryError } = await supabase
         .from('itineraries')
         .select(
-          'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, trip_start_at, trip_end_at',
+          'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, trip_start_at, trip_end_at, trip_rate',
         )
         .or(todaysTripsFilter(today))
         .order('trip_start_at', { ascending: true, nullsFirst: false })
@@ -621,7 +621,8 @@ function StaffDashboard() {
           endAt: row.trip_end_at,
           from: placeNameById.get(row.place_of_pickup_id) ?? '—',
           to: placeNameById.get(row.place_of_delivery_id) ?? '—',
-          rate: rateByBookingId.get(row.booking_id) ?? null,
+          // This trip's own rate (cargo lines can be priced differently).
+          rate: row.trip_rate ?? rateByBookingId.get(row.booking_id) ?? null,
           truckPlateNumber: row.plate_number,
           trailerPlateNumber:
             row.trailer_id !== null

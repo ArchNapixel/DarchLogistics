@@ -9,6 +9,7 @@
 import { supabase } from './supabaseClient'
 import { loadPaymentDueReport, type PaymentDueRow } from './paymentDue'
 import { downpaymentStatus, type DownpaymentStatus } from './downpayment'
+import { sumRates } from './lineRates'
 import { clientPaymentState, type PaymentState } from './clientPaymentState'
 import type { TripCargo } from './quoteRequest'
 
@@ -20,6 +21,8 @@ export type ClientTrip = {
   // The trip's time slot (null until Dispatch sets it).
   trip_start_at: string | null
   trip_end_at: string | null
+  // This trip's own rate (cargo lines can be priced differently).
+  trip_rate: number | null
   // This trip's own cargo (itineraries.cargo_*).
   cargo: TripCargo
 }
@@ -52,7 +55,10 @@ export const billableTrips = (booking: ClientBooking) => booking.itineraries.fil
 export function bookingDownpayment(booking: ClientBooking): DownpaymentStatus | null {
   if (booking.booking_status === 'Cancelled') return null
   return downpaymentStatus({
-    ratePerTrip: booking.rate_of_delivery_service,
+    contract:
+      booking.rate_of_delivery_service === null
+        ? null
+        : sumRates(billableTrips(booking).map((t) => t.trip_rate ?? booking.rate_of_delivery_service ?? 0)),
     costPerTrip: booking.cost_per_trip,
     trips: billableTrips(booking).length,
     amountPaid: booking.amount_paid,
@@ -92,7 +98,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
       ? supabase
           .from('itineraries')
           .select(
-            'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_date_to, trip_start_at, trip_end_at, cargo_type, container_type, trailer_type, weight, cargo_description',
+            'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_date_to, trip_start_at, trip_end_at, cargo_type, container_type, trailer_type, weight, cargo_description, trip_rate',
           )
           .in('booking_id', bookingIds)
           .order('itinerary_id', { ascending: true })
@@ -115,6 +121,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
       trip_date_to: row.trip_date_to,
       trip_start_at: row.trip_start_at,
       trip_end_at: row.trip_end_at,
+      trip_rate: row.trip_rate === null ? null : Number(row.trip_rate),
       cargo: {
         cargo_type: row.cargo_type,
         container_type: row.container_type,
@@ -177,7 +184,7 @@ export async function loadClientPaymentCards(clientId: number): Promise<{ cards:
         !extra || extra.booking_status === 'Cancelled'
           ? null
           : downpaymentStatus({
-              ratePerTrip: row.rate_per_trip,
+              contract: row.rate_per_trip === null ? null : sumRates(row.trip_rates),
               costPerTrip: extra.cost_per_trip,
               trips: row.total_trips,
               amountPaid: row.amount_paid,

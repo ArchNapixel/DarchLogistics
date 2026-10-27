@@ -38,6 +38,7 @@ import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
 import { chainSlots } from '../../../lib/tripSchedule'
 import { downpaymentStatus } from '../../../lib/downpayment'
+import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { promptDialog } from '../../../components/ConfirmDialog'
 
@@ -70,6 +71,8 @@ type Trip = {
   expenses: { amount: number; description: string }[]
   // How many files are attached in itinerary_documents (DO photos/PDFs).
   document_count: number
+  // This trip's own rate (itineraries.trip_rate: cargo lines can be priced differently).
+  rate: number | null
   // This trip's own cargo (itineraries.cargo_*, per trip since 2026-10-23).
   cargo: TripCargo
   // First time it was logged Picked Up (dispatch_status_logs) -- judges the
@@ -191,7 +194,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     supabase
       .from('itineraries')
       .select(
-        'itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description',
+        'itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description, trip_rate',
       )
       .eq('booking_id', bookingId)
       .order('itinerary_id', { ascending: true }),
@@ -314,6 +317,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === t.itinerary_id),
         document_count: (documentsResult.data ?? []).filter((d) => d.itinerary_id === t.itinerary_id).length,
         picked_up_at: pickedUpAt.get(t.itinerary_id) ?? null,
+        rate: t.trip_rate === null ? null : Number(t.trip_rate),
         cargo: {
           cargo_type: t.cargo_type,
           container_type: t.container_type,
@@ -383,7 +387,7 @@ function BookingDetailModal({
   // Downpayment (null = no requirement): non-cancelled trips only.
   const downpayment = details
     ? downpaymentStatus({
-        ratePerTrip: booking.rate,
+        contract: booking.rate === null ? null : sumRates(booking.trip_rates),
         costPerTrip: details.cost_per_trip,
         trips: details.trips.filter((t) => t.status !== 'Cancelled').length,
         amountPaid: booking.amount_paid,
@@ -719,7 +723,7 @@ function BookingDetailModal({
     <section className="border-2 border-line-card bg-white px-5 py-4">
       <h4 className="text-base font-semibold text-slate-900">Money</h4>
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-        <Figure label="Rate Per Trip" value={formatMoney(booking.rate)} />
+        <Figure label="Rate Per Trip" value={bookingRateLabel(booking.trip_rates, booking.rate)} />
         <Figure
           label="Total Contract Value"
           value={formatMoney(booking.total_contract_value)}
@@ -1040,6 +1044,7 @@ function BookingDetailModal({
                     <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">Time Slot</th>
                     <th className="px-3 py-3">Cargo</th>
+                    <th className="px-3 py-3">Rate</th>
                     <th className="px-3 py-3">Driver</th>
                     <th className="px-3 py-3">Truck / Trailer</th>
                     <th className="px-3 py-3">Exp.</th>
@@ -1101,6 +1106,7 @@ function BookingDetailModal({
                             <span className="block max-w-56 text-primary">{trip.cargo.cargo_description}</span>
                           )}
                         </td>
+                        <td className="px-3 py-3 tabular-nums text-slate-900">{formatMoney(trip.rate)}</td>
                         <td className="px-3 py-3">
                           {trip.driver ?? <span className={notAssigned}>Not assigned</span>}
                           {trip.helper && <span className="block text-xs text-slate-500">Helper: {trip.helper}</span>}
@@ -1166,7 +1172,7 @@ function BookingDetailModal({
                           has gone through (TripDocuments onUploaded). */}
                       {docsTripId === trip.itinerary_id && (
                         <tr className="bg-slate-50">
-                          <td colSpan={8} className="px-4 pt-2 pb-4">
+                          <td colSpan={9} className="px-4 pt-2 pb-4">
                             <div className="mb-2 flex items-center justify-between">
                               <span className="text-sm font-semibold text-slate-900">
                                 Trip #{trip.itinerary_id} · {onChanged ? 'Attach DO / documents' : 'Documents'}

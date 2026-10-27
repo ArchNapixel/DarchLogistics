@@ -15,6 +15,7 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
+import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
 import BookingDetailModal from './BookingDetailModal'
 import { type Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
@@ -60,7 +61,7 @@ function BookingTable({ rows, onSelect }: { rows: ClientBooking[]; onSelect: (bo
                 <StatusBadge status={booking.status} />
               </td>
               <td className="px-4 py-3 text-slate-600">
-                {formatMoney(booking.rate)}
+                {bookingRateLabel(booking.trip_rates, booking.rate)}
               </td>
               <td className="px-4 py-3 text-slate-600">
                 {formatMoney(booking.amount_paid)}
@@ -128,7 +129,7 @@ function ClientBookingHistoryModal({
       supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
       supabase
         .from('itineraries')
-        .select('booking_id, itinerary_status, cargo_type')
+        .select('booking_id, itinerary_status, cargo_type, trip_rate')
         .in('booking_id', bookingIds),
     ])
 
@@ -184,12 +185,18 @@ function ClientBookingHistoryModal({
       }
     })
 
+    // Every trip's own rate (cargo lines can be priced differently).
+    const tripRatesByBooking = groupTripRates(
+      itinerariesResult.data,
+      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
+    )
+
     setBookings(
       bookingRows.map((b) => {
-        const rate = b.rate_of_delivery_service ?? 0
+        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = rate * completedTrips
+        const computedBillableAmount = sumRates(tripRates.delivered)
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
         const billableAmount =
           deliveryAmountFor({
@@ -207,9 +214,10 @@ function ClientBookingHistoryModal({
           date: b.booking_date,
           status: b.booking_status ?? 'Draft',
           rate: b.rate_of_delivery_service,
+          trip_rates: tripRates.live,
           total_trips: totalTrips,
           completed_trips: completedTrips,
-          total_contract_value: rate * totalTrips,
+          total_contract_value: sumRates(tripRates.live),
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
           damage_charges: damageCharges,

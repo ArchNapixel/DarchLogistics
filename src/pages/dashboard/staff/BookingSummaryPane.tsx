@@ -1,25 +1,21 @@
 // BookingSummaryPane: the right-hand panel on Bookings & Trips (the canvas's
-// booking card): summary, payment, and one small card per trip with its slot,
-// driver, truck and trailer. Read-only -- "Full Details" opens the whole
+// booking card): summary, payment, and one small card per trip with its slot
+// and status (who drives it is on the Dispatch Board). Read-only -- "Full Details" opens the whole
 // booking card (BookingDetailModal: cancel, downpayment waiver, hours per
 // trip, cargo, documents) and "Record Payment" goes to Bills Receivable.
-// Loads this booking's trips itself (same lookup-by-id pattern as the rest
-// of the page: itineraries -> active crew -> employee names, trailer plates).
+// Loads this booking's trips itself.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
+import { bookingRateLabel, ratesDiffer } from '../../../lib/lineRates'
 import type { Booking } from './BookingsSection'
 
 type PaneTrip = {
   itinerary_id: number
   status: string
   slot: string
-  driver: string | null
-  helper: string | null
-  truck: string | null
-  trailer: string | null
 }
 
 const STATUS_LABELS: Record<string, string> = { PickedUp: 'Picked Up', InTransit: 'In Transit' }
@@ -27,50 +23,16 @@ const STATUS_LABELS: Record<string, string> = { PickedUp: 'Picked Up', InTransit
 async function loadPaneTrips(bookingId: number): Promise<{ trips: PaneTrip[]; error: string | null }> {
   const { data: rows, error } = await supabase
     .from('itineraries')
-    .select('itinerary_id, itinerary_status, trip_start_at, trip_end_at, trip_date_from, plate_number, trailer_id')
+    .select('itinerary_id, itinerary_status, trip_start_at, trip_end_at, trip_date_from')
     .eq('booking_id', bookingId)
     .order('itinerary_id')
   if (error) return { trips: [], error: error.message }
-  if (rows.length === 0) return { trips: [], error: null }
-
-  const ids = rows.map((r) => r.itinerary_id)
-  const trailerIds = rows.map((r) => r.trailer_id).filter((id): id is number => id !== null)
-  const [crewResult, trailersResult] = await Promise.all([
-    supabase
-      .from('itinerary_crews')
-      .select('itinerary_id, employee_id, crew_role')
-      .in('itinerary_id', ids)
-      .in('crew_role', ['Driver', 'Helper'])
-      .eq('is_active', true),
-    trailerIds.length > 0
-      ? supabase.from('trailers').select('trailer_id, plate_number').in('trailer_id', trailerIds)
-      : Promise.resolve({ data: [] as { trailer_id: number; plate_number: string | null }[], error: null }),
-  ])
-  if (crewResult.error) return { trips: [], error: crewResult.error.message }
-  if (trailersResult.error) return { trips: [], error: trailersResult.error.message }
-
-  const employeeIds = [...new Set(crewResult.data.map((c) => c.employee_id as number))]
-  const { data: employees, error: employeesError } = employeeIds.length
-    ? await supabase.from('employees').select('employee_id, full_name').in('employee_id', employeeIds)
-    : { data: [] as { employee_id: number; full_name: string }[], error: null }
-  if (employeesError) return { trips: [], error: employeesError.message }
-
-  const nameById = new Map(employees.map((e) => [e.employee_id, e.full_name]))
-  const crewName = (itineraryId: number, role: string) => {
-    const c = crewResult.data.find((x) => x.itinerary_id === itineraryId && x.crew_role === role)
-    return c ? (nameById.get(c.employee_id) ?? '—') : null
-  }
-  const trailerById = new Map(trailersResult.data.map((t) => [t.trailer_id, t.plate_number]))
 
   return {
     trips: rows.map((r) => ({
       itinerary_id: r.itinerary_id,
       status: r.itinerary_status ?? 'Awaiting',
       slot: r.trip_start_at ? formatSlot(r.trip_start_at, r.trip_end_at) : `${formatDate(r.trip_date_from)} · no time set`,
-      driver: crewName(r.itinerary_id, 'Driver'),
-      helper: crewName(r.itinerary_id, 'Helper'),
-      truck: r.plate_number,
-      trailer: r.trailer_id !== null ? (trailerById.get(r.trailer_id) ?? `#${r.trailer_id}`) : null,
     })),
     error: null,
   }
@@ -143,7 +105,7 @@ function BookingSummaryPane({
             <div>
               <dt className={LABEL}>Rate</dt>
               <dd className={`${VALUE} tabular-nums`}>
-                {booking.rate !== null ? formatMoney(booking.rate) : '—'}{' '}
+                {bookingRateLabel(booking.trip_rates, booking.rate)}{' '}
                 <span className="text-[13px] text-ink-muted">per trip</span>
               </dd>
             </div>
@@ -160,7 +122,8 @@ function BookingSummaryPane({
             <span className="text-ink-secondary">
               Contract value{' '}
               <span className="text-[13px] text-ink-muted">
-                {booking.total_trips} {booking.total_trips === 1 ? 'trip' : 'trips'} × {booking.rate !== null ? formatMoney(booking.rate) : '—'}
+                {booking.total_trips} {booking.total_trips === 1 ? 'trip' : 'trips'}
+                {ratesDiffer(booking.trip_rates) ? ', rates differ by cargo' : ` × ${bookingRateLabel(booking.trip_rates, booking.rate)}`}
               </span>
             </span>
             <span className="font-semibold tabular-nums">{formatMoney(booking.total_contract_value)}</span>
@@ -208,17 +171,6 @@ function BookingSummaryPane({
                   Trip #{t.itinerary_id} <span className="font-medium text-ink-secondary">· {t.slot}</span>
                 </div>
                 <StatusBadge status={t.status} label={STATUS_LABELS[t.status]} icon />
-                <div className="col-span-2 text-[13px] leading-[18px] text-ink-secondary">
-                  Driver <strong className="text-ink">{t.driver ?? '—'}</strong>
-                  {t.helper && (
-                    <>
-                      {' '}
-                      · Helper <strong className="text-ink">{t.helper}</strong>
-                    </>
-                  )}{' '}
-                  · Truck <strong className="text-ink">{t.truck ?? '—'}</strong> · Trailer{' '}
-                  <strong className="text-ink">{t.trailer ?? '—'}</strong>
-                </div>
               </div>
             ))}
           </div>

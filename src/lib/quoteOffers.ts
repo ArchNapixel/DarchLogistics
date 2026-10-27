@@ -27,7 +27,10 @@ export type QuoteOfferRow = {
   offer_id: number
   party: 'Business' | 'Client'
   action: 'Offer' | 'Counter' | 'Accept' | 'Decline'
+  // Average per trip; line_rates has one rate per cargo line (null on rows
+  // from before per-line pricing -- see lib/lineRates.ts).
   rate: number | null
+  line_rates: number[] | null
   pickup_date: string | null
   deadline_date: string | null
   note: string | null
@@ -35,11 +38,17 @@ export type QuoteOfferRow = {
   created_at: string
 }
 
+// A row's rate per cargo line ([rate] for old rows without line_rates).
+export function offerLineRates(row: Pick<QuoteOfferRow, 'rate' | 'line_rates'>): number[] {
+  if (Array.isArray(row.line_rates) && row.line_rates.length > 0) return row.line_rates.map(Number)
+  return row.rate != null ? [Number(row.rate)] : []
+}
+
 // A quote's history, oldest first.
 export async function loadQuoteOffers(quoteId: number): Promise<{ rows: QuoteOfferRow[]; error: string | null }> {
   const { data, error } = await supabase
     .from('quote_rate_offers')
-    .select('offer_id, party, action, rate, pickup_date, deadline_date, note, entered_by_staff, created_at')
+    .select('offer_id, party, action, rate, line_rates, pickup_date, deadline_date, note, entered_by_staff, created_at')
     .eq('quote_request_id', quoteId)
     .order('offer_id', { ascending: true })
   return { rows: (data ?? []) as QuoteOfferRow[], error: error?.message ?? null }
@@ -58,13 +67,17 @@ export type OfferChanges = { rate: boolean; pickup: boolean; deadline: boolean }
 
 // Which terms `current` changed compared with `previous` -- highlighted on
 // counter-offers and new offers. Null when there's nothing to compare.
-export function offerChanges(
-  previous: Pick<QuoteOfferRow, 'rate' | 'pickup_date' | 'deadline_date'> | undefined,
-  current: Pick<QuoteOfferRow, 'rate' | 'pickup_date' | 'deadline_date'>,
-): OfferChanges | null {
+export type OfferTerms = Pick<QuoteOfferRow, 'rate' | 'pickup_date' | 'deadline_date'> & {
+  line_rates?: number[] | null
+}
+
+export function offerChanges(previous: OfferTerms | undefined, current: OfferTerms): OfferChanges | null {
   if (!previous) return null
+  const before = offerLineRates({ rate: previous.rate, line_rates: previous.line_rates ?? null })
+  const now = offerLineRates({ rate: current.rate, line_rates: current.line_rates ?? null })
   return {
-    rate: Number(previous.rate ?? 0) !== Number(current.rate ?? 0),
+    // Any line's rate (or the number of lines) differing counts as a rate change.
+    rate: before.length !== now.length || before.some((r, i) => r !== now[i]),
     pickup: (previous.pickup_date ?? null) !== (current.pickup_date ?? null),
     deadline: (previous.deadline_date ?? null) !== (current.deadline_date ?? null),
   }
@@ -88,7 +101,8 @@ export async function withdrawQuoteRequest(quoteId: number): Promise<string | nu
 export async function respondToQuoteOffer(args: {
   quoteId: number
   action: 'accept' | 'counter' | 'decline'
-  rate?: number | null
+  // A counter: the client's rate for each cargo line (lib/lineRates.ts).
+  lineRates?: number[] | null
   pickupDate?: string | null
   deadlineDate?: string | null
   note?: string | null
@@ -96,7 +110,7 @@ export async function respondToQuoteOffer(args: {
   const { data, error } = await supabase.rpc('respond_to_quote_offer', {
     p_quote_id: args.quoteId,
     p_action: args.action,
-    p_rate: args.rate ?? null,
+    p_line_rates: args.lineRates ?? null,
     p_pickup_date: args.pickupDate ?? null,
     p_deadline_date: args.deadlineDate ?? null,
     p_note: args.note ?? null,

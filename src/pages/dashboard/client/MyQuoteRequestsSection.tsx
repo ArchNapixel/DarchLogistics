@@ -24,7 +24,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
 import QuoteOfferCard from './QuoteOfferCard'
-import { formatMoney } from '../../../lib/format'
+import { parseLineRates, rateLabel } from '../../../lib/lineRates'
 import { showToast } from '../../../components/Toast'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { withdrawQuoteRequest } from '../../../lib/quoteOffers'
@@ -53,6 +53,8 @@ type QuoteRow = {
   preferred_delivery_date: string | null
   // The rate on the table: our offer (Offered) or the client's counter.
   proposed_rate: number | null
+  // One rate per cargo line (lib/lineRates.ts); proposed_rate is their average.
+  line_rates: number[] | null
   delivery_order_count: number | null
   // Saved with our offer; the downpayment shown on it comes from this.
   cost_per_trip: number | null
@@ -63,6 +65,10 @@ type QuoteRow = {
   decline_reason: string | null
   created_at: string
 }
+
+// "₱5,500.00", or "₱5,000.00 – ₱8,000.00" when the cargo lines are priced differently.
+const quoteRateLabel = (q: QuoteRow) =>
+  rateLabel(parseLineRates(q.line_rates, parseCargoLines(q.cargo_lines).length, q.proposed_rate))
 
 // What the client sees for each status.
 const CLIENT_STATUS_LABELS: Record<string, string> = {
@@ -90,7 +96,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, payment_terms, decline_reason, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, line_rates, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, payment_terms, decline_reason, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -205,7 +211,7 @@ function MyQuoteRequestsSection() {
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-mono font-bold text-ink">{reference(quote)}</span>
                         <span className="rounded-[2px] bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">Offer received</span>
-                        <span className="ml-auto text-sm font-semibold text-ink tabular-nums">{formatMoney(quote.proposed_rate ?? 0)} per trip</span>
+                        <span className="ml-auto text-sm font-semibold text-ink tabular-nums">{quoteRateLabel(quote)} per trip</span>
                       </span>
                       <span className="text-sm text-ink-metric">
                         {route(quote)} · {trips(quote)}
@@ -243,7 +249,7 @@ function MyQuoteRequestsSection() {
 
                   {quote.request_status === 'Countered' && (
                     <p className="bg-slate-50 px-3 py-2 text-sm text-ink-secondary">
-                      You asked for {formatMoney(quote.proposed_rate ?? 0)} per trip. We'll reply here with a decision or a new offer.
+                      You asked for {quoteRateLabel(quote)} per trip. We'll reply here with a decision or a new offer.
                     </p>
                   )}
                   {quote.request_status === 'Declined' && quote.decline_reason && (

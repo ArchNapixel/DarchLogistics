@@ -7,9 +7,10 @@
 // rate_type/rate columns on `employees`, instead of one shared
 // app_settings value per position -- see buildEmployeePayLineItems):
 // - rate_type 'Commission Per Trip' (Drivers only): per trip,
-//   app_settings.driver_commission_rate% of that trip's
-//   bookings.rate_of_delivery_service (the rate is per trip, not per
-//   contract) PLUS app_settings.driver_per_trip_fee -- both
+//   app_settings.driver_commission_rate% of that trip's own
+//   itineraries.trip_rate (per trip, not per contract; cargo lines of one
+//   booking can be priced differently -- an old trip without one uses
+//   bookings.rate_of_delivery_service) PLUS app_settings.driver_per_trip_fee -- both
 //   company-wide, editable on the Settings page, and the same formula
 //   QuoteReviewModal's profitability panel estimates with. The old
 //   per-employee commission_basis / commission_per_trip columns are no
@@ -204,7 +205,7 @@ async function buildCommissionTripLineItems(
   const { data: itineraryRows, error: itineraryError } = await supabase
     .from('itineraries')
     .select(
-      'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status',
+      'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, trip_rate',
     )
     .in('itinerary_id', itineraryIds)
     .eq('itinerary_status', 'Delivered')
@@ -310,7 +311,8 @@ async function buildCommissionTripLineItems(
   )
 
   const lineItems = qualifying.map((row) => {
-    const tripRate = rateByBooking.get(row.booking_id) ?? 0
+    // The trip's OWN rate (cargo lines of a booking can be priced differently).
+    const tripRate = Number(row.trip_rate ?? rateByBooking.get(row.booking_id) ?? 0)
     const amount = (settings.driverCommissionRate / 100) * tripRate + settings.driverPerTripFee
     const pickup = placeNameById.get(row.place_of_pickup_id) ?? '—'
     const delivery = placeNameById.get(row.place_of_delivery_id) ?? '—'

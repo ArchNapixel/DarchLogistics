@@ -29,6 +29,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { deliveryAmountFor } from '../../../lib/paymentDue'
+import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import TripsView from './TripsView'
 import BookingDetailModal from './BookingDetailModal'
@@ -57,6 +58,9 @@ export type Booking = {
   // lib/bookingCharges.ts). (See src/lib/paymentDue.ts for the
   // same rule applied to the Payments Due report.)
   rate: number | null
+  // Each live (not cancelled) trip's own rate -- cargo lines can be priced
+  // differently, so contract / billed amounts add these up (lib/lineRates.ts).
+  trip_rates: number[]
   total_trips: number
   completed_trips: number
   total_contract_value: number
@@ -264,10 +268,10 @@ function BookingsSection() {
           .in('quote_request_id', chunk)
           .range(from, to),
       ),
-      fetchIn<{ booking_id: number; itinerary_id: number; itinerary_status: string | null }>(bookingIds, (chunk, from, to) =>
+      fetchIn<{ booking_id: number; itinerary_id: number; itinerary_status: string | null; trip_rate: number | string | null }>(bookingIds, (chunk, from, to) =>
         supabase
           .from('itineraries')
-          .select('booking_id, itinerary_id, itinerary_status')
+          .select('booking_id, itinerary_id, itinerary_status, trip_rate')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -332,12 +336,18 @@ function BookingsSection() {
       }
     })
 
+    // Every trip's own rate (cargo lines can be priced differently).
+    const tripRatesByBooking = groupTripRates(
+      itineraryRows,
+      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
+    )
+
     setBookings(
       bookingRows.map((b) => {
-        const rate = b.rate_of_delivery_service ?? 0
+        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
         const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
         const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = rate * completedTrips
+        const computedBillableAmount = sumRates(tripRates.delivered)
         const damageCharges = damageByBooking.get(b.booking_id) ?? 0
         const billableAmount =
           deliveryAmountFor({
@@ -355,9 +365,10 @@ function BookingsSection() {
           date: b.booking_date,
           status: b.booking_status ?? 'Draft',
           rate: b.rate_of_delivery_service,
+          trip_rates: tripRates.live,
           total_trips: totalTrips,
           completed_trips: completedTrips,
-          total_contract_value: rate * totalTrips,
+          total_contract_value: sumRates(tripRates.live),
           computed_billable_amount: computedBillableAmount,
           amount_to_pay: b.amount_to_pay,
           damage_charges: damageCharges,
@@ -562,7 +573,7 @@ function BookingsSection() {
                             </td>
                             <td className={TD}>
                               <span className="block font-semibold tabular-nums">
-                                {booking.rate !== null ? formatMoney(booking.rate) : '—'}
+                                {bookingRateLabel(booking.trip_rates, booking.rate)}
                               </span>
                               <span className={SUB}>
                                 {booking.completed_trips}/{booking.total_trips} {booking.total_trips === 1 ? 'trip' : 'trips'}

@@ -33,7 +33,13 @@ export type TripProfitRow = TripProfit & {
 }
 
 type LogRow = { itinerary_id: number; status_changed_at: string }
-type TripRow = { itinerary_id: number; booking_id: number; plate_number: string | null; itinerary_status: string | null }
+type TripRow = {
+  itinerary_id: number
+  booking_id: number
+  plate_number: string | null
+  itinerary_status: string | null
+  trip_rate: number | string | null
+}
 type BookingRow = {
   booking_id: number
   client_id: number
@@ -92,7 +98,7 @@ export async function loadTripProfitReport(month: string): Promise<{
   const trips = await fetchIn<TripRow>(inMonthIds, (chunk, a, b) =>
     supabase
       .from('itineraries')
-      .select('itinerary_id, booking_id, plate_number, itinerary_status')
+      .select('itinerary_id, booking_id, plate_number, itinerary_status, trip_rate')
       .in('itinerary_id', chunk)
       .range(a, b),
   )
@@ -156,7 +162,8 @@ export async function loadTripProfitReport(month: string): Promise<{
     return [
       {
         ...tripProfit(costSettings, {
-          ratePerTrip: Number(booking.rate_of_delivery_service ?? 0),
+          // This trip's own rate (cargo lines can be priced differently).
+          ratePerTrip: Number(trip.trip_rate ?? booking.rate_of_delivery_service ?? 0),
           distanceKm: km,
           fuelLogged,
           otherExpenses: otherByTrip.get(trip.itinerary_id) ?? 0,

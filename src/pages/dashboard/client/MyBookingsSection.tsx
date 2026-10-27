@@ -16,6 +16,7 @@ import { useAuth } from '../../../context/AuthContext'
 import ClientStatusRequestModal from './ClientStatusRequestModal'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
+import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { showToast } from '../../../components/Toast'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
 import {
@@ -123,6 +124,8 @@ function MyBookingsSection() {
               {visible.map((booking) => {
                 const isOpen = openId === booking.booking_id
                 const trips = billableTrips(booking)
+                // Each trip has its own rate (cargo lines can be priced differently).
+                const tripRates = trips.map((t) => t.trip_rate ?? booking.rate_of_delivery_service ?? 0)
                 const cancelledTrips = booking.itineraries.length - trips.length
                 const downpayment = bookingDownpayment(booking)
                 const payment = paymentByBooking.get(booking.booking_id)
@@ -145,13 +148,13 @@ function MyBookingsSection() {
                         </span>
                       </span>
                       <span>{formatDate(booking.booking_date)}</span>
-                      <span className="text-right tabular-nums">{formatMoney(booking.rate_of_delivery_service)}</span>
+                      <span className="text-right tabular-nums">{bookingRateLabel(tripRates, booking.rate_of_delivery_service)}</span>
                       <span className="text-right tabular-nums">
                         {trips.length}
                         {cancelledTrips > 0 && <span className="block text-[13px] text-ink-muted">{cancelledTrips} cancelled</span>}
                       </span>
                       <span className="text-right font-semibold text-ink tabular-nums">
-                        {booking.rate_of_delivery_service != null ? formatMoney(booking.rate_of_delivery_service * trips.length) : '—'}
+                        {booking.rate_of_delivery_service != null ? formatMoney(sumRates(tripRates)) : '—'}
                       </span>
                       <span>
                         {payment ? (
