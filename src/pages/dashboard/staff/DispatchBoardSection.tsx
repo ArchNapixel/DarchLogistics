@@ -81,6 +81,7 @@ import { groupTripRates, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
 import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
+import { substituteNote, trailerAllowed } from '../../../lib/trailerRules'
 import {
   SUGGESTED_COUNT,
   isOutNow,
@@ -156,6 +157,8 @@ type DispatchRow = {
   // This trip's trailer type (Flatbed/Skeletal) -- the trailer dropdown only
   // offers that type. null = no requirement (very old trips).
   required_trailer_type: string | null
+  // 'Container' / 'Loose': a container may also ride the other trailer type.
+  cargo_type: string | null
   // This trip's cargo, shown under the route ("Loose cargo · 20ft flatbed · 18 t").
   cargo_label: string
   cargo_description: string | null
@@ -695,6 +698,9 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
   const otherFree = free.slice(SUGGESTED_COUNT)
   const unavailable = ranked.filter((v) => v.blockedBy !== null)
   const topPick = currentId === null && row.trip_start_at ? suggested[0] : undefined
+  // "Skeletal instead of the Flatbed asked for" when the assigned trailer isn't the asked type.
+  const usingNote =
+    kind === 'Trailer' ? substituteNote(row.required_trailer_type, ranked.find((v) => v.id === currentId)?.trailer_type) : null
 
   // Option value -> what the handlers take (plate / trailer id).
   const pick = (id: string | null) =>
@@ -704,7 +710,8 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
   // Just the plate: the "this booking" / "service due" / "work order
   // pending" hints only decide the order, and the Unavailable group is
   // greyed out. The reason shows as a tooltip on hover (title).
-  const label = (v: (typeof ranked)[number]) => v.label
+  // A container on the other trailer type than asked for says so.
+  const label = (v: (typeof ranked)[number]) => (v.substitute ? `${v.label} (substitute: ${v.trailer_type})` : v.label)
 
   return (
     <div className="flex flex-col gap-1">
@@ -753,6 +760,7 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
           Use {topPick.label}
         </button>
       )}
+      {usingNote && <span className="text-xs text-slate-600">Using a {usingNote}</span>}
     </div>
   )
 }
@@ -1662,6 +1670,7 @@ function DispatchBoardSection() {
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
           required_trailer_type: it.trailer_type,
+          cargo_type: it.cargo_type,
           cargo_label: tripCargoLabel(it),
           cargo_description: it.cargo_description,
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
@@ -2006,8 +2015,12 @@ function DispatchBoardSection() {
     // Guard the dropdown filter: the trailer must match this trip's cargo.
     const row = rows.find((r) => r.itinerary_id === itineraryId)
     const picked = trailers.find((t) => t.trailer_id === trailerId)
-    if (row?.required_trailer_type && picked && picked.trailer_type !== row.required_trailer_type) {
-      setError(`This trip needs a ${row.required_trailer_type} trailer.`)
+    if (row && picked && !trailerAllowed(row.cargo_type, row.required_trailer_type, picked.trailer_type)) {
+      setError(
+        row.cargo_type === 'Container'
+          ? `This container trip needs a Flatbed or Skeletal trailer.`
+          : `This trip needs a ${row.required_trailer_type} trailer.`,
+      )
       return false
     }
 

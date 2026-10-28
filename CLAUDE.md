@@ -1892,3 +1892,21 @@ went on, but almost certainly needs a policy:**
 - Match existing codebase conventions/patterns exactly instead of
   introducing a "more correct" novel pattern in just the new file. Lint
   is at 0 problems since 2026-10-27 -- keep it there (see that section).
+## 2026-10-28: trailer substitution + capacity waves
+- **Containers may use either trailer type** (`lib/trailerRules.ts`, self-check
+  `node scripts/check-trailer-rules.ts`): `trailerAllowed(cargoType, asked, vehicle)`
+  -- Container: Flatbed or Skeletal whichever the client asked for; Loose: the
+  asked type only (Flatbed). Lowbed is ignored. `trailerRank` puts a Skeletal
+  first for containers (keeps Flatbeds for loose cargo). Used by `capacity.ts`,
+  `fleetMatch.ts` (`RankedVehicle.substitute`), the Dispatch Board
+  (`DispatchRow.cargo_type`, "(substitute: Skeletal)" label + "Using a …" note,
+  `handleTrailerChange` guard), `EditTripCargo` and the Capacity card.
+  Capacity breakdown pools container trips as "Flatbed or Skeletal".
+- **Parallel (storage-deadline) quotes run in waves** (`placeAt`): trips that
+  find no free driver / truck / trailer at the start wait until one of the
+  quote's own earlier trips ends. `checkCapacity` is `fits` if the last trip
+  ends by the deadline, else `late`. The "fleet too small" card only shows
+  when result is late / none. `get_capacity_inputs`' `unassigned` trips don't
+  return `cargo_type` yet (optional -- until then they're held to their asked type).
+  Approve (`create_booking_from_quote`) still starts storage-deadline trips
+  at the same time -- not changed.

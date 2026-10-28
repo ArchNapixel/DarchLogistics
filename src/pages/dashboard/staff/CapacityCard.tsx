@@ -11,6 +11,7 @@ import { formatDate, formatDateTime } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import { availabilityBreakdown, checkCapacity, shortageLabel, type CapacityResult, type KindAvailability } from '../../../lib/capacity'
 import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
+import { substituteNote } from '../../../lib/trailerRules'
 
 type Props = {
   quoteId: number
@@ -34,7 +35,14 @@ const kindLabel = (b: KindAvailability, count: number) =>
 // Wait for typing to settle before asking the database.
 const TYPING_DELAY_MS = 500
 
-type View = { result: CapacityResult; requestedStart: number; hasHolds: boolean; breakdown: KindAvailability[] }
+type View = {
+  result: CapacityResult
+  requestedStart: number
+  hasHolds: boolean
+  breakdown: KindAvailability[]
+  // "Skeletal instead of the Flatbed asked for" -- containers on the other trailer type.
+  substitutes: string[]
+}
 
 function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineDate, storage, onResult, onUseStart, onReject }: Props) {
   const [view, setView] = useState<View | null>(null)
@@ -70,8 +78,12 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
       setError(null)
       const demand = buildDemand({ ...args, defaultStartMinutes: inputs.defaultStartMinutes })
       const result = checkCapacity(demand, inputs.resources)
+      const placements = result.status === 'none' ? [] : result.placements
       setView({
         result,
+        substitutes: [
+          ...new Set(placements.flatMap((p, i) => substituteNote(demand.trips[i].trailerType, p.trailer.trailerType) ?? [])),
+        ],
         requestedStart: demand.requestedStart,
         hasHolds: inputs.resources.some((r) => r.busy.some((b) => b.tentative)),
         breakdown: availabilityBreakdown(demand, inputs.resources),
@@ -175,8 +187,23 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
         </>
       )
     }
-    // The fleet can never do this quote as asked (more needed at once than we own).
-    const tooSmall = view.breakdown.find((b) => b.need > b.have)
+    // Some trips wait for a free driver / truck / trailer (storage-deadline quote run in waves).
+    const waves = storage && needs.some((p) => p.start !== needs[0].start)
+    if (waves && (result.status === 'fits' || result.status === 'later')) {
+      body = (
+        <>
+          {body}
+          <p className="mt-2 text-sm text-slate-800">
+            Not enough to run every trip at once, so they run in waves as vehicles come back. The last trip ends{' '}
+            <span className="font-semibold">{formatDateTime(new Date(Math.max(...needs.map((p) => p.end))).toISOString())}</span>, before
+            the deadline.
+          </p>
+        </>
+      )
+    }
+    // The fleet can never do this quote as asked (more needed at once than we own) --
+    // only a problem when waves can't finish by the deadline either.
+    const tooSmall = result.status === 'late' || result.status === 'none' ? view.breakdown.find((b) => b.need > b.have) : undefined
     if (tooSmall) {
       tone = 'border-red-300 bg-red-50'
       body = (
@@ -221,6 +248,14 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
         </table>
       </>
     )
+    if (view.substitutes.length > 0) {
+      body = (
+        <>
+          {body}
+          <p className="mt-2 text-xs text-slate-600">Using a {view.substitutes.join(', ')}.</p>
+        </>
+      )
+    }
     if (view.hasHolds) {
       body = (
         <>

@@ -8,7 +8,8 @@
 // Progress / On Hold), has a Created / Scheduled work order scheduled on a
 // day of the trip, or is on another trip whose slot overlaps (back to back is fine; a trip on the
 // road stays busy until delivered). Trailers of the wrong type are left out
-// entirely (the cargo decides Flatbed / Skeletal).
+// entirely (the cargo decides Flatbed / Skeletal -- a container may also use
+// the other of the two, see trailerRules.ts).
 //
 // Free vehicles are ranked:
 //   1. already on this booking (so one rig stays with the booking),
@@ -18,6 +19,7 @@
 //      not blocked,
 //   3. idle longest since their last trip (never used first).
 import { tripsClash, type ScheduledTrip } from './tripSchedule.ts'
+import { substituteNote, trailerAllowed, trailerRank } from './trailerRules.ts'
 
 export type VehicleCandidate = {
   id: string
@@ -40,9 +42,12 @@ export type RankedVehicle = VehicleCandidate & {
   sameBooking: boolean
   // When its last trip ended (ms), for "idle longest".
   lastEnd: number | null
+  // "Skeletal instead of the Flatbed asked for", or null.
+  substitute: string | null
 }
 
-export type MatchTrip = ScheduledTrip & { required_trailer_type?: string | null }
+// cargo_type decides whether the other trailer type may stand in (trailerRules.ts).
+export type MatchTrip = ScheduledTrip & { required_trailer_type?: string | null; cargo_type?: string | null }
 
 // Work order statuses that mean the vehicle is in the shop right now.
 const SHOP_STATUSES = ['In Progress', 'On Hold']
@@ -64,7 +69,7 @@ export function rankVehicles(
   const tripFrom = trip.trip_start_at ? manilaDate(Date.parse(trip.trip_start_at)) : null
   const tripTo = trip.trip_end_at ? manilaDate(Date.parse(trip.trip_end_at)) : tripFrom
   return candidates
-    .filter((v) => !trip.required_trailer_type || !v.trailer_type || v.trailer_type === trip.required_trailer_type)
+    .filter((v) => trailerAllowed(trip.cargo_type, trip.required_trailer_type, v.trailer_type))
     .map((v) => {
       const theirs = tripsOf(v.id).filter((t) => t.itinerary_id !== trip.itinerary_id)
       const clash = theirs.find((t) => tripsClash(trip, t, now))
@@ -90,6 +95,8 @@ export function rankVehicles(
         ...v,
         blockedBy,
         note: due ? `service due ${describeDate(due)}` : pendingWorkOrder ? 'work order pending' : null,
+        // Set when a container rides the other trailer type than the one asked for.
+        substitute: substituteNote(trip.required_trailer_type, v.trailer_type),
         sameBooking: theirs.some((t) => t.booking_id === trip.booking_id && t.status !== 'Cancelled'),
         lastEnd: ends.length ? Math.max(...ends) : null,
       }
@@ -98,6 +105,9 @@ export function rankVehicles(
       if ((a.blockedBy === null) !== (b.blockedBy === null)) return a.blockedBy === null ? -1 : 1
       if (a.sameBooking !== b.sameBooking) return a.sameBooking ? -1 : 1
       if ((a.note === null) !== (b.note === null)) return a.note === null ? -1 : 1
+      // A container goes on a Skeletal before a Flatbed (keeps Flatbeds for loose cargo).
+      const byType = trailerRank(trip.cargo_type, a.trailer_type) - trailerRank(trip.cargo_type, b.trailer_type)
+      if (byType !== 0) return byType
       return (a.lastEnd ?? -Infinity) - (b.lastEnd ?? -Infinity)
     })
 }

@@ -14,6 +14,7 @@
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { MAX_WEIGHT_TONS, type TripCargo } from '../../../lib/quoteRequest'
+import { trailerAllowed } from '../../../lib/trailerRules'
 
 // Not Delivered and not Cancelled (null status counts as Awaiting).
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
@@ -73,7 +74,8 @@ function EditTripCargo({
         setSaving(false)
         return setError(trailerError.message)
       }
-      if (trailer?.trailer_type && trailer.trailer_type !== trailerType) {
+      // A container may ride a Skeletal or a Flatbed whichever was asked for.
+      if (trailer?.trailer_type && !trailerAllowed(cargoType, trailerType, trailer.trailer_type)) {
         setSaving(false)
         return setError(
           `This trip has a ${trailer.trailer_type} trailer assigned (${trailer.plate_number ?? `#${trip.trailer_id}`}). ` +

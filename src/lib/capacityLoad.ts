@@ -39,7 +39,8 @@ type RawInputs = {
   trailers: RawResource[]
   offers: RawOffer[]
   // Booked trips still missing a driver / truck / trailer.
-  unassigned?: { itinerary_id: number; start: number; end: number; trailer_type: string | null; needs: Resource['kind'][] }[]
+  // cargo_type: only if the SQL function returns it (else a container trip is held to its asked trailer type).
+  unassigned?: { itinerary_id: number; start: number; end: number; trailer_type: string | null; cargo_type?: string | null; needs: Resource['kind'][] }[]
   default_start_minutes: number
 }
 
@@ -73,6 +74,7 @@ export function buildDemand(args: {
   const trips = expandCargoLines(parseCargoLines(args.cargoLines)).map((t) => ({
     hours: args.hours,
     trailerType: t.trailer_type,
+    cargoType: t.cargo_type,
   }))
   const dayStart = new Date(manilaTimestamp(args.pickupDate, args.defaultStartMinutes)).getTime()
   // Pickup today and the start time already passed: start from the next half hour.
@@ -128,7 +130,7 @@ export async function loadCapacityInputs(
     // An offer past its pickup date can't be accepted any more -- it holds nothing.
     .filter((o) => offerTiming(o.pickup_date, today) === 'open')
     .map((o) => {
-      const trips = expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type }))
+      const trips = expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type, cargoType: t.cargo_type }))
       return {
         label: o.label,
         demand: { trips, mode: (o.storage ? 'parallel' : 'chain') as Demand['mode'] },
@@ -139,7 +141,7 @@ export async function loadCapacityInputs(
   // Booked trips with nothing picked yet hold one first, then the offers.
   const booked = withUnassignedTrips(
     resources,
-    (raw.unassigned ?? []).map((t) => ({ itinerary_id: t.itinerary_id, start: t.start, end: t.end, trailerType: t.trailer_type, needs: t.needs })),
+    (raw.unassigned ?? []).map((t) => ({ itinerary_id: t.itinerary_id, start: t.start, end: t.end, trailerType: t.trailer_type, cargoType: t.cargo_type, needs: t.needs })),
   )
   return { inputs: { resources: withTentativeHolds(booked, holds), defaultStartMinutes }, error: null }
 }

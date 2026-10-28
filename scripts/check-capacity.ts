@@ -102,7 +102,41 @@ if ('placements' in handover) assert.deepEqual(handover.placements.map((p) => p.
 // Parallel (storage-deadline): 2 trips at once need 2 drivers.
 const parallel: Demand = { trips: [{ hours: 6, trailerType: null }, { hours: 6, trailerType: null }], mode: 'parallel', requestedStart: oct24, deadlineEnd: null }
 assert.equal(checkCapacity(parallel, [driver('D1'), driver('D2'), ...fleet]).status, 'fits')
-assert.notEqual(checkCapacity(parallel, [driver('D1'), ...fleet]).status, 'fits')
+// ...with only 1 driver the 2nd trip waits for the 1st (a wave), still 'fits' with no deadline.
+const oneDriver = placeAt(parallel, [driver('D1'), ...fleet], oct24)
+assert.ok('placements' in oneDriver)
+if ('placements' in oneDriver) assert.deepEqual(oneDriver.placements.map((p) => p.start), [oct24, oct24 + 6 * HOUR_MS])
+
+// The 2-trips / 1-Flatbed case: waves fit before a deadline that leaves room...
+const oneFlatbed = [driver('D1'), driver('D2'), truck('T1'), truck('T2'), trailer('F1', 'Flatbed')]
+const twoLoose: Demand = {
+  trips: [{ hours: 6, trailerType: 'Flatbed', cargoType: 'Loose' }, { hours: 6, trailerType: 'Flatbed', cargoType: 'Loose' }],
+  mode: 'parallel',
+  requestedStart: oct24,
+  deadlineEnd: deadline26,
+}
+assert.equal(checkCapacity(twoLoose, oneFlatbed).status, 'fits')
+// ...but not when the deadline is the end of the first trip's day (2nd trip would end 6 PM).
+const tight = checkCapacity({ ...twoLoose, deadlineEnd: oct24 + 8 * HOUR_MS }, oneFlatbed)
+assert.equal(tight.status, 'late')
+if (tight.status === 'late') assert.equal(tight.start, oct24)
+
+// Containers may use a Skeletal (tried first) or a Flatbed; loose cargo only a Flatbed.
+const container = { hours: 6, trailerType: 'Flatbed', cargoType: 'Container' }
+const both = [driver('D1'), truck('T1'), trailer('F1', 'Flatbed'), trailer('S1', 'Skeletal')]
+const onSkeletal = placeAt({ trips: [container], mode: 'chain' }, both, oct24)
+assert.ok('placements' in onSkeletal)
+if ('placements' in onSkeletal) assert.equal(onSkeletal.placements[0].trailer.id, 'S1')
+const skeletalOnlyFleet = [driver('D1'), truck('T1'), trailer('S1', 'Skeletal')]
+assert.equal(checkCapacity({ trips: [container], mode: 'chain', requestedStart: oct24, deadlineEnd: null }, skeletalOnlyFleet).status, 'fits')
+assert.equal(
+  checkCapacity({ trips: [{ ...container, cargoType: 'Loose' }], mode: 'chain', requestedStart: oct24, deadlineEnd: null }, skeletalOnlyFleet).status,
+  'none',
+)
+// Two containers at once on 1 Flatbed + 1 Skeletal: one each, no wave needed.
+const twoBoxes = placeAt({ trips: [container, container], mode: 'parallel' }, [driver('D1'), driver('D2'), truck('T1'), truck('T2'), trailer('F1', 'Flatbed'), trailer('S1', 'Skeletal')], oct24)
+assert.ok('placements' in twoBoxes)
+if ('placements' in twoBoxes) assert.deepEqual(twoBoxes.placements.map((p) => p.start), [oct24, oct24])
 
 // Tentative hold: an offered quote takes D1 on Oct 24, so a new quote for
 // the same time gets D2 -- or has to wait when there is no D2.
@@ -153,5 +187,11 @@ const skeletal = tooSmall.find((b) => b.kind === 'Trailer')!
 assert.equal(skeletal.need, 3)
 assert.equal(skeletal.have, 2)
 assert.equal(skeletal.earliestFree, null)
+// Container trips pool Flatbeds and Skeletals together.
+const boxPool = availabilityBreakdown(
+  { trips: [container, container], mode: 'parallel', requestedStart: oct24, deadlineEnd: null },
+  [driver('D1'), truck('T1'), trailer('F1', 'Flatbed'), trailer('S1', 'Skeletal')],
+).find((b) => b.kind === 'Trailer')!
+assert.deepEqual([boxPool.trailerType, boxPool.need, boxPool.have], ['Flatbed or Skeletal', 2, 2])
 
 console.log('ok')

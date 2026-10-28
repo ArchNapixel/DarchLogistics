@@ -12,14 +12,19 @@
 // ending 12 NN, the next starting 12 NN).
 //
 // A quote's trips run back to back ('chain', one after another from the
-// start) or all at once ('parallel', storage-deadline bookings). Each trip
-// needs one driver, one truck and one trailer of its type (Skeletal /
-// Flatbed; null = any). Helpers are optional and not counted. In a chain
+// start) or as many at once as we have the people / vehicles for ('parallel',
+// storage-deadline bookings: the rest wait for a free one -- waves -- and
+// the quote only runs late if the last trip ends after the deadline). Each
+// trip needs one driver, one truck and one trailer of its type (Skeletal /
+// Flatbed; null = any; a container may also use the other of the two, see
+// trailerRules.ts). Helpers are optional and not counted. In a chain
 // the same driver / truck / trailer are kept from trip to trip when free,
 // otherwise any free one is used.
 //
 // Times are epoch ms. Advisory only: staff can still send an offer that
 // doesn't fit.
+
+import { trailerAllowed, trailerRank } from './trailerRules.ts'
 
 export type ResourceKind = 'Driver' | 'Truck' | 'Trailer'
 
@@ -42,7 +47,9 @@ export type Resource = {
   busy: BusyWindow[]
 }
 
-export type TripNeed = { hours: number; trailerType: string | null }
+// cargoType ('Container' / 'Loose') decides which trailers may stand in for
+// the asked type (lib/trailerRules.ts).
+export type TripNeed = { hours: number; trailerType: string | null; cargoType?: string | null }
 
 export type Demand = {
   trips: TripNeed[]
@@ -99,39 +106,68 @@ export function tripSlots(demand: Pick<Demand, 'trips' | 'mode'>, start: number)
 }
 
 // Try to cover every trip starting at `start`. Returns the placements, or
-// the first thing that ran out.
+// the first thing that ran out. In parallel mode a trip that finds nothing
+// free at the start waits for the next wave (when one of this demand's own
+// earlier trips ends) -- `delayed` is what first held it back.
 export function placeAt(
   demand: Pick<Demand, 'trips' | 'mode'>,
   resources: Resource[],
   start: number,
-): { placements: Placement[] } | { shortage: Shortage } {
+): { placements: Placement[]; delayed?: Shortage } | { shortage: Shortage } {
   const slots = tripSlots(demand, start)
   // Windows taken by this demand's own earlier trips (parallel trips can't share).
   const taken = new Map<string, { start: number; end: number }[]>()
   const freeHere = (r: Resource, s: number, e: number) =>
     isFree(r, s, e) && (taken.get(r.id) ?? []).every((w) => w.end <= s || w.start >= e)
-  const pick = (kind: ResourceKind, s: number, e: number, previous: Resource | undefined, trailerType: string | null = null) => {
+  const pick = (
+    kind: ResourceKind,
+    s: number,
+    e: number,
+    previous: Resource | undefined,
+    trailerType: string | null = null,
+    cargoType: string | null = null,
+  ) => {
     const fits = (r: Resource) =>
-      r.kind === kind && (kind !== 'Trailer' || !trailerType || r.trailerType === trailerType) && freeHere(r, s, e)
+      r.kind === kind && (kind !== 'Trailer' || trailerAllowed(cargoType, trailerType, r.trailerType)) && freeHere(r, s, e)
     if (previous && fits(previous)) return previous
-    return resources.find(fits)
+    const free = resources.filter(fits)
+    // Trailers: the preferred type first (a container goes on a Skeletal before a Flatbed).
+    if (kind === 'Trailer') free.sort((a, b) => trailerRank(cargoType, a.trailerType) - trailerRank(cargoType, b.trailerType))
+    return free[0]
   }
 
   const placements: Placement[] = []
+  let delayed: Shortage | undefined
   for (let i = 0; i < slots.length; i++) {
-    const { start: s, end: e } = slots[i]
+    const { trailerType, cargoType, hours } = demand.trips[i]
     const prev = demand.mode === 'chain' ? placements[i - 1] : undefined
-    const trailerType = demand.trips[i].trailerType
-    const driver = pick('Driver', s, e, prev?.driver)
-    if (!driver) return { shortage: { kind: 'Driver', trailerType: null, tripIndex: i } }
-    const truck = pick('Truck', s, e, prev?.truck)
-    if (!truck) return { shortage: { kind: 'Truck', trailerType: null, tripIndex: i } }
-    const trailer = pick('Trailer', s, e, prev?.trailer, trailerType)
-    if (!trailer) return { shortage: { kind: 'Trailer', trailerType, tripIndex: i } }
-    for (const r of [driver, truck, trailer]) taken.set(r.id, [...(taken.get(r.id) ?? []), { start: s, end: e }])
-    placements.push({ start: s, end: e, driver, truck, trailer })
+    // Chain: its one slot. Parallel: the start, then each time an earlier trip ends.
+    const tryStarts =
+      demand.mode === 'parallel' ? [...new Set([start, ...placements.map((p) => p.end)])].sort((a, b) => a - b) : [slots[i].start]
+    let shortage: Shortage | undefined
+    let placed = false
+    for (const s of tryStarts) {
+      const e = s + hours * HOUR_MS
+      const driver = pick('Driver', s, e, prev?.driver)
+      const truck = driver && pick('Truck', s, e, prev?.truck)
+      const trailer = truck && pick('Trailer', s, e, prev?.trailer, trailerType, cargoType ?? null)
+      if (!driver || !truck || !trailer) {
+        shortage ??= !driver
+          ? { kind: 'Driver', trailerType: null, tripIndex: i }
+          : !truck
+            ? { kind: 'Truck', trailerType: null, tripIndex: i }
+            : { kind: 'Trailer', trailerType, tripIndex: i }
+        continue
+      }
+      for (const r of [driver, truck, trailer]) taken.set(r.id, [...(taken.get(r.id) ?? []), { start: s, end: e }])
+      placements.push({ start: s, end: e, driver, truck, trailer })
+      if (s !== start) delayed ??= shortage
+      placed = true
+      break
+    }
+    if (!placed) return { shortage: shortage! }
   }
-  return { placements }
+  return { placements, delayed }
 }
 
 const MANILA_OFFSET_MS = 8 * HOUR_MS
@@ -153,22 +189,30 @@ function* laterStarts(demand: Demand, searchUntil: number): Generator<number> {
 export function checkCapacity(demand: Demand, resources: Resource[]): CapacityResult {
   if (demand.trips.length === 0) return { status: 'fits', start: demand.requestedStart, placements: [] }
   const atRequested = placeAt(demand, resources, demand.requestedStart)
-  if ('placements' in atRequested) return { status: 'fits', start: demand.requestedStart, placements: atRequested.placements }
+  const lastEnd = (ps: Placement[]) => Math.max(...ps.map((p) => p.end))
+  const inTime = (ps: Placement[]) => demand.deadlineEnd === null || lastEnd(ps) <= demand.deadlineEnd
+  // Trips that had to wait for a free trailer / truck / driver (waves) still
+  // fit as long as the last one ends by the deadline.
+  if ('placements' in atRequested && (!atRequested.delayed || inTime(atRequested.placements))) {
+    return { status: 'fits', start: demand.requestedStart, placements: atRequested.placements }
+  }
+  const shortage = 'shortage' in atRequested ? atRequested.shortage : atRequested.delayed!
 
   const searchUntil = (demand.deadlineEnd ?? demand.requestedStart) + SEARCH_DAYS_PAST_DEADLINE * DAY_MS
   for (const start of laterStarts(demand, searchUntil)) {
     const tried = placeAt(demand, resources, start)
     if ('placements' in tried) {
-      const lastEnd = tried.placements[tried.placements.length - 1].end
-      return {
-        status: demand.deadlineEnd === null || lastEnd <= demand.deadlineEnd ? 'later' : 'late',
-        start,
-        placements: tried.placements,
-        shortageAtRequested: atRequested.shortage,
-      }
+      const ok = inTime(tried.placements)
+      // A later start that is still late is no better than waves from the requested one.
+      if (!ok && 'placements' in atRequested) continue
+      return { status: ok ? 'later' : 'late', start, placements: tried.placements, shortageAtRequested: shortage }
     }
   }
-  return { status: 'none', shortageAtRequested: atRequested.shortage }
+  // Waves from the requested start finish after the deadline: still the earliest.
+  if ('placements' in atRequested) {
+    return { status: 'late', start: demand.requestedStart, placements: atRequested.placements, shortageAtRequested: shortage }
+  }
+  return { status: 'none', shortageAtRequested: shortage }
 }
 
 // "No driver free", "No Skeletal trailer free" -- for the card and the client.
@@ -209,6 +253,7 @@ export type UnassignedTrip = {
   start: number
   end: number
   trailerType: string | null
+  cargoType?: string | null
   needs: ResourceKind[]
 }
 
@@ -219,7 +264,7 @@ export function withUnassignedTrips(resources: Resource[], trips: UnassignedTrip
       const free = current.find(
         (r) =>
           r.kind === kind &&
-          (kind !== 'Trailer' || !trip.trailerType || r.trailerType === trip.trailerType) &&
+          (kind !== 'Trailer' || trailerAllowed(trip.cargoType, trip.trailerType, r.trailerType)) &&
           isFree(r, trip.start, trip.end),
       )
       // Nothing free: that trip is already short (the board shows it) -- holds nothing.
@@ -246,16 +291,26 @@ export type KindAvailability = {
 export function availabilityBreakdown(demand: Demand, resources: Resource[]): KindAvailability[] {
   if (demand.trips.length === 0) return []
   const slots = tripSlots(demand, demand.requestedStart)
-  const groups: { kind: ResourceKind; trailerType: string | null; tripIndexes: number[] }[] = [
+  const groups: { kind: ResourceKind; trailerType: string | null; cargoType?: string | null; tripIndexes: number[] }[] = [
     { kind: 'Driver', trailerType: null, tripIndexes: demand.trips.map((_, i) => i) },
     { kind: 'Truck', trailerType: null, tripIndexes: demand.trips.map((_, i) => i) },
   ]
-  for (const type of [...new Set(demand.trips.map((t) => t.trailerType))]) {
-    groups.push({ kind: 'Trailer', trailerType: type, tripIndexes: demand.trips.flatMap((t, i) => (t.trailerType === type ? [i] : [])) })
+  // Containers share one Flatbed-or-Skeletal pool; loose cargo asks for its own type.
+  const trailerGroup = (t: TripNeed) => (t.cargoType === 'Container' ? 'Flatbed or Skeletal' : t.trailerType)
+  for (const type of [...new Set(demand.trips.map(trailerGroup))]) {
+    const tripIndexes = demand.trips.flatMap((t, i) => (trailerGroup(t) === type ? [i] : []))
+    groups.push({ kind: 'Trailer', trailerType: type, cargoType: demand.trips[tripIndexes[0]].cargoType, tripIndexes })
   }
   const searchUntil = (demand.deadlineEnd ?? demand.requestedStart) + SEARCH_DAYS_PAST_DEADLINE * DAY_MS
   return groups.map((g) => {
-    const pool = resources.filter((r) => r.kind === g.kind && (g.kind !== 'Trailer' || !g.trailerType || r.trailerType === g.trailerType))
+    const pool = resources.filter(
+      (r) =>
+        r.kind === g.kind &&
+        (g.kind !== 'Trailer' ||
+          (g.trailerType === 'Flatbed or Skeletal'
+            ? trailerAllowed('Container', 'Flatbed', r.trailerType)
+            : trailerAllowed(g.cargoType, g.trailerType, r.trailerType))),
+    )
     // Side by side, every trip needs its own; back to back, one at a time.
     const need = demand.mode === 'parallel' ? g.tripIndexes.length : 1
     // This group's first trip: its slot relative to the start.
