@@ -597,8 +597,16 @@ function SlotCell({ row, now, showDate }: { row: DispatchRow; now: number; showD
       {/* Storage-deadline trip still at the port: that deadline is what
           matters until pickup, so it replaces "Overdue". */}
       {storage ? (
-        <span className={`${CHIP} ${STORAGE_BADGE[storage].className}`}>
-          {storage === 'missed' ? STORAGE_BADGE.missed.label : `Pick up by ${formatDate(row.storage_deadline!)} 11:59 PM`}
+        // Two lines so it stays inside the narrow Time Slot column.
+        <span className={`${CHIP} ${STORAGE_BADGE[storage].className} flex-col items-start gap-0`}>
+          {storage === 'missed' ? (
+            STORAGE_BADGE.missed.label
+          ) : (
+            <>
+              <span>Pick up by</span>
+              <span>{formatDate(row.storage_deadline!)} 11:59 PM</span>
+            </>
+          )}
         </span>
       ) : (
         isOverdue(row, now) && <span className={`${CHIP} bg-red-100 text-red-800`}>Overdue</span>
@@ -1268,7 +1276,8 @@ function DispatchBoardSection() {
   const [day, setDay] = useState<string>(() => toManilaDate(new Date()))
   const dateInputRef = useRef<HTMLInputElement>(null)
   // Filters: status ('all' | 'needs' | 'atrisk' | a status), driver ('all' | 'none' | employee id), booking / trip #.
-  const [statusFilter, setStatusFilter] = useState('all')
+  // Starts on "Needs assignment" -- what dispatch has to deal with first.
+  const [statusFilter, setStatusFilter] = useState('needs')
   const [driverFilter, setDriverFilter] = useState('all')
   const [bookingFilter, setBookingFilter] = useState('')
   // The trip open in the View panel, and the one in the Update Status pop-up.
@@ -2276,7 +2285,11 @@ function DispatchBoardSection() {
 
   // Filters under the tiles: Status (plus Needs assignment / At risk), Driver, Booking ID.
   const bookingQuery = bookingFilter.trim().replace(/^#/, '')
-  const filteredRows = dayRows.filter((r) => {
+  const needsAssignment = (r: DispatchRow) => r.status === 'Awaiting' && !isFullyAssigned(r)
+  const filteredRows = dayRows
+    // Trips that still need assignment first (sort is stable: the rest keep their order).
+    .toSorted((a, b) => Number(needsAssignment(b)) - Number(needsAssignment(a)))
+    .filter((r) => {
     if (statusFilter === 'needs' && (r.status !== 'Awaiting' || isFullyAssigned(r))) return false
     if (statusFilter === 'atrisk' && !atRiskById.has(r.itinerary_id)) return false
     if (!['all', 'needs', 'atrisk'].includes(statusFilter) && r.status !== statusFilter) return false
@@ -2561,7 +2574,7 @@ function DispatchBoardSection() {
               ) : (
                 <table className="w-full min-w-[980px] table-fixed text-left text-sm text-ink-metric">
                   <colgroup>
-                    {['120px', '130px', '', '150px', '120px', '130px', '236px'].map((width, i) => (
+                    {['120px', '170px', '', '150px', '120px', '130px', '236px'].map((width, i) => (
                       <col key={i} style={width ? { width } : undefined} />
                     ))}
                   </colgroup>

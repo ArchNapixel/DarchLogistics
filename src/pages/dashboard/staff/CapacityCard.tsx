@@ -12,7 +12,6 @@ import { toManilaDate } from '../../../lib/payslip'
 import { availabilityBreakdown, checkCapacity, shortageLabel, type CapacityResult, type KindAvailability } from '../../../lib/capacity'
 import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
 import { substituteNote } from '../../../lib/trailerRules'
-
 type Props = {
   quoteId: number
   // quote_requests.cargo_lines
@@ -184,20 +183,6 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
             weeks after the deadline.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">{rejectButton}</div>
-        </>
-      )
-    }
-    // Some trips wait for a free driver / truck / trailer (storage-deadline quote run in waves).
-    const waves = storage && needs.some((p) => p.start !== needs[0].start)
-    if (waves && (result.status === 'fits' || result.status === 'later')) {
-      body = (
-        <>
-          {body}
-          <p className="mt-2 text-sm text-slate-800">
-            Not enough to run every trip at once, so they run in waves as vehicles come back. The last trip ends{' '}
-            <span className="font-semibold">{formatDateTime(new Date(Math.max(...needs.map((p) => p.end))).toISOString())}</span>, before
-            the deadline.
-          </p>
         </>
       )
     }
