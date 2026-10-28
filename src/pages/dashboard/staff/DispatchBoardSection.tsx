@@ -73,7 +73,7 @@ import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { toManilaDate } from '../../../lib/payslip'
 import PageHeader from '../../../components/PageHeader'
-import { formatDate, formatMoney, formatSlot, slotLines } from '../../../lib/format'
+import { formatDate, formatMoney, formatSlot, manilaTimestamp, slotLines } from '../../../lib/format'
 import StatusBadge from '../../../components/StatusBadge'
 import EditTripTimeModal from './EditTripTimeModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
@@ -84,6 +84,7 @@ import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../..
 import { substituteNote, trailerAllowed } from '../../../lib/trailerRules'
 import {
   SUGGESTED_COUNT,
+  hoursLate,
   isOutNow,
   isOverdue,
   lateEarlierTrip,
@@ -131,6 +132,7 @@ type BoardBookingRow = {
   amount_paid: number | null
   downpayment_waived_at: string | null
   storage_deadline: string | null
+  quote_request_id: number | null
 }
 
 type DispatchRow = {
@@ -165,6 +167,8 @@ type DispatchRow = {
   // Last free storage day (bookings.storage_deadline): must be Picked Up by
   // 11:59 PM that day. null = not an urgent booking.
   storage_deadline: string | null
+  // The quote's Deadline date (delivery by, YYYY-MM-DD), or null.
+  delivery_by: string | null
 }
 
 // Not picked up yet on a storage-deadline booking: 'pending' (still time)
@@ -688,6 +692,14 @@ function atRiskReasons(
       const theirs = allRows.filter((r) => r.assigned_employee_id === row.assigned_employee_id && r.itinerary_id !== row.itinerary_id)
       const late = lateEarlierTrip(row, theirs, now)
       if (late) reasons.push(`${row.assigned_driver_name ?? 'Driver'}'s trip #${late.itinerary_id} is running late`)
+    }
+  }
+  // The booking's last trip ends after its delivery-by date: late at this pace (shown on that trip).
+  if (row.delivery_by && !row.storage_deadline && row.trip_end_at) {
+    const lastEnd = Math.max(...allRows.filter((r) => r.booking_id === row.booking_id && r.trip_end_at).map((r) => Date.parse(r.trip_end_at!)))
+    const hours = hoursLate(lastEnd, Date.parse(manilaTimestamp(row.delivery_by, 24 * 60)) - 1)
+    if (hours > 0 && Date.parse(row.trip_end_at) === lastEnd) {
+      reasons.push(`Booking #${row.booking_id} will be late by ${hours} h at the current pace (delivery-by ${formatDate(row.delivery_by)}) -- speed up the remaining trips`)
     }
   }
   return reasons
@@ -1445,7 +1457,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline, quote_request_id')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1464,6 +1476,15 @@ function DispatchBoardSection() {
       return
     }
     const bookingTypeRows = bookingTypeResult.rows
+    // Each booking's delivery-by date (its quote's Deadline date), for the "running late" alert.
+    const quoteIds = bookingTypeRows.flatMap((b) => (b.quote_request_id === null ? [] : [b.quote_request_id as number]))
+    const { data: quoteDates } = quoteIds.length
+      ? await supabase.from('quote_requests').select('quote_request_id, preferred_delivery_date').in('quote_request_id', quoteIds)
+      : { data: [] }
+    const deliveryByQuote = new Map((quoteDates ?? []).map((q) => [q.quote_request_id as number, q.preferred_delivery_date as string | null]))
+    const deliveryByBooking = new Map(
+      bookingTypeRows.map((b) => [b.booking_id as number, b.quote_request_id === null ? null : (deliveryByQuote.get(b.quote_request_id as number) ?? null)]),
+    )
     const storageDeadlineByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.storage_deadline]),
     )
@@ -1683,6 +1704,7 @@ function DispatchBoardSection() {
           cargo_label: tripCargoLabel(it),
           cargo_description: it.cargo_description,
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
+          delivery_by: deliveryByBooking.get(it.booking_id) ?? null,
         }
       }),
     )

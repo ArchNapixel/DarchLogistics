@@ -164,3 +164,64 @@ export function chainSlots(firstStart: number, lengths: number[]): { start: numb
   }
   return slots
 }
+
+// One trip still to start, for flowAfterDelivery.
+export type FlowTrip = {
+  itinerary_id: number
+  booking_id: number
+  // Its planned slot (ms).
+  start: number
+  end: number
+  // The earliest it may start: its booking's pickup date (ms, Manila midnight).
+  notBefore: number
+  // true = one of the delivering driver's trips; false = another crew's trip
+  // on a booking that is affected, which only follows its booking's previous trip.
+  mine: boolean
+}
+
+// A driver delivers a trip at `deliveredAt` and is free from then. Works out
+// the new slot of every trip that still has to start (the driver's own, across
+// all bookings, plus the later trips of the same bookings):
+//   - the driver's next trip starts right then -- if its pickup date has
+//     arrived and its booking's previous trip is done. A trip that can't start
+//     yet is skipped (it keeps its planned time) and the next one that can goes
+//     first;
+//   - a trip that runs into a skipped trip pushes it later; a late delivery
+//     pushes everything after it;
+//   - a booking's trips stay back to back, each keeping its own length.
+// Returns the slot of each trip by id (unchanged ones included).
+export function flowAfterDelivery(
+  deliveredAt: number,
+  deliveredBooking: number,
+  trips: FlowTrip[],
+  // When each booking's earlier trips (done or on the road) are over, for bookings other than the delivered one.
+  bookingFloor: Map<number, number> = new Map(),
+): Map<number, { start: number; end: number }> {
+  const out = new Map<number, { start: number; end: number }>()
+  const bookingFree = new Map<number, number>([...bookingFloor, [deliveredBooking, deliveredAt]])
+  let driverFree = deliveredAt
+  const remaining = [...trips].sort((a, b) => a.start - b.start || a.itinerary_id - b.itinerary_id)
+  const floorOf = (t: FlowTrip) => Math.max(t.notBefore, bookingFree.get(t.booking_id) ?? -Infinity)
+  // Where a trip would start if it can't go right now.
+  const startOf = (t: FlowTrip) =>
+    t.mine ? Math.max(driverFree, t.start, floorOf(t)) : bookingFree.has(t.booking_id) ? floorOf(t) : t.start
+
+  while (remaining.length > 0) {
+    // A booking's trips go in order: not before its earlier ones.
+    const ready = remaining.filter((t) => !remaining.some((o) => o !== t && o.booking_id === t.booking_id && remaining.indexOf(o) < remaining.indexOf(t)))
+    const now = ready.find((t) => t.mine && floorOf(t) <= driverFree)
+    const pick = now ?? ready.reduce((best, t) => (startOf(t) < startOf(best) ? t : best))
+    const start = now ? driverFree : startOf(pick)
+    const end = start + (pick.end - pick.start)
+    out.set(pick.itinerary_id, { start, end })
+    bookingFree.set(pick.booking_id, end)
+    if (pick.mine) driverFree = end
+    remaining.splice(remaining.indexOf(pick), 1)
+  }
+  return out
+}
+
+// Whole hours the last trip ends after the delivery-by date (end of that day), or 0.
+export function hoursLate(lastEnd: number, deadlineEnd: number | null): number {
+  return deadlineEnd !== null && lastEnd > deadlineEnd ? Math.ceil((lastEnd - deadlineEnd) / HOUR_MS) : 0
+}

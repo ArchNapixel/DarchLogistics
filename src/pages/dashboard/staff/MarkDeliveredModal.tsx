@@ -119,8 +119,10 @@ function MarkDeliveredModal({
       }
 
       // The slot ends at the real delivery time; later trips follow it.
-      const retimeWarning = await retimeAfterDelivery(itineraryId, deliveredAt)
-      if (retimeWarning) showToast(retimeWarning, 'error')
+      const retime = await retimeAfterDelivery(itineraryId, deliveredAt)
+      if (retime.warning) showToast(retime.warning, 'error')
+      // At the current pace a booking misses its delivery-by date: remind the admin.
+      for (const message of retime.late) showToast(message, 'error')
     }
 
     // 3. Damage, if any.

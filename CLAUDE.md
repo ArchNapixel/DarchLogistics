@@ -1910,3 +1910,18 @@ went on, but almost certainly needs a policy:**
   return `cargo_type` yet (optional -- until then they're held to their asked type).
   Approve (`create_booking_from_quote`) still starts storage-deadline trips
   at the same time -- not changed.
+- **Driver flow after a delivery (2026-10-28).** `retimeAfterDelivery()`
+  (`lib/tripRetime.ts`, returns `{ warning, late }`) now follows the DRIVER's
+  next trips across bookings, not only the booking's: rules in
+  `flowAfterDelivery()` (`lib/tripSchedule.ts`, self-check in
+  `scripts/check-trip-schedule.ts`) -- the next trip starts at the delivery
+  time if its pickup date (`quote_requests.preferred_pickup_date`) has come
+  and its booking's previous trip is done, else it's skipped and keeps its
+  slot (a trip that runs into it pushes it later); a booking's own later
+  trips stay back to back. Stops at the first trip the DB refuses and names
+  it. **Late alert:** if a booking's last trip now ends after its delivery-by
+  date (`quote_requests.preferred_delivery_date`, end of day) -- toasts from
+  `MarkDeliveredModal` and a "will be late by N h" line in the Dispatch Board's
+  At-risk notice (`DispatchRow.delivery_by`). Not in the header bell. Old
+  rows delivered before this (e.g. trips #111-#114, delivered 2026-10-24)
+  keep their stale planned slots.
