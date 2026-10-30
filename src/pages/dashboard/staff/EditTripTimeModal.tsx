@@ -4,14 +4,11 @@
 // be pushed later on its own -- e.g. a trip running long (#6). Times are
 // picked in 12-hour format (TimeInput12) and saved as Manila timestamps.
 //
-// A booking's trips run one after another, so saving also re-chains the
-// later trips of the same booking that are still Awaiting (`laterTrips`,
-// including ones with no time yet): each starts when the one before it
-// ends, keeping its own length (or the booking's hours per trip if it has
-// none). Trips already on the road or delivered never move.
-// Exception: a last-free-storage-day booking (storageDeadline set) runs its
-// trips side by side, so the Dispatch Board passes no laterTrips for it.
-// Starting such a trip after 11:59 PM of the storage day asks first.
+// Saving cascades (retimeTrips in lib/tripRetime.ts): the trips after this
+// one in its driver's, truck's and trailer's lines -- any booking -- start
+// when the one before them ends, earlier or later, each keeping its length.
+// Trips already on the road or delivered never move. Starting a
+// last-free-storage-day trip after 11:59 PM of the storage day asks first.
 //
 // The database re-checks the trip's driver/helper on save
 // (itineraries_after_reschedule trigger): if the new time overlaps
@@ -21,7 +18,7 @@ import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import TimeInput12 from '../../../components/TimeInput12'
 import { formatSlot, manilaTimestamp, splitManila } from '../../../lib/format'
-import { chainSlots } from '../../../lib/tripSchedule'
+import { retimeTrips } from '../../../lib/tripRetime'
 import { storageDeadlineEnd } from '../../../lib/storageDeadline'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { formatDate } from '../../../lib/format'
@@ -37,15 +34,12 @@ function EditTripTimeModal({
   fallbackDate,
   defaultStartMinutes,
   hoursPerTrip,
-  laterTrips,
   storageDeadline = null,
   onClose,
   onSaved,
 }: {
   // bookings.storage_deadline -- the trip must be picked up by 11:59 PM that day.
   storageDeadline?: string | null
-  // Later Awaiting trips of the same booking, in trip order -- re-chained after this one.
-  laterTrips: { itinerary_id: number; trip_start_at: string | null; trip_end_at: string | null }[]
   itineraryId: number
   start: string | null
   end: string | null
@@ -55,7 +49,8 @@ function EditTripTimeModal({
   // The booking's hours per trip -- the length a brand-new slot gets.
   hoursPerTrip: number | null
   onClose: () => void
-  // `warning` = this trip saved, but some later trips couldn't be moved.
+  // `warning` = this trip saved, but some later trips couldn't be moved, or a
+  // booking now finishes after its delivery-by date.
   onSaved: (warning: string | null) => void
 }) {
   // Work in ms; inputs read/write through splitManila/manilaTimestamp.
@@ -99,69 +94,30 @@ function EditTripTimeModal({
     }
     setSaving(true)
     setError(null)
-    // Re-chain the later trips, one after another from this trip's end.
-    const fallbackLength = (hoursPerTrip ?? (endMs - startMs) / HOUR_MS) * HOUR_MS
-    const slots = chainSlots(
-      endMs,
-      laterTrips.map((t) =>
-        t.trip_start_at && t.trip_end_at
-          ? new Date(t.trip_end_at).getTime() - new Date(t.trip_start_at).getTime()
-          : fallbackLength,
-      ),
-    )
-    // Moving later: save the last trip first and this one last, so no trip
-    // ever overlaps its own next one on the same driver / truck mid-way (the
-    // database refuses that). Moving earlier: this one first, then in order.
-    // Judged by where the next trip starts now (the modal can open already
-    // filled with a new time, e.g. the At-risk "Move to …" button).
-    const firstLaterStart = laterTrips[0]?.trip_start_at
-    const movingLater = slots.length > 0 && !!firstLaterStart && slots[0].start > new Date(firstLaterStart).getTime()
-    const order = laterTrips.map((_, i) => i)
-    if (movingLater) order.reverse()
-
-    const failures: string[] = []
-    async function moveLaterTrips() {
-      for (const i of order) {
-        // Only while the trip is STILL Awaiting (laterTrips is from when the
-        // board loaded -- one dispatched since keeps its slot), and check a
-        // row really changed.
-        const { data: moved, error: chainError } = await supabase
-          .from('itineraries')
-          .update({
-            trip_start_at: new Date(slots[i].start).toISOString(),
-            trip_end_at: new Date(slots[i].end).toISOString(),
-          })
-          .eq('itinerary_id', laterTrips[i].itinerary_id)
-          .eq('itinerary_status', 'Awaiting')
-          .select('itinerary_id')
-          .maybeSingle()
-        if (chainError) failures.push(`trip #${laterTrips[i].itinerary_id}: ${chainError.message}`)
-        else if (!moved) failures.push(`trip #${laterTrips[i].itinerary_id}: no longer Awaiting, left as is`)
+    // No time yet: save its first slot directly (the cascade only knows trips that have one).
+    if (!start) {
+      const { data, error: saveError } = await supabase
+        .from('itineraries')
+        .update({ trip_start_at: new Date(startMs).toISOString(), trip_end_at: new Date(endMs).toISOString() })
+        .eq('itinerary_id', itineraryId)
+        .select('itinerary_id')
+        .maybeSingle()
+      if (saveError || !data) {
+        setSaving(false)
+        setError(saveError?.message ?? 'The trip was not updated. Refresh the board and try again.')
+        return
       }
     }
-
-    if (movingLater) await moveLaterTrips()
-    const { data, error: saveError } = await supabase
-      .from('itineraries')
-      .update({ trip_start_at: new Date(startMs).toISOString(), trip_end_at: new Date(endMs).toISOString() })
-      .eq('itinerary_id', itineraryId)
-      .select('itinerary_id')
-      .maybeSingle()
-    if (saveError || !data) {
-      setSaving(false)
-      // Trigger messages ("That time overlaps trip #57 for Juan…") are
-      // written for people, so show them as they are.
-      const message = saveError?.message ?? 'The trip was not updated. Refresh the board and try again.'
-      setError(movingLater && laterTrips.length > 0 ? `${message} (The trips after it were already moved later -- check them.)` : message)
+    const result = await retimeTrips({ fixed: new Map([[itineraryId, { start: startMs, end: endMs }]]) }, Math.min(startMs, initialStart))
+    setSaving(false)
+    // This trip itself was refused (e.g. "That time overlaps trip #57 for
+    // Juan…" -- written for people, shown as is): stay open.
+    if (result.failedTripId === itineraryId) {
+      setError(result.warning)
       return
     }
-    if (!movingLater) await moveLaterTrips()
-    setSaving(false)
-    onSaved(
-      failures.length
-        ? `Trip #${itineraryId} time saved, but these later trips kept their old time: ${failures.join('; ')}`
-        : null,
-    )
+    const notes = [result.warning, ...result.late].filter(Boolean)
+    onSaved(notes.length > 0 ? `Trip #${itineraryId} time saved. ${notes.join(' ')}` : null)
   }
 
   const hours = (endMs - startMs) / HOUR_MS
@@ -211,12 +167,9 @@ function EditTripTimeModal({
             </div>
           </div>
 
-          {laterTrips.length > 0 && (
-            <p className="text-xs text-slate-500">
-              This also moves trip{laterTrips.length > 1 ? 's' : ''}{' '}
-              {laterTrips.map((t) => `#${t.itinerary_id}`).join(', ')} to follow straight after.
-            </p>
-          )}
+          <p className="text-xs text-slate-500">
+            The next trips of this trip's driver, truck and trailer move to follow straight after.
+          </p>
           <p className="bg-slate-50 px-3 py-2 text-sm text-slate-700">
             {formatSlot(startMs, endMs)}
             {hours > 0 && (

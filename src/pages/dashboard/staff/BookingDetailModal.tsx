@@ -36,7 +36,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
-import { chainSlots } from '../../../lib/tripSchedule'
+import { retimeTrips } from '../../../lib/tripRetime'
 import { downpaymentStatus } from '../../../lib/downpayment'
 import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -396,10 +396,11 @@ function BookingDetailModal({
     : null
 
   // Changing hours per trip also re-times the trips that haven't left yet:
-  // from the first Awaiting trip that has a slot, every Awaiting trip after
-  // it gets the new length, back to back (chainSlots). Trips already on the
-  // road keep their slot. The database re-checks each trip's crew, so an
-  // overlap stops that trip's update with a message naming the clash.
+  // every Awaiting trip with a slot gets the new length, and the trips after
+  // each one in its driver's / truck's / trailer's line follow (retimeTrips in
+  // lib/tripRetime.ts). Trips already on the road keep their slot. The
+  // database re-checks each trip's crew, so an overlap stops the re-timing
+  // with a message naming the clash.
   async function saveHoursPerTrip() {
     const hours = Number(hoursDraft)
     if (!(hours > 0) || hours > 72) {
@@ -420,45 +421,19 @@ function BookingDetailModal({
       return
     }
 
+    const awaiting = (details?.trips ?? []).filter((t) => t.status === 'Awaiting' && t.trip_start_at !== null)
     const failures: string[] = []
-    const awaiting = (details?.trips ?? [])
-      .filter((t) => t.status === 'Awaiting')
-      .sort((a, b) => a.itinerary_id - b.itinerary_id)
-    const firstTimed = awaiting.findIndex((t) => t.trip_start_at !== null)
-    if (firstTimed !== -1) {
-      const toChain = awaiting.slice(firstTimed)
-      // Storage-deadline bookings run their trips side by side: each keeps
-      // its own start, only the length changes. Others stay back to back.
-      const slots = details?.storage_deadline
-        ? toChain.map((t) => {
-            const start = new Date(t.trip_start_at ?? toChain[0].trip_start_at!).getTime()
-            return { start, end: start + hours * 3_600_000 }
-          })
-        : chainSlots(
-            new Date(toChain[0].trip_start_at!).getTime(),
-            toChain.map(() => hours * 3_600_000),
-          )
-      for (let i = 0; i < toChain.length; i++) {
-        // Only while the trip is STILL Awaiting (the list above is from
-        // when this opened -- a trip dispatched since keeps its slot), and
-        // check a row really changed.
-        const { data: moved, error: tripError } = await supabase
-          .from('itineraries')
-          .update({
-            trip_start_at: new Date(slots[i].start).toISOString(),
-            trip_end_at: new Date(slots[i].end).toISOString(),
-          })
-          .eq('itinerary_id', toChain[i].itinerary_id)
-          .eq('itinerary_status', 'Awaiting')
-          .select('itinerary_id')
-          .maybeSingle()
-        if (tripError) failures.push(`trip #${toChain[i].itinerary_id}: ${tripError.message}`)
-        else if (!moved) failures.push(`trip #${toChain[i].itinerary_id}: no longer Awaiting, left as is`)
-      }
+    if (awaiting.length > 0) {
+      const result = await retimeTrips(
+        { lengths: new Map(awaiting.map((t) => [t.itinerary_id, hours * 3_600_000])) },
+        Math.min(...awaiting.map((t) => new Date(t.trip_start_at!).getTime())),
+      )
+      if (result.warning) failures.push(result.warning)
+      for (const message of result.late) showToast(message, 'error')
     }
     setHoursSaving(false)
     if (failures.length > 0) {
-      setHoursError(`Hours per trip saved, but some trips kept their old time slot (${failures.join('; ')}).`)
+      setHoursError(`Hours per trip saved, but not every trip was re-timed: ${failures.join(' ')}`)
     } else {
       setHoursDraft(null)
     }

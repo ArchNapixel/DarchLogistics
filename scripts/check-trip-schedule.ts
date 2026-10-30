@@ -4,8 +4,6 @@
 import assert from 'node:assert/strict'
 import {
   busyUntil,
-  chainSlots,
-  flowAfterDelivery,
   hoursLate,
   findClash,
   isOutNow,
@@ -13,6 +11,7 @@ import {
   lateEarlierTrip,
   manilaWeek,
   rankCandidates,
+  reflow,
   tripOnRoad,
   tripsClash,
   type ScheduledTrip,
@@ -93,18 +92,7 @@ assert.deepEqual(fresh.map((r) => r.employee_id), [9, 4])
 const withLeave = rankCandidates(target, [{ employee_id: 4, full_name: 'P4' }], (id) => tripsOf[id] ?? [], now, () => '', () => 'on leave')
 assert.equal(withLeave[0].blockedBy, 'on leave')
 
-// Chained trips: back to back, straight through the night.
-const six = at('2026-10-22T06:00:00+08:00')
 const H = 3_600_000
-assert.deepEqual(chainSlots(six, [6 * H, 6 * H, 6 * H, 6 * H]).map((x) => [x.start, x.end]), [
-  [six, six + 6 * H],
-  [six + 6 * H, six + 12 * H],
-  [six + 12 * H, six + 18 * H],
-  [six + 18 * H, six + 24 * H], // 12 MN -> 6 AM next day
-])
-assert.deepEqual(chainSlots(six, []), [])
-// Each trip keeps its own length (e.g. one was extended).
-assert.deepEqual(chainSlots(six, [8 * H, 6 * H]).map((x) => x.start), [six, six + 8 * H])
 
 // On the road: a person with a Dispatched / Picked Up / In Transit trip can't
 // start another; Awaiting, Delivered and Cancelled ones don't count.
@@ -127,25 +115,41 @@ assert.equal(isOutNow({ status: 'Dispatched', trip_start_at: null }, t0), true) 
 assert.equal(isOutNow({ status: 'Awaiting', ...slot('2026-10-27T08:00:00+08:00') }, t0), false)
 assert.equal(isOutNow({ status: 'Delivered', ...slot('2026-10-27T08:00:00+08:00') }, t0), false)
 
-// Driver flow after a delivery (flowAfterDelivery): times in hours from a base.
+// The cascade (reflow): times in hours from a base. Trip = id, status, slot, driver / truck / trailer.
 const base = new Date('2026-10-28T00:00:00+08:00').getTime()
 const hr = (h: number) => base + h * H
-const ft = (id: number, booking: number, from: number, to: number, notBefore: number, mine = true) => ({
-  itinerary_id: id, booking_id: booking, start: hr(from), end: hr(to), notBefore: hr(notBefore), mine,
+const rt = (id: number, from: number, to: number, driver: string | null, trailer: string | null = null, status = 'Awaiting') => ({
+  itinerary_id: id, status, start: hr(from), end: hr(to), driver, truck: driver ? `T${driver}` : null, trailer,
 })
-const slotsOf = (m: Map<number, { start: number; end: number }>) => [...m].map(([id, s]) => [id, (s.start - base) / H, (s.end - base) / H])
-// B1T1 delivered at 9 (planned 6-12): B1T2 (12-18) follows at once -> 9-15.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(9), 1, [ft(2, 1, 12, 18, 0)])), [[2, 9, 15]])
-// Driver's list B2T1 (today, planned 12-18) then B1T2: both can go -> B2T1 9-15, B1T2 15-21.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(9), 1, [ft(3, 2, 12, 18, 0), ft(2, 1, 18, 24, 0)])), [[3, 9, 15], [2, 15, 21]])
-// B2T1 can't start until tomorrow (24): skipped, B1T2 takes the free time, B2T1 keeps its slot.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(9), 1, [ft(3, 2, 30, 36, 24), ft(2, 1, 40, 46, 0)])), [[2, 9, 15], [3, 30, 36]])
-// B1T2 is long enough to run into the skipped B2T1 (30): B2T1 is pushed later.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(9), 1, [ft(3, 2, 30, 36, 24), ft(2, 1, 40, 62, 0)])), [[2, 9, 31], [3, 31, 37]])
-// Delivered late (planned end 12, delivered 15): the next trip is pushed to 15.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(15), 1, [ft(2, 1, 12, 18, 0)])), [[2, 15, 21]])
-// Another crew's later trip on the same booking follows the chain.
-assert.deepEqual(slotsOf(flowAfterDelivery(hr(9), 1, [ft(2, 1, 12, 18, 0, false), ft(3, 1, 18, 24, 0, false)])), [[2, 9, 15], [3, 15, 21]])
+const slotsOf = (m: Map<number, { start: number; end: number }>) =>
+  [...m].sort((a, b) => a[0] - b[0]).map(([id, s]) => [id, (s.start - base) / H, (s.end - base) / H])
+const delivered = (id: number, from: number, to: number) => ({ fixed: new Map([[id, { start: hr(from), end: hr(to) }]]) })
+// Trip 1 (6-12) delivered at 9: the driver's next trips pull earlier, each keeping its length.
+const juan = [rt(1, 6, 12, 'D1', null, 'Delivered'), rt(2, 12, 18, 'D1'), rt(3, 18, 24, 'D1')]
+assert.deepEqual(slotsOf(reflow(juan, delivered(1, 6, 9))), [[1, 6, 9], [2, 9, 15], [3, 15, 21]])
+// Delivered late (at 14): they push later.
+assert.deepEqual(slotsOf(reflow(juan, delivered(1, 6, 14))), [[1, 6, 14], [2, 14, 20], [3, 20, 26]])
+// Two drivers on one booking are two lines: Pedro's trip doesn't move.
+assert.deepEqual(slotsOf(reflow([...juan, rt(4, 12, 18, 'D2')], delivered(1, 6, 9))), [[1, 6, 9], [2, 9, 15], [3, 15, 21]])
+// Same trailer, another driver: follows the trailer, but not before its own driver is free (10).
+const shared = [rt(1, 6, 12, 'D1', 'R1', 'Delivered'), rt(5, 4, 10, 'D2'), rt(6, 12, 18, 'D2', 'R1')]
+assert.deepEqual(slotsOf(reflow(shared, delivered(1, 6, 9))), [[1, 6, 9], [6, 10, 16]])
+// Never before its pickup floor (11)...
+assert.deepEqual(slotsOf(reflow(juan, delivered(1, 6, 9), new Map([[2, hr(11)]]))), [[1, 6, 9], [2, 11, 17], [3, 17, 23]])
+// ...nor inside the driver's leave (9-10).
+assert.deepEqual(slotsOf(reflow(juan, delivered(1, 6, 9), new Map(), new Map([['D1', [{ start: hr(9), end: hr(10) }]]]))), [
+  [1, 6, 9], [2, 10, 16], [3, 16, 22],
+])
+// A trip on the road never moves, and what comes after it keeps its time.
+const onRoad = [rt(1, 6, 12, 'D1', null, 'Delivered'), rt(2, 12, 18, 'D1', null, 'InTransit'), rt(3, 20, 26, 'D1')]
+assert.deepEqual(slotsOf(reflow(onRoad, delivered(1, 6, 9))), [[1, 6, 9]])
+// A gap nothing changed before stays (trip 3 waits for its own reasons).
+assert.deepEqual(slotsOf(reflow([rt(2, 12, 18, 'D1'), rt(3, 30, 36, 'D2')], delivered(2, 12, 15))), [[2, 12, 15]])
+// Hours per trip changed to 4: every trip of the booking gets the new length, back to back from the first.
+const hours = { lengths: new Map([[2, 4 * H], [3, 4 * H]]) }
+assert.deepEqual(slotsOf(reflow(juan, hours)), [[2, 12, 16], [3, 16, 20]])
+// Time edited to start later: the trips after it are pushed.
+assert.deepEqual(slotsOf(reflow(juan, delivered(2, 13, 19))), [[2, 13, 19], [3, 19, 25]])
 // Late against the delivery-by date: 3 h past the end of the deadline day.
 assert.equal(hoursLate(hr(27), hr(24)), 3)
 assert.equal(hoursLate(hr(20), hr(24)), 0)

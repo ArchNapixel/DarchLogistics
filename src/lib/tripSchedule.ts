@@ -21,6 +21,7 @@ export type ScheduledTrip = {
 
 const DONE = ['Delivered', 'Cancelled']
 const HOUR_MS = 3_600_000
+const MINUTE_MS = 60_000
 
 const ms = (value: string) => new Date(value).getTime()
 
@@ -152,71 +153,81 @@ export function rankCandidates(
 // How many of the free, top-ranked people to show as "Suggested".
 export const SUGGESTED_COUNT = 3
 
-// A booking's trips run one after another: trip 2 starts the moment trip
-// 1 ends, and so on (no gap, no night cut-off). Given the first trip's
-// start and each trip's length (ms), returns every trip's slot (ms).
-export function chainSlots(firstStart: number, lengths: number[]): { start: number; end: number }[] {
-  const slots: { start: number; end: number }[] = []
-  let start = firstStart
-  for (const length of lengths) {
-    slots.push({ start, end: start + length })
-    start += length
-  }
-  return slots
-}
-
-// One trip still to start, for flowAfterDelivery.
-export type FlowTrip = {
+// reflow: the cascade (2026-10-31, replaced chainSlots / flowAfterDelivery).
+// When a trip's slot changes -- delivered early or late (`fixed`, its real
+// slot), its time edited (`fixed`), or its length changed (`lengths`, e.g.
+// hours per trip) -- the trips after it move with it.
+//
+// A "line" is every trip of one driver, one truck or one trailer, in start
+// order. Walking all trips in start order, an Awaiting trip whose previous
+// trip in any of its lines just changed starts the moment the last of its
+// previous trips (driver, truck, trailer) ends -- earlier or later than
+// planned -- but never before its floor (its booking's pickup date + default
+// start) and never inside a busy window of its own (leave, the shop). A trip
+// nothing changed before keeps its start (it is only pushed later if a
+// previous trip now runs into it). Each trip keeps its length unless
+// `lengths` gives a new one. Trips past Awaiting never move. A booking's own
+// trip order doesn't matter: two drivers on one booking are two lines.
+//
+// Returns the new slot of every trip that changed (fixed ones included).
+export type ReflowTrip = {
   itinerary_id: number
-  booking_id: number
-  // Its planned slot (ms).
+  status: string
   start: number
   end: number
-  // The earliest it may start: its booking's pickup date (ms, Manila midnight).
-  notBefore: number
-  // true = one of the delivering driver's trips; false = another crew's trip
-  // on a booking that is affected, which only follows its booking's previous trip.
-  mine: boolean
+  // Line keys, e.g. "D12" / "TABC 1234" / "R3" (null = none assigned).
+  driver: string | null
+  truck: string | null
+  trailer: string | null
 }
 
-// A driver delivers a trip at `deliveredAt` and is free from then. Works out
-// the new slot of every trip that still has to start (the driver's own, across
-// all bookings, plus the later trips of the same bookings):
-//   - the driver's next trip starts right then -- if its pickup date has
-//     arrived and its booking's previous trip is done. A trip that can't start
-//     yet is skipped (it keeps its planned time) and the next one that can goes
-//     first;
-//   - a trip that runs into a skipped trip pushes it later; a late delivery
-//     pushes everything after it;
-//   - a booking's trips stay back to back, each keeping its own length.
-// Returns the slot of each trip by id (unchanged ones included).
-export function flowAfterDelivery(
-  deliveredAt: number,
-  deliveredBooking: number,
-  trips: FlowTrip[],
-  // When each booking's earlier trips (done or on the road) are over, for bookings other than the delivered one.
-  bookingFloor: Map<number, number> = new Map(),
-): Map<number, { start: number; end: number }> {
-  const out = new Map<number, { start: number; end: number }>()
-  const bookingFree = new Map<number, number>([...bookingFloor, [deliveredBooking, deliveredAt]])
-  let driverFree = deliveredAt
-  const remaining = [...trips].sort((a, b) => a.start - b.start || a.itinerary_id - b.itinerary_id)
-  const floorOf = (t: FlowTrip) => Math.max(t.notBefore, bookingFree.get(t.booking_id) ?? -Infinity)
-  // Where a trip would start if it can't go right now.
-  const startOf = (t: FlowTrip) =>
-    t.mine ? Math.max(driverFree, t.start, floorOf(t)) : bookingFree.has(t.booking_id) ? floorOf(t) : t.start
+type Slot = { start: number; end: number }
 
-  while (remaining.length > 0) {
-    // A booking's trips go in order: not before its earlier ones.
-    const ready = remaining.filter((t) => !remaining.some((o) => o !== t && o.booking_id === t.booking_id && remaining.indexOf(o) < remaining.indexOf(t)))
-    const now = ready.find((t) => t.mine && floorOf(t) <= driverFree)
-    const pick = now ?? ready.reduce((best, t) => (startOf(t) < startOf(best) ? t : best))
-    const start = now ? driverFree : startOf(pick)
-    const end = start + (pick.end - pick.start)
-    out.set(pick.itinerary_id, { start, end })
-    bookingFree.set(pick.booking_id, end)
-    if (pick.mine) driverFree = end
-    remaining.splice(remaining.indexOf(pick), 1)
+export function reflow(
+  trips: ReflowTrip[],
+  seeds: { fixed?: Map<number, Slot>; lengths?: Map<number, number> },
+  // Earliest start per trip (its booking's pickup date + default start).
+  floors: Map<number, number> = new Map(),
+  // Per line key: leave, shop, licence expiry.
+  busy: Map<string, Slot[]> = new Map(),
+): Map<number, Slot> {
+  const fixed = seeds.fixed ?? new Map<number, Slot>()
+  const lengths = seeds.lengths ?? new Map<number, number>()
+  const lastEnd = new Map<string, number>()
+  const lastChanged = new Map<string, boolean>()
+  const out = new Map<number, Slot>()
+
+  for (const t of [...trips].sort((a, b) => a.start - b.start || a.itinerary_id - b.itinerary_id)) {
+    const keys = [t.driver, t.truck, t.trailer].filter((k): k is string => k !== null)
+    let slot: Slot = { start: t.start, end: t.end }
+    if (fixed.has(t.itinerary_id)) {
+      slot = fixed.get(t.itinerary_id)!
+    } else if (t.status === 'Awaiting') {
+      const length = lengths.get(t.itinerary_id) ?? t.end - t.start
+      const previous = Math.max(...keys.map((k) => lastEnd.get(k) ?? -Infinity))
+      const affected = keys.some((k) => lastChanged.get(k))
+      let start = affected ? Math.max(floors.get(t.itinerary_id) ?? -Infinity, previous) : Math.max(t.start, previous)
+      if (start === -Infinity) start = t.start
+      // Moved or resized: step past any leave / shop time of its own.
+      if (start !== t.start || length !== t.end - t.start) {
+        for (let stepped = true; stepped; ) {
+          stepped = false
+          for (const w of keys.flatMap((k) => busy.get(k) ?? [])) {
+            if (w.start < start + length && w.end > start) {
+              start = w.end
+              stepped = true
+            }
+          }
+        }
+      }
+      slot = { start, end: start + length }
+    }
+    const changed = Math.abs(slot.start - t.start) >= MINUTE_MS || Math.abs(slot.end - t.end) >= MINUTE_MS
+    if (changed || fixed.has(t.itinerary_id)) out.set(t.itinerary_id, slot)
+    for (const k of keys) {
+      lastEnd.set(k, Math.max(lastEnd.get(k) ?? -Infinity, slot.end))
+      lastChanged.set(k, changed || fixed.has(t.itinerary_id))
+    }
   }
   return out
 }

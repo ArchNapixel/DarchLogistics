@@ -2910,20 +2910,6 @@ function DispatchBoardSection() {
           defaultStartMinutes={defaultStartMinutes}
           hoursPerTrip={editTimeRow.hours_per_trip}
           storageDeadline={editTimeRow.storage_deadline}
-          // Same booking, later in trip order, not started yet. None for a
-          // storage-deadline booking -- its trips run side by side.
-          laterTrips={
-            editTimeRow.storage_deadline
-              ? []
-              : rows
-                  .filter(
-                    (r) =>
-                      r.booking_id === editTimeRow.booking_id &&
-                      r.itinerary_id > editTimeRow.itinerary_id &&
-                      r.status === 'Awaiting',
-                  )
-                  .sort((a, b) => a.itinerary_id - b.itinerary_id)
-          }
           onClose={() => setEditTimeRow(null)}
           onSaved={(warning) => {
             const itineraryId = editTimeRow.itinerary_id
