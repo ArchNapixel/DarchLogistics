@@ -118,8 +118,9 @@ export type RankedCandidate = Candidate & {
   lastEnd: number | null
 }
 
-// Ranks people for a trip: free ones first, then whoever finished their
-// last trip longest ago (never-worked first). The
+// Ranks people for a trip: free ones first, then whoever has earned least
+// that week (`earnings`, pesos -- drivers; 2026-10-31), then whoever finished
+// their last trip longest ago (never-worked first). The
 // caller decides what "blocked" means beyond clashes (e.g. leave) via
 // `extraBlock`. `tripsOf(id)` = that person's other trips (any status).
 export function rankCandidates(
@@ -129,6 +130,7 @@ export function rankCandidates(
   now: number,
   describeClash: (clash: ScheduledTrip) => string,
   extraBlock: (employeeId: number) => string | null = () => null,
+  earnings: (employeeId: number) => number = () => 0,
 ): RankedCandidate[] {
   return candidates
     .map((c) => {
@@ -145,8 +147,8 @@ export function rankCandidates(
     })
     .sort((a, b) => {
       if ((a.blockedBy === null) !== (b.blockedBy === null)) return a.blockedBy === null ? -1 : 1
-      // Never worked / finished longest ago first.
-      return (a.lastEnd ?? -Infinity) - (b.lastEnd ?? -Infinity)
+      // Earned least this week, then never worked / finished longest ago first.
+      return earnings(a.employee_id) - earnings(b.employee_id) || (a.lastEnd ?? -Infinity) - (b.lastEnd ?? -Infinity)
     })
 }
 

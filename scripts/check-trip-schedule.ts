@@ -88,6 +88,10 @@ assert.equal(ranked[3].blockedBy, 'busy (trip #11)')
 const fresh = rankCandidates(target, [{ employee_id: 4, full_name: 'P4' }, { employee_id: 9, full_name: 'P9' }], (id) => tripsOf[id] ?? [], now, () => '')
 assert.deepEqual(fresh.map((r) => r.employee_id), [9, 4])
 
+// Earned less this week goes first, before "rested longest".
+const byPesos = rankCandidates(target, [{ employee_id: 9, full_name: 'P9' }, { employee_id: 4, full_name: 'P4' }], (id) => tripsOf[id] ?? [], now, () => '', () => null, (id) => (id === 9 ? 5000 : 1000))
+assert.deepEqual(byPesos.map((r) => r.employee_id), [4, 9])
+
 // extraBlock (e.g. leave) also counts as blocked.
 const withLeave = rankCandidates(target, [{ employee_id: 4, full_name: 'P4' }], (id) => tripsOf[id] ?? [], now, () => '', () => 'on leave')
 assert.equal(withLeave[0].blockedBy, 'on leave')

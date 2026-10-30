@@ -66,12 +66,16 @@ import MarkDeliveredModal from './MarkDeliveredModal'
 import UpdateStatusModal from './UpdateStatusModal'
 import MarkAbsentModal from './MarkAbsentModal'
 import BreakdownModal from './BreakdownModal'
+import SwapDriverModal, { type SwapChoice } from './SwapDriverModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
-import { toManilaDate } from '../../../lib/payslip'
+import { loadPayrollSettings, toManilaDate, type PayrollSettings } from '../../../lib/payslip'
+import { retimeTrips } from '../../../lib/tripRetime'
+import { STEP_MS, planTrips } from '../../../lib/capacity'
+import { loadCapacityInputs } from '../../../lib/capacityLoad'
 import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney, formatSlot, manilaTimestamp, slotLines } from '../../../lib/format'
 import StatusBadge from '../../../components/StatusBadge'
@@ -84,10 +88,12 @@ import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../..
 import { substituteNote, trailerAllowed } from '../../../lib/trailerRules'
 import {
   SUGGESTED_COUNT,
+  findClash,
   hoursLate,
   isOutNow,
   isOverdue,
   lateEarlierTrip,
+  manilaWeek,
   rankCandidates,
   tripOnRoad,
   type ScheduledTrip,
@@ -101,7 +107,7 @@ const COMPLETED_DAYS = 30
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
 
 const ITINERARY_COLUMNS =
-  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description'
+  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description, trip_rate'
 
 // One row of ITINERARY_COLUMNS.
 type BoardItineraryRow = {
@@ -122,6 +128,7 @@ type BoardItineraryRow = {
   trailer_type: string | null
   weight: number | null
   cargo_description: string | null
+  trip_rate: number | string | null
 }
 
 type BoardBookingRow = {
@@ -169,6 +176,8 @@ type DispatchRow = {
   storage_deadline: string | null
   // The quote's Deadline date (delivery by, YYYY-MM-DD), or null.
   delivery_by: string | null
+  // This trip's own rate -- the driver's commission (fairness by pesos).
+  trip_rate: number | null
 }
 
 // Not picked up yet on a storage-deadline booking: 'pending' (still time)
@@ -214,6 +223,8 @@ type DriverOption = {
   // Drivers only: licence expiry (YYYY-MM-DD) -- an expired one can't be
   // picked for a trip on/after that date.
   license_expiry?: string | null
+  // Drivers only: his assigned truck (employees.assigned_plate_number).
+  truck?: string | null
 }
 
 type TruckOption = {
@@ -250,6 +261,7 @@ function rankPeople(
   allRows: DispatchRow[],
   leaveByEmployee: Map<number, LeaveRange[]>,
   now: number,
+  pay: PayrollSettings | null = null,
 ) {
   // A person's trips = every trip they're the active driver or helper on.
   const tripsOf = (employeeId: number): ScheduledTrip[] =>
@@ -263,8 +275,22 @@ function rankPeople(
       now,
       (clash) => ` — busy ${formatSlot(clash.trip_start_at, clash.trip_end_at)} (trip #${clash.itinerary_id})`,
       (employeeId) => leaveHint(row, employeeId, false, leaveByEmployee) ?? licenceHint(row, people, employeeId),
+      (employeeId) => weekEarnings(employeeId, row, allRows, pay),
     ),
   }
+}
+
+// What a driver earns that Sun-Sat week (the week of `row`): driver
+// commission % x each of his trips' rate + the per-trip fee (payslip.ts
+// formula), delivered and planned trips on the board. Helpers earn nothing
+// here (salaried), so they keep the old "rested longest" order.
+function weekEarnings(employeeId: number, row: DispatchRow, allRows: DispatchRow[], pay: PayrollSettings | null): number {
+  if (!pay || !row.trip_start_at) return 0
+  const week = manilaWeek(Date.parse(row.trip_start_at))
+  return allRows
+    .filter((r) => r.assigned_employee_id === employeeId && r.status !== 'Cancelled' && r.trip_start_at)
+    .filter((r) => Date.parse(r.trip_start_at!) >= week.from && Date.parse(r.trip_start_at!) < week.to)
+    .reduce((sum, r) => sum + (pay.driverCommissionRate / 100) * (r.trip_rate ?? 0) + pay.driverPerTripFee, 0)
 }
 
 // Driver or helper picker for one trip. Locked until the trip has a time
@@ -280,7 +306,9 @@ function CrewSelect({
   leaveByEmployee,
   now,
   disabled,
+  pay = null,
   onChange,
+  onSwap,
 }: {
   row: DispatchRow
   crewRole: 'Driver' | 'Helper'
@@ -289,7 +317,10 @@ function CrewSelect({
   leaveByEmployee: Map<number, LeaveRange[]>
   now: number
   disabled: boolean
+  pay?: PayrollSettings | null
   onChange: (employeeId: number | null) => void
+  // Drivers: pick someone planned on another trip that hasn't started (SwapDriverModal).
+  onSwap?: (employeeId: number, otherTripId: number) => void
 }) {
   const currentId = crewRole === 'Driver' ? row.assigned_employee_id : row.assigned_helper_employee_id
   const currentName = crewRole === 'Driver' ? row.assigned_driver_name : row.assigned_helper_name
@@ -305,11 +336,22 @@ function CrewSelect({
     )
   }
 
-  const { ranked, tripsOf } = rankPeople(row, people, allRows, leaveByEmployee, now)
+  const { ranked, tripsOf } = rankPeople(row, people, allRows, leaveByEmployee, now, pay)
   const free = ranked.filter((p) => p.blockedBy === null)
   const suggested = free.slice(0, SUGGESTED_COUNT)
   const otherFree = free.slice(SUGGESTED_COUNT)
-  const unavailable = ranked.filter((p) => p.blockedBy !== null)
+  // Busy only because of ONE trip that hasn't started (not leave / licence):
+  // can be swapped in (drivers).
+  const swapTripOf = (employeeId: number) => {
+    if (!onSwap || employeeId === currentId) return null
+    if (leaveHint(row, employeeId, false, leaveByEmployee) ?? licenceHint(row, people, employeeId)) return null
+    const theirs = tripsOf(employeeId).filter((t) => t.itinerary_id !== row.itinerary_id)
+    const clash = findClash(row, theirs, now)
+    if (!clash || clash.status !== 'Awaiting') return null
+    return findClash(row, theirs.filter((t) => t.itinerary_id !== clash.itinerary_id), now) ? null : clash
+  }
+  const swappable = ranked.filter((p) => p.blockedBy !== null && swapTripOf(p.employee_id))
+  const unavailable = ranked.filter((p) => p.blockedBy !== null && !swapTripOf(p.employee_id))
 
   // The assigned person's earlier trip running late into this one (#6).
   const late = currentId !== null ? lateEarlierTrip(row, tripsOf(currentId), now) : null
@@ -320,7 +362,13 @@ function CrewSelect({
       <select
         value={currentId ?? ''}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        onChange={(e) => {
+          const value = e.target.value
+          if (value.startsWith('swap:')) {
+            const id = Number(value.slice(5))
+            onSwap?.(id, swapTripOf(id)!.itinerary_id)
+          } else onChange(value ? Number(value) : null)
+        }}
         className={pickerClasses(currentId === null)}
       >
         <option value="">Unassigned</option>
@@ -338,6 +386,16 @@ function CrewSelect({
             {otherFree.map((p) => (
               <option key={p.employee_id} value={p.employee_id}>
                 {p.full_name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {swappable.length > 0 && (
+          <optgroup label="Planned on another trip (swap)">
+            {swappable.map((p) => (
+              <option key={p.employee_id} value={`swap:${p.employee_id}`}>
+                {p.full_name}
+                {p.blockedBy}
               </option>
             ))}
           </optgroup>
@@ -493,6 +551,9 @@ type BoardContext = {
   onViewLogs: (itineraryId: number) => void
   onEditTime: (row: DispatchRow) => void
   onBreakdown: (row: DispatchRow) => void
+  // Fairness by pesos (driver commission settings), null until loaded.
+  pay: PayrollSettings | null
+  onSwap: (row: DispatchRow, employeeId: number, otherTripId: number) => void
 }
 
 // Table spacing from the canvas board: 20px at the edges, 16px between
@@ -1028,7 +1089,9 @@ function TripPanel({
                     leaveByEmployee={ctx.leaveByEmployee}
                     now={ctx.now}
                     disabled={!ctx.canEditStatus || ctx.savingId === row.itinerary_id}
+                    pay={ctx.pay}
                     onChange={(id) => ctx.onCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, id)}
+                    onSwap={(id, otherTripId) => ctx.onSwap(row, id, otherTripId)}
                   />
                 </PanelField>
                 <PanelField label="Helper (optional)">
@@ -1312,6 +1375,10 @@ function DispatchBoardSection() {
   const [myRequests, setMyRequests] = useState<MyItineraryRelogRequest[]>([])
   // Trip whose time slot is being edited (EditTripTimeModal).
   const [editTimeRow, setEditTimeRow] = useState<DispatchRow | null>(null)
+  // Driver commission settings, for fairness by pesos (null = not loaded / missing).
+  const [pay, setPay] = useState<PayrollSettings | null>(null)
+  // A driver planned on another trip, picked for `row` (SwapDriverModal).
+  const [swap, setSwap] = useState<{ row: DispatchRow; employeeId: number; otherTripId: number } | null>(null)
   // Settings' default trip start (minutes after midnight), for trips with no slot yet.
   const [defaultStartMinutes, setDefaultStartMinutes] = useState(360)
   // "Now", refreshed every minute so Overdue / running-late flags appear on their own.
@@ -1411,6 +1478,8 @@ function DispatchBoardSection() {
         .eq('setting_key', 'default_trip_start_time')
         .maybeSingle(),
     ])
+    // Not fatal: without them suggestions skip fairness by pesos.
+    loadPayrollSettings().then(({ settings }) => setPay(settings))
     // Missing setting just keeps the 6 AM fallback.
     if (startSettingResult.data) setDefaultStartMinutes(Number(startSettingResult.data.setting_value))
 
@@ -1610,12 +1679,13 @@ function DispatchBoardSection() {
         full_name: string
         employment_status_id: number | null
         driver_license_expiry_date: string | null
+        assigned_plate_number: string | null
       }>(
         Array.from(employeeIds),
         (chunk, from, to) =>
           supabase
             .from('employees')
-            .select('employee_id, full_name, employment_status_id, driver_license_expiry_date')
+            .select('employee_id, full_name, employment_status_id, driver_license_expiry_date, assigned_plate_number')
             .in('employee_id', chunk)
             .range(from, to),
       ),
@@ -1658,6 +1728,7 @@ function DispatchBoardSection() {
           employee_id: e.employee_id,
           full_name: e.full_name,
           license_expiry: e.driver_license_expiry_date,
+          truck: e.assigned_plate_number,
         }))
         .sort((a, b) => a.full_name.localeCompare(b.full_name)),
     )
@@ -1705,6 +1776,7 @@ function DispatchBoardSection() {
           cargo_description: it.cargo_description,
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
           delivery_by: deliveryByBooking.get(it.booking_id) ?? null,
+          trip_rate: it.trip_rate === null ? null : Number(it.trip_rate),
         }
       }),
     )
@@ -2086,6 +2158,127 @@ function DispatchBoardSection() {
   // one at a time so each pick counts as busy for the next trip -- and a
   // truck/trailer already on the booking ranks first, so one rig stays with
   // it when it's free. The database still refuses overlaps.
+  // A driver's own truck follows him onto the trip (employees.assigned_plate_number),
+  // when it's free then -- otherwise the truck is left as is and staff are told.
+  async function followTruck(itineraryId: number, employeeId: number) {
+    const row = rows.find((r) => r.itinerary_id === itineraryId)
+    const driver = drivers.find((d) => d.employee_id === employeeId)
+    const plate = driver?.truck
+    if (!row || !driver || !plate || plate === row.plate_number) return
+    const truck = trucks.find((t) => t.plate_number === plate)
+    const inShop = truck?.current_status === 'Under Maintenance' || truck?.current_status === 'Out of Service'
+    const clash = findClash(row, rows.filter((r) => r.plate_number === plate && r.itinerary_id !== itineraryId), now)
+    if (inShop || clash) {
+      const why = inShop ? truck!.current_status : `on trip #${clash!.itinerary_id}`
+      showToast(`${driver.full_name}'s truck ${plate} is ${why} -- the truck was left as is.`, 'error')
+      return
+    }
+    await handleTruckChange(itineraryId, row.plate_number, plate)
+  }
+
+  // Crew dropdowns: assign, then (drivers) bring his truck.
+  async function assignCrew(itineraryId: number, crewRole: 'Driver' | 'Helper', previousEmployeeId: number | null, newEmployeeId: number | null) {
+    const ok = await handleCrewChange(itineraryId, crewRole, previousEmployeeId, newEmployeeId)
+    if (ok && crewRole === 'Driver' && newEmployeeId !== null) await followTruck(itineraryId, newEmployeeId)
+    return ok
+  }
+
+  // Who would take the other trip in a swap: the top free driver (not the one moving).
+  function swapHandOver(other: DispatchRow, movingId: number) {
+    const others = drivers.filter((d) => d.employee_id !== movingId)
+    return rankPeople(other, others, rows, leaveByEmployee, now, pay).ranked.find((p) => p.blockedBy === null) ?? null
+  }
+
+  // SwapDriverModal confirmed: the driver goes onto `row`; his other trip
+  // either moves to right after it (his later trips follow) or goes to the
+  // free driver who earned least this week. Made in an order the overlap
+  // guards accept: the other trip is moved / handed over first.
+  async function doSwap(choice: SwapChoice) {
+    if (!swap) return
+    const { row, employeeId } = swap
+    const other = rows.find((r) => r.itinerary_id === swap.otherTripId)
+    setSwap(null)
+    if (!other || !row.trip_end_at || !other.trip_start_at || !other.trip_end_at) return
+    if (choice === 'move') {
+      const start = Date.parse(row.trip_end_at)
+      const length = Date.parse(other.trip_end_at) - Date.parse(other.trip_start_at)
+      const result = await retimeTrips({ fixed: new Map([[other.itinerary_id, { start, end: start + length }]]) }, Date.parse(other.trip_start_at))
+      if (result.failedTripId !== null) {
+        setError(result.warning)
+        await loadDispatchBoard()
+        return
+      }
+      for (const message of result.late) showToast(message, 'error')
+    } else {
+      const pick = swapHandOver(other, employeeId)
+      if (!pick || !(await assignCrew(other.itinerary_id, 'Driver', employeeId, pick.employee_id))) {
+        await loadDispatchBoard()
+        return
+      }
+    }
+    if (await handleCrewChange(row.itinerary_id, 'Driver', row.assigned_employee_id, employeeId)) {
+      await followTruck(row.itinerary_id, employeeId)
+    }
+    await loadDispatchBoard()
+  }
+
+  // At-risk "Find a faster driver": the planner (lib/capacity.ts) looks for the
+  // earliest any driver + truck + trailer could do this trip from now. If that
+  // ends sooner, staff confirm, and the trip is handed over and re-timed.
+  async function findFasterDriver(row: DispatchRow) {
+    if (!row.trip_start_at || !row.trip_end_at) return
+    const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
+    const demand = {
+      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, cargoType: row.cargo_type }],
+      requestedStart: Math.ceil(Date.now() / STEP_MS) * STEP_MS,
+      deadlineEnd: row.delivery_by ? Date.parse(manilaTimestamp(row.delivery_by, 24 * 60)) - 1 : null,
+    }
+    const { inputs, error: loadError } = await loadCapacityInputs(demand, null)
+    if (!inputs) {
+      showToast(`Couldn't look for a driver (${loadError}).`, 'error')
+      return
+    }
+    // This trip's own driver / truck / trailer don't block it.
+    const world = { ...inputs.world, booked: inputs.world.booked.filter((t) => t.id !== row.itinerary_id) }
+    const plan = planTrips(demand, world, { swaps: false })
+    const best = plan.trips[0]
+    if (!best || best.end >= Date.parse(row.trip_end_at)) {
+      showToast(`Nobody can do trip #${row.itinerary_id} sooner.`)
+      return
+    }
+    const name = (resourceId: string) => world.resources.find((r) => r.id === resourceId)?.label ?? resourceId
+    const driverId = Number(best.driverId.slice(1))
+    const plate = best.truckId.slice(1)
+    const trailerId = Number(best.trailerId.slice(1))
+    const ok = await confirmDialog({
+      title: `Hand trip #${row.itinerary_id} to ${name(best.driverId)}?`,
+      message: `${name(best.driverId)} (truck ${plate}${best.spareTruck ? ', spare' : ''}, trailer ${name(best.trailerId)}) can do it ${formatSlot(best.start, best.end)}${
+        plan.hoursLate > 0 ? `, still ${plan.hoursLate} h after the delivery-by date` : ', on time'
+      }. Now it is ${formatSlot(row.trip_start_at, row.trip_end_at)}.`,
+      confirmLabel: 'Hand over',
+    })
+    if (!ok) return
+    // Clear the old crew / vehicles, move the time, then put the new ones on.
+    const id = row.itinerary_id
+    const cleared =
+      (row.assigned_employee_id === null || (await handleCrewChange(id, 'Driver', row.assigned_employee_id, null))) &&
+      (row.plate_number === null || (await handleTruckChange(id, row.plate_number, null))) &&
+      (row.trailer_id === null || row.trailer_id === trailerId || (await handleTrailerChange(id, row.trailer_id, null)))
+    if (cleared) {
+      const result = await retimeTrips({ fixed: new Map([[id, { start: best.start, end: best.end }]]) }, Math.min(best.start, Date.parse(row.trip_start_at)))
+      if (result.failedTripId !== null) {
+        setError(`${result.warning} Trip #${id} now has no driver / truck -- assign them again.`)
+      } else {
+        const assigned =
+          (await handleCrewChange(id, 'Driver', null, driverId)) &&
+          (await handleTruckChange(id, null, plate)) &&
+          (row.trailer_id === trailerId || (await handleTrailerChange(id, null, trailerId)))
+        if (assigned) showToast(`Trip #${id} handed to ${name(best.driverId)}.`)
+      }
+    }
+    await loadDispatchBoard()
+  }
+
   async function assignSuggestedCrew(groupRows: DispatchRow[]) {
     const ok = await confirmDialog({
       title: 'Use the suggested crew and vehicles?',
@@ -2104,7 +2297,7 @@ function DispatchBoardSection() {
         const currentId = crewRole === 'Driver' ? current.assigned_employee_id : current.assigned_helper_employee_id
         if (currentId !== null) continue
         const people = crewRole === 'Driver' ? drivers : helpers
-        const pick = rankPeople(current, people, working, leaveByEmployee, now).ranked.find((p) => p.blockedBy === null)
+        const pick = rankPeople(current, people, working, leaveByEmployee, now, pay).ranked.find((p) => p.blockedBy === null)
         if (!pick) continue
         if (!(await handleCrewChange(row.itinerary_id, crewRole, null, pick.employee_id))) {
           setBulkBookingId(null)
@@ -2219,13 +2412,13 @@ function DispatchBoardSection() {
             rangesOverlap(row.trip_date_from, row.trip_date_to, l.start_date, l.end_date),
           )
           if (!onLeave) continue
-          const pick = rankPeople(row, crewRole === 'Driver' ? drivers : helpers, rows, leaveByEmployee, now).ranked.find(
+          const pick = rankPeople(row, crewRole === 'Driver' ? drivers : helpers, rows, leaveByEmployee, now, pay).ranked.find(
             (p) => p.blockedBy === null,
           )
           if (pick) {
             actions.push({
               label: `Use ${pick.full_name} as ${crewRole.toLowerCase()}`,
-              onClick: () => handleCrewChange(row.itinerary_id, crewRole, currentId, pick.employee_id),
+              onClick: () => assignCrew(row.itinerary_id, crewRole, currentId, pick.employee_id),
             })
           }
         }
@@ -2275,6 +2468,10 @@ function DispatchBoardSection() {
           }
         }
       }
+      // The booking finishes after its delivery-by date: look for a driver who can do it sooner.
+      if (row.status === 'Awaiting' && reasons.some((r) => r.includes('will be late by'))) {
+        actions.push({ label: 'Find a faster driver', onClick: () => findFasterDriver(row) })
+      }
       return { row, reasons, actions }
     })
     .filter((t) => t.reasons.length > 0)
@@ -2295,12 +2492,14 @@ function DispatchBoardSection() {
     pendingCorrectionIds: new Set(myRequests.filter((r) => r.status === 'Pending').map((r) => r.itinerary_id)),
     onStatusChange: handleStatusChange,
     onRequestCorrection: handleRequestCorrection,
-    onCrewChange: handleCrewChange,
+    onCrewChange: assignCrew,
     onTruckChange: handleTruckChange,
     onTrailerChange: handleTrailerChange,
     onViewLogs: setLogsItineraryId,
     onEditTime: setEditTimeRow,
     onBreakdown: setBreakdownRow,
+    pay,
+    onSwap: (row, employeeId, otherTripId) => setSwap({ row, employeeId, otherTripId }),
   }
 
   const atRiskById = new Map<number, AtRisk>(atRiskTrips.map((t) => [t.row.itinerary_id, { reasons: t.reasons, actions: t.actions }]))
@@ -2845,6 +3044,29 @@ function DispatchBoardSection() {
           }}
         />
       )}
+
+      {swap &&
+        (() => {
+          const other = rows.find((r) => r.itinerary_id === swap.otherTripId)
+          const driver = drivers.find((d) => d.employee_id === swap.employeeId)
+          if (!other || !driver || !swap.row.trip_end_at || !other.trip_start_at || !other.trip_end_at) return null
+          const start = Date.parse(swap.row.trip_end_at)
+          const end = start + Date.parse(other.trip_end_at) - Date.parse(other.trip_start_at)
+          const lateHours = other.delivery_by ? hoursLate(end, Date.parse(manilaTimestamp(other.delivery_by, 24 * 60)) - 1) : 0
+          return (
+            <SwapDriverModal
+              tripId={swap.row.itinerary_id}
+              driverName={driver.full_name}
+              otherTripId={other.itinerary_id}
+              otherSlot={formatSlot(other.trip_start_at, other.trip_end_at)}
+              movedSlot={formatSlot(start, end)}
+              moveLateHours={lateHours}
+              handOverName={swapHandOver(other, driver.employee_id)?.full_name ?? null}
+              onCancel={() => setSwap(null)}
+              onConfirm={doSwap}
+            />
+          )
+        })()}
 
       {breakdownRow && (
         (() => {
