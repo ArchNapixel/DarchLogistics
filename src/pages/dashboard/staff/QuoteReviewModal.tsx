@@ -19,7 +19,8 @@
 //
 // The booking is created INSIDE the database when the offer is accepted
 // (create_booking_from_quote: client, places, route_cache, booking, one
-// itinerary per cargo with chained time slots), all in one transaction --
+// itinerary per cargo, timed and crewed from the Capacity card's plan saved
+// with the offer -- quote_requests.trip_plan), all in one transaction --
 // the old step-by-step JS Approve with "needs manual review" is gone.
 //
 // Distance, most precise source first (the field stays editable either
@@ -281,8 +282,8 @@ function QuoteReviewModal({
   const lastOurOffer = [...history].reverse().find((h) => h.party === 'Business' && h.action === 'Offer')
   const lastClientMove = [...history].reverse().find((h) => h.party === 'Client')
   // Last free storage day: every trip must be Picked Up by 11:59 PM on the
-  // pickup date, so the trips all start together (one truck each) instead
-  // of back to back. Saved as bookings.storage_deadline on Approve.
+  // pickup date. Saved as bookings.storage_deadline on Approve. The trips are
+  // planned like any other (as many drivers as are free -- Capacity card).
   const urgent = quote.is_last_day_of_port_storage === true
   // The client's cargo lines, and the cargo of each trip they turn into
   // (trip 1 = line 1's first trip...). Approve creates one itinerary each.
@@ -1044,7 +1045,7 @@ function QuoteReviewModal({
                     <p className="font-semibold">Urgent · last free storage day</p>
                     <p className="mt-0.5">
                       Every trip must be picked up from the port by 11:59 PM on{' '}
-                      {tripDateFrom ? formatDate(tripDateFrom) : '—'}. Approving starts all trips at the same time.
+                      {tripDateFrom ? formatDate(tripDateFrom) : '—'}. The Capacity card below shows which trips make it.
                       {tripDateFrom && tripDateFrom < toManilaDate(new Date()) && (
                         <span className="block font-semibold text-red-700">That day has already passed.</span>
                       )}

@@ -10,6 +10,10 @@
 // required) when editing an existing Driver, via the "Edit Information"
 // button in EmployeesSection.tsx -- adding a new employee skips them
 // entirely, so they're just null until someone fills them in later.
+//
+// Every Driver has an assigned truck (employees.assigned_plate_number,
+// unique -- one driver per truck), required on add and edit. It may be in
+// the shop; the Dispatch Board then uses a spare truck for him.
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { useAuth } from '../../../context/AuthContext'
@@ -60,6 +64,8 @@ export type EditableEmployee = Partial<MedicalExamValues> & {
   sss_number: string | null
   philhealth_number: string | null
   pagibig_number: string | null
+  // Drivers: his own truck (truck_profiles.plate_number).
+  assigned_plate_number: string | null
 }
 
 function AddEmployeeModal({
@@ -118,6 +124,9 @@ function AddEmployeeModal({
       : null
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
+  const [truckPlate, setTruckPlate] = useState(employee?.assigned_plate_number ?? '')
+  // Trucks a driver can be given: the ones no other driver has (plus his own).
+  const [truckOptions, setTruckOptions] = useState<{ plate_number: string; current_status: string | null }[]>([])
   const [licenseNumber, setLicenseNumber] = useState(employee?.driver_license_number ?? '')
   const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
   // The three medical exams (Physical / Drug Test / Psychological): date,
@@ -151,6 +160,23 @@ function AddEmployeeModal({
   const [accountEmail, setAccountEmail] = useState('')
   const [accountUsername, setAccountUsername] = useState('')
   const [accountPassword, setAccountPassword] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      supabase.from('truck_profiles').select('plate_number, current_status').order('plate_number'),
+      supabase.from('employees').select('employee_id, assigned_plate_number').not('assigned_plate_number', 'is', null),
+    ]).then(([trucksResult, takenResult]) => {
+      if (cancelled) return
+      const taken = new Set(
+        (takenResult.data ?? []).filter((e) => e.employee_id !== employee?.employee_id).map((e) => e.assigned_plate_number as string),
+      )
+      setTruckOptions((trucksResult.data ?? []).filter((t) => !taken.has(t.plate_number)))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [employee])
 
   useEffect(() => {
     if (!employee) return
@@ -200,6 +226,10 @@ function AddEmployeeModal({
     }
     if (!hireDate) {
       setError('Enter a hire date.')
+      return
+    }
+    if (position === 'Driver' && !truckPlate) {
+      setError("Pick the driver's assigned truck.")
       return
     }
     // License/medical exam fields aren't collected when first adding an
@@ -292,6 +322,7 @@ function AddEmployeeModal({
       ...(selectedRateType.column
         ? { [selectedRateType.column]: rateAmount ? Number(rateAmount) : null }
         : {}),
+      assigned_plate_number: position === 'Driver' ? truckPlate : null,
       driver_license_number: position === 'Driver' ? licenseNumber.trim() || null : null,
       driver_license_expiry_date: position === 'Driver' ? licenseExpiryDate || null : null,
       // Drivers only: the three medical exams.
@@ -309,7 +340,8 @@ function AddEmployeeModal({
 
     if (saveError) {
       setSubmitting(false)
-      setError(saveError.message)
+      // employees_assigned_plate_number_key: someone else took that truck meanwhile.
+      setError(saveError.message.includes('assigned_plate_number') ? 'That truck already has a driver. Pick another one.' : saveError.message)
       return
     }
 
@@ -421,6 +453,21 @@ function AddEmployeeModal({
                 <option value="Helper">Helper</option>
                 <option value="Dispatcher">Dispatcher</option>
                 <option value="Admin">Admin</option>
+              </select>
+            </label>
+          )}
+
+          {position === 'Driver' && (
+            <label className={labelClasses}>
+              Assigned truck
+              <select value={truckPlate} onChange={(e) => setTruckPlate(e.target.value)} className={fieldClasses}>
+                <option value="">Pick a truck</option>
+                {truckOptions.map((t) => (
+                  <option key={t.plate_number} value={t.plate_number}>
+                    {t.plate_number}
+                    {t.current_status === 'Under Maintenance' || t.current_status === 'Out of Service' ? ` (${t.current_status})` : ''}
+                  </option>
+                ))}
               </select>
             </label>
           )}

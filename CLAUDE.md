@@ -1159,7 +1159,9 @@ before creating it.
 - **Schedule Overview** (`/dashboard/schedule-overview`, replaced Driver
   Schedule): see the Driver time slots bullet. "Needs assignment" on its
   Trips tab is just a one-line notice linking to the Dispatch Board.
-- **Capacity Check** (can we actually run a quote's trips?). Rules:
+- **Capacity Check** (can we actually run a quote's trips?) -- **superseded by
+  "2026-10-31: Capacity by time window" at the end of this file** (chain /
+  parallel, waves, later-start search and the breakdown table are gone). Old rules:
   `lib/capacity.ts` (pure, self-check `node scripts/check-capacity.ts`):
   drivers/trucks/trailers (trailer type per trip) with busy windows; result
   fits / later (before deadline) / late (after) / none; later starts are
@@ -1893,6 +1895,8 @@ went on, but almost certainly needs a policy:**
   introducing a "more correct" novel pattern in just the new file. Lint
   is at 0 problems since 2026-10-27 -- keep it there (see that section).
 ## 2026-10-28: trailer substitution + capacity waves
+(The waves and `flowAfterDelivery` parts are superseded by 2026-10-31 below;
+the trailer rules still hold.)
 - **Containers may use either trailer type** (`lib/trailerRules.ts`, self-check
   `node scripts/check-trailer-rules.ts`): `trailerAllowed(cargoType, asked, vehicle)`
   -- Container: Flatbed or Skeletal whichever the client asked for; Loose: the
@@ -1925,3 +1929,72 @@ went on, but almost certainly needs a policy:**
   At-risk notice (`DispatchRow.delivery_by`). Not in the header bell. Old
   rows delivered before this (e.g. trips #111-#114, delivered 2026-10-24)
   keep their stale planned slots.
+
+## 2026-10-31: Capacity by time window (SQL given in chat, phases 0-6)
+Replaces the chain / parallel Capacity Check, Approve's back-to-back trips
+and `flowAfterDelivery` / `chainSlots`. Decided with the user:
+- **Rule** (`planTrips()` in `lib/capacity.ts`, self-check
+  `node scripts/check-capacity.ts`): each trip needs 1 driver (+ his truck)
+  and 1 trailer of an allowed type for its hours; the same driver does the
+  next trip as soon as one ends (10 trips != 10 drivers). Each trip, in
+  order, goes to the earliest moment a driver + truck + trailer are free
+  (several drivers at once, gaps between bookings allowed, no working hours
+  / truck bans). Tie: driver who **earned least that Sun-Sat week** (pesos:
+  commission % x trip rate + per-trip fee, delivered + planned). Window =
+  start -> 11:59 PM of the deadline date. Verdict: fits / late ("finishes X,
+  N h late, k of N by the deadline") / none (fleet too small only when we
+  own none of a kind). Storage-deadline quotes follow the same rule.
+- **Start**: accepted before the pickup date -> default start time that
+  day; on/after -> next half hour (`buildDemand`, `create_booking_from_quote`).
+  Default-start fallback is 480 (8 AM) everywhere.
+- **Truck follows the driver**: `employees.assigned_plate_number` (unique,
+  FK to `truck_profiles.plate_number`, on update cascade / on delete set
+  null). Required for Drivers in AddEmployeeModal; Employees panel shows
+  it + a "no truck assigned" banner (also on the Dispatch Board); Fleet
+  truck panel shows "Driver: X" / "Spare". A driver uses his own truck,
+  else a spare (a truck no driver has) -- never another driver's.
+- **Swaps** (one hop, drivers only): the planner may move an Awaiting
+  booked trip to another driver if that lets a new trip start sooner. Hard
+  rule: **no swap without a Dispatcher / Admin click** -- sending an offer
+  approves the swaps it lists (confirm dialog), accepting a counter does
+  too. A driver can't be moved once his trip left Awaiting.
+- **Data**: `get_capacity_inputs` returns busy windows tagged with
+  `trip_id`, drivers' `truck`, a `trips` list (incl. delivered ones of the
+  week, for earnings; `rate` staff-only) and `pay` (staff-only).
+  `lib/capacityLoad.ts` builds the `PlanWorld`; offers waiting for an
+  answer are held via `withPlannedHolds` (no swaps).
+- **Approve books the plan**: `quote_requests.trip_plan` jsonb (`trips`:
+  start/end/driver_id/plate_number/trailer_id per trip in cargo-line order,
+  `swaps`), saved by `send_quote_offer(..., p_trip_plan)` /
+  `accept_quote_counter(..., p_trip_plan)` (old signatures dropped), cleared
+  by a client counter. `create_booking_from_quote` applies swaps (Awaiting
+  only), inserts trips with the plan's times / truck / trailer + Driver crew
+  row, shifts the plan to the next half hour if accepted late; any overlap
+  trigger refusal rolls back everything ("This date was just taken").
+  No plan -> old back-to-back fallback. Leave / shop changes after the offer
+  are NOT re-checked. Client Accept's browser re-check was removed.
+  `tripPlanForDb()` in capacityLoad.ts. Clients can read their own
+  `trip_plan` (driver ids, plates; no names / rates).
+- **Cascade** (`reflow()` in `lib/tripSchedule.ts`, self-check
+  `node scripts/check-trip-schedule.ts`; saver `retimeTrips()` /
+  `retimeAfterDelivery()` in `lib/tripRetime.ts`, reads via
+  `get_capacity_inputs`): lines = each driver's / truck's / trailer's trips
+  in start order; an Awaiting trip whose previous trip in a line changed
+  starts when the last of its previous trips ends (earlier or later), never
+  before pickup date + default start or inside leave / shop; keeps its
+  length unless hours changed. Used by Mark Delivered, EditTripTimeModal
+  (no more `laterTrips` prop) and BookingDetailModal hours per trip. Times
+  cascade automatically; no queue-jumping (a line keeps its order); a gap
+  only closes if something before it changed.
+- **Dispatch Board** (Phase 5): driver dropdown group "Planned on another
+  trip (swap)" -> `SwapDriverModal.tsx` (move the other trip after this one,
+  or hand it to the free driver who earned least; default = move unless
+  that makes its booking late). At-risk "Find a faster driver" on trips of
+  a booking that will be late (planner from now, confirm, then hand over +
+  re-time). Suggestions everywhere rank by pesos this week
+  (`rankCandidates(..., earnings)`; helpers keep "rested longest"). Picking
+  a driver brings his own truck if free (`assignCrew` / `followTruck`);
+  "Use Suggested Crew & Vehicles" uses his truck, else a spare.
+- Deliberate limits (ponytail comments): one-hop swaps, new trips carry no
+  rate inside one quote's fairness, plan not re-checked against leave /
+  shop at Accept.

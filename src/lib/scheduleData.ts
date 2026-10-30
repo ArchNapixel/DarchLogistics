@@ -344,7 +344,7 @@ async function fetchTripRows(from: number, to: number): Promise<TimelineRow[]> {
   }))
 }
 
-// One row per booking, all its trips on the row (they run back to back).
+// One row per booking, all its trips on the row (one or more drivers).
 async function fetchBookingRows(from: number, to: number): Promise<TimelineRow[]> {
   const trips = await fetchTripsInWindow(from, to)
   const details = await fetchTripDetails(trips)

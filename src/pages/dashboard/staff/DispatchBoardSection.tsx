@@ -2316,7 +2316,12 @@ function DispatchBoardSection() {
         const current = working.find((r) => r.itinerary_id === row.itinerary_id) ?? row
         if (vehicleIdOf(kind, current) !== null) continue
         const candidates = kind === 'Truck' ? truckCandidates(trucks, vehicleService) : trailerCandidates(trailers, vehicleService)
-        const pick = rankFleet(kind, current, candidates, working, now).ranked.find((v) => v.blockedBy === null)
+        const free = rankFleet(kind, current, candidates, working, now).ranked.filter((v) => v.blockedBy === null)
+        // Trucks: the driver's own one, else a spare (no driver has it), else any free one.
+        const ownPlate = drivers.find((d) => d.employee_id === current.assigned_employee_id)?.truck
+        const owned = new Set(drivers.flatMap((d) => (d.truck ? [`T:${d.truck}`] : [])))
+        const pick =
+          kind === 'Truck' ? (free.find((v) => v.id === `T:${ownPlate}`) ?? free.find((v) => !owned.has(v.id)) ?? free[0]) : free[0]
         if (!pick) continue
         const saved =
           kind === 'Truck'
@@ -2655,6 +2660,12 @@ function DispatchBoardSection() {
       </section>
 
       {error && <p className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {drivers.some((d) => !d.truck) && (
+        <p className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {drivers.filter((d) => !d.truck).map((d) => d.full_name).join(', ')} {drivers.filter((d) => !d.truck).length === 1 ? 'has' : 'have'} no truck
+          assigned -- set it on the Employees page (each driver drives his own truck).
+        </p>
+      )}
 
       {needsElsewhere > 0 && (
         <p className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border border-amber-600 bg-amber-100 px-4 py-2.5 text-sm text-amber-900">

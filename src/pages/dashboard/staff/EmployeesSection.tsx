@@ -217,6 +217,7 @@ function EmployeePanel({
               </button>
             </h3>
             <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+              <Field label="Truck">{info.assigned_plate_number ?? <span className="text-amber-700">None assigned</span>}</Field>
               <Field label="License No.">{info.driver_license_number}</Field>
               <Field label="Expires">
                 <span className={expiryClass(info.driver_license_expiry_date)}>{expiryLabel(info.driver_license_expiry_date)}</span>
@@ -483,7 +484,7 @@ function EmployeesSection() {
     const first = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result, assigned_plate_number',
       )
       .order('full_name', { ascending: true })
     let employeeRows = first.data
@@ -493,7 +494,7 @@ function EmployeesSection() {
       const second = await supabase
         .from('employees')
         .select(
-          'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date',
+          'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, assigned_plate_number',
         )
         .order('full_name', { ascending: true })
       employeeRows = second.data ? second.data.map((row) => ({ ...row, ...NO_NEW_EXAM_VALUES })) : null
@@ -571,6 +572,7 @@ function EmployeesSection() {
           sss_number: row.sss_number,
           philhealth_number: row.philhealth_number,
           pagibig_number: row.pagibig_number,
+          assigned_plate_number: row.assigned_plate_number,
         },
         licenseExpiryDate: row.driver_license_expiry_date,
         medicalExamExpiryDate: row.medical_exam_expiry_date,
@@ -692,6 +694,18 @@ function EmployeesSection() {
         </div>
       )}
 
+      {(() => {
+        // Every driver needs his own truck (the Dispatch Board and Capacity Check use it).
+        const noTruck = employees.filter(
+          (e) => e.position === 'Driver' && e.status !== 'Deactivated' && e.status !== 'Terminated' && !e.editable.assigned_plate_number,
+        )
+        return noTruck.length > 0 ? (
+          <p className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {noTruck.length} {noTruck.length === 1 ? 'driver has' : 'drivers have'} no truck assigned: {noTruck.map((e) => e.name).join(', ')}. Edit
+            each one and pick a truck.
+          </p>
+        ) : null
+      })()}
       {loading && <p className="mt-4 text-slate-500">Loading employees...</p>}
       {error && <p className="mt-4 text-red-700">{error}</p>}
       {!loading && !error && employees.length === 0 && (

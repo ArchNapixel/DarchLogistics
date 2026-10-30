@@ -180,6 +180,8 @@ function FleetSection() {
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [workOrders, setWorkOrders] = useState<OpenWorkOrder[]>([])
   const [schedules, setSchedules] = useState<PendingMaintenanceSchedule[]>([])
+  // Plate -> the driver it's assigned to (employees.assigned_plate_number); missing = spare.
+  const [driverByPlate, setDriverByPlate] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
@@ -214,14 +216,16 @@ function FleetSection() {
         .order('trailer_id', { ascending: true })
       if (trailerError) throw trailerError
 
-      const [ordersResult, schedulesResult] = await Promise.all([
+      const [ordersResult, schedulesResult, driversResult] = await Promise.all([
         supabase
           .from('work_orders')
           .select('work_order_id, work_order_number, plate_number, trailer_id, maintenance_type, work_order_status')
           .in('work_order_status', OPEN_WORK_ORDER_STATUSES),
         loadPendingMaintenanceSchedules(),
+        supabase.from('employees').select('full_name, assigned_plate_number').not('assigned_plate_number', 'is', null),
       ])
       if (ordersResult.error) throw ordersResult.error
+      setDriverByPlate(new Map((driversResult.data ?? []).map((e) => [e.assigned_plate_number as string, e.full_name as string])))
 
       setTrucks((truckData ?? []) as Truck[])
       setTrailers((trailerData ?? []) as Trailer[])
@@ -543,6 +547,7 @@ function FleetSection() {
                   <h3 className={GROUP}>{selected.type === 'truck' ? 'Truck details' : 'Trailer details'}</h3>
                   {selected.type === 'truck' ? (
                     <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+                      <Field label="Driver">{driverByPlate.get(truck!.plate_number) ?? 'Spare'}</Field>
                       <Field label="Model">{truck!.model}</Field>
                       <Field label="Year Model">{truck!.year}</Field>
                       <Field label="Odometer">{truck!.current_odometer != null ? `${Number(truck!.current_odometer).toLocaleString()} km` : null}</Field>
