@@ -1349,6 +1349,8 @@ function DispatchBoardSection() {
   const [breakdownRow, setBreakdownRow] = useState<DispatchRow | null>(null)
   // The day shown ('YYYY-MM-DD', Manila), or 'all' = every trip not delivered yet.
   const [day, setDay] = useState<string>(() => toManilaDate(new Date()))
+  // Day view or the Sun-Sat week (the payroll week) around `day`.
+  const [view, setView] = useState<'day' | 'week'>('day')
   const dateInputRef = useRef<HTMLInputElement>(null)
   // Filters: status ('all' | 'needs' | 'atrisk' | a status), driver ('all' | 'none' | employee id), booking / trip #.
   // Starts on "Needs assignment" -- what dispatch has to deal with first.
@@ -2396,8 +2398,16 @@ function DispatchBoardSection() {
   const today = toManilaDate(new Date(now))
   const isAllDays = day === 'all'
   const shownDay = isAllDays ? today : day
+  const isWeek = view === 'week' && !isAllDays
+  const weekStart = shiftDay(shownDay, -new Date(`${shownDay}T12:00:00Z`).getUTCDay())
+  const weekEnd = shiftDay(weekStart, 6)
+  const weekHasToday = today >= weekStart && today <= weekEnd
   const onDay = (r: DispatchRow) =>
-    isAllDays ? r.status !== 'Delivered' : tripDay(r) === day || (day === today && isOutNow(r, now))
+    isAllDays
+      ? r.status !== 'Delivered'
+      : isWeek
+        ? (tripDay(r) >= weekStart && tripDay(r) <= weekEnd) || (weekHasToday && isOutNow(r, now))
+        : tripDay(r) === day || (day === today && isOutNow(r, now))
   const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
   const dayRows = rows.filter(onDay).sort((a, b) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id)
   // Planned trips that may not happen as assigned (leave, shop, late trip,
@@ -2525,12 +2535,12 @@ function DispatchBoardSection() {
     if (bookingQuery && String(r.booking_id) !== bookingQuery && String(r.itinerary_id) !== bookingQuery) return false
     return true
   })
-  const pagedTrips = usePaged(filteredRows, `${day}|${statusFilter}|${driverFilter}|${bookingFilter}`)
+  const pagedTrips = usePaged(filteredRows, `${day}|${view}|${statusFilter}|${driverFilter}|${bookingFilter}`)
   const anyFilter = statusFilter !== 'all' || driverFilter !== 'all' || bookingFilter !== ''
   const deliveredCount = dayRows.filter((r) => r.status === 'Delivered').length
   // Unassigned trips on other days -- the day view would hide them.
   const needsElsewhere = isAllDays ? 0 : rows.filter((r) => r.status === 'Awaiting' && !isFullyAssigned(r) && !onDay(r)).length
-  const dayWord = isAllDays ? 'not delivered yet' : day === today ? 'today' : 'this day'
+  const dayWord = isAllDays ? 'not delivered yet' : isWeek ? 'this week' : day === today ? 'today' : 'this day'
   const panelRow = panelRowId !== null ? (rows.find((r) => r.itinerary_id === panelRowId) ?? null) : null
   const statusRow = statusRowId !== null ? (rows.find((r) => r.itinerary_id === statusRowId) ?? null) : null
 
@@ -2570,7 +2580,31 @@ function DispatchBoardSection() {
         subtitle="Every trip scheduled for the day and where it is now."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" aria-label="Previous day" onClick={() => setDay(shiftDay(shownDay, -1))} className={squareButton}>
+            {/* Day / Week: outlined, the chosen one filled. */}
+            <div className="flex">
+              {(['day', 'week'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v && !isAllDays}
+                  onClick={() => {
+                    setView(v)
+                    if (isAllDays) setDay(today)
+                  }}
+                  className={`h-11 border px-4 text-sm font-semibold first:rounded-l-[2px] last:-ml-px last:rounded-r-[2px] ${
+                    view === v && !isAllDays ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink hover:bg-slate-50'
+                  }`}
+                >
+                  {v === 'day' ? 'Day' : 'Week'}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              aria-label={isWeek ? 'Previous week' : 'Previous day'}
+              onClick={() => setDay(shiftDay(shownDay, isWeek ? -7 : -1))}
+              className={squareButton}
+            >
               <Icon name="left" size={18} />
             </button>
             {/* The date: click it to pick any day. */}
@@ -2589,7 +2623,11 @@ function DispatchBoardSection() {
               className="flex h-11 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-ink hover:bg-slate-50"
             >
               <Icon name="calendar" className="text-primary" />
-              {isAllDays ? 'All trips not delivered yet' : dayLabel(day, today)}
+              {isAllDays
+                ? 'All trips not delivered yet'
+                : isWeek
+                  ? `${weekHasToday ? 'This week · ' : ''}${formatDate(weekStart)} – ${formatDate(weekEnd)}`
+                  : dayLabel(day, today)}
             </button>
             <input
               ref={dateInputRef}
@@ -2599,10 +2637,15 @@ function DispatchBoardSection() {
               onChange={(e) => e.target.value && setDay(e.target.value)}
               className="sr-only"
             />
-            <button type="button" aria-label="Next day" onClick={() => setDay(shiftDay(shownDay, 1))} className={squareButton}>
+            <button
+              type="button"
+              aria-label={isWeek ? 'Next week' : 'Next day'}
+              onClick={() => setDay(shiftDay(shownDay, isWeek ? 7 : 1))}
+              className={squareButton}
+            >
               <Icon name="right" size={18} />
             </button>
-            {day !== today && (
+            {(isWeek ? !weekHasToday : day !== today) && (
               <button type="button" onClick={() => setDay(today)} className="btn-secondary px-4 text-sm font-medium">
                 Today
               </button>
@@ -2794,7 +2837,7 @@ function DispatchBoardSection() {
                         ? 'No trips match these filters.'
                         : isAllDays
                           ? 'Every trip has been delivered.'
-                          : `No trips ${day === today ? 'today' : 'on this day'}.`}
+                          : `No trips ${isWeek ? 'this week' : day === today ? 'today' : 'on this day'}.`}
                     </p>
                     {!isAllDays && !anyFilter && rows.some((r) => r.status !== 'Delivered') && (
                       <button type="button" onClick={() => setDay('all')} className="btn-primary px-5 text-sm">
@@ -2840,7 +2883,7 @@ function DispatchBoardSection() {
                             </Link>
                           </td>
                           <td className={TD}>
-                            <SlotCell row={row} now={now} showDate={isAllDays || tripDay(row) !== day} />
+                            <SlotCell row={row} now={now} showDate={isAllDays || isWeek || tripDay(row) !== day} />
                           </td>
                           <td className={TD}>
                             <span className="block truncate" title={row.pickup_location}>
@@ -2975,7 +3018,7 @@ function DispatchBoardSection() {
               )}
             </aside>
           )}
-          <ResourcesPanel day={shownDay} isToday={shownDay === today} dayRows={isAllDays ? rows.filter((r) => tripDay(r) === today) : dayRows} ctx={ctx} />
+          <ResourcesPanel day={shownDay} isToday={shownDay === today} dayRows={isAllDays || isWeek ? rows.filter((r) => tripDay(r) === shownDay) : dayRows} ctx={ctx} />
         </div>
       </div>
 
