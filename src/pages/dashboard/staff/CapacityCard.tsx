@@ -1,17 +1,18 @@
 // CapacityCard: in Review Quote, tells staff whether the quote's trips can
-// actually be run on the pickup date being offered -- enough drivers, trucks
-// and trailers free, counting approved leave, trips already booked, the
-// shop, and offers waiting for the client's answer -- and if not, the
-// earliest date that works. Advisory: staff can still send the offer (the
-// modal asks first). The rules live in lib/capacity.ts, the loading in
-// lib/capacityLoad.ts. It reports its result up through onResult so the
-// modal can ask before sending an offer that doesn't fit.
+// actually be run from the pickup date being offered -- each trip on the
+// earliest free driver (with his truck) and trailer, counting approved leave,
+// trips already booked, the shop, and offers waiting for the client's answer --
+// and when the last trip would end. Shows the plan (who does which trip) and
+// any driver changes on booked trips the plan needs. Advisory: staff can still
+// send the offer (the modal asks first). The rules live in lib/capacity.ts
+// (planTrips), the loading in lib/capacityLoad.ts. It reports its result up
+// through onResult so the modal can ask before sending an offer that doesn't fit.
 import { useEffect, useState } from 'react'
-import { formatDate, formatDateTime } from '../../../lib/format'
-import { toManilaDate } from '../../../lib/payslip'
-import { availabilityBreakdown, checkCapacity, shortageLabel, type CapacityResult, type KindAvailability } from '../../../lib/capacity'
+import { formatDateTime, formatSlot } from '../../../lib/format'
+import { planTrips, shortageLabel, type CapacityCheck, type Resource, type TripPlan } from '../../../lib/capacity'
 import { buildDemand, loadCapacityInputs } from '../../../lib/capacityLoad'
 import { substituteNote } from '../../../lib/trailerRules'
+
 type Props = {
   quoteId: number
   // quote_requests.cargo_lines
@@ -20,30 +21,27 @@ type Props = {
   hoursPerTrip: string
   pickupDate: string
   deadlineDate: string
-  storage: boolean
-  onResult: (result: CapacityResult | null) => void
-  // Put the suggested pickup date (and a deadline that still fits) in the offer.
-  onUseStart: (pickupDate: string, lastTripEndDate: string) => void
+  onResult: (result: CapacityCheck | null) => void
   onReject: () => void
 }
-
-// "driver(s)", "truck(s)", "Skeletal trailer(s)".
-const kindLabel = (b: KindAvailability, count: number) =>
-  `${b.kind === 'Trailer' && b.trailerType ? `${b.trailerType} ` : ''}${b.kind.toLowerCase()}${count === 1 ? '' : 's'}`
 
 // Wait for typing to settle before asking the database.
 const TYPING_DELAY_MS = 500
 
 type View = {
-  result: CapacityResult
-  requestedStart: number
+  plan: TripPlan
+  tripCount: number
+  // Trips ending after it are shown in red.
+  deadlineEnd: number | null
+  // Names / plates by id.
+  byId: Map<string, Resource>
+  swapLines: string[]
   hasHolds: boolean
-  breakdown: KindAvailability[]
   // "Skeletal instead of the Flatbed asked for" -- containers on the other trailer type.
   substitutes: string[]
 }
 
-function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineDate, storage, onResult, onUseStart, onReject }: Props) {
+function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineDate, onResult, onReject }: Props) {
   const [view, setView] = useState<View | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The inputs of the last finished check -- "loading" = not the current ones.
@@ -51,7 +49,7 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
 
   const hours = Number(hoursPerTrip)
   const ready = hours > 0 && pickupDate !== ''
-  const inputsKey = JSON.stringify([cargoLines, hours, pickupDate, deadlineDate, storage, quoteId])
+  const inputsKey = JSON.stringify([cargoLines, hours, pickupDate, deadlineDate, quoteId])
   const loading = ready && checkedKey !== inputsKey
 
   useEffect(() => {
@@ -62,10 +60,10 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
     }
     let cancelled = false
     const timer = setTimeout(async () => {
-      const args = { cargoLines, hours, pickupDate, deadlineDate: deadlineDate || null, storage }
+      const args = { cargoLines, hours, pickupDate, deadlineDate: deadlineDate || null }
       // The default start time is only known once loaded; the first demand
-      // (6 AM) is just for how far to read, then it's rebuilt with the real one.
-      const { inputs, error: loadError } = await loadCapacityInputs(buildDemand({ ...args, defaultStartMinutes: 360 }), quoteId)
+      // (8 AM) is just for how far to read, then it's rebuilt with the real one.
+      const { inputs, error: loadError } = await loadCapacityInputs(buildDemand({ ...args, defaultStartMinutes: 480 }), quoteId)
       if (cancelled) return
       setCheckedKey(inputsKey)
       if (!inputs) {
@@ -76,18 +74,22 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
       }
       setError(null)
       const demand = buildDemand({ ...args, defaultStartMinutes: inputs.defaultStartMinutes })
-      const result = checkCapacity(demand, inputs.resources)
-      const placements = result.status === 'none' ? [] : result.placements
+      const plan = planTrips(demand, inputs.world)
+      const byId = new Map(inputs.world.resources.map((r) => [r.id, r]))
+      const name = (id: string | null) => (id ? (byId.get(id)?.label ?? id) : 'nobody')
+      const swapLines = plan.swaps.map((s) => `Trip #${s.itineraryId}: ${name(s.fromDriverId)} → ${name(s.toDriverId)} (truck ${name(s.toTruckId)})`)
       setView({
-        result,
+        plan,
+        tripCount: demand.trips.length,
+        deadlineEnd: demand.deadlineEnd,
+        byId,
+        swapLines,
+        hasHolds: inputs.world.resources.some((r) => r.busy.some((b) => b.tentative)),
         substitutes: [
-          ...new Set(placements.flatMap((p, i) => substituteNote(demand.trips[i].trailerType, p.trailer.trailerType) ?? [])),
+          ...new Set(plan.trips.flatMap((p, i) => substituteNote(demand.trips[i].trailerType, byId.get(p.trailerId)?.trailerType) ?? [])),
         ],
-        requestedStart: demand.requestedStart,
-        hasHolds: inputs.resources.some((r) => r.busy.some((b) => b.tentative)),
-        breakdown: availabilityBreakdown(demand, inputs.resources),
       })
-      onResult(result)
+      onResult({ plan, swapLines })
     }, TYPING_DELAY_MS)
     return () => {
       cancelled = true
@@ -95,10 +97,7 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
     }
     // onResult is a state setter from the modal -- stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, cargoLines, hours, pickupDate, deadlineDate, storage, quoteId, inputsKey])
-
-  const dayOf = (ms: number) => toManilaDate(new Date(ms))
-  const unique = (labels: string[]) => [...new Set(labels)].join(', ')
+  }, [ready, cargoLines, hours, pickupDate, deadlineDate, quoteId, inputsKey])
 
   let tone = 'border-slate-300'
   let body: React.ReactNode
@@ -110,145 +109,104 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
   } else if (!view) {
     body = <p className="text-sm text-slate-500">Checking availability…</p>
   } else {
-    const { result } = view
-    const needs = result.status === 'fits' || result.status === 'later' || result.status === 'late' ? result.placements : []
-    const crew = unique(needs.map((p) => p.driver.label))
-    const vehicles = unique(needs.map((p) => `${p.truck.label} / ${p.trailer.label}`))
-    // (Not a hook -- a plain helper that draws the button.)
-    const pickDateButton = (label: string) =>
-      result.status === 'later' || result.status === 'late' ? (
-        <button
-          type="button"
-          onClick={() => onUseStart(dayOf(result.start), dayOf(result.placements[result.placements.length - 1].end - 1))}
-          className="border-2 border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-        >
-          {label}
-        </button>
-      ) : null
+    const { plan, tripCount, byId } = view
+    const label = (id: string) => byId.get(id)?.label ?? id
+    const drivers = `${plan.driversUsed} ${plan.driversUsed === 1 ? 'driver' : 'drivers'}`
     const rejectButton = (
-      <button type="button" onClick={onReject} className="border-2 border-red-700 px-3 py-1.5 text-sm font-semibold text-red-800 hover:bg-red-50">
+      <button type="button" onClick={onReject} className="btn-danger mt-3">
         Reject: schedule unavailable
       </button>
     )
 
-    if (result.status === 'fits') {
+    let verdict: React.ReactNode
+    if (plan.status === 'fits') {
       tone = 'border-green-300 bg-green-50'
-      body = (
+      verdict = (
         <>
           <p className="text-sm font-semibold text-green-900">Can run as asked</p>
           <p className="mt-1 text-sm text-green-900">
-            Free: {crew} · {vehicles}
+            All {tripCount} {tripCount === 1 ? 'trip' : 'trips'} done by <span className="font-semibold">{formatDateTime(plan.lastEnd)}</span> · {drivers}
           </p>
         </>
       )
-    } else if (result.status === 'later') {
-      tone = 'border-amber-300 bg-amber-50'
-      body = (
-        <>
-          <p className="text-sm font-semibold text-amber-900">
-            {shortageLabel(result.shortageAtRequested)} on {formatDate(dayOf(view.requestedStart))}
-          </p>
-          <p className="mt-1 text-sm text-amber-900">
-            Earliest that works: <span className="font-semibold">{formatDate(dayOf(result.start))}</span> ({crew}), still before the
-            deadline.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {pickDateButton(`Use ${formatDate(dayOf(result.start))} as the pickup date`)}
-            {rejectButton}
-          </div>
-        </>
-      )
-    } else if (result.status === 'late') {
+    } else if (plan.status === 'late') {
       tone = 'border-red-300 bg-red-50'
-      body = (
+      verdict = (
         <>
-          <p className="text-sm font-semibold text-red-900">Nothing free before the deadline</p>
+          <p className="text-sm font-semibold text-red-900">Finishes after the deadline</p>
           <p className="mt-1 text-sm text-red-900">
-            {shortageLabel(result.shortageAtRequested)} on {formatDate(dayOf(view.requestedStart))}. The earliest we can do it is{' '}
-            <span className="font-semibold">{formatDate(dayOf(result.start))}</span> ({crew}), after the client's deadline.
+            Starting as offered, the last trip ends <span className="font-semibold">{formatDateTime(plan.lastEnd)}</span>, {plan.hoursLate} h after the
+            deadline · <span className="font-semibold">{plan.doneByDeadline} of {tripCount}</span> trips by the deadline · {drivers}
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {pickDateButton(`Offer ${formatDate(dayOf(result.start))} instead`)}
-            {rejectButton}
-          </div>
+          {rejectButton}
         </>
       )
     } else {
       tone = 'border-red-300 bg-red-50'
-      body = (
+      const shortage = plan.shortage!
+      const what = shortageLabel(shortage).replace(/^No /, '').replace(/ free$/, '')
+      verdict = shortage.missing ? (
+        <>
+          <p className="text-sm font-semibold text-red-900">Our fleet can't carry this</p>
+          <p className="mt-1 text-sm text-red-900">We don't have any {what} for these trips.</p>
+          {rejectButton}
+        </>
+      ) : (
         <>
           <p className="text-sm font-semibold text-red-900">Nothing free</p>
           <p className="mt-1 text-sm text-red-900">
-            {shortageLabel(result.shortageAtRequested)} on {formatDate(dayOf(view.requestedStart))}, and nothing opens up in the next 2
-            weeks after the deadline.
+            {shortageLabel(shortage)} for trip {shortage.tripIndex + 1} of {tripCount} within 2 weeks after the deadline
+            {plan.trips.length > 0 ? ` (${plan.trips.length} of ${tripCount} could be placed)` : ''}.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">{rejectButton}</div>
+          {rejectButton}
         </>
       )
     }
-    // The fleet can never do this quote as asked (more needed at once than we own) --
-    // only a problem when waves can't finish by the deadline either.
-    const tooSmall = result.status === 'late' || result.status === 'none' ? view.breakdown.find((b) => b.need > b.have) : undefined
-    if (tooSmall) {
-      tone = 'border-red-300 bg-red-50'
-      body = (
-        <>
-          <p className="text-sm font-semibold text-red-900">Our fleet is too small for this quote</p>
-          <p className="mt-1 text-sm text-red-900">
-            We only have {tooSmall.have} {kindLabel(tooSmall, tooSmall.have)}; this needs {tooSmall.need} at the same time. Offer fewer
-            trips at once, or reject it.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">{rejectButton}</div>
-        </>
-      )
-    }
+
     body = (
       <>
-        {body}
-        <table className="mt-3 w-full text-left text-[13px]">
-          <thead className="text-slate-500">
-            <tr>
-              <th className="py-1 font-medium">Needed at once</th>
-              <th className="py-1 font-medium">Free at that time</th>
-              <th className="py-1 font-medium">Earliest free</th>
-            </tr>
-          </thead>
-          <tbody className="text-slate-800">
-            {view.breakdown.map((b) => {
-              const short = b.freeAtRequested < b.need
-              return (
-                <tr key={`${b.kind}-${b.trailerType}`} className={short ? 'font-semibold text-red-800' : ''}>
-                  <td className="py-1">
-                    {b.need} {kindLabel(b, b.need)}
+        {verdict}
+        {plan.trips.length > 0 && (
+          <table className="mt-3 w-full text-left text-[13px]">
+            <thead>
+              <tr>
+                <th className="py-1 pr-2">Trip</th>
+                <th className="py-1 pr-2">Slot</th>
+                <th className="py-1 pr-2">Driver</th>
+                <th className="py-1 pr-2">Truck</th>
+                <th className="py-1">Trailer</th>
+              </tr>
+            </thead>
+            <tbody className="text-slate-800">
+              {plan.trips.map((t, i) => (
+                <tr key={i} className={view.deadlineEnd !== null && t.end > view.deadlineEnd ? 'font-semibold text-red-800' : ''}>
+                  <td className="py-1 pr-2">{i + 1}</td>
+                  <td className="py-1 pr-2">{formatSlot(t.start, t.end)}</td>
+                  <td className="py-1 pr-2">{label(t.driverId)}</td>
+                  <td className="py-1 pr-2">
+                    {label(t.truckId)}
+                    {t.spareTruck ? ' (spare)' : ''}
                   </td>
-                  <td className="py-1">
-                    {b.freeAtRequested} of {b.have}
-                    {short ? ' ⚠' : ''}
-                  </td>
-                  <td className="py-1">{short ? (b.earliestFree !== null ? formatDateTime(new Date(b.earliestFree).toISOString()) : 'not within 2 weeks') : '—'}</td>
+                  <td className="py-1">{label(t.trailerId)}</td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {view.swapLines.length > 0 && (
+          <div className="mt-3 text-sm text-slate-800">
+            <p className="font-semibold">Driver changes needed on booked trips</p>
+            <ul className="mt-1 list-disc pl-5">
+              {view.swapLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {view.substitutes.length > 0 && <p className="mt-2 text-xs text-slate-600">Using a {view.substitutes.join(', ')}.</p>}
+        {view.hasHolds && <p className="mt-2 text-xs text-slate-600">Offers still waiting for the client's answer are counted as booked.</p>}
       </>
     )
-    if (view.substitutes.length > 0) {
-      body = (
-        <>
-          {body}
-          <p className="mt-2 text-xs text-slate-600">Using a {view.substitutes.join(', ')}.</p>
-        </>
-      )
-    }
-    if (view.hasHolds) {
-      body = (
-        <>
-          {body}
-          <p className="mt-2 text-xs text-slate-600">Offers still waiting for the client's answer are counted as booked.</p>
-        </>
-      )
-    }
   }
 
   return (

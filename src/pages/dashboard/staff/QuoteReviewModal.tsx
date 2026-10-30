@@ -41,7 +41,7 @@ import { showToast } from '../../../components/Toast'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
 import type { QuoteRequest } from './QuoteRequestsSection'
-import { formatMoney, formatDate } from '../../../lib/format'
+import { formatMoney, formatDate, formatDateTime } from '../../../lib/format'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { toManilaDate } from '../../../lib/payslip'
 import {
@@ -78,8 +78,9 @@ import {
 import OfferComparison from '../../../components/OfferComparison'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import CapacityCard from './CapacityCard'
+import { tripPlanForDb } from '../../../lib/capacityLoad'
 import QuoteWarnings from './QuoteWarnings'
-import type { CapacityResult } from '../../../lib/capacity'
+import type { CapacityCheck } from '../../../lib/capacity'
 
 // Same cap as the bookings.hours_per_trip CHECK constraint.
 const MAX_HOURS_PER_TRIP = 72
@@ -304,7 +305,7 @@ function QuoteReviewModal({
   const [error, setError] = useState<string | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
   // Capacity Check result for the dates / hours being offered (CapacityCard).
-  const [capacity, setCapacity] = useState<CapacityResult | null>(null)
+  const [capacity, setCapacity] = useState<CapacityCheck | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   // Preset picked in the Reject form -- tells the client which field to
   // fix on resubmit (REJECTION_TAGS in lib/quoteRequest.ts).
@@ -549,17 +550,31 @@ function QuoteReviewModal({
     const offer = await checkOffer()
     if (!offer) return
     // Capacity Check is advisory: ask before sending an offer we can't run as asked.
+    const plan = capacity?.plan
     if (
-      capacity &&
-      capacity.status !== 'fits' &&
+      plan &&
+      plan.status !== 'fits' &&
       !(await confirmDialog({
         title: "We can't run this as offered",
         message:
-          capacity.status === 'none'
-            ? `No driver, truck and trailer are free for these trips on ${formatDate(offerPickupDate)}, or in the next 2 weeks after the deadline. Send the offer anyway?`
-            : `Not everything is free on ${formatDate(offerPickupDate)}. The earliest that works is ${formatDate(toManilaDate(new Date(capacity.start)))}. Send the offer anyway?`,
+          plan.status === 'none'
+            ? `Not every trip can be given a driver, truck and trailer from ${formatDate(offerPickupDate)} (${plan.trips.length} of ${deliveryCount} could). Send the offer anyway?`
+            : `Starting ${formatDate(offerPickupDate)}, the last trip ends ${formatDateTime(plan.lastEnd)}, ${plan.hoursLate} h after the deadline (${plan.doneByDeadline} of ${deliveryCount} trips by then). Send the offer anyway?`,
         confirmLabel: 'Send anyway',
         danger: true,
+      }))
+    ) {
+      return
+    }
+    // Sending the offer approves the driver changes the plan needs on booked
+    // trips; create_booking_from_quote makes them when the client accepts.
+    if (
+      plan &&
+      plan.swaps.length > 0 &&
+      !(await confirmDialog({
+        title: 'Approve these driver changes?',
+        message: `To fit this offer, these booked trips change driver when the client accepts: ${capacity!.swapLines.join('; ')}.`,
+        confirmLabel: 'Approve and send',
       }))
     ) {
       return
@@ -575,6 +590,9 @@ function QuoteReviewModal({
       p_hours_per_trip: offer.hours,
       p_cost_per_trip: costPerTrip,
       p_note: offerNote,
+      // The trips are booked exactly as planned (times, drivers, trucks, trailers).
+      // No plan (check failed, or a trip can't be placed): booked the old way.
+      p_trip_plan: plan && plan.status !== 'none' ? tripPlanForDb(plan) : null,
     })
     setSubmitting(false)
     if (rpcError) {
@@ -604,11 +622,21 @@ function QuoteReviewModal({
       setError("The trip cost can't be worked out -- check the Settings (diesel price, commission, per-trip fee).")
       return
     }
+    // The Capacity card's plan counts only when it was worked out for the
+    // client's own dates (the ones the booking is made with).
+    const plan =
+      capacity?.plan &&
+      capacity.plan.status !== 'none' &&
+      offerPickupDate === (quote.preferred_pickup_date ?? '') &&
+      offerDeadline === (quote.preferred_delivery_date ?? '')
+        ? capacity.plan
+        : null
+    const swapNote = plan && plan.swaps.length > 0 ? ` These booked trips change driver: ${capacity!.swapLines.join('; ')}.` : ''
     const ok = await confirmDialog({
       title: `Accept ${rateLabel(savedRates)} per trip?`,
       message: `This creates the booking now: ${deliveryCount} trips, contract ${formatMoney(contractTotal(cargoLines, savedRates))}, pickup ${
         quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'
-      }.`,
+      }.${swapNote}`,
       confirmLabel: 'Accept and create booking',
     })
     if (!ok) return
@@ -619,6 +647,7 @@ function QuoteReviewModal({
       p_distance_km: distance,
       p_hours_per_trip: Number(hoursPerTrip),
       p_cost_per_trip: counterAt.costPerTrip,
+      p_trip_plan: plan ? tripPlanForDb(plan) : null,
     })
     setSubmitting(false)
     if (rpcError) {
@@ -627,7 +656,9 @@ function QuoteReviewModal({
     }
     setDoneMessage(
       `Client's rate accepted. Booking #${bookingId} was created with ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'} ` +
-        '(status "Awaiting"). Assign a truck, trailer and driver to each from the Dispatch Board.',
+        (plan
+          ? '(status "Awaiting") with the planned drivers, trucks and trailers. Check them on the Dispatch Board.'
+          : '(status "Awaiting"). Assign a truck, trailer and driver to each from the Dispatch Board.'),
     )
   }
 
@@ -1486,13 +1517,7 @@ function QuoteReviewModal({
                     hoursPerTrip={hoursPerTrip}
                     pickupDate={offerPickupDate}
                     deadlineDate={offerDeadline}
-                    storage={urgent}
                     onResult={setCapacity}
-                    onUseStart={(pickup, lastTripEnd) => {
-                      setOfferPickupDate(pickup)
-                      // Don't leave a deadline before the new trips end.
-                      if (offerDeadline && offerDeadline < lastTripEnd) setOfferDeadline(lastTripEnd)
-                    }}
                     onReject={() => {
                       pickRejectTag('Schedule')
                       setShowRejectForm(true)
