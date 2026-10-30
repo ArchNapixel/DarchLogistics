@@ -15,15 +15,33 @@ import {
   SEARCH_DAYS_PAST_DEADLINE,
   STEP_MS,
   manilaMidnight,
+  withPlannedHolds,
   withTentativeHolds,
   withUnassignedTrips,
+  type BookedTrip,
   type BusyWindow,
   type Demand,
+  type PlanWorld,
   type Resource,
 } from './capacity'
 
-type RawBusy = { start: number; end: number; reason: string | null }
-type RawResource = { id: string | number; label: string | null; trailer_type?: string | null; busy: RawBusy[] }
+// trip_id: the window is a booked trip (planTrips reads those from `trips` instead).
+type RawBusy = { start: number; end: number; reason: string | null; trip_id?: number | null }
+// truck: drivers only, his assigned_plate_number.
+type RawResource = { id: string | number; label: string | null; trailer_type?: string | null; truck?: string | null; busy: RawBusy[] }
+type RawTrip = {
+  itinerary_id: number
+  status: string
+  start: number
+  end: number
+  driver_id: number | null
+  truck: string | null
+  trailer_id: number | null
+  trailer_type: string | null
+  cargo_type: string | null
+  // Staff only.
+  rate: number | null
+}
 type RawOffer = {
   quote_id: number
   label: string
@@ -42,14 +60,25 @@ type RawInputs = {
   // cargo_type: only if the SQL function returns it (else a container trip is held to its asked trailer type).
   unassigned?: { itinerary_id: number; start: number; end: number; trailer_type: string | null; cargo_type?: string | null; needs: Resource['kind'][] }[]
   default_start_minutes: number
+  // Every trip not Cancelled from the start of the window's first payroll week
+  // (delivered ones too -- they count toward the week's earnings). Optional
+  // until the SQL that adds it is run.
+  trips?: RawTrip[]
+  // Staff only: driver_commission_rate (%) and driver_per_trip_fee.
+  pay?: { commission_rate: number | null; per_trip_fee: number | null } | null
 }
 
-// Settings' default trip start (6 AM) when the row can't be read.
-const FALLBACK_START_MINUTES = 360
+// Settings' default trip start (8 AM) when the row can't be read -- the same
+// fallback as create_booking_from_quote.
+const FALLBACK_START_MINUTES = 480
 
 export type CapacityInputs = {
   // Everyone / everything that could take a trip, tentative holds included.
   resources: Resource[]
+  // The same for planTrips (lib/capacity.ts): booked trips kept apart from busy
+  // windows so the planner knows which ones it may swap. Offers held, unassigned
+  // trips are handled inside planTrips.
+  world: PlanWorld
   defaultStartMinutes: number
 }
 
@@ -100,7 +129,8 @@ const toResource = (kind: Resource['kind'], prefix: string, fallback: string) =>
   kind,
   label: r.label ?? fallback,
   trailerType: r.trailer_type ?? null,
-  busy: r.busy.map((b): BusyWindow => ({ start: b.start, end: b.end, reason: b.reason ?? 'Busy' })),
+  truckId: r.truck ? `T${r.truck}` : null,
+  busy: r.busy.map((b): BusyWindow => ({ start: b.start, end: b.end, reason: b.reason ?? 'Busy', tripId: b.trip_id ?? null })),
 })
 
 // Load the resources for a demand. `excludeQuoteId` leaves out that quote's
@@ -143,5 +173,30 @@ export async function loadCapacityInputs(
     resources,
     (raw.unassigned ?? []).map((t) => ({ itinerary_id: t.itinerary_id, start: t.start, end: t.end, trailerType: t.trailer_type, cargoType: t.cargo_type, needs: t.needs })),
   )
-  return { inputs: { resources: withTentativeHolds(booked, holds), defaultStartMinutes }, error: null }
+
+  // planTrips' view: busy windows without the booked trips (those come from
+  // `trips`, so the planner knows which it may swap), offers held as planned.
+  const trips: BookedTrip[] = (raw.trips ?? []).map((t) => ({
+    id: t.itinerary_id,
+    status: t.status,
+    start: t.start,
+    end: t.end,
+    driverId: t.driver_id === null ? null : `D${t.driver_id}`,
+    truckId: t.truck === null ? null : `T${t.truck}`,
+    trailerId: t.trailer_id === null ? null : `R${t.trailer_id}`,
+    trailerType: t.trailer_type,
+    cargoType: t.cargo_type,
+    rate: t.rate,
+  }))
+  const pay = raw.pay ? { commissionRate: Number(raw.pay.commission_rate) || 0, perTripFee: Number(raw.pay.per_trip_fee) || 0 } : null
+  const world = withPlannedHolds(
+    {
+      resources: resources.map((r) => ({ ...r, busy: r.busy.filter((b) => b.tripId == null) })),
+      booked: trips,
+      pay,
+      horizon: to,
+    },
+    holds.map((o) => ({ label: o.label, demand: { trips: o.demand.trips, requestedStart: o.start, deadlineEnd: null } })),
+  )
+  return { inputs: { resources: withTentativeHolds(booked, holds), world, defaultStartMinutes }, error: null }
 }
