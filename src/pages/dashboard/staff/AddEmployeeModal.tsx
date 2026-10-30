@@ -647,6 +647,14 @@ function AddEmployeeModal({
           )}
         </div>
 
+        {/* Repeated here: the form is tall, so the one at the top is often
+            scrolled out of view when Save is pressed. */}
+        {error && (
+          <p role="alert" className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-3">
           {isEditing && onToggleStatus && onDelete && (
             <div className="mr-auto flex gap-3">
