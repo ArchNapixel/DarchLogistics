@@ -1303,10 +1303,12 @@ function ResourcesPanel({
   const count = (lines: ResourceLine[], chip: ResourceLine['chip'][]) => lines.filter((l) => !chip.includes(l.chip)).length
 
   return (
-    <aside aria-labelledby="res-h" className="card flex flex-col gap-[18px] px-5 py-4">
+    // Never taller than the screen: the title and link stay, the lists scroll inside.
+    <aside aria-labelledby="res-h" className="card flex max-h-[calc(100dvh-10rem)] flex-col gap-3 px-5 py-4">
       <h2 id="res-h" className="text-base leading-6 font-semibold text-ink">
         Resources {isToday ? 'Today' : `· ${dayLabel(day, day)}`}
       </h2>
+      <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto pr-1">
       <ResourceGroup
         title="Trucks"
         summary={`${count(truckLines, [RESOURCE_CHIP.down])} of ${truckLines.length} operational`}
@@ -1329,9 +1331,10 @@ function ResourcesPanel({
           lines={helperLines}
         />
       )}
+      </div>
       <Link
         to="/dashboard/schedule-overview"
-        className="mt-auto inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary hover:underline"
+        className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary hover:underline"
       >
         Open Schedule Overview
         <Icon name="arrow" />
