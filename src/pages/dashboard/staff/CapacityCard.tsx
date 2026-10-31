@@ -167,7 +167,11 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
       <>
         {verdict}
         {plan.trips.length > 0 && (
-          <table className="mt-3 w-full text-left text-[13px]">
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+              Show assignments ({plan.trips.length} {plan.trips.length === 1 ? 'trip' : 'trips'})
+            </summary>
+          <table className="mt-2 w-full text-left text-[13px]">
             <thead>
               <tr>
                 <th className="py-1 pr-2">Trip</th>
@@ -192,6 +196,7 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
               ))}
             </tbody>
           </table>
+          </details>
         )}
         {view.swapLines.length > 0 && (
           <div className="mt-3 text-sm text-slate-800">
