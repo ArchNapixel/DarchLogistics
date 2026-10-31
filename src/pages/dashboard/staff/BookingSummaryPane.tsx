@@ -152,10 +152,12 @@ function BookingSummaryPane({
         </section>
 
         <section>
-          <h3 className="mb-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink">
+          {/* Collapsed by default; open when a trip is linked (?trip=N) so it can be highlighted. */}
+          <details open={highlightTripId != null}>
+          <summary className="mb-3 cursor-pointer border-b border-slate-200 pb-2 text-sm font-semibold text-ink">
             Trips ({booking.total_trips}
             {booking.cancelled_trips ? ` · ${booking.cancelled_trips} cancelled` : ''})
-          </h3>
+          </summary>
           {error && <p className="text-sm text-red-700">{error}</p>}
           {!trips && !error && <p className="text-sm text-ink-muted">Loading trips…</p>}
           {trips && trips.length === 0 && <p className="text-sm text-ink-muted">No trips on this booking.</p>}
@@ -174,6 +176,7 @@ function BookingSummaryPane({
               </div>
             ))}
           </div>
+          </details>
         </section>
       </div>
 

@@ -75,6 +75,7 @@ import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/
 import { loadPayrollSettings, toManilaDate, type PayrollSettings } from '../../../lib/payslip'
 import { retimeTrips } from '../../../lib/tripRetime'
 import { STEP_MS, planTrips } from '../../../lib/capacity'
+import { planRebalance } from '../../../lib/rebalance'
 import { loadCapacityInputs } from '../../../lib/capacityLoad'
 import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney, formatSlot, manilaTimestamp, slotLines } from '../../../lib/format'
@@ -847,7 +848,9 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
 }
 
 // What a trip still needs or is waiting on, as small tags under its status.
-type AtRisk = { reasons: string[]; actions: { label: string; onClick: () => void }[] }
+// `auto` marks a fix "Fix all at-risk" may run without asking per trip (same key = same fix).
+type AtRiskAction = { label: string; onClick: () => void; auto?: { key: string; run: () => Promise<unknown> } }
+type AtRisk = { reasons: string[]; actions: AtRiskAction[] }
 
 function TripStatusCell({ row, risk, pendingCorrection }: { row: DispatchRow; risk: AtRisk | undefined; pendingCorrection: boolean }) {
   const needs = row.status === 'Awaiting' && !isFullyAssigned(row) ? missingForDispatch(row) : null
@@ -1354,7 +1357,7 @@ function DispatchBoardSection() {
   const dateInputRef = useRef<HTMLInputElement>(null)
   // Filters: status ('all' | 'needs' | 'atrisk' | a status), driver ('all' | 'none' | employee id), booking / trip #.
   // Starts on "Needs assignment" -- what dispatch has to deal with first.
-  const [statusFilter, setStatusFilter] = useState('needs')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [driverFilter, setDriverFilter] = useState('all')
   const [bookingFilter, setBookingFilter] = useState('')
   // The trip open in the View panel, and the one in the Update Status pop-up.
@@ -2281,11 +2284,10 @@ function DispatchBoardSection() {
     await loadDispatchBoard()
   }
 
-  async function assignSuggestedCrew(groupRows: DispatchRow[]) {
+  async function assignSuggestedCrew(groupRows: DispatchRow[], scope = 'this booking') {
     const ok = await confirmDialog({
       title: 'Use the suggested crew and vehicles?',
-      message:
-        'Every trip of this booking that has a time slot gets the top suggested free driver, helper, truck and trailer where one is missing. You can change any of them afterwards.',
+      message: `Every trip of ${scope} that has a time slot gets the top suggested free driver, helper, truck and trailer where one is missing. You can change any of them afterwards.`,
       confirmLabel: 'Assign suggestions',
     })
     if (!ok) return
@@ -2349,16 +2351,19 @@ function DispatchBoardSection() {
 
   // At-risk action: the truck / trailer on this booking's remaining
   // (Awaiting) trips can't go -- put the top free suggestion on each instead.
-  async function replaceVehicle(kind: 'Truck' | 'Trailer', row: DispatchRow) {
+  // `ask` = false when "Fix all at-risk" already got the go-ahead.
+  async function replaceVehicle(kind: 'Truck' | 'Trailer', row: DispatchRow, ask = true) {
     const oldId = vehicleIdOf(kind, row)
     const affected = rows
       .filter((r) => r.booking_id === row.booking_id && r.status === 'Awaiting' && vehicleIdOf(kind, r) === oldId)
       .sort((a, b) => Date.parse(a.trip_start_at ?? '') - Date.parse(b.trip_start_at ?? ''))
-    const ok = await confirmDialog({
-      title: `Replace the ${kind.toLowerCase()}?`,
-      message: `Trips ${affected.map((r) => `#${r.itinerary_id}`).join(', ')} get the top suggested free ${kind.toLowerCase()} instead. You can change them afterwards.`,
-      confirmLabel: `Replace ${kind.toLowerCase()}`,
-    })
+    const ok =
+      !ask ||
+      (await confirmDialog({
+        title: `Replace the ${kind.toLowerCase()}?`,
+        message: `Trips ${affected.map((r) => `#${r.itinerary_id}`).join(', ')} get the top suggested free ${kind.toLowerCase()} instead. You can change them afterwards.`,
+        confirmLabel: `Replace ${kind.toLowerCase()}`,
+      }))
     if (!ok) return
     const candidates = (kind === 'Truck' ? truckCandidates(trucks, vehicleService) : trailerCandidates(trailers, vehicleService)).filter(
       (v) => v.id !== oldId,
@@ -2390,6 +2395,61 @@ function DispatchBoardSection() {
     )
   }
 
+  // Board-wide "Fill all unassigned": the per-booking suggestion run, over
+  // every Awaiting trip that has a slot and still lacks crew / truck / trailer.
+  async function assignAllUnassigned() {
+    await assignSuggestedCrew(
+      rows.filter((r) => r.status === 'Awaiting' && r.trip_start_at && !isFullyAssigned(r)),
+      'every booking',
+    )
+  }
+
+  // "Balance driver pay": lib/rebalance.ts proposes moving Awaiting trips from
+  // the best-paid driver of a week to the least-paid one (only to drivers who
+  // are free then -- same overlap / leave / licence rules as the dropdowns).
+  // Staff see the whole list and confirm; nothing moves before that.
+  // ponytail: single-trip moves only, never touches started trips or booking
+  // deadlines -- late bookings are "Find a faster driver"'s job.
+  async function rebalanceDrivers() {
+    if (!pay) {
+      showToast('Driver commission settings are missing -- set them on Settings first.', 'error')
+      return
+    }
+    const trips = rows
+      .filter((r) => r.status !== 'Cancelled' && r.trip_start_at)
+      .map((r) => ({
+        id: r.itinerary_id,
+        driverId: r.assigned_employee_id,
+        earn: (pay.driverCommissionRate / 100) * (r.trip_rate ?? 0) + pay.driverPerTripFee,
+        week: manilaWeek(Date.parse(r.trip_start_at!)).from,
+        movable: r.status === 'Awaiting' && r.assigned_employee_id !== null,
+      }))
+    const moves = planRebalance(trips, drivers.map((d) => d.employee_id), (tripId, driverId, owners) => {
+      const working = rows.map((r) => (owners.has(r.itinerary_id) ? { ...r, assigned_employee_id: owners.get(r.itinerary_id) ?? null } : r))
+      const row = working.find((r) => r.itinerary_id === tripId)!
+      const person = rankPeople(row, drivers, working, leaveByEmployee, now, pay).ranked.find((p) => p.employee_id === driverId)
+      return !!person && person.blockedBy === null
+    })
+    if (moves.length === 0) {
+      showToast('Driver pay is already as even as the free slots allow.')
+      return
+    }
+    const name = (id: number) => drivers.find((d) => d.employee_id === id)?.full_name ?? `#${id}`
+    const ok = await confirmDialog({
+      title: `Move ${moves.length} ${moves.length === 1 ? 'trip' : 'trips'} to even out driver pay?`,
+      message: moves.map((m) => `Trip #${m.tripId}: ${name(m.from)} → ${name(m.to)} (${formatMoney(m.earn)})`).join('; '),
+      confirmLabel: 'Move trips',
+    })
+    if (!ok) return
+    let done = 0
+    for (const m of moves) {
+      if (!(await assignCrew(m.tripId, 'Driver', m.from, m.to))) break
+      done++
+    }
+    await loadDispatchBoard()
+    showToast(done === moves.length ? `Moved ${done} ${done === 1 ? 'trip' : 'trips'}.` : `Moved ${done} of ${moves.length} trips -- the rest were refused.`)
+  }
+
   // Day view (the canvas board): the trips on one day -- by slot start,
   // Manila time -- plus, on today, every trip still on the road whenever it
   // started (a Dispatched trip only once its slot has started: one dispatched
@@ -2416,7 +2476,7 @@ function DispatchBoardSection() {
   const atRiskTrips = rows
     .map((row) => {
       const reasons = atRiskReasons(row, rows, leaveByEmployee, drivers, trucks, trailers, now)
-      const actions: { label: string; onClick: () => void }[] = []
+      const actions: AtRiskAction[] = []
       // A driver / helper on leave (or marked absent today): one click puts the
       // top free replacement on this trip.
       if (row.status === 'Awaiting') {
@@ -2434,6 +2494,7 @@ function DispatchBoardSection() {
             actions.push({
               label: `Use ${pick.full_name} as ${crewRole.toLowerCase()}`,
               onClick: () => assignCrew(row.itinerary_id, crewRole, currentId, pick.employee_id),
+              auto: { key: `crew:${row.itinerary_id}:${crewRole}`, run: () => assignCrew(row.itinerary_id, crewRole, currentId, pick.employee_id) },
             })
           }
         }
@@ -2461,7 +2522,12 @@ function DispatchBoardSection() {
             const shop = current?.blockedBy?.includes('work order') ? current.blockedBy : null
             if (current && shop) reasons.push(`${kind} ${current.label}: ${shop}`)
             if (current && (shop || current.current_status === 'Under Maintenance' || current.current_status === 'Out of Service')) {
-              actions.push({ label: `Replace ${kind.toLowerCase()} on remaining trips`, onClick: () => replaceVehicle(kind, row) })
+              actions.push({
+                label: `Replace ${kind.toLowerCase()} on remaining trips`,
+                onClick: () => replaceVehicle(kind, row),
+                // One fix per booking + vehicle, however many of its trips are at risk.
+                auto: { key: `veh:${kind}:${row.booking_id}:${currentId}`, run: () => replaceVehicle(kind, row, false) },
+              })
             }
           }
           if (short.includes(kind)) freeAt.push(earliestFreeStart(row, fleet[kind], tripsOf, now, Date.parse(row.trip_start_at)))
@@ -2490,6 +2556,24 @@ function DispatchBoardSection() {
       return { row, reasons, actions }
     })
     .filter((t) => t.reasons.length > 0)
+
+  // "Fix all at-risk": runs every fix that picks a replacement by itself
+  // (driver / helper on leave, truck / trailer in the shop) after one confirm.
+  // Moving a time or finding a faster driver stay manual.
+  // ponytail: each fix was worked out at render time, so two fixes that pick
+  // the same replacement for overlapping trips: the database refuses the second.
+  const autoFixes = new Map<string, { label: string; run: () => Promise<unknown> }>()
+  for (const t of atRiskTrips) for (const a of t.actions) if (a.auto && !autoFixes.has(a.auto.key)) autoFixes.set(a.auto.key, { label: a.label, run: a.auto.run })
+  async function autoFixAtRisk() {
+    const ok = await confirmDialog({
+      title: `Fix ${autoFixes.size} at-risk ${autoFixes.size === 1 ? 'problem' : 'problems'}?`,
+      message: `Each gets the top suggested free replacement: ${[...autoFixes.values()].map((f) => f.label).join('; ')}.`,
+      confirmLabel: 'Fix all',
+    })
+    if (!ok) return
+    for (const fix of autoFixes.values()) await fix.run()
+    await loadDispatchBoard()
+  }
 
   const ctx: BoardContext = {
     allRows: rows,
@@ -2809,6 +2893,23 @@ function DispatchBoardSection() {
                 className={`${FILTER_CONTROL} w-40 font-normal placeholder:text-ink-muted`}
               />
             </label>
+            {canEditStatus && (
+              <div className="ml-auto flex flex-wrap gap-2">
+                {rows.some((r) => needsAssignment(r) && r.trip_start_at) && (
+                  <button type="button" onClick={assignAllUnassigned} disabled={bulkBookingId !== null} className="btn-secondary px-4 text-sm font-medium">
+                    Fill all unassigned
+                  </button>
+                )}
+                {autoFixes.size > 0 && (
+                  <button type="button" onClick={autoFixAtRisk} className="btn-secondary px-4 text-sm font-medium">
+                    Fix at-risk ({autoFixes.size})
+                  </button>
+                )}
+                <button type="button" onClick={rebalanceDrivers} className="btn-secondary px-4 text-sm font-medium">
+                  Balance driver pay
+                </button>
+              </div>
+            )}
             {anyFilter && (
               <button
                 type="button"
