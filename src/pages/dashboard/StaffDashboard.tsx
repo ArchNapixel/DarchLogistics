@@ -298,8 +298,8 @@ function StaffDashboard() {
               .from('itineraries')
               .select('itinerary_id', { count: 'exact', head: true })
               .or(todaysTripsFilter(today)),
-            supabase.from('truck_profiles').select('current_status'),
-            supabase.from('trailers').select('current_status'),
+            supabase.from('truck_profiles').select('current_status').eq('is_active', true),
+            supabase.from('trailers').select('current_status').eq('is_active', true),
           ])
 
         if (
@@ -789,12 +789,6 @@ function StaffDashboard() {
             >
               {net === null ? '--' : `${net < 0 ? '−' : ''}${formatMoney(Math.abs(net))}`}
             </p>
-            <p className="text-sm text-ink-muted">Collected − operational − maintenance</p>
-            {net !== null && expenses && (
-              <p className="text-[13px] leading-[18px] text-ink-muted tabular-nums">
-                {formatMoney(revenue)} − {formatMoney(expenses.ops)} − {formatMoney(expenses.maint)}
-              </p>
-            )}
           </div>
 
           {revenueError || expensesError ? (

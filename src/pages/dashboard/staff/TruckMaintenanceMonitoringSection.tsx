@@ -147,7 +147,7 @@ async function loadOdometerSuggestions(): Promise<{ suggestions: OdometerSuggest
   // latest delivered trip could otherwise be missing. Logs oldest first,
   // so the Map below ends up holding each trip's LATEST Delivered time.
   const [trucksResult, itinerariesResult, logsResult] = await Promise.all([
-    supabase.from('truck_profiles').select('plate_number, current_odometer, updated_at'),
+    supabase.from('truck_profiles').select('plate_number, current_odometer, updated_at').eq('is_active', true),
     fetchAll<{ itinerary_id: number; booking_id: number; trip_date_from: string; plate_number: string }>(
       (from, to) =>
         supabase
@@ -445,8 +445,9 @@ function TruckMaintenanceMonitoringSection() {
       supabase
         .from('truck_profiles')
         .select('plate_number, model, current_status, current_odometer, next_service_date')
+        .eq('is_active', true)
         .order('plate_number'),
-      supabase.from('trailers').select('trailer_id, plate_number, current_status').order('trailer_id'),
+      supabase.from('trailers').select('trailer_id, plate_number, current_status').eq('is_active', true).order('trailer_id'),
       // Newest trips first -- the table shows each truck's last two.
       supabase
         .from('itineraries')

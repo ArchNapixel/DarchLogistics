@@ -164,7 +164,7 @@ function AddEmployeeModal({
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      supabase.from('truck_profiles').select('plate_number, current_status').order('plate_number'),
+      supabase.from('truck_profiles').select('plate_number, current_status').eq('is_active', true).order('plate_number'),
       supabase.from('employees').select('employee_id, assigned_plate_number').not('assigned_plate_number', 'is', null),
     ]).then(([trucksResult, takenResult]) => {
       if (cancelled) return

@@ -93,6 +93,7 @@ function ConvertIssueToWorkOrderModal({
     const { data: trucks, error: truckError } = await supabase
       .from('truck_profiles')
       .select('plate_number, model, current_status')
+      .eq('is_active', true)
       .order('plate_number', { ascending: true })
 
     if (truckError) {
@@ -104,6 +105,7 @@ function ConvertIssueToWorkOrderModal({
     const { data: trailers, error: trailerError } = await supabase
       .from('trailers')
       .select('trailer_id, plate_number, trailer_type, current_status')
+      .eq('is_active', true)
       .order('trailer_id', { ascending: true })
 
     if (trailerError) {

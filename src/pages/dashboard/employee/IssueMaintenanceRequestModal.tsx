@@ -42,8 +42,8 @@ function IssueMaintenanceRequestModal({
   useEffect(() => {
     async function loadOptions() {
       const [trucksResult, trailersResult] = await Promise.all([
-        supabase.from('truck_profiles').select('plate_number, model').order('plate_number'),
-        supabase.from('trailers').select('trailer_id, plate_number, trailer_type').order('trailer_id'),
+        supabase.from('truck_profiles').select('plate_number, model').eq('is_active', true).order('plate_number'),
+        supabase.from('trailers').select('trailer_id, plate_number, trailer_type').eq('is_active', true).order('trailer_id'),
       ])
 
       if (trucksResult.error || trailersResult.error) {

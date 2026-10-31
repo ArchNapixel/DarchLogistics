@@ -1,8 +1,8 @@
 // FleetSection: the Fleet page (the canvas's board) -- Trucks / Trailers
 // tabs with a plate search, a table, and a side panel for the selected
 // vehicle: its details, open work orders and pending maintenance schedules,
-// and its last trips (with the driver). Panel buttons: Delete (blocked with a
-// clear message if the vehicle is still referenced), Create Work Order,
+// and its last trips (with the driver). Panel buttons: Deactivate / Reactivate (is_active;
+// blocked while the vehicle has an open trip), Create Work Order,
 // Assign Schedule (trucks), Edit. ?tab=Trailers opens the Trailers tab.
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -29,6 +29,7 @@ type Truck = {
   last_service_date: string | null
   current_odometer: number | null
   next_service_date: string | null
+  is_active: boolean
 }
 
 type Trailer = {
@@ -38,6 +39,7 @@ type Trailer = {
   registration_number: string | null
   current_status: string | null
   last_maintenance_date: string | null
+  is_active: boolean
 }
 
 type OpenWorkOrder = {
@@ -176,6 +178,8 @@ function FleetSection() {
 
   const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [search, setSearch] = useState('')
+  // Active fleet or the deactivated units (is_active = false).
+  const [showInactive, setShowInactive] = useState(false)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [trailers, setTrailers] = useState<Trailer[]>([])
   const [workOrders, setWorkOrders] = useState<OpenWorkOrder[]>([])
@@ -206,13 +210,13 @@ function FleetSection() {
 
       const { data: truckData, error: truckError } = await supabase
         .from('truck_profiles')
-        .select('plate_number, model, year, current_status, last_service_date, current_odometer, next_service_date')
+        .select('plate_number, model, year, current_status, last_service_date, current_odometer, next_service_date, is_active')
         .order('plate_number', { ascending: true })
       if (truckError) throw truckError
 
       const { data: trailerData, error: trailerError } = await supabase
         .from('trailers')
-        .select('trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date')
+        .select('trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date, is_active')
         .order('trailer_id', { ascending: true })
       if (trailerError) throw trailerError
 
@@ -239,87 +243,62 @@ function FleetSection() {
     }
   }
 
-  async function handleDeleteTruck(truck: Truck) {
-    if (
-      !(await confirmDialog({
-        title: `Delete truck ${truck.plate_number}?`,
-        message: 'This cannot be undone.',
-        confirmLabel: 'Delete',
-        danger: true,
-      }))
-    ) {
-      return
-    }
-
+  // Deactivate / Reactivate (instead of Delete, so history stays): sets
+  // is_active, which every picker, the board, Capacity and Schedule Overview
+  // read -- a deactivated unit is simply not in the fleet any more, and it is
+  // NOT marked as needing repair (current_status is left alone). Blocked
+  // while the vehicle has an open trip.
+  async function setVehicleActive(v: PreselectedVehicle, label: string, active: boolean) {
+    const isTruck = v.type === 'truck'
     setActionError(null)
 
-    const { error: deleteError } = await supabase.from('truck_profiles').delete().eq('plate_number', truck.plate_number)
-
-    if (deleteError) {
-      // '23503' is Postgres's error code for a foreign key violation --
-      // e.g. this truck is still referenced by a work order or itinerary.
-      // Uses a separate actionError state (not the page-load `error`) so
-      // a failed delete shows a banner without hiding the whole list.
-      if (deleteError.code === '23503') {
-        setActionError(
-          `Can't delete truck ${truck.plate_number} -- it's still ` +
-            `referenced elsewhere (e.g. a work order or itinerary). ` +
-            `Remove those first, then try again.`,
-        )
-      } else {
-        setActionError(deleteError.message)
+    if (!active) {
+      const openTrips = supabase.from('itineraries').select('itinerary_id').not('itinerary_status', 'in', '(Delivered,Cancelled)')
+      const { data: trips, error: tripsError } = await (isTruck ? openTrips.eq('plate_number', v.plateNumber) : openTrips.eq('trailer_id', v.trailerId))
+      if (tripsError) {
+        setActionError(tripsError.message)
+        return
       }
-      return
-    }
-
-    setPaneTruck(null)
-    loadFleet()
-  }
-
-  async function handleDeleteTrailer(trailer: Trailer) {
-    if (
-      !(await confirmDialog({
-        title: `Delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`}?`,
-        message: 'This cannot be undone.',
-        confirmLabel: 'Delete',
+      if ((trips ?? []).length > 0) {
+        setActionError(
+          `Can't deactivate ${label} -- it's still on trip ${(trips ?? []).map((t) => `#${t.itinerary_id}`).join(', ')}. Reassign those trips first.`,
+        )
+        return
+      }
+      const driver = isTruck ? driverByPlate.get(v.plateNumber) : undefined
+      const ok = await confirmDialog({
+        title: `Deactivate ${label}?`,
+        message: `It is taken out of the active fleet: not assigned to trips, not in any list or alert. ${
+          driver ? `${driver} is assigned to this truck -- give them another one. ` : ''
+        }You can reactivate it any time.`,
+        confirmLabel: 'Deactivate',
         danger: true,
-      }))
-    ) {
-      return
+      })
+      if (!ok) return
     }
 
-    setActionError(null)
-
-    const { error: deleteError } = await supabase.from('trailers').delete().eq('trailer_id', trailer.trailer_id)
-
-    if (deleteError) {
-      // '23503' is Postgres's error code for a foreign key violation --
-      // e.g. this trailer is still referenced by a work order or itinerary.
-      // Uses a separate actionError state (not the page-load `error`) so
-      // a failed delete shows a banner without hiding the whole list.
-      if (deleteError.code === '23503') {
-        setActionError(
-          `Can't delete trailer ${trailer.plate_number ?? `#${trailer.trailer_id}`} -- ` +
-            `it's still referenced elsewhere (e.g. a work order or ` +
-            `itinerary). Remove those first, then try again.`,
-        )
-      } else {
-        setActionError(deleteError.message)
-      }
+    const update = supabase.from(isTruck ? 'truck_profiles' : 'trailers').update({ is_active: active })
+    // .select() so a blocked update (RLS) shows up as "no row" instead of a fake success.
+    const { data, error: updateError } = await (isTruck ? update.eq('plate_number', v.plateNumber) : update.eq('trailer_id', v.trailerId))
+      .select()
+      .maybeSingle()
+    if (updateError || !data) {
+      setActionError(updateError?.message ?? `Couldn't update ${label}.`)
       return
     }
-
-    setPaneTrailer(null)
+    showToast(active ? `${label} reactivated.` : `${label} deactivated.`)
     loadFleet()
   }
 
   const term = search.trim().toLowerCase()
-  const shownTrucks = trucks.filter((t) => t.plate_number.toLowerCase().includes(term))
-  const shownTrailers = trailers.filter((t) => trailerName(t).toLowerCase().includes(term))
+  const viewTrucks = trucks.filter((t) => !t.is_active === showInactive)
+  const viewTrailers = trailers.filter((t) => !t.is_active === showInactive)
+  const shownTrucks = viewTrucks.filter((t) => t.plate_number.toLowerCase().includes(term))
+  const shownTrailers = viewTrailers.filter((t) => trailerName(t).toLowerCase().includes(term))
 
   // One page at a time (back to page 1 when the filters change).
-  const pagedTrucks = usePaged(shownTrucks, `${activeTab}|${search}`)
-  const pagedTrailers = usePaged(shownTrailers, `${activeTab}|${search}`)
+  const pagedTrucks = usePaged(shownTrucks, `${activeTab}|${search}|${showInactive}`)
+  const pagedTrailers = usePaged(shownTrailers, `${activeTab}|${search}|${showInactive}`)
   const pager = activeTab === 'Trucks' ? pagedTrucks.pager : pagedTrailers.pager
   const truck = pagedTrucks.rows.find((t) => t.plate_number === paneTruck) ?? pagedTrucks.rows[0] ?? null
   const trailer = pagedTrailers.rows.find((t) => t.trailer_id === paneTrailer) ?? pagedTrailers.rows[0] ?? null
@@ -397,8 +376,23 @@ function FleetSection() {
             >
               {tab}
               <span className={`rounded-[2px] px-1.5 text-xs tabular-nums ${activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-200 text-ink-secondary'}`}>
-                {tab === 'Trucks' ? trucks.length : trailers.length}
+                {tab === 'Trucks' ? trucks.filter((t) => t.is_active).length : trailers.filter((t) => t.is_active).length}
               </span>
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="Active or deactivated" className="flex gap-2">
+          {([false, true] as const).map((inactive) => (
+            <button
+              key={String(inactive)}
+              type="button"
+              aria-pressed={showInactive === inactive}
+              onClick={() => setShowInactive(inactive)}
+              className={`flex h-11 items-center rounded-[2px] border px-4 text-sm font-semibold ${
+                showInactive === inactive ? 'border-primary bg-primary-soft text-primary' : 'border-line-control bg-white text-ink-metric hover:bg-slate-100'
+              }`}
+            >
+              {inactive ? 'Deactivated' : 'Active'}
             </button>
           ))}
         </div>
@@ -418,10 +412,10 @@ function FleetSection() {
         <p className="mt-4 text-ink-muted">Loading fleet...</p>
       ) : error ? (
         <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-      ) : (activeTab === 'Trucks' ? trucks : trailers).length === 0 ? (
+      ) : (activeTab === 'Trucks' ? viewTrucks : viewTrailers).length === 0 ? (
         <EmptyState
-          message={activeTab === 'Trucks' ? 'No trucks yet.' : 'No trailers yet.'}
-          hint={`Use "Add ${activeTab === 'Trucks' ? 'Truck' : 'Trailer'}" to add one.`}
+          message={showInactive ? `No deactivated ${activeTab.toLowerCase()}.` : activeTab === 'Trucks' ? 'No trucks yet.' : 'No trailers yet.'}
+          hint={showInactive ? 'Deactivate a unit from its side panel on the Active list.' : `Use "Add ${activeTab === 'Trucks' ? 'Truck' : 'Trailer'}" to add one.`}
           className="mt-4"
         />
       ) : (
@@ -512,8 +506,8 @@ function FleetSection() {
             <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
               <span>
                 {activeTab === 'Trucks'
-                  ? `${trucks.length} ${trucks.length === 1 ? 'truck' : 'trucks'} · ${trucks.filter((t) => !down(t.current_status)).length} operational`
-                  : `${trailers.length} ${trailers.length === 1 ? 'trailer' : 'trailers'} · ${trailers.filter((t) => !down(t.current_status)).length} operational`}
+                  ? `${viewTrucks.length} ${viewTrucks.length === 1 ? 'truck' : 'trucks'}${showInactive ? '' : ` · ${viewTrucks.filter((t) => !down(t.current_status)).length} operational`}`
+                  : `${viewTrailers.length} ${viewTrailers.length === 1 ? 'trailer' : 'trailers'}${showInactive ? '' : ` · ${viewTrailers.filter((t) => !down(t.current_status)).length} operational`}`}
               </span>
               {pager.pageCount > 1 && (
                 <span className="flex gap-2">
@@ -594,10 +588,16 @@ function FleetSection() {
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
                 <button
                   type="button"
-                  onClick={() => void (selected.type === 'truck' ? handleDeleteTruck(truck!) : handleDeleteTrailer(trailer!))}
+                  onClick={() =>
+                    void setVehicleActive(
+                      selected,
+                      selected.type === 'truck' ? truck!.plate_number : trailerName(trailer!),
+                      !(selected.type === 'truck' ? truck! : trailer!).is_active,
+                    )
+                  }
                   className="btn-danger px-4 text-sm"
                 >
-                  Delete…
+                  {!(selected.type === 'truck' ? truck! : trailer!).is_active ? 'Reactivate' : 'Deactivate…'}
                 </button>
                 <span className="flex-1" />
                 <button type="button" onClick={() => setCreateFor(selected)} className="btn-secondary px-4 text-sm font-medium">
@@ -627,15 +627,6 @@ function FleetSection() {
       {(showAddTruck || editingTruck) && (
         <AddTruckModal
           truck={editingTruck ?? undefined}
-          onDelete={
-            editingTruck
-              ? () => {
-                  const t = editingTruck
-                  setEditingTruck(null)
-                  handleDeleteTruck(t)
-                }
-              : undefined
-          }
           onClose={() => {
             setShowAddTruck(false)
             setEditingTruck(null)
@@ -655,15 +646,6 @@ function FleetSection() {
               ? {
                   ...editingTrailer,
                   trailer_type: editingTrailer.trailer_type as EditableTrailer['trailer_type'],
-                }
-              : undefined
-          }
-          onDelete={
-            editingTrailer
-              ? () => {
-                  const t = editingTrailer
-                  setEditingTrailer(null)
-                  handleDeleteTrailer(t)
                 }
               : undefined
           }

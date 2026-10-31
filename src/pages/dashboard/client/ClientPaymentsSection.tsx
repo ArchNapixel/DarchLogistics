@@ -9,13 +9,16 @@
 // in lib/clientPortal.ts.
 import { useEffect, useState } from 'react'
 import { loadClientPaymentCards, type PaymentCard } from '../../../lib/clientPortal'
-import { PAYMENT_STATE_STYLES } from '../../../lib/clientPaymentState'
+import { PAYMENT_STATE_STYLES, type PaymentStateKey } from '../../../lib/clientPaymentState'
 import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { formatDaysUntilDue } from '../../../lib/paymentDue'
 import { formatMoney, formatDate } from '../../../lib/format'
 import { bookingRateLabel } from '../../../lib/lineRates'
 
-const termsLabel = (terms: string) => PAYMENT_TERMS_LABELS[terms as keyof typeof PAYMENT_TERMS_LABELS] ?? terms
+// Card order: what needs paying first, settled bookings last.
+const STATE_ORDER: Record<PaymentStateKey, number> = { overdue: 0, downpaymentDue: 1, due: 2, none: 3, paid: 4 }
+
+const termsLabel =(terms: string) => PAYMENT_TERMS_LABELS[terms as keyof typeof PAYMENT_TERMS_LABELS] ?? terms
 
 function ClientPaymentsSection({ clientId }: { clientId: number }) {
   const [cards, setCards] = useState<PaymentCard[] | null>(null)
@@ -83,7 +86,8 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {cards.map(({ row, reference, state }) => {
+          {/* Unpaid first (stable sort: each group keeps its soonest-due order). */}
+          {cards.toSorted((a, b) => STATE_ORDER[a.state.key] - STATE_ORDER[b.state.key]).map(({ row, reference, state }) => {
             const style = PAYMENT_STATE_STYLES[state.key]
             return (
               <article key={row.booking_id} aria-labelledby={`pc-${row.booking_id}`} className="card flex flex-col">

@@ -157,7 +157,7 @@ function MaintenanceSection() {
           .order('scheduled_start_date', { ascending: true }),
         supabase.from('employees').select('employee_id, full_name').eq('position', 'Mechanic').order('full_name', { ascending: true }),
         supabase.from('trailers').select('trailer_id, plate_number'),
-        supabase.from('truck_profiles').select('plate_number, current_status'),
+        supabase.from('truck_profiles').select('plate_number, current_status').eq('is_active', true),
         loadPendingMaintenanceRequests(),
         loadPendingMaintenanceSchedules(),
         loadMaintenanceCostReport(currentReportMonth()),

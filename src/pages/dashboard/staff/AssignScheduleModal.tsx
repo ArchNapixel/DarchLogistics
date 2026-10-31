@@ -42,6 +42,7 @@ function AssignScheduleModal({
     supabase
       .from('truck_profiles')
       .select('plate_number, model')
+      .eq('is_active', true)
       .order('plate_number')
       .then(({ data, error: loadError }) => {
         if (loadError) setError(loadError.message)

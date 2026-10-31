@@ -1478,8 +1478,8 @@ function DispatchBoardSection() {
     // even when there are no active itineraries yet, so load them
     // regardless.
     const [trucksResult, trailersResult, startSettingResult] = await Promise.all([
-      supabase.from('truck_profiles').select('plate_number, current_status, next_service_date').order('plate_number'),
-      supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').order('trailer_id'),
+      supabase.from('truck_profiles').select('plate_number, current_status, next_service_date').eq('is_active', true).order('plate_number'),
+      supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').eq('is_active', true).order('trailer_id'),
       supabase
         .from('app_settings')
         .select('setting_value')

@@ -159,11 +159,24 @@ export async function loadCapacityInputs(
   const defaultStartMinutes = Number(raw.default_start_minutes) || FALLBACK_START_MINUTES
   // Busy windows without the booked trips -- those come from `trips`, so the
   // planner knows which ones it may swap.
+  // Deactivated trucks / trailers (is_active = false) are not part of the fleet.
+  // get_capacity_inputs still lists them, so they're dropped here. Clients can't
+  // read these tables (empty answer = nothing dropped) -- their note is advisory.
+  const [offTrucks, offTrailers] = await Promise.all([
+    supabase.from('truck_profiles').select('plate_number').eq('is_active', false),
+    supabase.from('trailers').select('trailer_id').eq('is_active', false),
+  ])
+  const off = new Set([
+    ...(offTrucks.data ?? []).map((t) => `T${t.plate_number}`),
+    ...(offTrailers.data ?? []).map((t) => `R${t.trailer_id}`),
+  ])
   const resources = [
     ...raw.drivers.map(toResource('Driver', 'D', 'A driver')),
     ...raw.trucks.map(toResource('Truck', 'T', 'A truck')),
     ...raw.trailers.map(toResource('Trailer', 'R', 'A trailer')),
-  ].map((r) => ({ ...r, busy: r.busy.filter((b) => b.tripId == null) }))
+  ]
+    .filter((r) => !off.has(r.id))
+    .map((r) => ({ ...r, busy: r.busy.filter((b) => b.tripId == null) }))
   const booked: BookedTrip[] = raw.trips.map((t) => ({
     id: t.itinerary_id,
     status: t.status,

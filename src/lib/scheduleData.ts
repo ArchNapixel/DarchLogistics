@@ -206,10 +206,10 @@ async function fetchCrewSchedule(role: CrewRole, from: number, to: number): Prom
 async function fetchVehicleSchedule(kind: VehicleKind, from: number, to: number): Promise<TimelineRow[]> {
   const [trucksResult, trailersResult, workOrdersResult, schedulesResult] = await Promise.all([
     kind === 'Truck'
-      ? supabase.from('truck_profiles').select('plate_number, model, current_status, next_service_date').order('plate_number')
+      ? supabase.from('truck_profiles').select('plate_number, model, current_status, next_service_date').eq('is_active', true).order('plate_number')
       : Promise.resolve({ data: [], error: null }),
     kind === 'Trailer'
-      ? supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').order('trailer_id')
+      ? supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').eq('is_active', true).order('trailer_id')
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('work_orders')
