@@ -2610,8 +2610,8 @@ function DispatchBoardSection() {
   const bookingQuery = bookingFilter.trim().replace(/^#/, '')
   const needsAssignment = (r: DispatchRow) => r.status === 'Awaiting' && !isFullyAssigned(r)
   const filteredRows = dayRows
-    // Trips that still need assignment first (sort is stable: the rest keep their order).
-    .toSorted((a, b) => Number(needsAssignment(b)) - Number(needsAssignment(a)))
+    // Trips not delivered yet first, delivered ones at the bottom (sort is stable: each group keeps its start-time order).
+    .toSorted((a, b) => Number(a.status === 'Delivered') - Number(b.status === 'Delivered'))
     .filter((r) => {
     if (statusFilter === 'needs' && (r.status !== 'Awaiting' || isFullyAssigned(r))) return false
     if (statusFilter === 'atrisk' && !atRiskById.has(r.itinerary_id)) return false
