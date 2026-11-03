@@ -289,7 +289,8 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
                   </button>
                 )}
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              {/* Scrolls past ~4 rows so a long trip list doesn't stretch the form. */}
+              <div className="grid max-h-60 gap-2 overflow-y-auto border border-line bg-slate-50 p-3 sm:grid-cols-2">
                 {line.descriptions.map((description, tripIndex) => {
                   const missing = !!lineErrors.descriptions && !description.trim()
                   return (
