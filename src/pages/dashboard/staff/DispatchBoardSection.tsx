@@ -355,7 +355,8 @@ function CrewSelect({
 
   // The assigned person's earlier trip running late into this one (#6).
   const late = currentId !== null ? lateEarlierTrip(row, tripsOf(currentId), now) : null
-  const topPick = currentId === null ? suggested[0] : undefined
+  // One-click "Use X" is for drivers only; helpers are picked by hand.
+  const topPick = currentId === null && crewRole === 'Driver' ? suggested[0] : undefined
 
   return (
     <div className="flex flex-col gap-1">
@@ -915,7 +916,7 @@ function TripPanel({
   const missingCrew = openTrips.filter(
     (r) =>
       r.trip_start_at &&
-      (r.assigned_employee_id === null || r.assigned_helper_employee_id === null || r.plate_number === null || r.trailer_id === null),
+      (r.assigned_employee_id === null || r.plate_number === null || r.trailer_id === null),
   )
   // Same downpayment for every trip of a booking.
   const downpaymentDue =
@@ -2288,7 +2289,7 @@ function DispatchBoardSection() {
   async function assignSuggestedCrew(groupRows: DispatchRow[], scope = 'this booking') {
     const ok = await confirmDialog({
       title: 'Use the suggested crew and vehicles?',
-      message: `Every trip of ${scope} that has a time slot gets the top suggested free driver, helper, truck and trailer where one is missing. You can change any of them afterwards.`,
+      message: `Every trip of ${scope} that has a time slot gets the top suggested free driver, truck and trailer where one is missing. Helpers are assigned by hand. You can change any of them afterwards.`,
       confirmLabel: 'Assign suggestions',
     })
     if (!ok) return
@@ -2297,7 +2298,8 @@ function DispatchBoardSection() {
     let assigned = 0
     for (const row of [...groupRows].sort((a, b) => Date.parse(a.trip_start_at ?? '') - Date.parse(b.trip_start_at ?? ''))) {
       if (!row.trip_start_at) continue
-      for (const crewRole of ['Driver', 'Helper'] as const) {
+      // Drivers only -- helpers are always picked by hand.
+      for (const crewRole of ['Driver'] as const) {
         const current = working.find((r) => r.itinerary_id === row.itinerary_id) ?? row
         const currentId = crewRole === 'Driver' ? current.assigned_employee_id : current.assigned_helper_employee_id
         if (currentId !== null) continue
@@ -2478,10 +2480,11 @@ function DispatchBoardSection() {
     .map((row) => {
       const reasons = atRiskReasons(row, rows, leaveByEmployee, drivers, trucks, trailers, now)
       const actions: AtRiskAction[] = []
-      // A driver / helper on leave (or marked absent today): one click puts the
-      // top free replacement on this trip.
+      // A driver on leave: one click puts the top free replacement on this
+      // trip. (A helper on leave is still flagged above; staff pick the
+      // replacement by hand.)
       if (row.status === 'Awaiting') {
-        for (const crewRole of ['Driver', 'Helper'] as const) {
+        for (const crewRole of ['Driver'] as const) {
           const currentId = crewRole === 'Driver' ? row.assigned_employee_id : row.assigned_helper_employee_id
           if (currentId === null) continue
           const onLeave = (leaveByEmployee.get(currentId) ?? []).some((l) =>
