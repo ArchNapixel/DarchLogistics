@@ -1044,8 +1044,8 @@ function QuoteReviewModal({
                   <div className="border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
                     <p className="font-semibold">Urgent · last free storage day</p>
                     <p className="mt-0.5">
-                      Every trip must be picked up from the port by 11:59 PM on{' '}
-                      {tripDateFrom ? formatDate(tripDateFrom) : '—'}. The Capacity card below shows which trips make it.
+                      Pick up every trip from the port by 11:59 PM,{' '}
+                      {tripDateFrom ? formatDate(tripDateFrom) : '—'}.
                       {tripDateFrom && tripDateFrom < toManilaDate(new Date()) && (
                         <span className="block font-semibold text-red-700">That day has already passed.</span>
                       )}
@@ -1258,7 +1258,7 @@ function QuoteReviewModal({
                   <section className="border-2 border-line-card px-5 py-5">
                     <h3 className="text-base font-semibold text-ink">Waiting on the client</h3>
                     <p className="mt-1 text-[13px] text-slate-500">
-                      They can accept, counter (rate or dates) or decline from their portal.
+                      They answer from their portal.
                     </p>
                     <div className="mt-3 text-[15px]">
                       {ratesDiffer(savedRates) && (
@@ -1273,19 +1273,16 @@ function QuoteReviewModal({
                         strong
                       />
                       {offeredDownpayment !== null && (
-                        <CostRow label="Client downpayment" value={formatMoney(offeredDownpayment)} />
+                        <CostRow label="Downpayment" value={formatMoney(offeredDownpayment)} />
                       )}
                       {lastOurOffer?.note && <p className="mt-1 text-[13px] text-slate-600">Note sent: "{lastOurOffer.note}"</p>}
                     </div>
                   </section>
                   <section className="border-2 border-line-card px-5 py-5">
-                    <h3 className="text-base font-semibold text-ink">Client answered by phone or in person?</h3>
-                    <p className="mt-1 text-[13px] text-slate-500">
-                      For clients without a portal login. Recorded as entered by staff.
-                    </p>
+                    <h3 className="text-base font-semibold text-ink">Reply by phone or in person</h3>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button type="button" onClick={() => handleRecordReply('accept')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
-                        Client accepted
+                        Accepted
                       </button>
                       <button
                         type="button"
@@ -1299,15 +1296,15 @@ function QuoteReviewModal({
                         aria-expanded={showReplyCounter}
                         className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50"
                       >
-                        Client countered…
+                        Countered
                       </button>
                       <button type="button" onClick={() => handleRecordReply('decline')} disabled={submitting} className="border-2 border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
-                        Client declined…
+                        Declined
                       </button>
                     </div>
                     {showReplyCounter && (
                       <div className="mt-3 border-2 border-line-control px-3 py-3">
-                        <p className="text-sm font-semibold text-slate-900">Client's rate per trip, for each line</p>
+                        <p className="text-sm font-semibold text-slate-900">Rate per trip</p>
                         <ol className="mt-2 flex flex-col gap-2">
                           {cargoLines.map((line, index) => (
                             <li key={index}>
@@ -1330,7 +1327,7 @@ function QuoteReviewModal({
                         </ol>
                         <div className="mt-3 flex gap-2">
                           <button type="button" onClick={() => handleRecordReply('counter')} disabled={submitting} className="btn-primary px-3 py-2 text-sm font-semibold">
-                            Record counter-offer
+                            Save Counter
                           </button>
                           <button type="button" onClick={() => setShowReplyCounter(false)} disabled={submitting} className="border-2 border-line-control px-3 py-2 text-sm font-semibold text-ink-metric hover:bg-slate-50">
                             Cancel
@@ -1340,11 +1337,11 @@ function QuoteReviewModal({
                     )}
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <label className="flex flex-col gap-1 text-[13px] font-medium text-slate-600">
-                        Counter: pickup date
+                        Pickup date
                         <input type="date" value={offerPickupDate} onChange={(e) => setOfferPickupDate(e.target.value)} className={fieldClasses} />
                       </label>
                       <label className="flex flex-col gap-1 text-[13px] font-medium text-slate-600">
-                        Counter: deadline
+                        Deadline
                         <input type="date" value={offerDeadline} min={offerPickupDate || undefined} onChange={(e) => setOfferDeadline(e.target.value)} className={fieldClasses} />
                       </label>
                     </div>
@@ -1733,7 +1730,7 @@ function QuoteReviewModal({
                 className={`border-2 border-red-700 text-red-700 hover:bg-red-50 ${footerButton}`}
               >
                 <Icon name="close" />
-                Reject Quote...
+                Reject Quote
               </button>
               <p role="alert" className="min-w-0 flex-1 text-center text-sm text-red-700">
                 {error}

@@ -116,6 +116,7 @@ function NewQuoteRequestModal({
     supabase
       .from('clients')
       .select('client_id, client_name, email, phone_number')
+      .is('deactivated_at', null) // deactivated clients can't get new quotes
       .order('client_name', { ascending: true })
       .then(({ data, error: loadError }) => {
         if (loadError) {

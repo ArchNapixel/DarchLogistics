@@ -853,7 +853,7 @@ function BookingDetailModal({
                 onClick={() => setShowCancel(true)}
                 className="flex items-center gap-2 border-2 border-red-700 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
               >
-                <span aria-hidden="true">✕</span> {anyDelivered ? 'Cancel Remaining Trips…' : 'Cancel Booking…'}
+                <span aria-hidden="true">✕</span> {anyDelivered ? 'Cancel Remaining Trips' : 'Cancel Booking'}
               </button>
             )}
             {!inline && (
@@ -965,7 +965,7 @@ function BookingDetailModal({
                   onClick={waiveDownpayment}
                   className="border-2 border-amber-700 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
                 >
-                  Allow Trips Without Downpayment…
+                  Allow Trips Without Downpayment
                 </button>
               )}
             </div>

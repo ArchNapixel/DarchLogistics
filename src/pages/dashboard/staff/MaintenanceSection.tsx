@@ -574,7 +574,7 @@ function MaintenanceSection() {
                 {canDecide ? (
                   <>
                     <button type="button" onClick={() => void handleReject(paneRequest)} disabled={busyId === paneRequest.request_id} className="btn-danger px-4 text-sm">
-                      Reject…
+                      Reject
                     </button>
                     <span className="flex-1" />
                     <button type="button" onClick={() => void handleApprove(paneRequest)} disabled={busyId === paneRequest.request_id} className="btn-primary px-5 text-sm">

@@ -318,11 +318,11 @@ function QuoteOfferCard({
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
         <button type="button" onClick={() => setMode('decline')} disabled={saving} className="btn-danger px-4 text-sm">
-          Decline…
+          Decline Offer
         </button>
         <span className="flex-1" />
         <button type="button" onClick={() => setMode('counter')} disabled={saving} className="btn-secondary px-4 text-sm font-medium">
-          Counter-offer…
+          Make Counter-Offer
         </button>
         {timing === 'open' && (
           <button type="button" onClick={accept} disabled={saving} className="btn-primary px-5 text-sm">

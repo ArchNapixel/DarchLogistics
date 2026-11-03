@@ -7,7 +7,7 @@
 //   - change its status, including Cancelled -- through the same
 //     changeWorkOrderStatus() the mechanic uses, so cancelling frees the
 //     truck/trailer and reopening puts it back "Under Maintenance".
-//   - finish it: "Complete work order..." opens the same completion form
+//   - finish it: "Complete Work Order" opens the same completion form
 //     the mechanic uses (CompleteWorkOrderModal.tsx -- description, parts,
 //     odometer), so nothing is skipped; admin is recorded as who completed
 //     it. "Completed" isn't in the status dropdown for the same reason.
@@ -271,7 +271,7 @@ function WorkOrderDetailModal({
               disabled={saving}
               className="btn-primary px-4 py-2 text-sm font-medium"
             >
-              Complete work order...
+              Complete Work Order
             </button>
           )}
         </div>

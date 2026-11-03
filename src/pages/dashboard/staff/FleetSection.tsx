@@ -597,7 +597,7 @@ function FleetSection() {
                   }
                   className="btn-danger px-4 text-sm"
                 >
-                  {!(selected.type === 'truck' ? truck! : trailer!).is_active ? 'Reactivate' : 'Deactivate…'}
+                  {!(selected.type === 'truck' ? truck! : trailer!).is_active ? 'Reactivate' : 'Deactivate'}
                 </button>
                 <span className="flex-1" />
                 <button type="button" onClick={() => setCreateFor(selected)} className="btn-secondary px-4 text-sm font-medium">

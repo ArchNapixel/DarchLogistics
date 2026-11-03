@@ -417,7 +417,7 @@ function InventorySection() {
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
                 <button type="button" onClick={() => void handleDelete(pane)} disabled={deletingId === pane.item_id} className="btn-danger px-4 text-sm">
-                  {deletingId === pane.item_id ? 'Deleting...' : 'Delete…'}
+                  {deletingId === pane.item_id ? 'Deleting...' : 'Delete'}
                 </button>
                 <span className="flex-1" />
                 <button type="button" onClick={() => setEditingItem(pane)} className="btn-primary flex items-center gap-2 px-5 text-sm">

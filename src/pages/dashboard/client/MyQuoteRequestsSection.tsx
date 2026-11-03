@@ -176,7 +176,7 @@ function MyQuoteRequestsSection() {
         disabled={withdrawingId !== null}
         className="btn-secondary px-3.5 text-sm font-medium"
       >
-        {withdrawingId === quote.quote_request_id ? 'Withdrawing...' : 'Withdraw This Quote…'}
+        {withdrawingId === quote.quote_request_id ? 'Withdrawing...' : 'Withdraw This Quote'}
       </button>
     )
 

@@ -283,7 +283,7 @@ function EmployeePanel({
           </button>
         ) : (
           <button type="button" onClick={() => onSetStatus('Deactivated')} className="btn-danger px-4 text-sm">
-            Deactivate…
+            Deactivate
           </button>
         )}
         <span className="flex-1" />

@@ -680,7 +680,7 @@ function ClientsSection() {
                     </button>
                   ) : (
                     <button onClick={() => handleSetActive(paneClient, false)} className="btn-danger px-4 text-sm">
-                      Deactivate…
+                      Deactivate
                     </button>
                   )}
                   <button
