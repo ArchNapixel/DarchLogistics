@@ -64,7 +64,6 @@ import {
 import ItineraryLogModal from './ItineraryLogModal'
 import MarkDeliveredModal from './MarkDeliveredModal'
 import UpdateStatusModal from './UpdateStatusModal'
-import MarkAbsentModal from './MarkAbsentModal'
 import BreakdownModal from './BreakdownModal'
 import SwapDriverModal, { type SwapChoice } from './SwapDriverModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
@@ -1350,7 +1349,6 @@ function DispatchBoardSection() {
   const [relogRequestRow, setRelogRequestRow] = useState<DispatchRow | null>(null)
   const [deliveryRow, setDeliveryRow] = useState<DispatchRow | null>(null)
   // A forward status move waiting for "when did it happen?" (StatusTimeModal).
-  const [showAbsent, setShowAbsent] = useState(false)
   // The trip whose truck / trailer broke down (BreakdownModal).
   const [breakdownRow, setBreakdownRow] = useState<DispatchRow | null>(null)
   // The day shown ('YYYY-MM-DD', Manila), or 'all' = every trip not delivered yet.
@@ -2737,11 +2735,6 @@ function DispatchBoardSection() {
                 Today
               </button>
             )}
-            {canEditStatus && (
-              <button type="button" onClick={() => setShowAbsent(true)} className="btn-secondary ml-2 px-4 text-sm font-medium">
-                Mark Absent Today
-              </button>
-            )}
             {/* Drivers move trips from their phones -- reload to see it. */}
             <button
               type="button"
@@ -3188,20 +3181,6 @@ function DispatchBoardSection() {
         />
       )}
 
-      {showAbsent && (
-        <MarkAbsentModal
-          people={[
-            ...drivers.map((p) => ({ employee_id: p.employee_id, full_name: p.full_name, role: 'Driver' as const })),
-            ...helpers.map((p) => ({ employee_id: p.employee_id, full_name: p.full_name, role: 'Helper' as const })),
-          ]}
-          onClose={() => setShowAbsent(false)}
-          onDone={(name) => {
-            setShowAbsent(false)
-            showToast(`${name} marked absent today.`)
-            loadDispatchBoard()
-          }}
-        />
-      )}
 
       {swap &&
         (() => {

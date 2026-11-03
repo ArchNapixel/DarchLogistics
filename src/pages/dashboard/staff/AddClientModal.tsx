@@ -1,8 +1,8 @@
 // AddClientModal: staff add a client by hand (a walk-in or phone-in
 // customer) or edit one's details -- the canvas's "Add Client" / "Edit
 // Client" on the Clients page. Pass `client` to edit that row; leave it out
-// to add a new one. Name and phone are required; contact person, email,
-// address and notes are optional. Phone and email use the same rules as
+// to add a new one. Name and phone are required; email, address and
+// notes are optional. Phone and email use the same rules as
 // every other form (lib/quoteRequest.ts). Adding warns first when another
 // client already has the same name, phone or email (likely a duplicate).
 // Logins are separate: "Set Up Account" on the Clients page.
@@ -14,7 +14,6 @@ import { confirmDialog } from '../../../components/ConfirmDialog'
 export type EditableClient = {
   client_id: number
   client_name: string
-  contact_person: string | null
   email: string | null
   phone_number: string | null
   address: string | null
@@ -34,7 +33,6 @@ function AddClientModal({
   onSaved: (clientId: number) => void
 }) {
   const [name, setName] = useState(client?.client_name ?? '')
-  const [contactPerson, setContactPerson] = useState(client?.contact_person ?? '')
   const [phone, setPhone] = useState(phoneInput(client?.phone_number ?? ''))
   const [email, setEmail] = useState(client?.email ?? '')
   const [address, setAddress] = useState(client?.address ?? '')
@@ -73,7 +71,6 @@ function AddClientModal({
     setError(null)
     const row = {
       client_name: name.trim(),
-      contact_person: contactPerson.trim() || null,
       phone_number: phoneDigits(phone),
       email: email.trim() || null,
       address: address.trim() || null,
@@ -91,8 +88,9 @@ function AddClientModal({
   }
 
   const field =
-    'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-[15px] text-ink-metric placeholder:text-ink-muted focus:border-primary'
-  const label = 'flex flex-col gap-1.5 text-sm font-semibold text-ink'
+    'mt-1.5 block min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-[15px] text-ink-metric placeholder:text-ink-muted focus:border-primary'
+  // Block (not flex-col) so the "optional" note sits on the same line as the label text.
+  const label = 'block text-sm font-semibold text-ink'
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
@@ -122,11 +120,7 @@ function AddClientModal({
             Client name (person or company)
             <input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} className={field} />
           </label>
-          <label className={label}>
-            Contact person <span className="text-[13px] font-normal text-ink-muted">optional</span>
-            <input value={contactPerson} maxLength={120} onChange={(e) => setContactPerson(e.target.value)} className={field} />
-          </label>
-          <label className={label}>
+          <label className={`${label} sm:col-span-2`}>
             Phone number
             <input
               type="tel"
