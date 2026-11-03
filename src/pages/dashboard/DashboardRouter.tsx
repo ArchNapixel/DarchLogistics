@@ -71,6 +71,7 @@ const staffLinks = [
       { label: 'Clients', to: '/dashboard/clients' },
       { label: 'Dispatch Board', to: '/dashboard/dispatch' },
       { label: 'Schedule Overview', to: '/dashboard/schedule-overview' },
+      { label: 'Damage Charges', to: '/dashboard/damage-charges' },
     ],
   },
   {
@@ -227,6 +228,7 @@ function DashboardRouter() {
           <Route path="dispatch" element={<DispatchBoardSection />} />
           <Route path="schedule-overview" element={<ScheduleOverviewSection />} />
           <Route path="driver-schedule" element={<Navigate to="/dashboard/schedule-overview" replace />} />
+          <Route path="damage-charges" element={<DamageChargesSection />} />
           <Route path="fleet" element={<FleetSection />} />
           <Route path="maintenance" element={<MaintenanceSection />} />
           <Route path="maintenance-monitoring" element={<TruckMaintenanceMonitoringSection />} />

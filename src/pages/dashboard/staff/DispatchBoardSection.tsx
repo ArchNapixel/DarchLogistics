@@ -47,7 +47,7 @@
 //
 // Downpayment (#10/#11): no trip of a booking can leave Awaiting until the
 // client's downpayment (lib/downpayment.ts) is paid or an Admin waived it.
-// The row shows "Awaiting downpayment" and the next status is disabled;
+// The row shows "Need DP" and the next status is disabled;
 // the database (require_downpayment trigger) enforces the same rule for
 // drivers' phones too.
 import { Fragment, useEffect, useRef, useState } from 'react'
@@ -859,7 +859,7 @@ function TripStatusCell({ row, risk, pendingCorrection }: { row: DispatchRow; ri
       <StatusBadge status={row.status} label={STATUS_LABELS[row.status]} icon />
       {needs && <span className="text-[13px] leading-[18px] font-semibold text-orange-700">Needs {needs}</span>}
       {row.status === 'Awaiting' && row.downpayment && !tripsMayStart(row.downpayment) && (
-        <span className={`${CHIP} bg-amber-100 text-amber-900`}>Awaiting downpayment</span>
+        <span className={`${CHIP} bg-amber-100 text-amber-900`}>Need DP</span>
       )}
       {risk && <span className={`${CHIP} bg-red-100 text-red-800`}>At risk</span>}
       {pendingCorrection && <span className={`${CHIP} bg-slate-200 text-ink-secondary`}>Correction pending</span>}
@@ -1018,13 +1018,13 @@ function TripPanel({
           {downpaymentDue && (
             <section className="flex flex-wrap items-center justify-between gap-3 border border-amber-600 bg-amber-100 px-4 py-3 text-sm text-amber-900">
               <p>
-                <span className="font-semibold">Awaiting downpayment: {formatMoney(downpaymentDue.missing)} to go</span>
+                <span className="font-semibold">Need DP: {formatMoney(downpaymentDue.missing)} to go</span>
                 {' · '}
                 {formatMoney(downpaymentDue.paid)} of {formatMoney(downpaymentDue.required)} paid. No trip can start until it is paid.
               </p>
               {/* Bills Receivable exists only in the Admin routes. */}
               {ctx.canFreelyEditStatus && (
-                <Link to={`/dashboard/financial-records?downpayment=${row.booking_id}`} className="font-semibold underline">
+                <Link to={`/dashboard/financial-records?downpayment=${row.booking_id}`} className="btn-secondary inline-flex items-center px-4 text-sm font-semibold">
                   Record Downpayment
                 </Link>
               )}
