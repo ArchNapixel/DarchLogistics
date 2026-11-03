@@ -34,6 +34,8 @@ import { minutesToTime, overtimeHours, workedHours } from '../../../lib/attendan
 type Employee = { employee_id: number; full_name: string; position: string }
 
 const DEFAULT_HOURS = 8
+// Saving a day longer than this asks "check AM / PM" first.
+const MAX_NORMAL_HOURS = 14
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Move a YYYY-MM-DD date by N days (noon UTC avoids any DST/timezone edge).
@@ -248,6 +250,28 @@ function AttendanceSection() {
   // Day view's "Save Attendance": every changed row in one go.
   async function handleSaveDay(changes: DayChange[]) {
     if (changes.length === 0) return
+    const nameOf = (id: number) => employees.find((e) => e.employee_id === id)?.full_name ?? `Employee #${id}`
+    const timed = changes.filter((c) => c.timeIn != null && c.timeOut != null)
+    // Same time in and out would be read as a 23-hour night shift -- always a typo.
+    const sameTime = timed.filter((c) => c.timeIn === c.timeOut)
+    if (sameTime.length > 0) {
+      setError(`Time in and time out are the same for ${sameTime.map((c) => nameOf(c.employeeId)).join(', ')}. Fix the times first.`)
+      return
+    }
+    // A very long day is usually AM/PM picked wrong (8 AM -> 5 AM = 20 h).
+    const long = timed.filter((c) => workedHours(c.timeIn!, c.timeOut!) > MAX_NORMAL_HOURS)
+    if (long.length > 0) {
+      const ok = await confirmDialog({
+        title: 'Check these times',
+        message:
+          long.map((c) => `${nameOf(c.employeeId)}: ${workedHours(c.timeIn!, c.timeOut!)} h`).join('; ') +
+          `. That's more than ${MAX_NORMAL_HOURS} hours, counted as a shift past midnight, with the extra paid as overtime. ` +
+          'Check AM / PM before saving.',
+        confirmLabel: 'Save anyway',
+        danger: true,
+      })
+      if (!ok) return
+    }
     const onPayslip = changes.filter((c) => records.get(`${c.employeeId}|${day}`)?.paid_payroll_id != null)
     if (onPayslip.length > 0) {
       const ok = await confirmDialog({
@@ -275,7 +299,7 @@ function AttendanceSection() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Record time in / out or mark Present, Leave or Absent. Drivers are paid per trip and aren't on this sheet."
+        subtitle="Record time in / out or mark Present or Absent. Leave fills in by itself when a leave request is approved. Drivers are paid per trip and aren't on this sheet."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div role="group" aria-label="View" className="flex gap-2">
@@ -434,8 +458,10 @@ function AttendanceSection() {
                           >
                             {shown === '' && <option value="">—</option>}
                             <option>Present</option>
-                            <option value="Leave">Leave (paid)</option>
-                            <option>Unpaid Leave</option>
+                            {/* Leave only comes from an approved leave request (My Leave -> Leave Requests),
+                                so the yearly paid balance is always checked -- shown here, not pickable. */}
+                            <option value="Leave" disabled>Leave (paid)</option>
+                            <option disabled>Unpaid Leave</option>
                             <option>Absent</option>
                           </select>
                           {shown === 'Present' && rec?.time_in && rec.time_out && (

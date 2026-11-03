@@ -174,8 +174,9 @@ function AttendanceDayTable({
                       >
                         {d.status === '' && <option value="">Not recorded</option>}
                         <option>Present</option>
-                        <option value="Leave">Leave (paid)</option>
-                        <option>Unpaid Leave</option>
+                        {/* Leave only comes from an approved leave request (balance checked there). */}
+                        <option value="Leave" disabled>Leave (paid)</option>
+                        <option disabled>Unpaid Leave</option>
                         <option>Absent</option>
                       </select>
                     )}
