@@ -636,7 +636,15 @@ function PayrollSection() {
                   </h3>
                   {deductionRows.map(([label, amount]) => (
                     <div key={label} className={kv}>
-                      <span className="text-ink-secondary">{label}</span>
+                      <span className="text-ink-secondary">
+                        {label}
+                        {/* Share of this payslip's gross pay. */}
+                        {selected.gross_pay > 0 && (
+                          <span className="ml-2 text-[13px] text-ink-muted tabular-nums">
+                            {((Math.abs(amount) / selected.gross_pay) * 100).toFixed(1)}% of gross
+                          </span>
+                        )}
+                      </span>
                       <span className={`font-semibold tabular-nums ${amount === 0 ? 'text-ink-muted' : ''}`}>
                         {amount < 0 ? '+' : ''}
                         {formatMoney(Math.abs(amount))}

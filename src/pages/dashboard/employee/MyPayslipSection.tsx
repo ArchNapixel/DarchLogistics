@@ -201,7 +201,15 @@ function MyPayslipSection({ onIssueReported }: { onIssueReported?: () => void })
               {deductions.length > 0 && <div className={GROUP}>Deductions</div>}
               {deductions.map(([label, amount]) => (
                 <div key={label} className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto_8.5rem] items-center gap-3 border-b border-slate-200 px-5 py-2">
-                  <span className="text-ink-secondary">{label}</span>
+                  <span className="text-ink-secondary">
+                    {label}
+                    {/* Share of this payslip's gross pay. */}
+                    {selected.gross_pay > 0 && (
+                      <span className="ml-2 text-[13px] text-ink-muted tabular-nums">
+                        {((Math.abs(amount) / selected.gross_pay) * 100).toFixed(1)}% of gross
+                      </span>
+                    )}
+                  </span>
                   <span className="font-semibold text-red-700 tabular-nums">
                     {/* negative = refund of an earlier over-deduction this month */}
                     {amount > 0 ? '− ' : '+ '}
