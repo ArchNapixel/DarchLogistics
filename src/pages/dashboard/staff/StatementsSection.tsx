@@ -24,11 +24,12 @@ function StatementsSection() {
   // Loading the client list failed.
   const [error, setError] = useState<string | null>(null)
 
-  // Client choices (everyone, A-Z). Loaded once.
+  // Client choices (active clients, A-Z). Loaded once.
   useEffect(() => {
     supabase
       .from('clients')
       .select('client_id, client_name')
+      .is('deactivated_at', null)
       .order('client_name')
       .then(({ data, error: clientsError }) => {
         if (clientsError) setError(clientsError.message)

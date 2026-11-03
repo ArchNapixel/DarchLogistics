@@ -87,9 +87,6 @@ function DamageFields({
               className={`${fieldClasses} text-right tabular-nums`}
             />
           </label>
-          <p className="text-[13px] leading-[18px] text-orange-900">
-            This goes to Damage Charges, where you choose whether the client or the company pays.
-          </p>
         </div>
       )}
     </>

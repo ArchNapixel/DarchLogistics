@@ -123,9 +123,6 @@ function ReportDamageForm({ onReported }: { onReported: () => void }) {
         <h2 id="rd-h" className="text-lg leading-[26px] font-bold text-ink">
           Report Damage
         </h2>
-        <p className="mt-0.5 text-[13px] leading-[18px] text-ink-muted">
-          For damage found after delivery. Same form as in Mark Delivered. Pick from the last 200 delivered trips.
-        </p>
       </div>
 
       <form
