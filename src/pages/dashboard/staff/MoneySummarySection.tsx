@@ -37,25 +37,10 @@ const TABS = [
   { key: 'expenses', label: 'Expense Breakdown' },
 ] as const
 
-// The summary plus short notes on the Expenses figure -- what in it is an
-// estimate or not final yet, so the profit isn't read as exact.
-type SummaryWithNotes = MoneySummary & { expenseNotes: string[] }
-
-async function fetchMoneySummary(month: string): Promise<SummaryWithNotes> {
+async function fetchMoneySummary(month: string): Promise<MoneySummary> {
   const { data, error } = await loadProfitLoss(month)
   if (error || !data) throw new Error(error ?? 'Could not load this month.')
-  const expenseNotes: string[] = []
-  if (data.parts.dieselEstimatedTrips > 0) {
-    expenseNotes.push(
-      `Diesel includes ${formatMoney(data.parts.dieselEstimated)} estimated for ${data.parts.dieselEstimatedTrips} trip${
-        data.parts.dieselEstimatedTrips === 1 ? '' : 's'
-      } with no fuel logged.`,
-    )
-  }
-  if (data.memo.draftPayroll > 0) {
-    expenseNotes.push(`Salaries include ${formatMoney(data.memo.draftPayroll)} from draft payslips (not final yet).`)
-  }
-  const summary = buildMoneySummary({
+  return buildMoneySummary({
     earned: data.totalRevenue,
     revenueRows: data.revenueRows,
     collected: data.memo.collected,
@@ -66,15 +51,13 @@ async function fetchMoneySummary(month: string): Promise<SummaryWithNotes> {
     repairs: data.parts.maintenanceParts,
     damage: data.parts.companyDamage,
   })
-  return { ...summary, expenseNotes }
 }
 
-function BigNumber({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: string }) {
+function BigNumber({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="card px-5 py-4">
       <p className="text-sm font-medium text-ink-secondary">{label}</p>
       <p className={`text-[26px] leading-[34px] font-bold tracking-[-0.01em] tabular-nums ${tone ?? 'text-ink'}`}>{value}</p>
-      {note && <p className="mt-1 text-[13px] text-ink-muted">{note}</p>}
     </div>
   )
 }
@@ -92,7 +75,6 @@ function NetWaterfall({ summary }: { summary: MoneySummary }) {
   return (
     <section className="card px-5 py-4">
       <h2 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">How the net result is worked out</h2>
-      <p className="text-[13px] text-ink-muted">Bars are scaled to the largest amount, {formatMoney(biggest)}.</p>
       {lines.map((line) => (
         <div key={line.label} className={row}>
           <span className="text-ink-secondary">{line.label}</span>
@@ -118,7 +100,6 @@ function NetWaterfall({ summary }: { summary: MoneySummary }) {
       </div>
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3 border border-line bg-slate-50 px-4 py-3 text-sm">
         <span className="font-semibold text-ink">Collected this month</span>
-        <span className="text-[13px] text-ink-muted">Client payments actually received. Shown for reference, not part of the net.</span>
         <span className="font-bold tabular-nums">{formatMoney(summary.collected)}</span>
       </div>
     </section>
@@ -192,13 +173,8 @@ async function fetchGap(month: string): Promise<Gap> {
 }
 
 // "Collected vs Revenue" in plain words: the difference, and what it is made of.
-function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | null; summary: MoneySummary }) {
+function GapCard({ gap, error }: { gap: Gap | null; error: string | null }) {
   const difference = gap ? gap.collected - gap.billed : 0
-  // The cards above come from the Profit & Loss loader, this card from the
-  // statement ledger; they should agree. If not, say so instead of hiding it.
-  const mismatch = gap
-    ? Math.abs(gap.billed - summary.earned) > 0.005 || Math.abs(gap.collected - summary.collected) > 0.005
-    : false
   return (
     <div className="card mt-6 px-5 py-4">
       <h3 className="border-b border-slate-200 pb-2 text-sm font-semibold text-ink">Why Collected is not the same as Revenue</h3>
@@ -236,12 +212,6 @@ function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | nul
               ))}
             </ul>
           )}
-          {mismatch && (
-            <p className="mt-3 text-xs text-amber-700">
-              These figures differ slightly from the cards above ({formatMoney(gap.billed)} billed,{' '}
-              {formatMoney(gap.collected)} collected).
-            </p>
-          )}
         </>
       )}
     </div>
@@ -250,7 +220,7 @@ function GapCard({ gap, error, summary }: { gap: Gap | null; error: string | nul
 
 function MoneySummarySection() {
   const [month, setMonth] = useState(() => toManilaDate(new Date()).slice(0, 7))
-  const [summary, setSummary] = useState<SummaryWithNotes | null>(null)
+  const [summary, setSummary] = useState<MoneySummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [gap, setGap] = useState<Gap | null>(null)
   const [gapError, setGapError] = useState<string | null>(null)
@@ -311,7 +281,6 @@ function MoneySummarySection() {
     <div>
       <PageHeader
         title="Money Summary"
-        subtitle="Money earned against money spent, one month at a time."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -392,26 +361,13 @@ function MoneySummarySection() {
       ) : (
         <>
           <section aria-label={`Totals for ${monthLabel(month)}`} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <BigNumber
-              label="Revenue"
-              value={formatMoney(summary.earned)}
-              note={`from ${summary.tripCount} delivered trip${summary.tripCount === 1 ? '' : 's'}`}
-            />
-            <BigNumber label="Collected" value={formatMoney(summary.collected)} note="client payments received" />
-            <BigNumber
-              label="Expenses"
-              value={formatMoney(summary.spent)}
-              note={summary.expenseNotes.length > 0 ? summary.expenseNotes.join(' ') : undefined}
-            />
+            <BigNumber label="Revenue" value={formatMoney(summary.earned)} />
+            <BigNumber label="Collected" value={formatMoney(summary.collected)} />
+            <BigNumber label="Expenses" value={formatMoney(summary.spent)} />
             <BigNumber
               label={summary.left < 0 ? 'Net loss' : 'Net profit'}
               value={`${summary.left < 0 ? '−' : ''}${formatMoney(Math.abs(summary.left))}`}
               tone={summary.left < 0 ? 'text-red-700' : 'text-green-800'}
-              note={
-                summary.earned > 0
-                  ? `${Math.round((summary.left / summary.earned) * 1000) / 10}% of revenue`
-                  : undefined
-              }
             />
           </section>
 
@@ -425,7 +381,7 @@ function MoneySummarySection() {
             />
           </div>
 
-          <GapCard gap={gap} error={gapError} summary={summary} />
+          <GapCard gap={gap} error={gapError} />
         </>
       )}
     </div>

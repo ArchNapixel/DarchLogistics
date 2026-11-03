@@ -1310,11 +1310,14 @@ extra charge; no-work days only block STARTING a trip). Phase A built:
   `node scripts/check-attendance-hours.ts`): hours = out − in − 1 h lunch
   (no lunch off a day of 5 h or less; out before in = past midnight),
   overtime = hours above 8, paid (day rate ÷ 8) × 1.25 (weekly ÷ 6,
-  monthly ÷ 30 = day rate). Attendance page has a **Day** view
-  (`staff/AttendanceDayTable.tsx`: Time In / Time Out via TimeInput12,
-  Total Hours, Overtime, Status, one Save Attendance) next to the Week
-  view; a Present day with no times = 8 h, no overtime; the week view
-  keeps a day's times when Present is re-picked and shows "X h · OT Y".
+  monthly ÷ 30 = day rate). **2026-11-03: Day view removed** — the
+  Attendance page is the week table only; dropdown = Present / Absent
+  (Leave / Unpaid Leave show as a badge, they only come from approved
+  leave requests). A Present day has an "Edit times" link →
+  `staff/AttendanceTimesModal.tsx` (Time In / Out, Clear times). Hours
+  and overtime are deliberately NOT shown on the Attendance page — only
+  on the payslip (user's choice). A Present day with no times = 8 h, no
+  overtime; re-picking Present keeps a day's times.
   Payroll: `sumPaidOvertimeHours()` (`lib/employeeAttendance.ts`) adds an
   "Overtime" line to Daily / Weekly / Monthly payslips and an "Overtime
   premium" (the extra 0.25) to Hourly ones; draft top-up picks it up for

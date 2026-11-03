@@ -38,10 +38,11 @@ function IssueCashAdvanceModal({
   async function loadEmployees() {
     setLoadingOptions(true)
 
-    const { data, error: loadError } = await supabase
-      .from('employees')
-      .select('employee_id, full_name')
-      .order('full_name', { ascending: true })
+    const [employeesResult, statusesResult] = await Promise.all([
+      supabase.from('employees').select('employee_id, full_name, employment_status_id').order('full_name', { ascending: true }),
+      supabase.from('employment_status').select('status_id, status_name'),
+    ])
+    const loadError = employeesResult.error ?? statusesResult.error
 
     if (loadError) {
       setError(loadError.message)
@@ -49,6 +50,16 @@ function IssueCashAdvanceModal({
       return
     }
 
+    // Only current employees (same rule as Attendance / Payroll) -- plus the
+    // one this was opened for, so a preset pick never disappears.
+    const inactiveIds = new Set(
+      (statusesResult.data ?? [])
+        .filter((s) => s.status_name === 'Deactivated' || s.status_name === 'Terminated')
+        .map((s) => s.status_id),
+    )
+    const data = (employeesResult.data ?? []).filter(
+      (e) => !inactiveIds.has(e.employment_status_id) || e.employee_id === presetEmployeeId,
+    )
     setEmployees(data)
     // Keep an employee picked in advance; otherwise start on the first one.
     if (data.length > 0) {

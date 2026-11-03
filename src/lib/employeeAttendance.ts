@@ -6,6 +6,14 @@ import { overtimeHours } from './attendanceHours'
 // shown as leave, but payroll doesn't pay it (only Present/Leave count).
 export type AttendanceStatus = 'Present' | 'Absent' | 'Leave' | 'Unpaid Leave'
 
+// What a day with NO attendance row shows as: a finished Mon-Sat day =
+// Absent; Sunday is a rest day (can still be marked, but never auto-Absent);
+// today / future = not marked yet. Display only -- payroll just pays rows.
+export function unrecordedStatus(date: string, today: string): 'Absent' | null {
+  const sunday = new Date(`${date}T12:00:00Z`).getUTCDay() === 0
+  return date < today && !sunday ? 'Absent' : null
+}
+
 export type AttendanceRecord = {
   attendance_id: number
   employee_id: number
@@ -26,7 +34,8 @@ export type AttendanceRecord = {
 // time in / out SQL hasn't been run). Attendance then still loads and saves,
 // just without times, instead of breaking the Attendance pages.
 function isMissingTimeColumns(message: string) {
-  return /time_(in|out)/.test(message) && message.includes('does not exist')
+  // Reads say "does not exist"; upserts say "Could not find the 'time_in' column".
+  return /time_(in|out)/.test(message) && (message.includes('does not exist') || message.includes('Could not find'))
 }
 
 export async function loadAttendanceRecords(

@@ -4,7 +4,7 @@
 // recorded) -- and today is outlined. Read-only; loads its own month of
 // records, ‹ › to change month (not past this month).
 import { useEffect, useState } from 'react'
-import { loadAttendanceRecords, type AttendanceStatus } from '../../../lib/employeeAttendance'
+import { loadAttendanceRecords, unrecordedStatus, type AttendanceStatus } from '../../../lib/employeeAttendance'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -83,7 +83,7 @@ function MyAttendanceCalendar({ employeeId, today }: { employeeId: number; today
           {Array.from({ length: daysInMonth }, (_, i) => {
             const date = `${month}-${String(i + 1).padStart(2, '0')}`
             // Day over + no record = Absent, same rule as the week list.
-            const status = statusByDate.get(date) ?? (date < today ? 'Absent' : null)
+            const status = statusByDate.get(date) ?? unrecordedStatus(date, today)
             const isToday = date === today
             return (
               <div

@@ -3,8 +3,9 @@
 // employee (not Deactivated/Terminated, and not Drivers -- they're paid per
 // trip) and a column per day. The table "generates itself" -- no rows are
 // written until the admin marks someone. Use the arrows to open another week.
-// Each day cell is a Present / Leave / Absent dropdown, saved on change via
-// saveAttendanceRecord() (upsert on employee + date). Rules:
+// Each day cell is a Present / Absent dropdown, saved on change via
+// saveAttendanceRecord() (upsert on employee + date). Leave days come only
+// from approved leave requests and show as a plain badge here. Rules:
 // - Future days are disabled.
 // - Today with no record shows "—"; a day that is over with no record counts
 //   as ABSENT automatically (worked out here, no row written -- payroll only
@@ -13,29 +14,28 @@
 //   draft payslip. A draft doesn't change by itself, so after fixing a day
 //   to Absent/Leave, use Edit or Regenerate on that payslip.
 // - "All present" in a day's header marks that day's unmarked people Present.
-// Day view (the canvas's board): one day, with Time In / Time Out per person.
-// Hours = out - in - 1 h lunch, overtime above 8 (lib/attendanceHours.ts);
-// payroll pays that overtime. A Present day with no times still counts as 8
-// hours, no overtime. The week view keeps a day's times when re-picking Present.
+// - A Present day has an "Edit times" link -> AttendanceTimesModal
+//   (Time In / Time Out). Hours = out - in - 1 h lunch, overtime above 8
+//   (lib/attendanceHours.ts), paid by payroll. Hours are NOT shown on this page
+//   on purpose -- only on the payslip. A Present day with no times = 8 hours.
+//   Re-picking Present keeps a day's times.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
-import { loadAttendanceRecords, saveAttendanceRecord, type AttendanceRecord, type AttendanceStatus } from '../../../lib/employeeAttendance'
+import { loadAttendanceRecords, saveAttendanceRecord, unrecordedStatus, type AttendanceRecord, type AttendanceStatus } from '../../../lib/employeeAttendance'
 import { toManilaDate } from '../../../lib/payslip'
 import { supabase } from '../../../lib/supabaseClient'
 import LeaveRequestsSection from './LeaveRequestsSection'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
 import { confirmDialog } from '../../../components/ConfirmDialog'
-import AttendanceDayTable, { type DayChange } from './AttendanceDayTable'
-import { minutesToTime, overtimeHours, workedHours } from '../../../lib/attendanceHours'
+import AttendanceTimesModal, { type AttendanceTimes } from './AttendanceTimesModal'
+import { minutesToTime, timeToMinutes, workedHours } from '../../../lib/attendanceHours'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
 const DEFAULT_HOURS = 8
-// Saving a day longer than this asks "check AM / PM" first.
-const MAX_NORMAL_HOURS = 14
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Move a YYYY-MM-DD date by N days (noon UTC avoids any DST/timezone edge).
@@ -63,6 +63,7 @@ const COUNT_RULES: [string, string][] = [
   ['Unpaid Leave', 'Approved, not paid'],
   ['Absent', 'Not paid'],
   ['Not marked', 'Counts as Absent once the day is over'],
+  ['Sunday', 'Rest day -- optional, never auto-Absent'],
 ]
 
 // Drivers aren't on this sheet (they're paid per trip) -- the panel lists
@@ -137,16 +138,11 @@ function AttendanceSection() {
   const { employeeId: recorderId } = useAuth()
   const today = toManilaDate(new Date())
   const thisWeekStart = weekStartOf(today)
-  const [view, setView] = useState<'day' | 'week'>('day')
-  // The day the Day view shows; the loaded week is always the one holding it.
-  const [day, setDayState] = useState(today)
   const [weekStart, setWeekStartState] = useState(thisWeekStart)
-  function setDay(date: string) {
-    setDayState(date)
-    setWeekStartState(weekStartOf(date))
-  }
-  // Week arrows move the day by a week (never past today).
-  const setWeekStart = (start: string) => setDay(start >= thisWeekStart ? today : start)
+  // Any date -> the week holding it (never past this week).
+  const setWeekStart = (date: string) => setWeekStartState(weekStartOf(date >= thisWeekStart ? today : date))
+  // The Present day whose times pop-up is open.
+  const [timesFor, setTimesFor] = useState<{ employee: Employee; date: string } | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -229,63 +225,31 @@ function AttendanceSection() {
     setBusy(false)
   }
 
+  // A day already counted on a payslip: changing it here does NOT change
+  // that payslip, so make sure that's understood first.
+  async function okToChange(employeeId: number, date: string) {
+    if (records.get(`${employeeId}|${date}`)?.paid_payroll_id == null) return true
+    return confirmDialog({
+      title: 'This day is already on a payslip',
+      message:
+        "Changing it won't change the payslip that already paid it. " +
+        'If that payslip is still a draft, use Regenerate on the Payroll page afterwards; ' +
+        'if it is finalized, correct the pay by hand.',
+      confirmLabel: 'Change anyway',
+      danger: true,
+    })
+  }
+
   async function handleMark(employeeId: number, date: string, status: AttendanceStatus) {
-    // A day already counted on a payslip: changing it here does NOT change
-    // that payslip, so make sure that's understood first.
-    if (records.get(`${employeeId}|${date}`)?.paid_payroll_id != null) {
-      const ok = await confirmDialog({
-        title: 'This day is already on a payslip',
-        message:
-          `Changing it to ${status} won't change the payslip that already paid it. ` +
-          'If that payslip is still a draft, use Regenerate on the Payroll page afterwards; ' +
-          'if it is finalized, correct the pay by hand.',
-        confirmLabel: 'Change anyway',
-        danger: true,
-      })
-      if (!ok) return
-    }
+    if (!(await okToChange(employeeId, date))) return
     return runSaves(recorderId ? [save(employeeId, date, status)] : [])
   }
 
-  // Day view's "Save Attendance": every changed row in one go.
-  async function handleSaveDay(changes: DayChange[]) {
-    if (changes.length === 0) return
-    const nameOf = (id: number) => employees.find((e) => e.employee_id === id)?.full_name ?? `Employee #${id}`
-    const timed = changes.filter((c) => c.timeIn != null && c.timeOut != null)
-    // Same time in and out would be read as a 23-hour night shift -- always a typo.
-    const sameTime = timed.filter((c) => c.timeIn === c.timeOut)
-    if (sameTime.length > 0) {
-      setError(`Time in and time out are the same for ${sameTime.map((c) => nameOf(c.employeeId)).join(', ')}. Fix the times first.`)
-      return
-    }
-    // A very long day is usually AM/PM picked wrong (8 AM -> 5 AM = 20 h).
-    const long = timed.filter((c) => workedHours(c.timeIn!, c.timeOut!) > MAX_NORMAL_HOURS)
-    if (long.length > 0) {
-      const ok = await confirmDialog({
-        title: 'Check these times',
-        message:
-          long.map((c) => `${nameOf(c.employeeId)}: ${workedHours(c.timeIn!, c.timeOut!)} h`).join('; ') +
-          `. That's more than ${MAX_NORMAL_HOURS} hours, counted as a shift past midnight, with the extra paid as overtime. ` +
-          'Check AM / PM before saving.',
-        confirmLabel: 'Save anyway',
-        danger: true,
-      })
-      if (!ok) return
-    }
-    const onPayslip = changes.filter((c) => records.get(`${c.employeeId}|${day}`)?.paid_payroll_id != null)
-    if (onPayslip.length > 0) {
-      const ok = await confirmDialog({
-        title: onPayslip.length === 1 ? 'One of these days is already on a payslip' : `${onPayslip.length} of these days are already on a payslip`,
-        message:
-          "Changing them won't change the payslip that already paid them. " +
-          'If that payslip is still a draft, use Regenerate on the Payroll page afterwards; ' +
-          'if it is finalized, correct the pay by hand.',
-        confirmLabel: 'Save anyway',
-        danger: true,
-      })
-      if (!ok) return
-    }
-    return runSaves(recorderId ? changes.map((c) => save(c.employeeId, day, c.status, c)) : [])
+  // The times pop-up's Save / Clear times (null times = plain 8-hour day).
+  async function handleSaveTimes(employeeId: number, date: string, times: AttendanceTimes) {
+    if (!(await okToChange(employeeId, date))) return
+    await runSaves(recorderId ? [save(employeeId, date, 'Present', times)] : [])
+    setTimesFor(null)
   }
 
   function handleAllPresent(date: string) {
@@ -302,24 +266,9 @@ function AttendanceSection() {
         subtitle="Record time in / out or mark Present or Absent. Leave fills in by itself when a leave request is approved. Drivers are paid per trip and aren't on this sheet."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div role="group" aria-label="View" className="flex gap-2">
-              {(['day', 'week'] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={view === v}
-                  onClick={() => setView(v)}
-                  className={`min-h-11 rounded-[2px] border-2 px-4 text-sm font-semibold ${
-                    view === v ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-secondary hover:bg-slate-50'
-                  }`}
-                >
-                  {v === 'day' ? 'Day' : 'Week'}
-                </button>
-              ))}
-            </div>
             <button
-              onClick={() => (view === 'day' ? setDay(shiftDate(day, -1)) : setWeekStart(shiftDate(weekStart, -7)))}
-              aria-label={view === 'day' ? 'Previous day' : 'Previous week'}
+              onClick={() => setWeekStart(shiftDate(weekStart, -7))}
+              aria-label="Previous week"
               className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -343,40 +292,31 @@ function AttendanceSection() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary" aria-hidden="true">
                 <path d="M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M4 9h16 M8 2v4 M16 2v4" />
               </svg>
-              {view === 'day' ? (
-                <>
-                  {day === today ? 'Today · ' : ''}
-                  {new Date(`${day}T12:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
-                </>
-              ) : (
-                <>
-                  {weekStart === thisWeekStart ? 'This week · ' : ''}
-                  {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
-                </>
-              )}
+              {weekStart === thisWeekStart ? 'This week · ' : ''}
+              {formatShort(weekStart)} – {formatShort(weekEnd)}, {weekEnd.slice(0, 4)}
             </button>
             <input
               ref={dateInputRef}
               type="date"
               aria-label="Jump to date"
               max={today}
-              value={view === 'day' ? day : weekStart}
-              onChange={(e) => e.target.value && setDay(e.target.value)}
+              value={weekStart}
+              onChange={(e) => e.target.value && setWeekStart(e.target.value)}
               className="sr-only"
             />
             <button
-              onClick={() => (view === 'day' ? setDay(shiftDate(day, 1)) : setWeekStart(shiftDate(weekStart, 7)))}
-              disabled={view === 'day' ? day >= today : weekStart >= thisWeekStart}
-              aria-label={view === 'day' ? 'Next day' : 'Next week'}
+              onClick={() => setWeekStart(shiftDate(weekStart, 7))}
+              disabled={weekStart >= thisWeekStart}
+              aria-label="Next week"
               className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-line disabled:text-ink-muted"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M9 6l6 6-6 6" />
               </svg>
             </button>
-            {(view === 'day' ? day !== today : weekStart !== thisWeekStart) && (
-              <button onClick={() => setDay(today)} className="btn-secondary px-4 text-sm font-medium">
-                {view === 'day' ? 'Today' : 'This Week'}
+            {weekStart !== thisWeekStart && (
+              <button onClick={() => setWeekStart(today)} className="btn-secondary px-4 text-sm font-medium">
+                This Week
               </button>
             )}
           </div>
@@ -390,17 +330,6 @@ function AttendanceSection() {
         <p className="text-ink-muted">Loading attendance...</p>
       ) : employees.length === 0 ? (
         <EmptyState message="No active employees." />
-      ) : view === 'day' ? (
-        // Remounted per day and after each reload, so unsaved edits start clean.
-        <AttendanceDayTable
-          key={`${day}|${records.size}|${[...records.values()].map((r) => r.attendance_id).join(',')}`}
-          date={day}
-          today={today}
-          employees={employees}
-          records={records}
-          busy={busy}
-          onSave={(changes) => void handleSaveDay(changes)}
-        />
       ) : (
         <section aria-label="Staff attendance" className="card flex min-h-[calc(100dvh-15rem)] flex-col">
           <div className="flex-1 overflow-x-auto">
@@ -434,40 +363,50 @@ function AttendanceSection() {
                     </td>
                     {days.map((date) => {
                       const rec = records.get(`${e.employee_id}|${date}`)
-                      // Day over + no record = Absent; today/future + no record = blank.
-                      const shown: AttendanceStatus | '' = rec?.attendance_status ?? (date < today ? 'Absent' : '')
+                      // Day over + no record = Absent (not Sundays); otherwise blank.
+                      const shown: AttendanceStatus | '' = rec?.attendance_status ?? unrecordedStatus(date, today) ?? ''
                       if (shown === 'Present') presentDays += 1
-                      const ot = rec?.time_in && rec.time_out ? overtimeHours(rec.hours_worked) : 0
                       return (
                         <td key={date} className="px-2 py-3 text-center">
-                          <select
-                            value={shown}
-                            disabled={busy || date > today}
-                            onChange={(event) => void handleMark(e.employee_id, date, event.target.value as AttendanceStatus)}
-                            className={`min-h-11 rounded-[2px] border px-1 py-1 text-sm font-medium disabled:opacity-60 ${
-                              shown === 'Present'
-                                ? 'border-primary bg-primary text-white'
-                                : shown === 'Absent'
-                                  ? 'border-red-300 bg-red-50 text-red-800'
-                                  : shown === 'Leave'
-                                    ? 'border-line-control bg-primary-soft text-primary'
-                                    : shown === 'Unpaid Leave'
-                                      ? 'border-amber-600 bg-amber-100 text-amber-900'
-                                      : 'border-line-control bg-white text-ink-metric'
-                            }`}
-                          >
-                            {shown === '' && <option value="">—</option>}
-                            <option>Present</option>
-                            {/* Leave only comes from an approved leave request (My Leave -> Leave Requests),
-                                so the yearly paid balance is always checked -- shown here, not pickable. */}
-                            <option value="Leave" disabled>Leave (paid)</option>
-                            <option disabled>Unpaid Leave</option>
-                            <option>Absent</option>
-                          </select>
-                          {shown === 'Present' && rec?.time_in && rec.time_out && (
-                            <div className="mt-0.5 text-xs text-ink-muted tabular-nums">
-                              {rec.hours_worked} h{ot > 0 && <span className="font-semibold text-primary"> · OT {ot}</span>}
-                            </div>
+                          {shown === 'Leave' || shown === 'Unpaid Leave' ? (
+                            // Leave only comes from an approved leave request (yearly paid
+                            // balance checked there) -- shown here, not changeable.
+                            <span
+                              className={`inline-flex min-h-11 items-center rounded-[2px] border px-3 text-sm font-medium ${
+                                shown === 'Leave' ? 'border-line-control bg-primary-soft text-primary' : 'border-amber-600 bg-amber-100 text-amber-900'
+                              }`}
+                            >
+                              {shown === 'Leave' ? 'Leave (paid)' : 'Unpaid Leave'}
+                            </span>
+                          ) : (
+                            <select
+                              value={shown}
+                              disabled={busy || date > today}
+                              aria-label={`${e.full_name}, ${date}`}
+                              onChange={(event) => void handleMark(e.employee_id, date, event.target.value as AttendanceStatus)}
+                              className={`min-h-11 rounded-[2px] border px-1 py-1 text-sm font-medium disabled:opacity-60 ${
+                                shown === 'Present'
+                                  ? 'border-primary bg-primary text-white'
+                                  : shown === 'Absent'
+                                    ? 'border-red-300 bg-red-50 text-red-800'
+                                    : 'border-line-control bg-white text-ink-metric'
+                              }`}
+                            >
+                              {shown === '' && <option value="">—</option>}
+                              <option>Present</option>
+                              <option>Absent</option>
+                            </select>
+                          )}
+                          {/* Time in / out pop-up. No hours shown here -- they show on the payslip. */}
+                          {shown === 'Present' && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => setTimesFor({ employee: e, date })}
+                              className="mt-1 block w-full text-xs font-medium text-primary underline disabled:opacity-50"
+                            >
+                              Edit times
+                            </button>
                           )}
                         </td>
                       )
@@ -519,12 +458,27 @@ function AttendanceSection() {
               </div>
             ))}
             <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
-              Day view saves with Save Attendance; the week view saves as soon as you pick. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
+              Saves as soon as you pick. Use Edit times under a Present day to record time in / out; the hours show on the payslip. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
             </p>
           </section>
           <DriversToday today={today} />
         </aside>
       </div>
+
+      {timesFor && (() => {
+        const rec = records.get(`${timesFor.employee.employee_id}|${timesFor.date}`)
+        return (
+          <AttendanceTimesModal
+            employeeName={timesFor.employee.full_name}
+            dateLabel={new Date(`${timesFor.date}T12:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+            timeIn={timeToMinutes(rec?.time_in ?? null)}
+            timeOut={timeToMinutes(rec?.time_out ?? null)}
+            busy={busy}
+            onSave={(times) => void handleSaveTimes(timesFor.employee.employee_id, timesFor.date, times)}
+            onClose={() => setTimesFor(null)}
+          />
+        )
+      })()}
 
       {/* Pending leave requests -- approving one marks its days as Leave above. */}
       <div className="mt-6">

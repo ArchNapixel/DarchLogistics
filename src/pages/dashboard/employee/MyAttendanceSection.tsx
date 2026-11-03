@@ -10,7 +10,7 @@
 // overtime when Admin recorded them), and a month calendar beside it.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import { loadAttendanceRecords, type AttendanceRecord } from '../../../lib/employeeAttendance'
+import { loadAttendanceRecords, unrecordedStatus, type AttendanceRecord } from '../../../lib/employeeAttendance'
 import { overtimeHours, timeToMinutes } from '../../../lib/attendanceHours'
 import { formatClock } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
@@ -86,7 +86,7 @@ function MyAttendanceSection() {
   }
 
   // Day over + no record = Absent; today/future + no record = not marked yet.
-  const statusOf = (date: string) => records.get(date)?.attendance_status ?? (date < today ? 'Absent' : null)
+  const statusOf = (date: string) => records.get(date)?.attendance_status ?? unrecordedStatus(date, today)
 
   // Month so far: recorded days by status, plus finished days with no record (Absent).
   const monthName = fmt(`${month}-01`, { month: 'long' })
@@ -97,7 +97,7 @@ function MyAttendanceSection() {
     let leave = 0
     let absent = 0
     for (let d = `${month}-01`; d <= today; d = shiftDate(d, 1)) {
-      const status = byDate.get(d) ?? (d < today ? 'Absent' : null)
+      const status = byDate.get(d) ?? unrecordedStatus(d, today)
       if (status === 'Present') present += 1
       else if (status === 'Leave' || status === 'Unpaid Leave') leave += 1
       else if (status === 'Absent') absent += 1
@@ -120,7 +120,7 @@ function MyAttendanceSection() {
             <span className="ml-1 rounded-[2px] bg-slate-200 px-2 py-0.5 align-middle text-xs font-semibold text-ink-secondary">View only</span>
           </>
         }
-        subtitle="You're paid weekly by attendance. A finished day with nothing recorded counts as Absent. More than 8 hours in a day adds an Overtime line to your payslip."
+        subtitle="You're paid weekly by attendance. A finished day with nothing recorded counts as Absent (Sundays are rest days). More than 8 hours in a day adds an Overtime line to your payslip."
       />
 
       <section aria-label={`${monthName} totals`} className="mb-4 grid gap-3 sm:grid-cols-3">
