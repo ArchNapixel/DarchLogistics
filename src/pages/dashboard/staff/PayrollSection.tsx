@@ -25,7 +25,7 @@ import {
   isWeekInProgress,
   setPayslipHold,
   loadPayslipLineItems,
-  getOutstandingCashAdvance,
+  loadOutstandingCashAdvances,
   totalEmployeeDeductions,
   type PayslipLineItem,
 } from '../../../lib/payslip'
@@ -91,7 +91,8 @@ function PayrollSection() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState<DraftToEdit | null>(null)
-  const [generating, setGenerating] = useState(false)
+  // Drafts are updating in the background -- their buttons stay locked.
+  const [generating, setGenerating] = useState(true)
   // Employees the auto-generator couldn't make a draft for (e.g. no rate set)
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([])
   const [markingPaidId, setMarkingPaidId] = useState<number | null>(null)
@@ -120,8 +121,10 @@ function PayrollSection() {
   // since (an un-delivered trip, a day changed to Absent) needs the
   // payslip's own Regenerate button. (This used to rebuild every draft
   // from scratch on each page open, silently wiping admin edits.)
+  // The list shows straight away and this runs behind it; buttons unlock
+  // only once the list has been re-read with the updated drafts.
   async function generateThenLoad() {
-    setGenerating(true)
+    const firstLoad = loadPayroll()
     const allWarnings: string[] = []
     const periods = [getDefaultPayPeriod(), getCurrentPayPeriod()]
     for (const period of periods) {
@@ -129,10 +132,13 @@ function PayrollSection() {
       allWarnings.push(...warnings)
       if (generateError) setActionError(`Couldn't update the draft payslips: ${generateError}`)
     }
-    setGenerating(false)
     // Same employee can be flagged for both weeks -- show it once
     setGenerationWarnings([...new Set(allWarnings)])
+    await firstLoad
     await loadPayroll()
+    // A draft that was topped up has new lines -- the open one re-reads them.
+    setLineItemsByPayroll({})
+    setGenerating(false)
   }
 
   // Throw away one draft and rebuild it from the current trips / attendance,
@@ -166,8 +172,6 @@ function PayrollSection() {
   }
 
   async function loadPayroll() {
-    setLoading(true)
-
     // Every page -- Supabase stops at 1000 rows, which would silently drop
     // the oldest payslips (about a year in with ~20 staff).
     const { rows: data, error } = await fetchAll<PayrollRow>((from, to) =>
@@ -223,13 +227,10 @@ function PayrollSection() {
         }
       }),
     )
-    const employeeIds = [...new Set(data.map((entry) => entry.employee_id))]
-    const owed = await Promise.all(
-      employeeIds.map(async (id) => [id, (await getOutstandingCashAdvance(id)).outstanding] as const),
-    )
-    setOwedByEmployee(Object.fromEntries(owed))
     setError(null)
     setLoading(false)
+    const { owedByEmployee: owed } = await loadOutstandingCashAdvances()
+    setOwedByEmployee(Object.fromEntries(owed))
   }
 
   // Group payslips per employee (payroll is already newest-first, so each
@@ -253,6 +254,7 @@ function PayrollSection() {
     return aDraft - bDraft || a.employee_name.localeCompare(b.employee_name)
   })
 
+  const busy = reviewingId !== null || generating
   const drafts = payroll.filter((entry) => entry.status === 'Draft')
   // "Finalize all" skips held drafts and weeks still in progress
   const draftIds = drafts
@@ -438,7 +440,7 @@ function PayrollSection() {
                     handleFinalize(draftIds, 'all')
                   }
                 }}
-                disabled={reviewingId !== null}
+                disabled={busy}
                 className="btn-secondary px-4 text-sm font-medium"
               >
                 {reviewingId === 'all' ? 'Finalizing...' : `Finalize All ${draftIds.length} Drafts`}
@@ -472,10 +474,12 @@ function PayrollSection() {
         </p>
       )}
 
-      {generating && <p className="text-ink-muted">Preparing this week&apos;s draft payslips...</p>}
-      {!generating && loading && <p className="text-ink-muted">Loading payroll...</p>}
+      {loading && <p className="text-ink-muted">Loading payroll...</p>}
+      {generating && !loading && (
+        <p className="mb-4 text-sm text-ink-muted">Updating draft payslips -- the buttons unlock when this finishes...</p>
+      )}
       {error && <p className="text-red-700">{error}</p>}
-      {!loading && !error && payroll.length === 0 && (
+      {!loading && !generating && !error && payroll.length === 0 && (
         <EmptyState message="No payroll entries yet." hint="Draft payslips appear here automatically once employees have trips or attendance in a completed week." />
       )}
 
@@ -547,7 +551,7 @@ function PayrollSection() {
                     <input
                       type="checkbox"
                       checked={selected.on_hold}
-                      disabled={reviewingId !== null}
+                      disabled={busy}
                       onChange={() => handleToggleHold(selected)}
                       className="h-5 w-5 accent-primary"
                     />
@@ -627,7 +631,7 @@ function PayrollSection() {
                             periodLabel: selected.period,
                           })
                         }
-                        disabled={reviewingId !== null}
+                        disabled={busy}
                         className="font-semibold text-primary hover:underline disabled:opacity-50"
                       >
                         Edit deductions
@@ -673,7 +677,7 @@ function PayrollSection() {
                     <>
                       <button
                         onClick={() => handleRegenerate(selected)}
-                        disabled={reviewingId !== null}
+                        disabled={busy}
                         className="btn-secondary px-4 text-sm font-medium"
                       >
                         Regenerate
@@ -689,14 +693,14 @@ function PayrollSection() {
                             periodLabel: selected.period,
                           })
                         }
-                        disabled={reviewingId !== null}
+                        disabled={busy}
                         className="btn-secondary px-4 text-sm font-medium"
                       >
                         Edit Payslip
                       </button>
                       <button
                         onClick={() => handleFinalize([selected.payroll_id], selected.payroll_id)}
-                        disabled={reviewingId !== null || selected.on_hold || isWeekInProgress(selected.period_end)}
+                        disabled={busy || selected.on_hold || isWeekInProgress(selected.period_end)}
                         title={
                           selected.on_hold
                             ? 'Remove the hold first'
@@ -716,7 +720,7 @@ function PayrollSection() {
                   {selected.status === 'Pending' && (
                     <button
                       onClick={() => handleMarkPaid(selected.payroll_id)}
-                      disabled={markingPaidId === selected.payroll_id}
+                      disabled={generating || markingPaidId === selected.payroll_id}
                       className="btn-primary px-5 text-sm"
                     >
                       {markingPaidId === selected.payroll_id ? 'Saving...' : 'Mark Paid'}

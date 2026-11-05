@@ -61,8 +61,10 @@
 //   even if settings/rates change later -- a payslip is a historical
 //   record, not a live calculation.
 import { supabase } from './supabaseClient'
-import { countPaidAttendanceDays, sumPaidAttendanceHours, sumPaidOvertimeHours, markAttendanceAsPaid } from './employeeAttendance'
-import { OVERTIME_RATE, REGULAR_HOURS, overtimePay } from './attendanceHours'
+import { markAttendanceAsPaid } from './employeeAttendance'
+import { OVERTIME_RATE, REGULAR_HOURS, overtimePay, summarizeUnpaidDays } from './attendanceHours'
+import { fetchAll, fetchIn } from './dashboardExpenses'
+import { deliveryDatesInPeriod, tripKey, tripsToPay } from './payslipPeriod'
 import {
   computeWeeklyContributions,
   weeklyWithholdingTax,
@@ -165,18 +167,195 @@ export type EmployeePayRate = {
   hourly_rate: number | null
 }
 
-// Commission Per Trip (Drivers only): one line item per trip actually
-// delivered within the period -- commission% of the trip's rate plus
-// the flat per-trip fee, both from app_settings.
-// Trips already paid on some earlier payslip (any itinerary_id already
-// sitting in payslip_line_items) are excluded up front, regardless of
-// period dates -- the guarantee that a trip is never paid twice.
-async function buildCommissionTripLineItems(
-  employee: EmployeePayRate,
+type UnpaidDay = { attendance_status: string; hours_worked: number | null }
+type PeriodTrip = {
+  itinerary_id: number
+  booking_id: number
+  place_of_pickup_id: number
+  place_of_delivery_id: number
+  trip_rate: number | null
+}
+
+// Everything a generate run needs to work out pay, read ONCE for everybody
+// instead of employee by employee (that was a chain of about 100 requests
+// one after another on every Payroll open). Reads only -- the writes in
+// generateDraftPayslipsNow still go one employee at a time.
+type PeriodPayData = {
+  // Present / Leave days in the period not on a payslip yet (paid_payroll_id
+  // gets set once one uses them, so a day is only ever counted once).
+  daysByEmployee: Map<number, UnpaidDay[]>
+  // Trips whose delivery date is in the period (see deliveryDatesInPeriod).
+  trips: PeriodTrip[]
+  deliveryDates: Map<number, string>
+  // tripKey(employee, trip) sets: the active driver, and "already on one of
+  // this employee's own payslips" -- the guarantee a trip is never paid twice.
+  crew: Set<string>
+  alreadyPaid: Set<string>
+  rateByBooking: Map<number, number | null>
+  placeNameById: Map<number, string>
+}
+
+// ponytail: days are read when the run starts, so a day marked in another tab
+// during a run that writes could be marked paid without being counted. A
+// Postgres function (one transaction) closes that if it ever becomes real.
+async function loadPeriodPayData(
   periodStart: string,
   periodEnd: string,
+): Promise<{ data: PeriodPayData | null; error: string | null }> {
+  // A day early so no time-zone difference can cut a trip off;
+  // deliveryDatesInPeriod does the exact check on the Manila date.
+  const logsFrom = new Date(new Date(periodStart).getTime() - 86_400_000).toISOString()
+
+  const [attendance, logs] = await Promise.all([
+    fetchAll<UnpaidDay & { employee_id: number }>((from, to) =>
+      supabase
+        .from('employee_attendance')
+        .select('employee_id, attendance_status, hours_worked')
+        .gte('attendance_date', periodStart)
+        .lte('attendance_date', periodEnd)
+        .in('attendance_status', ['Present', 'Leave'])
+        .is('paid_payroll_id', null)
+        .order('attendance_id')
+        .range(from, to),
+    ),
+    // The delivery date is when the trip was marked Delivered on the Dispatch
+    // Board. Oldest first, so the LATEST Delivered log per trip wins.
+    fetchAll<{ itinerary_id: number; status_changed_at: string }>((from, to) =>
+      supabase
+        .from('dispatch_status_logs')
+        .select('itinerary_id, status_changed_at')
+        .eq('new_status', 'Delivered')
+        .gte('status_changed_at', logsFrom)
+        .order('status_changed_at', { ascending: true })
+        .range(from, to),
+    ),
+  ])
+  if (attendance.error) return { data: null, error: attendance.error }
+  if (logs.error) return { data: null, error: logs.error }
+
+  const daysByEmployee = new Map<number, UnpaidDay[]>()
+  for (const row of attendance.rows) {
+    daysByEmployee.set(row.employee_id, [...(daysByEmployee.get(row.employee_id) ?? []), row])
+  }
+
+  const deliveryDates = deliveryDatesInPeriod(
+    logs.rows.map((row) => ({ itinerary_id: row.itinerary_id, date: toManilaDate(row.status_changed_at) })),
+    periodStart,
+    periodEnd,
+  )
+  const tripIds = [...deliveryDates.keys()]
+  if (tripIds.length === 0) {
+    return {
+      data: {
+        daysByEmployee,
+        deliveryDates,
+        trips: [],
+        crew: new Set(),
+        alreadyPaid: new Set(),
+        rateByBooking: new Map(),
+        placeNameById: new Map(),
+      },
+      error: null,
+    }
+  }
+
+  const [tripRows, crewRows, paidLines] = await Promise.all([
+    // Still Delivered now -- a trip moved back since isn't paid.
+    fetchIn<PeriodTrip>(tripIds, (chunk, from, to) =>
+      supabase
+        .from('itineraries')
+        .select('itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, trip_rate')
+        .in('itinerary_id', chunk)
+        .eq('itinerary_status', 'Delivered')
+        .order('itinerary_id')
+        .range(from, to),
+    ),
+    // A driver swapped off the trip (Dispatch Board keeps their row as
+    // is_active: false) didn't drive it -- only the active driver is paid.
+    fetchIn<{ itinerary_id: number; employee_id: number }>(tripIds, (chunk, from, to) =>
+      supabase
+        .from('itinerary_crews')
+        .select('itinerary_id, employee_id')
+        .in('itinerary_id', chunk)
+        .eq('crew_role', 'Driver')
+        .eq('is_active', true)
+        .order('itinerary_id')
+        .order('employee_id')
+        .range(from, to),
+    ),
+    fetchIn<{ itinerary_id: number; payroll_id: number }>(tripIds, (chunk, from, to) =>
+      supabase
+        .from('payslip_line_items')
+        .select('itinerary_id, payroll_id')
+        .in('itinerary_id', chunk)
+        .order('payslip_line_item_id')
+        .range(from, to),
+    ),
+  ])
+  if (tripRows.error) return { data: null, error: tripRows.error }
+  if (crewRows.error) return { data: null, error: crewRows.error }
+  if (paidLines.error) return { data: null, error: paidLines.error }
+
+  // payslip_line_items has no employee_id of its own, so "already paid" goes
+  // through the payslip each line sits on.
+  const payslipOwners = await fetchIn<{ payroll_id: number; employee_id: number }>(
+    [...new Set(paidLines.rows.map((line) => line.payroll_id))],
+    (chunk, from, to) =>
+      supabase
+        .from('payroll_payslips')
+        .select('payroll_id, employee_id')
+        .in('payroll_id', chunk)
+        .order('payroll_id')
+        .range(from, to),
+  )
+  if (payslipOwners.error) return { data: null, error: payslipOwners.error }
+  const ownerByPayroll = new Map(payslipOwners.rows.map((row) => [row.payroll_id, row.employee_id]))
+
+  const bookingIds = [...new Set(tripRows.rows.map((row) => row.booking_id))]
+  const placeIds = [...new Set(tripRows.rows.flatMap((row) => [row.place_of_pickup_id, row.place_of_delivery_id]))]
+  const [bookings, places] = await Promise.all([
+    fetchIn<{ booking_id: number; rate_of_delivery_service: number | null }>(bookingIds, (chunk, from, to) =>
+      supabase
+        .from('bookings')
+        .select('booking_id, rate_of_delivery_service')
+        .in('booking_id', chunk)
+        .order('booking_id')
+        .range(from, to),
+    ),
+    fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
+      supabase.from('places').select('place_id, place_name').in('place_id', chunk).order('place_id').range(from, to),
+    ),
+  ])
+  if (bookings.error) return { data: null, error: bookings.error }
+  if (places.error) return { data: null, error: places.error }
+
+  return {
+    data: {
+      daysByEmployee,
+      deliveryDates,
+      trips: tripRows.rows,
+      crew: new Set(crewRows.rows.map((row) => tripKey(row.employee_id, row.itinerary_id))),
+      alreadyPaid: new Set(
+        paidLines.rows.flatMap((line) => {
+          const owner = ownerByPayroll.get(line.payroll_id)
+          return owner === undefined ? [] : [tripKey(owner, line.itinerary_id)]
+        }),
+      ),
+      rateByBooking: new Map(bookings.rows.map((row) => [row.booking_id, row.rate_of_delivery_service])),
+      placeNameById: new Map(places.rows.map((row) => [row.place_id, row.place_name])),
+    },
+    error: null,
+  }
+}
+
+// Commission Per Trip (Drivers only): one line item per trip delivered within
+// the period and not on a payslip of theirs yet -- commission% of the trip's
+// rate plus the flat per-trip fee, both from app_settings.
+function buildCommissionTripLineItems(
+  employee: EmployeePayRate,
   settings: PayrollSettings,
-): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  data: PeriodPayData,
+): { lineItems: PayslipLineItem[]; error: string | null } {
   if (employee.position !== 'Driver') {
     return {
       lineItems: [],
@@ -184,139 +363,13 @@ async function buildCommissionTripLineItems(
     }
   }
 
-  const { data: crewRows, error: crewError } = await supabase
-    .from('itinerary_crews')
-    .select('itinerary_id')
-    .eq('employee_id', employee.employee_id)
-    .eq('crew_role', 'Driver')
-    // A driver swapped off the trip (Dispatch Board keeps their row as
-    // is_active: false) didn't drive it -- only the active driver is paid.
-    .eq('is_active', true)
-
-  if (crewError) {
-    return { lineItems: [], error: crewError.message }
-  }
-
-  const itineraryIds = Array.from(new Set(crewRows.map((row) => row.itinerary_id)))
-  if (itineraryIds.length === 0) {
-    return { lineItems: [], error: null }
-  }
-
-  const { data: itineraryRows, error: itineraryError } = await supabase
-    .from('itineraries')
-    .select(
-      'itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, itinerary_status, trip_rate',
-    )
-    .in('itinerary_id', itineraryIds)
-    .eq('itinerary_status', 'Delivered')
-
-  if (itineraryError) {
-    return { lineItems: [], error: itineraryError.message }
-  }
-  if (itineraryRows.length === 0) {
-    return { lineItems: [], error: null }
-  }
-
-  const deliveredIds = itineraryRows.map((row) => row.itinerary_id)
-
-  // payslip_line_items has no employee_id column of its own -- it only
-  // links back to payroll_payslips, which does. So "already paid"
-  // has to go through THIS employee's own payslips specifically, not
-  // a bare itinerary_id lookup across the whole table -- otherwise the
-  // Driver on a trip getting paid would wrongly blacklist that same
-  // trip from ever paying the Helper who was also on it, since two
-  // different employees legitimately earn their own commission on the
-  // same delivered trip.
-  const [statusLogResult, ownPayslipsResult] = await Promise.all([
-    // The delivery date is when the trip was marked Delivered on the
-    // Dispatch Board (logged in dispatch_status_logs). Ordered
-    // oldest-first so the loop below keeps the LAST (most recent)
-    // Delivered transition per itinerary, in case one cycled through
-    // Delivered more than once.
-    supabase
-      .from('dispatch_status_logs')
-      .select('itinerary_id, status_changed_at')
-      .in('itinerary_id', deliveredIds)
-      .eq('new_status', 'Delivered')
-      .order('status_changed_at', { ascending: true }),
-    supabase.from('payroll_payslips').select('payroll_id').eq('employee_id', employee.employee_id),
-  ])
-
-  if (statusLogResult.error) {
-    return { lineItems: [], error: statusLogResult.error.message }
-  }
-  if (ownPayslipsResult.error) {
-    return { lineItems: [], error: ownPayslipsResult.error.message }
-  }
-
-  const receivedDateByItinerary = new Map<number, string>()
-  for (const row of statusLogResult.data) {
-    receivedDateByItinerary.set(row.itinerary_id, toManilaDate(row.status_changed_at))
-  }
-
-  const ownPayrollIds = ownPayslipsResult.data.map((row) => row.payroll_id)
-  let alreadyPaidIds = new Set<number>()
-  if (ownPayrollIds.length > 0) {
-    const alreadyPaidResult = await supabase
-      .from('payslip_line_items')
-      .select('itinerary_id')
-      .in('payroll_id', ownPayrollIds)
-      .in('itinerary_id', deliveredIds)
-
-    if (alreadyPaidResult.error) {
-      return { lineItems: [], error: alreadyPaidResult.error.message }
-    }
-    alreadyPaidIds = new Set(
-      alreadyPaidResult.data.map((row) => row.itinerary_id).filter((id): id is number => id != null),
-    )
-  }
-
-  const qualifying = itineraryRows.filter((row) => {
-    if (alreadyPaidIds.has(row.itinerary_id)) return false
-    const receivedDate = receivedDateByItinerary.get(row.itinerary_id)
-    return receivedDate && receivedDate >= periodStart && receivedDate <= periodEnd
-  })
-
-  if (qualifying.length === 0) {
-    return { lineItems: [], error: null }
-  }
-
-  const bookingIds = Array.from(new Set(qualifying.map((row) => row.booking_id)))
-  const placeIds = Array.from(
-    new Set(
-      qualifying.flatMap((row) => [row.place_of_pickup_id, row.place_of_delivery_id]),
-    ),
-  )
-
-  const [bookingsResult, placesResult] = await Promise.all([
-    supabase
-      .from('bookings')
-      .select('booking_id, rate_of_delivery_service')
-      .in('booking_id', bookingIds),
-    supabase.from('places').select('place_id, place_name').in('place_id', placeIds),
-  ])
-
-  if (bookingsResult.error) {
-    return { lineItems: [], error: bookingsResult.error.message }
-  }
-  if (placesResult.error) {
-    return { lineItems: [], error: placesResult.error.message }
-  }
-
-  const rateByBooking = new Map(
-    bookingsResult.data.map((row) => [row.booking_id, row.rate_of_delivery_service]),
-  )
-  const placeNameById = new Map(
-    placesResult.data.map((row) => [row.place_id, row.place_name]),
-  )
-
-  const lineItems = qualifying.map((row) => {
+  const lineItems = tripsToPay(employee.employee_id, data.trips, data.crew, data.alreadyPaid).map((row) => {
     // The trip's OWN rate (cargo lines of a booking can be priced differently).
-    const tripRate = Number(row.trip_rate ?? rateByBooking.get(row.booking_id) ?? 0)
+    const tripRate = Number(row.trip_rate ?? data.rateByBooking.get(row.booking_id) ?? 0)
     const amount = (settings.driverCommissionRate / 100) * tripRate + settings.driverPerTripFee
-    const pickup = placeNameById.get(row.place_of_pickup_id) ?? '—'
-    const delivery = placeNameById.get(row.place_of_delivery_id) ?? '—'
-    const date = receivedDateByItinerary.get(row.itinerary_id) ?? ''
+    const pickup = data.placeNameById.get(row.place_of_pickup_id) ?? '—'
+    const delivery = data.placeNameById.get(row.place_of_delivery_id) ?? '—'
+    const date = data.deliveryDates.get(row.itinerary_id) ?? ''
 
     return {
       itinerary_id: row.itinerary_id,
@@ -333,21 +386,19 @@ async function buildCommissionTripLineItems(
 // Daily Fixed / Weekly Salary / Monthly Salary / Hourly: paid against attendance,
 // using this employee's own rate column instead of a shared
 // per-position app_settings value.
-async function buildAttendanceBasedLineItems(
+function buildAttendanceBasedLineItems(
   employee: EmployeePayRate,
   periodStart: string,
   periodEnd: string,
-): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  data: PeriodPayData,
+): { lineItems: PayslipLineItem[]; error: string | null } {
+  const { days, hours, overtime } = summarizeUnpaidDays(data.daysByEmployee.get(employee.employee_id) ?? [])
+
   if (employee.rate_type === 'Hourly') {
     if (employee.hourly_rate == null) {
       return { lineItems: [], error: `This employee's hourly rate hasn't been set -- edit their employee record first.` }
     }
-    const { hours, error } = await sumPaidAttendanceHours(employee.employee_id, periodStart, periodEnd)
-    if (error) return { lineItems: [], error }
     // Every hour is already paid above; overtime hours get the extra 0.25.
-    const ot = await sumPaidOvertimeHours(employee.employee_id, periodStart, periodEnd)
-    if (ot.error) return { lineItems: [], error: ot.error }
-
     return {
       lineItems: [
         {
@@ -355,12 +406,12 @@ async function buildAttendanceBasedLineItems(
           description: `${employee.position} hourly pay (${hours} hrs @ ₱${employee.hourly_rate}/hr)`,
           amount: employee.hourly_rate * hours,
         },
-        ...(ot.hours > 0
+        ...(overtime > 0
           ? [
               {
                 itinerary_id: null,
-                description: `Overtime premium (${ot.hours} hrs @ ₱${employee.hourly_rate}/hr × ${OVERTIME_RATE - 1})`,
-                amount: Math.round(ot.hours * employee.hourly_rate * (OVERTIME_RATE - 1) * 100) / 100,
+                description: `Overtime premium (${overtime} hrs @ ₱${employee.hourly_rate}/hr × ${OVERTIME_RATE - 1})`,
+                amount: Math.round(overtime * employee.hourly_rate * (OVERTIME_RATE - 1) * 100) / 100,
               },
             ]
           : []),
@@ -388,9 +439,6 @@ async function buildAttendanceBasedLineItems(
     }
   }
 
-  const { days, error } = await countPaidAttendanceDays(employee.employee_id, periodStart, periodEnd)
-  if (error) return { lineItems: [], error }
-
   // Weekly (÷6 working days) and Monthly (÷30) salaries are converted
   // to a daily-equivalent and paid per attendance day, same approach as
   // Daily Fixed -- just derived from a bigger figure instead of an
@@ -410,8 +458,6 @@ async function buildAttendanceBasedLineItems(
 
   // Overtime from time in / time out (lib/attendanceHours.ts): hours above
   // 8 a day, at (day rate ÷ 8) × 1.25.
-  const ot = await sumPaidOvertimeHours(employee.employee_id, periodStart, periodEnd)
-  if (ot.error) return { lineItems: [], error: ot.error }
   const otHourly = Math.round((dayRate / REGULAR_HOURS) * OVERTIME_RATE * 100) / 100
 
   return {
@@ -421,12 +467,12 @@ async function buildAttendanceBasedLineItems(
         description: `${employee.position} ${label} (${days}/${denominator} paid attendance days)`,
         amount: dayRate * days,
       },
-      ...(ot.hours > 0
+      ...(overtime > 0
         ? [
             {
               itinerary_id: null,
-              description: `Overtime (${ot.hours} hrs @ ₱${otHourly}/hr)`,
-              amount: overtimePay(ot.hours, dayRate),
+              description: `Overtime (${overtime} hrs @ ₱${otHourly}/hr)`,
+              amount: overtimePay(overtime, dayRate),
             },
           ]
         : []),
@@ -435,21 +481,19 @@ async function buildAttendanceBasedLineItems(
   }
 }
 
-// The single entry point IssuePayslipModal calls -- dispatches on the
-// employee's own rate_type instead of their position.
-export async function buildEmployeePayLineItems(
+// Dispatches on the employee's own rate_type instead of their position.
+function buildEmployeePayLineItems(
   employee: EmployeePayRate,
   periodStart: string,
   periodEnd: string,
   settings: PayrollSettings,
-): Promise<{ lineItems: PayslipLineItem[]; error: string | null }> {
+  data: PeriodPayData,
+): { lineItems: PayslipLineItem[]; error: string | null } {
   if (employee.rate_type === 'Commission Per Trip') {
-    return buildCommissionTripLineItems(employee, periodStart, periodEnd, settings)
+    return buildCommissionTripLineItems(employee, settings, data)
   }
-  return buildAttendanceBasedLineItems(employee, periodStart, periodEnd)
+  return buildAttendanceBasedLineItems(employee, periodStart, periodEnd, data)
 }
-
-export { countPaidAttendanceDays }
 
 // Total cash advances issued minus what's already been deducted across
 // this employee's past payslips -- what's still owed back. Only counts
@@ -484,6 +528,43 @@ export async function getOutstandingCashAdvance(
   )
 
   return { outstanding: totalIssued - totalDeducted, error: null }
+}
+
+// The same balance for every employee at once, read in one go. Employees
+// who never had a cash advance aren't in the map (they owe nothing).
+export async function loadOutstandingCashAdvances(): Promise<{
+  owedByEmployee: Map<number, number>
+  error: string | null
+}> {
+  const [advances, payslips] = await Promise.all([
+    fetchAll<{ employee_id: number; amount: number }>((from, to) =>
+      supabase
+        .from('cash_advances')
+        .select('employee_id, amount')
+        .eq('status', 'Approved')
+        .order('cash_advance_id')
+        .range(from, to),
+    ),
+    fetchAll<{ employee_id: number; cash_advance_deducted: number }>((from, to) =>
+      supabase
+        .from('payroll_payslips')
+        .select('employee_id, cash_advance_deducted')
+        .gt('cash_advance_deducted', 0)
+        .order('payroll_id')
+        .range(from, to),
+    ),
+  ])
+  const owedByEmployee = new Map<number, number>()
+  const error = advances.error ?? payslips.error
+  if (error) return { owedByEmployee, error }
+
+  for (const row of advances.rows) {
+    owedByEmployee.set(row.employee_id, (owedByEmployee.get(row.employee_id) ?? 0) + row.amount)
+  }
+  for (const row of payslips.rows) {
+    owedByEmployee.set(row.employee_id, (owedByEmployee.get(row.employee_id) ?? 0) - row.cash_advance_deducted)
+  }
+  return { owedByEmployee, error: null }
 }
 
 // Cash advances are paid back automatically: this share of each weekly
@@ -688,6 +769,13 @@ async function computeAutoDeductions(
   }
 }
 
+type DraftLine = {
+  payroll_id: number
+  payslip_line_item_id: number
+  itinerary_id: number | null
+  amount: number
+}
+
 type ExistingDraft = PayslipDeductions & {
   payroll_id: number
   employee_id: number
@@ -779,6 +867,28 @@ async function generateDraftPayslipsNow(
       (onlyEmployeeId === undefined || e.employee_id === onlyEmployeeId),
   )
 
+  // Reads for everybody at once; the loop below only works it out and writes.
+  const draftIds = toProcess.flatMap((e) => {
+    const draft = existingByEmployee.get(e.employee_id)
+    return draft ? [draft.payroll_id] : []
+  })
+  const [payData, owed, draftLines] = await Promise.all([
+    loadPeriodPayData(periodStart, periodEnd),
+    loadOutstandingCashAdvances(),
+    fetchIn<DraftLine>(draftIds, (chunk, from, to) =>
+      supabase
+        .from('payslip_line_items')
+        .select('payroll_id, payslip_line_item_id, itinerary_id, amount')
+        .in('payroll_id', chunk)
+        .order('payslip_line_item_id', { ascending: true })
+        .range(from, to),
+    ),
+  ])
+  const readError = payData.error ?? owed.error ?? draftLines.error
+  if (readError || !payData.data) {
+    return { createdIds: [], warnings: [], error: readError ?? 'Could not load the payroll data.' }
+  }
+
   const createdIds: number[] = []
   const warnings: string[] = []
 
@@ -789,12 +899,13 @@ async function generateDraftPayslipsNow(
     // doesn't match its lines), so the top-up below adds to a correct total.
     const existing = existingByEmployee.get(employee.employee_id)
     if (existing) {
-      const healed = await healDraft(existing, employee, periodEnd)
+      const lines = draftLines.rows.filter((line) => line.payroll_id === existing.payroll_id)
+      const healed = await healDraft(existing, lines, employee, periodEnd)
       if (healed.error) warnings.push(`${employee.full_name}: ${healed.error}`)
       else if (healed.gross !== null) existing.gross_pay = healed.gross
     }
 
-    const pay = await buildEmployeePayLineItems(employee, periodStart, periodEnd, settingsResult.settings)
+    const pay = buildEmployeePayLineItems(employee, periodStart, periodEnd, settingsResult.settings, payData.data)
     if (pay.error) {
       warnings.push(`${employee.full_name}: ${pay.error}`)
       continue
@@ -806,8 +917,7 @@ async function generateDraftPayslipsNow(
       // Nothing earned -- skip, unless the employee still owes a cash
       // advance: then make an empty draft so admin can deduct it via Edit.
       if (existingByEmployee.has(employee.employee_id)) continue
-      const owed = await getOutstandingCashAdvance(employee.employee_id)
-      if (owed.error || owed.outstanding <= 0) continue
+      if ((owed.owedByEmployee.get(employee.employee_id) ?? 0) <= 0) continue
     }
 
     const draft = existingByEmployee.get(employee.employee_id)
@@ -902,20 +1012,15 @@ async function topUpDraft(
 // bad drafts fix themselves. Returns the corrected gross when it changed.
 async function healDraft(
   draft: ExistingDraft,
+  // The draft's lines, oldest first (so the first copy of a trip is kept).
+  lines: DraftLine[],
   employee: EmployeePayRate & { is_minimum_wage_earner: boolean },
   periodEnd: string,
 ): Promise<{ gross: number | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('payslip_line_items')
-    .select('payslip_line_item_id, itinerary_id, amount')
-    .eq('payroll_id', draft.payroll_id)
-    .order('payslip_line_item_id', { ascending: true })
-  if (error) return { gross: null, error: error.message }
-
   const seenTrips = new Set<number>()
   const duplicateIds: number[] = []
   let gross = 0
-  for (const line of data) {
+  for (const line of lines) {
     if (line.itinerary_id != null) {
       if (seenTrips.has(line.itinerary_id)) {
         duplicateIds.push(line.payslip_line_item_id)

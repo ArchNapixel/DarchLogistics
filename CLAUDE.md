@@ -1270,6 +1270,18 @@ extra charge; no-work days only block STARTING a trip). Phase A built:
   Not one transaction: failures say which steps are done. Needs staff INSERT
   policies on `itinerary_expenses` (and `work_orders` for Dispatchers).
 
+## 2026-11-06: Payroll speed
+- Opening Payroll used to run about 90 requests one after another (employee by
+  employee, two weeks). `loadPeriodPayData()` in `lib/payslip.ts` now reads a
+  week's attendance, delivered trips, crew and already-paid lines ONCE for
+  everybody; `loadOutstandingCashAdvances()` does the same for balances. Which
+  trips / days get paid: `lib/payslipPeriod.ts` (self-check
+  `node scripts/check-payslip-period.ts`) and `summarizeUnpaidDays()` in
+  `lib/attendanceHours.ts`. A failed read stops the run with an error. Writes
+  still go one employee at a time.
+- The list shows straight away and drafts update behind it: every payslip
+  button is locked (`generating`) until the list has been re-read.
+
 ## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
 - **Payroll** no longer rebuilds every draft on page open (that wiped
   admin edits) — opening Payroll only creates/tops up drafts; Regenerate

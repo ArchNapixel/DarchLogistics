@@ -2,7 +2,7 @@
 //   node scripts/check-attendance-hours.ts
 // Prints "ok" or throws on the first wrong answer.
 import assert from 'node:assert/strict'
-import { minutesToTime, overtimeHours, overtimePay, timeToMinutes, workedHours } from '../src/lib/attendanceHours.ts'
+import { minutesToTime, overtimeHours, overtimePay, summarizeUnpaidDays, timeToMinutes, workedHours } from '../src/lib/attendanceHours.ts'
 
 const t = (hhmm: string) => timeToMinutes(hhmm)!
 
@@ -33,5 +33,17 @@ assert.equal(timeToMinutes('08:30:00'), 510)
 assert.equal(timeToMinutes(null), null)
 assert.equal(minutesToTime(510), '08:30')
 assert.equal(minutesToTime(0), '00:00')
+
+// A period's days: leave counts as a day and its hours, never as overtime.
+assert.deepEqual(
+  summarizeUnpaidDays([
+    { attendance_status: 'Present', hours_worked: 8 },
+    { attendance_status: 'Present', hours_worked: 11 },
+    { attendance_status: 'Leave', hours_worked: 10 },
+    { attendance_status: 'Present', hours_worked: null },
+  ]),
+  { days: 4, hours: 29, overtime: 3 },
+)
+assert.deepEqual(summarizeUnpaidDays([]), { days: 0, hours: 0, overtime: 0 })
 
 console.log('ok')

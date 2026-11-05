@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient'
-import { overtimeHours } from './attendanceHours'
+
 
 // 'Leave' = PAID leave (payroll pays it like Present). 'Unpaid Leave' =
 // approved leave beyond the yearly paid balance (lib/leaveRequests.ts) --
@@ -137,73 +137,6 @@ export async function saveAttendanceRecord({
   }
 
   return { error: error?.message ?? null }
-}
-
-// Both functions below only count a day toward a payslip once --
-// paid_payroll_id gets set on these rows by markAttendanceAsPaid()
-// once a payslip that used them is actually issued, so a day already
-// paid on an earlier payslip is excluded here even if its date falls
-// inside a later (or overlapping) period.
-export async function countPaidAttendanceDays(
-  employeeId: number,
-  startDate: string,
-  endDate: string,
-): Promise<{ days: number; error: string | null }> {
-  const { data, error } = await supabase
-    .from('employee_attendance')
-    .select('attendance_status')
-    .eq('employee_id', employeeId)
-    .gte('attendance_date', startDate)
-    .lte('attendance_date', endDate)
-    .in('attendance_status', ['Present', 'Leave'])
-    .is('paid_payroll_id', null)
-
-  return { days: data?.length ?? 0, error: error?.message ?? null }
-}
-
-// For Hourly-rate employees' payslips -- sums hours_worked across the
-// same unpaid "Present"/"Leave" days countPaidAttendanceDays counts, so
-// a day logged without hours (null) just contributes 0 instead of
-// breaking the sum.
-export async function sumPaidAttendanceHours(
-  employeeId: number,
-  startDate: string,
-  endDate: string,
-): Promise<{ hours: number; error: string | null }> {
-  const { data, error } = await supabase
-    .from('employee_attendance')
-    .select('hours_worked')
-    .eq('employee_id', employeeId)
-    .gte('attendance_date', startDate)
-    .lte('attendance_date', endDate)
-    .in('attendance_status', ['Present', 'Leave'])
-    .is('paid_payroll_id', null)
-
-  if (error) return { hours: 0, error: error.message }
-
-  const hours = data.reduce((sum, row) => sum + (row.hours_worked ?? 0), 0)
-  return { hours, error: null }
-}
-
-// Overtime on the same unpaid days (Present only -- leave has no overtime):
-// each day's hours above 8 (lib/attendanceHours.ts), summed. A Present day
-// marked without times stores 8 hours, so it adds nothing.
-export async function sumPaidOvertimeHours(
-  employeeId: number,
-  startDate: string,
-  endDate: string,
-): Promise<{ hours: number; error: string | null }> {
-  const { data, error } = await supabase
-    .from('employee_attendance')
-    .select('hours_worked')
-    .eq('employee_id', employeeId)
-    .gte('attendance_date', startDate)
-    .lte('attendance_date', endDate)
-    .eq('attendance_status', 'Present')
-    .is('paid_payroll_id', null)
-  if (error) return { hours: 0, error: error.message }
-  const hours = data.reduce((sum, row) => sum + overtimeHours(row.hours_worked), 0)
-  return { hours: Math.round(hours * 100) / 100, error: null }
 }
 
 // Called by issuePayslip() right after a Daily Fixed / Monthly Salary /

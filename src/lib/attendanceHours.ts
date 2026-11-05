@@ -33,6 +33,22 @@ export function overtimeHours(hours: number | null): number {
   return hours == null ? 0 : round2(Math.max(0, hours - REGULAR_HOURS))
 }
 
+// A person's unpaid days for a period (Present / Leave rows), added up the
+// way payroll pays them: days and hours count both, overtime is Present only
+// (leave has no overtime). A day with no hours just adds 0.
+export function summarizeUnpaidDays(rows: { attendance_status: string; hours_worked: number | null }[]) {
+  return {
+    days: rows.length,
+    hours: rows.reduce((sum, row) => sum + (row.hours_worked ?? 0), 0),
+    overtime: round2(
+      rows.reduce(
+        (sum, row) => sum + (row.attendance_status === 'Present' ? overtimeHours(row.hours_worked) : 0),
+        0,
+      ),
+    ),
+  }
+}
+
 // What `otHours` of overtime pays for someone earning `dayRate` a day.
 export function overtimePay(otHours: number, dayRate: number): number {
   return round2(otHours * (dayRate / REGULAR_HOURS) * OVERTIME_RATE)
