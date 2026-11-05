@@ -178,9 +178,11 @@ function QuoteWizard({
     .map((f: ShipmentField) => (errors[f] ? { field: f, message: errors[f] } : null))
     .filter((p): p is { field: ShipmentField; message: string } => p !== null)
   const next = STEPS[stepIndex + 1]
+  // Review has no summary panel; with no aside either, the page is one centered column.
+  const centered = isReview && !aside
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className={centered ? 'mx-auto w-full max-w-3xl' : 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]'}>
       <form onSubmit={handleSubmit} noValidate className="min-w-0">
         <nav aria-label="Quote steps" className="mb-4">
           <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -301,15 +303,17 @@ function QuoteWizard({
         </section>
       </form>
 
-      <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
-        {!isReview && (
-          <div className="card hidden p-4 lg:block">
-            <p className="mb-3 text-sm font-semibold text-ink">Summary</p>
-            <QuoteSummary form={form} />
-          </div>
-        )}
-        {aside}
-      </aside>
+      {!centered && (
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
+          {!isReview && (
+            <div className="card hidden p-4 lg:block">
+              <p className="mb-3 text-sm font-semibold text-ink">Summary</p>
+              <QuoteSummary form={form} />
+            </div>
+          )}
+          {aside}
+        </aside>
+      )}
     </div>
   )
 }
