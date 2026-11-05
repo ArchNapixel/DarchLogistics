@@ -3,7 +3,7 @@
 // (statement.ts / statementTotals.ts) narrowed to this booking, so the
 // lines, billed amount, paid amount and balance are exactly what Bills
 // Receivable and the client's statement show; this file only adds the
-// booking's own details (route, cargo, terms, invoice number).
+// booking's own details (route, cargo, terms).
 import { supabase } from './supabaseClient'
 import { toManilaDate } from './payslip'
 import { loadLedgerInputs } from './statement'
@@ -14,7 +14,6 @@ export type Billing = {
   booking_id: number
   client_id: number
   booking_date: string
-  invoice_number: string | null
   client_name: string
   pickup: string
   delivery: string
@@ -50,7 +49,7 @@ export async function loadBilling(
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'booking_id, client_id, booking_date, invoice_number, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail',
+      'booking_id, client_id, booking_date, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail',
     )
     .eq('booking_id', bookingId)
     .maybeSingle()
@@ -114,7 +113,6 @@ export async function loadBilling(
       booking_id: bookingId,
       client_id: booking.client_id,
       booking_date: booking.booking_date,
-      invoice_number: booking.invoice_number,
       client_name: row.client_name,
       pickup: location(booking.place_of_pickup_id, booking.pickup_address_detail),
       delivery: location(booking.place_of_delivery_id, booking.delivery_address_detail),

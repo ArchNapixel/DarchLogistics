@@ -61,7 +61,6 @@ type ReceivableBookingRow = {
   rate_of_delivery_service: number | null
   amount_to_pay: number | null
   amount_paid: number | null
-  invoice_number: string | null
   cost_per_trip: number | null
   downpayment_waived_at: string | null
   created_at: string
@@ -466,7 +465,6 @@ function FinancialActionModal({
   const [overrideAmount, setOverrideAmount] = useState(
     String(booking.billable_amount - booking.damage_charges),
   )
-  const [invoiceText, setInvoiceText] = useState(booking.invoice_number ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -587,12 +585,6 @@ function FinancialActionModal({
     )
   }
 
-  // Invoice number from the printed booklet; blank clears it.
-  function saveInvoice() {
-    const invoice = invoiceText.trim() || null
-    save({ invoice_number: invoice }, { invoice_number: invoice })
-  }
-
   function resetOverride() {
     setOverrideAmount(String(booking.computed_billable_amount))
     save(
@@ -701,17 +693,6 @@ function FinancialActionModal({
             {booking.amount_to_pay !== null && (
               <button onClick={resetOverride} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50">Reset to computed</button>
             )}
-          </div>
-        </div>
-
-        <div className="mt-4 bg-slate-50 p-4">
-          <h4 className="font-medium text-slate-900">Invoice number</h4>
-          <p className="mt-1 text-xs text-slate-500">
-            The number printed on this booking's invoice. Leave blank to clear it.
-          </p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="text" maxLength={50} value={invoiceText} onChange={(e) => setInvoiceText(e.target.value)} className="w-full border border-line-control bg-white px-3 py-2 text-slate-900 rounded-[2px] min-h-11 focus:border-primary" />
-            <button onClick={saveInvoice} disabled={saving} className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-white disabled:opacity-50 rounded-[2px]">{saving ? 'Saving...' : 'Save Invoice No.'}</button>
           </div>
         </div>
 
@@ -840,7 +821,7 @@ function FinancialSection() {
       supabase
         .from('bookings')
         .select(
-          'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
+          'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
         )
         .order('created_at', { ascending: false })
         .order('booking_id', { ascending: false })
@@ -993,7 +974,6 @@ function FinancialSection() {
           billable_amount: billableAmount,
           amount_paid: amountPaid,
           balance_due: billableAmount - amountPaid,
-          invoice_number: b.invoice_number,
           created_at: b.created_at,
           cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
           cancelled_at: b.cancelled_at,
@@ -1174,9 +1154,6 @@ function FinancialSection() {
                           <tr key={booking.booking_id} className="h-[60px] border-b border-slate-200">
                             <td className={TD}>
                               <span className="block font-bold text-ink">#{booking.booking_id}</span>
-                              <span className="block text-[13px] leading-[18px] text-ink-muted">
-                                {booking.invoice_number ? `Inv. ${booking.invoice_number}` : 'No invoice no.'}
-                              </span>
                             </td>
                             <td className={`${TD} font-semibold`}>{booking.client_name}</td>
                             <td className={TD}>{due ? (TERMS_LABELS[due.payment_terms] ?? due.payment_terms) : '—'}</td>

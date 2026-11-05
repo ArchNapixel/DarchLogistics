@@ -5,8 +5,7 @@
 // booking from the links in Bills Receivable / the booking detail
 // (/dashboard/billing/:bookingId). The sidebar/header are hidden when
 // printing (print: classes in DashboardLayout). It is a billing statement,
-// not a BIR invoice; the invoice number shown is whatever was typed in
-// Bills Receivable. Numbers come from lib/billing.ts, which narrows the
+// not a BIR invoice. Numbers come from lib/billing.ts, which narrows the
 // Statement of Account ledger to this booking.
 // Laid out like the canvas board: every booking in a list on the left
 // (search by booking # or client), the chosen one's bill on the right.
@@ -216,7 +215,7 @@ function BillingPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4 print:hidden">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h2 className="text-lg leading-[26px] font-bold text-ink">
-                {billing.invoice_number ? `Invoice ${billing.invoice_number} · ` : ''}Booking #{billing.booking_id}
+                Booking #{billing.booking_id}
               </h2>
               {billing.balance_due <= 0 && billing.billed > 0 ? (
                 <StatusBadge status="Paid" icon />
@@ -240,7 +239,6 @@ function BillingPage() {
             </div>
             <div className="text-right text-sm text-slate-600">
               <p>Booking #{billing.booking_id}</p>
-              {billing.invoice_number && <p>Invoice no. {billing.invoice_number}</p>}
               <p className="text-xs">Prepared {formatDate(toManilaDate(new Date()))}</p>
             </div>
           </div>

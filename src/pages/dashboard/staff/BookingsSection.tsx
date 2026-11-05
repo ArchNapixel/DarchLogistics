@@ -73,9 +73,6 @@ export type Booking = {
   // The source quote's customer-facing reference ("Q-7F3K9A"), when it
   // has one. Optional so other screens building a Booking can skip it.
   reference_code?: string | null
-  // Number from the printed invoice booklet, typed in on Bills Receivable.
-  // Optional for the same reason as reference_code.
-  invoice_number?: string | null
   // When the booking was created (Bills Receivable: earliest allowed
   // "date received" for its payments). Optional for the same reason.
   created_at?: string
@@ -105,7 +102,6 @@ type BookingRow = {
   rate_of_delivery_service: number | null
   amount_to_pay: number | null
   amount_paid: number | null
-  invoice_number: string | null
 }
 
 const STATUS_FILTERS = [
@@ -209,7 +205,7 @@ function BookingsSection() {
       supabase
         .from('bookings')
         .select(
-          'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid, invoice_number',
+          'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid',
         )
         .order('created_at', { ascending: false })
         .order('booking_id', { ascending: false })
@@ -377,7 +373,6 @@ function BookingsSection() {
           balance_due: billableAmount - amountPaid,
           reference_code:
             b.quote_request_id !== null ? (referenceByQuote.get(b.quote_request_id) ?? null) : null,
-          invoice_number: b.invoice_number,
           cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
           cancelled_at: b.cancelled_at,
           trip_ids: tripIdsByBooking.get(b.booking_id) ?? [],
@@ -403,7 +398,6 @@ function BookingsSection() {
           booking.pickup_location,
           booking.delivery_location,
           booking.reference_code ?? '',
-          booking.invoice_number ?? '',
         ].some((text) => text.toLowerCase().includes(query))),
   )
   const counts = loading

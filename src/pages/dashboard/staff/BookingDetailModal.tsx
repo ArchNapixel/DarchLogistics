@@ -82,7 +82,6 @@ type Trip = {
 
 type Details = {
   reference_code: string | null
-  invoice_number: string | null
   payment_terms: string | null
   pickup: string
   delivery: string
@@ -173,7 +172,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, invoice_number, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -286,7 +285,6 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   return {
     details: {
       reference_code: quoteResult.data?.reference_code ?? null,
-      invoice_number: b.invoice_number,
       payment_terms: b.payment_terms,
       pickup: location(b.place_of_pickup_id, b.pickup_address_detail),
       delivery: location(b.place_of_delivery_id, b.delivery_address_detail),
@@ -721,9 +719,6 @@ function BookingDetailModal({
               ? (PAYMENT_TERMS_LABELS[details.payment_terms as keyof typeof PAYMENT_TERMS_LABELS] ?? details.payment_terms)
               : '—'}
           </span>
-        </span>
-        <span>
-          Invoice No. <span className="font-semibold text-slate-900">{details?.invoice_number || '—'}</span>
         </span>
         {/* Billing lives in the banner while a downpayment is due. */}
         {billingLink && !showDownpaymentDue && (

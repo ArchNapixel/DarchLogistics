@@ -124,14 +124,13 @@ export type PaymentRow = {
   void_reason: string | null
   client_id: number
   client_name: string
-  invoice_number: string | null
   recorded_by_name: string
   voided_by_name: string | null
 }
 
 type RawPayment = Omit<
   PaymentRow,
-  'client_id' | 'client_name' | 'invoice_number' | 'recorded_by_name' | 'voided_by_name'
+  'client_id' | 'client_name' | 'recorded_by_name' | 'voided_by_name'
 > & { recorded_by: number | null; voided_by: number | null }
 
 // Payments whose "date received" falls between from and to (YYYY-MM-DD,
@@ -155,12 +154,12 @@ export async function loadPayments(
   if (payments.error) return { rows: [], error: payments.error }
 
   const bookingIds = Array.from(new Set(payments.rows.map((p) => p.booking_id)))
-  const bookings = await fetchIn<{ booking_id: number; client_id: number; invoice_number: string | null }>(
+  const bookings = await fetchIn<{ booking_id: number; client_id: number }>(
     bookingIds,
     (chunk, a, b) =>
       supabase
         .from('bookings')
-        .select('booking_id, client_id, invoice_number')
+        .select('booking_id, client_id')
         .in('booking_id', chunk)
         .range(a, b),
   )
@@ -196,7 +195,6 @@ export async function loadPayments(
       amount: Number(p.amount),
       client_id: booking?.client_id ?? 0,
       client_name: booking ? (clientNameById.get(booking.client_id) ?? '—') : '—',
-      invoice_number: booking?.invoice_number ?? null,
       // An admin with no employees row linked shows as a dash (see CLAUDE.md).
       recorded_by_name: recorded_by !== null ? (employeeNameById.get(recorded_by) ?? '—') : '—',
       voided_by_name: voided_by !== null ? (employeeNameById.get(voided_by) ?? '—') : null,
@@ -218,11 +216,11 @@ export async function voidBookingPayment(paymentId: number, reason: string): Pro
 // Plain numbers so the CSV opens as numbers in Excel.
 export function buildCollectionsCsv(from: string, to: string, rows: PaymentRow[]): string {
   const header = [
-    'Payment #', 'Date Received', 'Booking #', 'Client', 'Invoice No.', 'Method', 'Amount',
+    'Payment #', 'Date Received', 'Booking #', 'Client', 'Method', 'Amount',
     'Reference No.', 'OR Number', 'Note', 'Recorded By', 'Status', 'Void Reason',
   ]
   const lines = rows.map((r) => [
-    r.payment_id, r.paid_on, r.booking_id, r.client_name, r.invoice_number ?? '', r.method, r.amount,
+    r.payment_id, r.paid_on, r.booking_id, r.client_name, r.method, r.amount,
     r.reference_no ?? '', r.or_number ?? '', r.note ?? '', r.recorded_by_name,
     r.voided_at ? 'Voided' : 'Counted', r.void_reason ?? '',
   ])

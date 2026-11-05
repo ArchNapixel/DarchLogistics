@@ -901,12 +901,10 @@ before creating it.
     "No due date" only when non-empty). Per-client rows expand to
     bookings. Nothing is billable until a trip is Delivered (unless a
     payment locked `amount_to_pay` at the contract value).
-  - **Invoice number** — `bookings.invoice_number` (text, SQL run by user).
-    Just stores the number from the printed invoice booklet: edited in
-    Bills Receivable's financial modal, shown in the list, in
-    `BookingDetailModal`, and searchable on Client Bookings. The app does
-    NOT generate or print invoices; no uniqueness constraint. Deliberately
-    kept manual (BIR-registered booklet is the official invoice).
+  - **Invoice number: removed 2026-11-06** (user's choice). The company
+    issues no invoices yet, and Billing / Statements aren't BIR invoices.
+    The app has no invoice field any more; any future invoice feature
+    must use BIR-registered numbers, not app-made ones.
   - **Payroll & Remittances** (`/dashboard/payroll-remittances`,
     `staff/PayrollRemittanceSection.tsx`, `lib/remittanceReport.ts` loader +
     CSV, `lib/remittanceTotals.ts` pure math, self-check
@@ -976,7 +974,7 @@ before creating it.
     payments were converted to dated-today "Opening balance" rows,
     statements for periods before that date show old bookings as unpaid
     and the payment inside the period of the backfill. Not built: payment
-    history in the client portal / BookingDetailModal, invoice numbering.
+    history in the client portal / BookingDetailModal.
   - **Planned, in order** (decided with the user; each needs go-ahead):
     Phase 4 (all of 4a–4c built, see above; original design:)
     `booking_payments` payment history
@@ -1012,7 +1010,7 @@ before creating it.
     same `print:` setup as Statements): client, route, cargo, terms, trips
     delivered, the dated ledger lines (delivered trips, adjustment,
     payments) with running balance, total billed / paid / amount due (or
-    PAID), due date, invoice no. if typed. It is `loadLedgerInputs(clientId)`
+    PAID), due date. It is `loadLedgerInputs(clientId)`
     narrowed to the booking, so it matches Bills Receivable and the
     Statement. Trips not delivered yet are listed too (greyed, no amount, "Trip #N (not delivered yet): route · cargo", in date order, `pendingTrips` in `lib/billing.ts`) and are billed on delivery, like the statement's trip lines. Titled "Billing" — NOT a BIR invoice. "Billing" link in
     Bills Receivable's Action column and in `BookingDetailModal` (Admin

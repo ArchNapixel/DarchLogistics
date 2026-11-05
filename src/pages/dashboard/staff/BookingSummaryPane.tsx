@@ -109,10 +109,6 @@ function BookingSummaryPane({
                 <span className="text-[13px] text-ink-muted">per trip</span>
               </dd>
             </div>
-            <div>
-              <dt className={LABEL}>Invoice no.</dt>
-              <dd className={booking.invoice_number ? VALUE : `${VALUE} text-ink-muted`}>{booking.invoice_number || 'Not entered'}</dd>
-            </div>
           </dl>
         </section>
 

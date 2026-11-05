@@ -119,7 +119,7 @@ function CollectionsSection() {
       (!clientFilter || String(r.client_id) === clientFilter) &&
       (showVoided || r.voided_at === null) &&
       (!search.trim() ||
-        [`#${r.booking_id}`, String(r.booking_id), r.reference_no ?? '', r.or_number ?? '', r.invoice_number ?? '']
+        [`#${r.booking_id}`, String(r.booking_id), r.reference_no ?? '', r.or_number ?? '']
           .join(' ')
           .toLowerCase()
           .includes(search.trim().toLowerCase().replace(/^#/, ''))),
@@ -251,7 +251,6 @@ function CollectionsSection() {
                             <Link to={`/dashboard/bookings?booking=${r.booking_id}`} className="font-semibold text-primary hover:underline">
                               Booking #{r.booking_id}
                             </Link>
-                            {r.invoice_number && <span className="block text-[13px] text-ink-muted">Inv. {r.invoice_number}</span>}
                           </td>
                           <td className={`${TD} text-[13px]`}>
                             {r.reference_no && <span className="block">Ref: {r.reference_no}</span>}
