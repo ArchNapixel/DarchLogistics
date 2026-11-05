@@ -54,7 +54,7 @@ function formatShort(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
-// "How days are counted" -- the side panel's rules (same as payroll's).
+// "How days are counted" -- the "?" button's rules (same as payroll's).
 const COUNT_RULES: [string, string][] = [
   ['Present', 'Paid day (8 hours if no times)'],
   ['Hours', 'Time out − time in − 1 h lunch'],
@@ -65,6 +65,52 @@ const COUNT_RULES: [string, string][] = [
   ['Not marked', 'Counts as Absent once the day is over'],
   ['Sunday', 'Rest day -- optional, never auto-Absent'],
 ]
+
+// The "?" button and its pop-up. Uses the browser's popover feature, which
+// already closes on Esc or a click outside. m-auto centres it (Tailwind's
+// reset removes the browser's own centring).
+function CountRulesHelp() {
+  return (
+    <>
+      <button
+        type="button"
+        popoverTarget="attendance-count-rules"
+        aria-label="How days are counted"
+        title="How days are counted"
+        className="flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-base font-semibold text-ink-secondary hover:bg-slate-50"
+      >
+        ?
+      </button>
+      <div
+        id="attendance-count-rules"
+        popover="auto"
+        className="card m-auto w-[calc(100vw-32px)] max-w-md px-5 py-4 text-ink backdrop:bg-slate-900/50"
+      >
+        <div className="mb-1 flex items-center justify-between gap-3 border-b border-line pb-2">
+          <h2 className="text-sm font-semibold text-ink">How days are counted</h2>
+          <button
+            type="button"
+            popoverTarget="attendance-count-rules"
+            popoverTargetAction="hide"
+            aria-label="Close"
+            className="flex h-11 w-11 items-center justify-center text-lg text-ink-secondary hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </div>
+        {COUNT_RULES.map(([status, rule]) => (
+          <div key={status} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm">
+            <span className="text-ink-secondary">{status}</span>
+            <span className="text-right font-semibold">{rule}</span>
+          </div>
+        ))}
+        <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
+          Saves as soon as you pick. Use Edit times under a Present day to record time in / out; the hours show on the payslip. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
+        </p>
+      </div>
+    </>
+  )
+}
 
 // Drivers aren't on this sheet (they're paid per trip) -- the panel lists
 // who has trips today instead.
@@ -266,6 +312,7 @@ function AttendanceSection() {
         subtitle="Record time in / out or mark Present or Absent. Leave fills in by itself when a leave request is approved. Drivers are paid per trip and aren't on this sheet."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <CountRulesHelp />
             <button
               onClick={() => setWeekStart(shiftDate(weekStart, -7))}
               aria-label="Previous week"
@@ -448,20 +495,12 @@ function AttendanceSection() {
         </section>
       )}
 
-        <aside className="card flex flex-col gap-5 px-5 py-4">
-          <section>
-            <h2 className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">How days are counted</h2>
-            {COUNT_RULES.map(([status, rule]) => (
-              <div key={status} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm">
-                <span className="text-ink-secondary">{status}</span>
-                <span className="text-right font-semibold">{rule}</span>
-              </div>
-            ))}
-            <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
-              Saves as soon as you pick. Use Edit times under a Present day to record time in / out; the hours show on the payslip. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
-            </p>
-          </section>
-          <DriversToday today={today} />
+        <aside className="flex flex-col gap-4">
+          {/* Pending leave requests -- approving one marks its days as Leave. */}
+          <LeaveRequestsSection onDecided={() => void load()} />
+          <div className="card px-5 py-4">
+            <DriversToday today={today} />
+          </div>
         </aside>
       </div>
 
@@ -479,11 +518,6 @@ function AttendanceSection() {
           />
         )
       })()}
-
-      {/* Pending leave requests -- approving one marks its days as Leave above. */}
-      <div className="mt-6">
-        <LeaveRequestsSection onDecided={() => void load()} />
-      </div>
     </div>
   )
 }
