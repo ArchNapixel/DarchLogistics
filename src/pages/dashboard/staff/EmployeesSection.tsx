@@ -395,61 +395,6 @@ function EmployeesSection() {
     loadEmployees()
   }
 
-  async function handleDelete(employee: Employee) {
-    // Someone with a login can't be deleted: their users row (the login)
-    // would be left pointing at a missing employee, and their trips would
-    // lose their name. Deactivate keeps everything and blocks the login.
-    if (linkedEmployeeIds.has(employee.employee_id)) {
-      setActionError(
-        `${employee.name} has a login account, so they can't be deleted. Use Deactivate instead -- it blocks the login and keeps their records.`,
-      )
-      return
-    }
-
-    if (
-      !(await confirmDialog({
-        title: `Delete ${employee.name}?`,
-        message: 'This cannot be undone.',
-        confirmLabel: 'Delete',
-        danger: true,
-      }))
-    ) {
-      return
-    }
-
-    setActionError(null)
-
-    const { data: deleted, error: deleteError } = await supabase
-      .from('employees')
-      .delete()
-      .eq('employee_id', employee.employee_id)
-      .select('employee_id')
-
-
-    if (deleteError) {
-      // '23503' is Postgres's error code for a foreign key violation --
-      // e.g. this employee is still assigned to a work order. Uses a
-      // separate actionError state (not the page-load `error`) so a
-      // failed delete shows a banner without hiding the whole list.
-      if (deleteError.code === '23503') {
-        setActionError(
-          `Can't delete ${employee.name} -- they're still referenced ` +
-            `elsewhere (e.g. an assigned work order). Reassign or remove ` +
-            `those first, then try again.`,
-        )
-      } else {
-        setActionError(deleteError.message)
-      }
-      return
-    }
-    if (!deleted || deleted.length === 0) {
-      setActionError(`${employee.name} was not deleted (no permission, or already gone).`)
-      return
-    }
-
-    loadEmployees()
-  }
-
   async function loadEmployees() {
     setLoading(true)
 
@@ -808,22 +753,10 @@ function EmployeesSection() {
       {editingEmployee && (
         <AddEmployeeModal
           employee={editingEmployee.editable}
-          isDeactivated={editingEmployee.status === 'Deactivated'}
           onClose={() => setEditingEmployee(null)}
           onSaved={() => {
             setEditingEmployee(null)
             loadEmployees()
-          }}
-          // Close the edit modal first so the confirm dialog isn't hidden behind it.
-          onToggleStatus={() => {
-            const emp = editingEmployee
-            setEditingEmployee(null)
-            handleSetStatus(emp, emp.status === 'Deactivated' ? 'Active' : 'Deactivated')
-          }}
-          onDelete={() => {
-            const emp = editingEmployee
-            setEditingEmployee(null)
-            handleDelete(emp)
           }}
         />
       )}

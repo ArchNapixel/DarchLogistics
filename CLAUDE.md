@@ -286,7 +286,7 @@ before creating it.
   (Draft/Confirmed) and Past sections. Read-only.
 - Employees (`/dashboard/employees`, EmployeesSection + AddEmployeeModal) —
   fully wired to `employees`/`employment_status`/`users`. Search/position/
-  status filters, Edit, Delete (FK-violation-aware error handling), and
+  status filters, Edit (no Delete since 2026-11-06, Deactivate instead), and
   "Set Up Account" (SetUpStaffAccountModal, via the `create-user-account`
   Edge Function). Active/Deactivated tabs (Deactivate/Reactivate flips
   `employment_status_id`). The Edit form also has a login section:

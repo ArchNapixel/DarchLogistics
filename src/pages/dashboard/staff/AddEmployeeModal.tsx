@@ -67,19 +67,12 @@ export type EditableEmployee = {
 
 function AddEmployeeModal({
   employee,
-  isDeactivated,
   onClose,
   onSaved,
-  onToggleStatus,
-  onDelete,
 }: {
   employee?: EditableEmployee
-  // Only used when editing: show Deactivate/Reactivate and Delete buttons.
-  isDeactivated?: boolean
   onClose: () => void
   onSaved: () => void
-  onToggleStatus?: () => void
-  onDelete?: () => void
 }) {
   const isEditing = !!employee
 
@@ -600,26 +593,6 @@ function AddEmployeeModal({
         )}
 
         <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-3">
-          {isEditing && onToggleStatus && onDelete && (
-            <div className="mr-auto flex gap-3">
-              <button
-                onClick={onToggleStatus}
-                className={`text-sm font-medium ${
-                  isDeactivated
-                    ? 'text-green-600 hover:text-green-800'
-                    : 'text-orange-600 hover:text-orange-800'
-                }`}
-              >
-                {isDeactivated ? 'Reactivate' : 'Deactivate'}
-              </button>
-              <button
-                onClick={onDelete}
-                className="text-sm font-medium text-red-600 hover:text-red-800"
-              >
-                Delete
-              </button>
-            </div>
-          )}
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
