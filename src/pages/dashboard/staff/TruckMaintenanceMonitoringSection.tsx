@@ -336,14 +336,9 @@ function OdometerConfirm({
   return (
     <section aria-labelledby="odo-h" className="card flex flex-col">
       <div className={PANEL_HEAD}>
-        <div>
-          <h2 id="odo-h" className="text-base font-semibold text-ink">
-            Confirm odometer readings
-          </h2>
-          <p className="text-[13px] text-ink-muted">
-            Suggested after each delivered trip: current reading + J.P. Laurel → pickup + trip + back to J.P. Laurel.
-          </p>
-        </div>
+        <h2 id="odo-h" className="text-base font-semibold text-ink">
+          Confirm odometer readings
+        </h2>
       </div>
       {error && <p className="mx-5 mt-3 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {suggestions.length === 0 ? (
@@ -412,9 +407,6 @@ function OdometerConfirm({
           <Pager {...paged.pager} />
         </div>
       )}
-      <p className="border-t border-line px-5 py-3 text-[13px] text-ink-muted">
-        Leave New Reading empty to accept the suggested value. A new reading must be higher than the current one.
-      </p>
     </section>
   )
 }
@@ -672,7 +664,6 @@ function TruckMaintenanceMonitoringSection() {
               <h2 id="alerts-h" className="text-base font-semibold text-ink">
                 Alerts
               </h2>
-              <span className="text-[13px] text-ink-muted">Not operational, service due, schedules due, late work orders</span>
             </div>
             {loading ? (
               <p className="px-5 py-4 text-ink-muted">Loading alerts...</p>
