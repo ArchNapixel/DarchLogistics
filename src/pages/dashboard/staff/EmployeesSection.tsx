@@ -276,38 +276,43 @@ function EmployeePanel({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
-        {inactive ? (
-          <button type="button" onClick={() => onSetStatus('Active')} className="btn-secondary px-4 text-sm font-medium">
-            Reactivate
-          </button>
-        ) : (
-          <button type="button" onClick={() => onSetStatus('Deactivated')} className="btn-danger px-4 text-sm">
-            Deactivate
-          </button>
+      <div className="flex flex-col gap-3 border-t border-line px-5 py-4">
+        {(onHistory || !inactive) && (
+          <div className="flex flex-wrap gap-3">
+            {onHistory && (
+              <button type="button" onClick={onHistory} className="btn-secondary flex-1 px-4 text-sm font-medium">
+                {employee.position === 'Mechanic' ? 'Work History' : 'Trip History'}
+              </button>
+            )}
+            {!hasLogin && !inactive && (
+              <button type="button" onClick={onSetUpAccount} className="btn-secondary flex-1 px-4 text-sm font-medium">
+                Set Up Account
+              </button>
+            )}
+            {!inactive && (
+              <button type="button" onClick={onCashAdvance} className="btn-secondary flex-1 px-4 text-sm font-medium">
+                Add Cash Advance
+              </button>
+            )}
+          </div>
         )}
-        <span className="flex-1" />
-        {onHistory && (
-          <button type="button" onClick={onHistory} className="btn-secondary px-4 text-sm font-medium">
-            {employee.position === 'Mechanic' ? 'Work History' : 'Trip History'}
+        <div className="flex items-center gap-3">
+          {inactive ? (
+            <button type="button" onClick={() => onSetStatus('Active')} className="btn-secondary px-4 text-sm font-medium">
+              Reactivate
+            </button>
+          ) : (
+            <button type="button" onClick={() => onSetStatus('Deactivated')} className="btn-danger px-4 text-sm">
+              Deactivate
+            </button>
+          )}
+          <button type="button" onClick={onEdit} className="btn-primary flex items-center gap-2 px-5 text-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
+            </svg>
+            Edit
           </button>
-        )}
-        {!hasLogin && !inactive && (
-          <button type="button" onClick={onSetUpAccount} className="btn-secondary px-4 text-sm font-medium">
-            Set Up Account
-          </button>
-        )}
-        {!inactive && (
-          <button type="button" onClick={onCashAdvance} className="btn-secondary px-4 text-sm font-medium">
-            Add Cash Advance
-          </button>
-        )}
-        <button type="button" onClick={onEdit} className="btn-primary flex items-center gap-2 px-5 text-sm">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
-          </svg>
-          Edit
-        </button>
+        </div>
       </div>
     </aside>
   )
