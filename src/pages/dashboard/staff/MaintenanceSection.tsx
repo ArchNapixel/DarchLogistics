@@ -392,7 +392,7 @@ function MaintenanceSection() {
               <div className="flex-1 overflow-x-auto">
                 {activeTab === 'Requests' &&
                   (requests.length === 0 ? (
-                    <EmptyState message="No pending maintenance requests." hint="Drivers and mechanics send these from their portal." className="m-5" />
+                    <EmptyState message="No pending maintenance requests." className="m-5" />
                   ) : (
                     <table className="w-full min-w-[760px] text-left text-sm text-ink-metric">
                       <thead>
@@ -478,7 +478,7 @@ function MaintenanceSection() {
 
                 {activeTab === 'Schedules' &&
                   (schedules.length === 0 ? (
-                    <EmptyState message="No upcoming maintenance schedules." hint='Use "Assign Schedule" to add one.' className="m-5" />
+                    <EmptyState message="No upcoming maintenance schedules." className="m-5" />
                   ) : (
                     <table className="w-full min-w-[760px] text-left text-sm text-ink-metric">
                       <thead>
@@ -565,10 +565,6 @@ function MaintenanceSection() {
                     <span className="whitespace-pre-line">{paneRequest.description}</span>
                   </Field>
                 </dl>
-                <p className="mt-4 text-[13px] text-ink-muted">
-                  Approving creates an unassigned work order (it goes on the mechanics' Task Board) and sets the vehicle Under
-                  Maintenance. Rejecting asks for a reason.
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
                 {canDecide ? (
@@ -621,7 +617,7 @@ function MaintenanceSection() {
                 </section>
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
-                <p className="flex-1 text-[13px] text-ink-muted">Notes, parts used, reassign, status and Complete are inside.</p>
+                <span className="flex-1" />
                 <button type="button" onClick={() => setOpenOrderId(paneOrder.work_order_id)} className="btn-primary px-5 text-sm">
                   Open Work Order
                 </button>

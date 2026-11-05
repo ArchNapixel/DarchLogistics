@@ -415,7 +415,6 @@ function FleetSection() {
       ) : (activeTab === 'Trucks' ? viewTrucks : viewTrailers).length === 0 ? (
         <EmptyState
           message={showInactive ? `No deactivated ${activeTab.toLowerCase()}.` : activeTab === 'Trucks' ? 'No trucks yet.' : 'No trailers yet.'}
-          hint={showInactive ? 'Deactivate a unit from its side panel on the Active list.' : `Use "Add ${activeTab === 'Trucks' ? 'Truck' : 'Trailer'}" to add one.`}
           className="mt-4"
         />
       ) : (

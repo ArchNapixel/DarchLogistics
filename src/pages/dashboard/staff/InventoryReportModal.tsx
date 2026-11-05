@@ -116,10 +116,6 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <p className="mt-2 text-sm text-slate-500">
-          Reports run Sunday through Saturday.
-        </p>
-
         <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-slate-700 sm:w-72">
           Week
           {loadingWeeks ? (

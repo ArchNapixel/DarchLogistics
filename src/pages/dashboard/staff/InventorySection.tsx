@@ -283,7 +283,7 @@ function InventorySection() {
 
       {loading && <p className="mt-4 text-ink-muted">Loading inventory...</p>}
       {!loading && error && <p className="mt-4 text-red-700">{error}</p>}
-      {!loading && !error && items.length === 0 && <EmptyState message="No inventory items yet." hint='Use "Add Item" to add one.' className="mt-4" />}
+      {!loading && !error && items.length === 0 && <EmptyState message="No inventory items yet." className="mt-4" />}
 
       {!loading && !error && items.length > 0 && (
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
@@ -411,9 +411,6 @@ function InventorySection() {
                   </div>
                 </dl>
                 <RecentUse itemId={pane.item_id} />
-                <p className="text-[13px] text-ink-muted">
-                  To restock or correct the count, use Edit. Parts a mechanic logs on a work order are taken out of stock right away.
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
                 <button type="button" onClick={() => void handleDelete(pane)} disabled={deletingId === pane.item_id} className="btn-danger px-4 text-sm">

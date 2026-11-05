@@ -607,7 +607,7 @@ function TruckMaintenanceMonitoringSection() {
             {loading ? (
               <p className="px-5 py-4 text-ink-muted">Loading trucks...</p>
             ) : trucks.length === 0 ? (
-              <EmptyState message="No trucks yet." hint="Add one on the Fleet page." className="m-5" />
+              <EmptyState message="No trucks yet." className="m-5" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm text-ink-metric">

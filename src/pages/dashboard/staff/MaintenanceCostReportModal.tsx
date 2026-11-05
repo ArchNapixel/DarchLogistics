@@ -74,11 +74,6 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <p className="mt-2 text-sm text-slate-500">
-          Parts used on work orders completed in the selected month, at the price each part had
-          when it was used.
-        </p>
-
         <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-slate-700 sm:w-72">
           Month
           <input
