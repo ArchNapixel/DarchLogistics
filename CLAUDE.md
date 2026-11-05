@@ -1281,6 +1281,12 @@ extra charge; no-work days only block STARTING a trip). Phase A built:
   still go one employee at a time.
 - The list shows straight away and drafts update behind it: every payslip
   button is locked (`generating`) until the list has been re-read.
+- Indexes (SQL given in chat, not in a migration file): `payslip_line_items`
+  (payroll_id) and (itinerary_id), `dispatch_status_logs` (itinerary_id) and
+  (new_status, status_changed_at), `itinerary_crews` (itinerary_id) and
+  (employee_id), `payroll_payslips` (payroll_period_start desc, payroll_id desc),
+  `employee_attendance` (attendance_date). Before these, each table had only
+  its primary key and unique constraint. `cash_advances` skipped (6 rows).
 
 ## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
 - **Payroll** no longer rebuilds every draft on page open (that wiped
