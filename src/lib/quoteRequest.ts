@@ -537,10 +537,11 @@ export function useSummaryDrawer(form: ShipmentForm) {
 
 // A location from one of the client's own past bookings, offered as a
 // one-click pick in the client portal.
-export type RecentLocation = LocationValue & { label: string }
+// `stop` says which card it belongs on (quick picks from named_locations have none).
+export type RecentLocation = LocationValue & { label: string; stop?: 'pickup' | 'delivery' }
 
-// Pickup and delivery spots from the client's latest bookings, newest
-// first, one entry per distinct city + barangay + landmark. Reads only
+// The last 3 pickup spots and last 3 delivery spots from the client's
+// bookings, newest first, one entry per distinct city + barangay + landmark. Reads only
 // the client's own bookings (same query shape as MyBookingsSection)
 // plus `places` for the city/barangay. Failures just mean no recent
 // picks -- they never block the form.
@@ -571,16 +572,16 @@ export async function loadRecentLocations(clientId: number): Promise<RecentLocat
 
   for (const b of bookings) {
     const ends = [
-      [b.place_of_pickup_id, b.pickup_address_detail, b.pickup_landmark, b.pickup_lat, b.pickup_lng],
-      [b.place_of_delivery_id, b.delivery_address_detail, b.delivery_landmark, b.delivery_lat, b.delivery_lng],
+      ['pickup', b.place_of_pickup_id, b.pickup_address_detail, b.pickup_landmark, b.pickup_lat, b.pickup_lng],
+      ['delivery', b.place_of_delivery_id, b.delivery_address_detail, b.delivery_landmark, b.delivery_lat, b.delivery_lng],
     ] as const
-    for (const [placeId, detail, landmark, lat, lng] of ends) {
+    for (const [stop, placeId, detail, landmark, lat, lng] of ends) {
       const place = placeById.get(placeId)
       // Older places rows from before city/barangay existed can't be
       // turned back into a pick -- skip them.
       if (!place?.city || !place?.barangay) continue
 
-      const key = `${place.city}|${place.barangay}|${(detail ?? '').trim().toLowerCase()}`
+      const key = `${stop}|${place.city}|${place.barangay}|${(detail ?? '').trim().toLowerCase()}`
       if (seen.has(key)) continue
       seen.add(key)
 
@@ -592,9 +593,13 @@ export async function loadRecentLocations(clientId: number): Promise<RecentLocat
         lat: lat ?? null,
         lng: lng ?? null,
         label: detail?.trim() || `Brgy. ${place.barangay}`,
+        stop,
       })
     }
   }
 
-  return recent.slice(0, 6)
+  return [
+    ...recent.filter((r) => r.stop === 'pickup').slice(0, 3),
+    ...recent.filter((r) => r.stop === 'delivery').slice(0, 3),
+  ]
 }

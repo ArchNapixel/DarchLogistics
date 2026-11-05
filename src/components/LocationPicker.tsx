@@ -248,12 +248,14 @@ function LocationPicker({
     label: named.abbreviation,
   }))
 
-  function renderShortcuts(title: string, items: RecentLocation[]) {
-    if (items.length === 0) return null
+  // `after` sits in the same grid as the picks (the "Select" button).
+  function renderShortcuts(title: string, items: RecentLocation[], after?: React.ReactNode) {
+    if (items.length === 0 && !after) return null
     return (
-      <>
-        {title && <span className="text-xs font-medium text-slate-500">{title}</span>}
-        {items.map((location, index) => {
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-slate-500">{title}</span>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {items.map((location, index) => {
           const selected = isSelected(location)
           return (
             <button
@@ -262,7 +264,7 @@ function LocationPicker({
               onClick={() => pickShortcut(location)}
               title={`${location.detail ? `${location.detail}, ` : ''}Brgy. ${location.barangay}, ${location.city}`}
               aria-pressed={selected}
-              className={`w-32 truncate border-2 px-3 py-1.5 text-center text-sm font-medium transition-colors ${
+              className={`min-w-0 truncate border-2 px-3 py-1.5 text-center text-sm font-medium transition-colors ${
                 selected
                   ? 'border-primary bg-primary text-white'
                   : 'border-line-control text-ink-metric hover:border-slate-500 hover:bg-slate-50'
@@ -271,8 +273,10 @@ function LocationPicker({
               {location.label}
             </button>
           )
-        })}
-      </>
+          })}
+          {after}
+        </div>
+      </div>
     )
   }
 
@@ -303,17 +307,20 @@ function LocationPicker({
 
       {/* Quick picks first; "Select specific" swaps them for the manual inputs + map */}
       {!specific && (
-        <div className="col-span-full flex flex-wrap items-center gap-2">
-          {renderShortcuts('Recent', recentLocations)}
-          {renderShortcuts('', namedShortcuts)}
-          <button
+        <div className="col-span-full flex flex-col gap-3">
+          {renderShortcuts('Recent', recentLocations.filter((location) => location.stop === stop))}
+          {renderShortcuts(
+            'Common places',
+            namedShortcuts,
+            <button
               type="button"
               onClick={() => setSpecific(true)}
-              className="inline-flex w-32 items-center justify-center gap-1.5 border-2 border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:border-slate-500 hover:bg-slate-50"
+              className="inline-flex min-w-0 items-center justify-center gap-1.5 border-2 border-line-control px-3 py-1.5 text-sm font-medium text-ink-metric hover:border-slate-500 hover:bg-slate-50"
             >
               <PinIcon />
               Select
-            </button>
+            </button>,
+          )}
         </div>
       )}
 
