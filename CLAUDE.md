@@ -233,7 +233,7 @@ before creating it.
   places, crew, plates), a Refresh button, formatted dates, and booking
   numbers link to `/dashboard/bookings?booking=ID` (BookingsSection
   opens that booking's detail on load). The header bell
-  (`ComplianceExpiryAlerts`) now shows driver license/medical expiries
+  (`ComplianceExpiryAlerts`) now shows driver license expiries
   to Dispatchers too. Damage Charges' approve checks the update matched
   a row. **Damage billing:** an approved `charge_to = 'Client'` damage
   record is added ON TOP of the booking's delivery amount everywhere a
@@ -1136,7 +1136,7 @@ before creating it.
     detail, `employee/MyScheduleSection.tsx` (`/dashboard/schedule`,
     Driver + Helper only), `components/TripNotifications.tsx` bell in the
     header (Driver/Helper; polls every minute, opening marks read). It is
-    separate from `ComplianceExpiryAlerts` (licence/medical bell).
+    separate from `ComplianceExpiryAlerts` (licence bell).
 
 ## 2026-10-24: scheduling rules, Capacity Check (SQL given in chat)
 - **Crew can't start a second trip while one is on the road.** A trip
@@ -1371,12 +1371,8 @@ mention `SetUpClientAccountModal`, `AddClientModal` or staff-made client logins.
   charges"). `amount_to_pay` stays the delivery amount.
 - **Money Summary Export** -- CSV of the month (`buildMoneySummaryCsv` in
   `lib/moneySummary.ts`).
-- **Three medical exams** (`lib/medicalExams.ts`): Physical (the old
-  `medical_exam_date` / `medical_exam_expiry_date` + `physical_exam_result`),
-  Drug Test (`drug_test_*`), Psychological (`psych_exam_*`), each date +
-  expiry + result Passed/Failed. Drivers only, in AddEmployeeModal and the
-  Employees panel; the header bell warns on each expiry (30 days) and on a
-  Failed result. Queries list the columns literally (typed select).
+- **Medical exams removed 2026-11-06** (user's choice): no form, panel or
+  bell alerts, `lib/medicalExams.ts` deleted, columns dropped by SQL given in chat.
 - **Maintenance boards rebuilt with existing data only.** Truck Monitoring:
   tiles, Trucks table (status, odometer, last 2 trips, next maintenance =
   next service date or earliest pending schedule), Alerts (truck / trailer

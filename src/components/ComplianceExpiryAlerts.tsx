@@ -3,7 +3,7 @@
 // their end time by more than app_settings.overdue_alert_hours, default 2,
 // and not delivered / cancelled), linking to the trip -- so nobody has to
 // notice a red badge on the board. It reloads every 5 minutes.
-// Surfaces driver licenses and medical exams expiring within 30 days
+// Surfaces driver licenses expiring within 30 days
 // (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
 // full-width banner strip this used to render under the header.
@@ -19,15 +19,12 @@ import { Link } from 'react-router-dom'
 import { isAdmin, isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
-import { MEDICAL_EXAMS, examValuesOf, isMissingExamColumns } from '../lib/medicalExams'
 
 type ComplianceRow = {
   employee_id: number
   full_name: string
   driver_license_expiry_date: string | null
   employment_status_id: number | null
-  // Plus the three medical exams' columns (lib/medicalExams.ts).
-  [examColumn: string]: unknown
 }
 
 type OverdueTrip = {
@@ -45,13 +42,10 @@ const overdueKey = (t: OverdueTrip) => `trip-${t.tripId}`
 type ExpiryAlert = {
   employeeId: number
   employeeName: string
-  // 'Driver license', or a medical exam ("Drug Test exam").
   kind: string
   // null = no licence on record at all (shown as "not on record").
   date: string | null
   daysRemaining: number
-  // The exam's result is Failed (shown instead of the expiry).
-  failed?: boolean
 }
 
 function daysUntil(date: string) {
@@ -60,8 +54,7 @@ function daysUntil(date: string) {
   )
 }
 
-// One employee can have both kinds expiring, so the name alone isn't
-// unique enough to dismiss a single notification by.
+// Identifies one notification, for dismissing it.
 function alertKey(alert: ExpiryAlert) {
   return `${alert.employeeName}-${alert.kind}`
 }
@@ -158,10 +151,7 @@ function ComplianceExpiryAlerts() {
 
     let query = supabase
       .from('employees')
-      .select(
-        // + the three medical exams (lib/medicalExams.ts)
-        'employee_id, full_name, driver_license_expiry_date, employment_status_id, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result',
-      )
+      .select('employee_id, full_name, driver_license_expiry_date, employment_status_id')
       .eq('position', 'Driver')
 
     if (role === 'Driver') {
@@ -172,23 +162,10 @@ function ComplianceExpiryAlerts() {
       query = query.eq('employee_id', employeeId)
     }
 
-    const [first, statuses] = await Promise.all([
+    const [{ data, error }, statuses] = await Promise.all([
       query,
       supabase.from('employment_status').select('status_id, status_name'),
     ])
-    let data: ComplianceRow[] | null = first.data
-    let error = first.error
-    if (error && isMissingExamColumns(error.message)) {
-      // Exam SQL not run yet: load without the new exam columns.
-      let fallback = supabase
-        .from('employees')
-        .select('employee_id, full_name, driver_license_expiry_date, employment_status_id, medical_exam_date, medical_exam_expiry_date')
-        .eq('position', 'Driver')
-      if (role === 'Driver' && employeeId) fallback = fallback.eq('employee_id', employeeId)
-      const second = await fallback
-      data = second.data
-      error = second.error
-    }
     if (error || !data) {
       setAlerts([])
       return
@@ -223,21 +200,6 @@ function ComplianceExpiryAlerts() {
             date: row.driver_license_expiry_date,
             daysRemaining,
           })
-        }
-      }
-      // Each medical exam (Physical / Drug Test / Psychological): a Failed
-      // result, or an expiry within 30 days.
-      const exams = examValuesOf(row)
-      for (const exam of MEDICAL_EXAMS) {
-        const expiry = exams[exam.expiry]
-        const kind = `${exam.label} exam`
-        if (exams[exam.result] === 'Failed') {
-          nextAlerts.push({ employeeId: row.employee_id, employeeName: row.full_name, kind, date: expiry, daysRemaining: -Infinity, failed: true })
-        } else if (expiry) {
-          const daysRemaining = daysUntil(expiry)
-          if (daysRemaining <= 30) {
-            nextAlerts.push({ employeeId: row.employee_id, employeeName: row.full_name, kind, date: expiry, daysRemaining })
-          }
         }
       }
     })
@@ -355,9 +317,7 @@ function ComplianceExpiryAlerts() {
                         {alert.employeeName}
                       </p>
                       <p className="text-orange-800">
-                        {alert.failed ? (
-                          <>{alert.kind} result: Failed</>
-                        ) : alert.date === null ? (
+                        {alert.date === null ? (
                           <>{alert.kind} not on record -- add it on the Employees page</>
                         ) : (
                           <>

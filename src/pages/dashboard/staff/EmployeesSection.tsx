@@ -14,7 +14,6 @@ import EmployeeDetailModal from './EmployeeDetailModal'
 import IssueCashAdvanceModal from './IssueCashAdvanceModal'
 import { showToast } from '../../../components/Toast'
 import { toManilaDate } from '../../../lib/payslip'
-import { MEDICAL_EXAMS, NO_NEW_EXAM_VALUES, examValuesOf, isMissingExamColumns } from '../../../lib/medicalExams'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
@@ -33,7 +32,6 @@ type Employee = {
   hire_date: string
   editable: EditableEmployee
   licenseExpiryDate: string | null
-  medicalExamExpiryDate: string | null
 }
 
 function extractRateAmount(row: Record<string, unknown>, rateType: string) {
@@ -142,7 +140,7 @@ function useTodaysTrips(employeeId: number, enabled: boolean) {
 }
 
 // The right-hand panel (the canvas's employee card): employment, contact,
-// licence and medical exam, today's trips, and the actions.
+// licence, today's trips, and the actions.
 function EmployeePanel({
   employee,
   hasLogin,
@@ -226,37 +224,6 @@ function EmployeePanel({
           </section>
         )}
 
-        {employee.position === 'Driver' && (
-          <section>
-            <h3 className={GROUP}>
-              <span>Medical Exams</span>
-              <button type="button" onClick={onEdit} className="font-semibold text-primary hover:underline">
-                Update
-              </button>
-            </h3>
-            <dl className="grid grid-cols-3 gap-x-5 gap-y-3">
-              {MEDICAL_EXAMS.map((exam) => {
-                const result = info[exam.result]
-                const expiry = info[exam.expiry] ?? null
-                return (
-                  <Field key={exam.key} label={exam.label}>
-                    {result || expiry ? (
-                      <span className="flex flex-col">
-                        <span className={result === 'Failed' ? 'font-semibold text-red-700' : result === 'Passed' ? 'text-green-800' : 'text-ink-muted'}>
-                          {result ?? 'No result'}
-                        </span>
-                        <span className={`text-[13px] ${expiryClass(expiry)}`}>{expiryLabel(expiry)}</span>
-                      </span>
-                    ) : (
-                      <span className="text-ink-muted">Not recorded</span>
-                    )}
-                  </Field>
-                )
-              })}
-            </dl>
-          </section>
-        )}
-
         {onTrips && (
           <section className="border border-line bg-slate-50 px-3.5 py-3">
             <h3 className="mb-1 text-sm font-semibold text-ink">Today, {today}</h3>
@@ -280,17 +247,17 @@ function EmployeePanel({
         {(onHistory || !inactive) && (
           <div className="flex flex-wrap gap-3">
             {onHistory && (
-              <button type="button" onClick={onHistory} className="btn-secondary flex-1 px-4 text-sm font-medium">
+              <button type="button" onClick={onHistory} className="btn-secondary flex-auto px-4 text-sm font-medium">
                 {employee.position === 'Mechanic' ? 'Work History' : 'Trip History'}
               </button>
             )}
             {!hasLogin && !inactive && (
-              <button type="button" onClick={onSetUpAccount} className="btn-secondary flex-1 px-4 text-sm font-medium">
+              <button type="button" onClick={onSetUpAccount} className="btn-secondary flex-auto px-4 text-sm font-medium">
                 Set Up Account
               </button>
             )}
             {!inactive && (
-              <button type="button" onClick={onCashAdvance} className="btn-secondary flex-1 px-4 text-sm font-medium">
+              <button type="button" onClick={onCashAdvance} className="btn-secondary flex-auto px-4 text-sm font-medium">
                 Add Cash Advance
               </button>
             )}
@@ -486,25 +453,12 @@ function EmployeesSection() {
   async function loadEmployees() {
     setLoading(true)
 
-    const first = await supabase
+    const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, physical_exam_result, drug_test_date, drug_test_expiry_date, drug_test_result, psych_exam_date, psych_exam_expiry_date, psych_exam_result, assigned_plate_number',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, assigned_plate_number',
       )
       .order('full_name', { ascending: true })
-    let employeeRows = first.data
-    let employeeError = first.error
-    if (employeeError && isMissingExamColumns(employeeError.message)) {
-      // Exam SQL not run yet: load without the new exam columns.
-      const second = await supabase
-        .from('employees')
-        .select(
-          'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, medical_exam_date, medical_exam_expiry_date, assigned_plate_number',
-        )
-        .order('full_name', { ascending: true })
-      employeeRows = second.data ? second.data.map((row) => ({ ...row, ...NO_NEW_EXAM_VALUES })) : null
-      employeeError = second.error
-    }
 
     if (employeeError) {
       setError(employeeError.message)
@@ -560,9 +514,6 @@ function EmployeesSection() {
           is_minimum_wage_earner: row.is_minimum_wage_earner,
           driver_license_number: row.driver_license_number,
           driver_license_expiry_date: row.driver_license_expiry_date,
-          // Physical / Drug Test / Psychological (lib/medicalExams.ts) --
-          // includes medical_exam_date / medical_exam_expiry_date.
-          ...examValuesOf(row),
           middle_name: row.middle_name,
           phone_number: row.phone_number,
           date_of_birth: row.date_of_birth,
@@ -580,7 +531,6 @@ function EmployeesSection() {
           assigned_plate_number: row.assigned_plate_number,
         },
         licenseExpiryDate: row.driver_license_expiry_date,
-        medicalExamExpiryDate: row.medical_exam_expiry_date,
       })),
     )
     setError(null)
