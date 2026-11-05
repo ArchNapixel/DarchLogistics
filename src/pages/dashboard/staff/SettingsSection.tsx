@@ -25,6 +25,10 @@ type Setting = {
   unit: string | null
 }
 
+// A fixed-width slot beside every box (even with no unit), so all the boxes
+// come out the same width.
+const UNIT = 'w-20 shrink-0 text-sm text-slate-400'
+
 function SettingsSection() {
   const [settings, setSettings] = useState<Setting[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
@@ -128,8 +132,8 @@ function SettingsSection() {
       )}
 
       {!loading && !error && settings.length > 0 && (
-        <div className="mt-6 max-w-md border-2 border-line-card bg-white p-6">
-          <div className="flex flex-col gap-4">
+        <div className="mt-6 border-2 border-line-card bg-white p-6">
+          <div className="grid items-end gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
             {settings.map((setting) => (
               <label
                 key={setting.setting_key}
@@ -137,15 +141,16 @@ function SettingsSection() {
               >
                 {setting.label}
                 {setting.unit === 'time' ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <TimeInput12
+                      className="min-w-0 flex-1"
                       label={setting.label}
                       value={Number(values[setting.setting_key]) || 0}
                       onChange={(minutes) =>
                         setValues((prev) => ({ ...prev, [setting.setting_key]: String(minutes) }))
                       }
                     />
-                    <span className="text-sm text-slate-400">
+                    <span className={UNIT}>
                       {formatMinutesOfDay(Number(values[setting.setting_key]) || 0)}
                     </span>
                   </div>
@@ -161,11 +166,9 @@ function SettingsSection() {
                         [setting.setting_key]: e.target.value,
                       }))
                     }
-                    className="w-full border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
+                    className="min-w-0 flex-1 border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
                   />
-                  {setting.unit && (
-                    <span className="text-sm text-slate-400">{setting.unit}</span>
-                  )}
+                  <span className={UNIT}>{setting.unit}</span>
                 </div>
                 )}
               </label>

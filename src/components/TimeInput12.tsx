@@ -7,17 +7,20 @@ const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5)
 
 const selectClasses =
-  'rounded-[2px] border border-line-control bg-white px-2 py-2 text-slate-900 focus:border-primary'
+  'min-h-11 min-w-0 flex-1 rounded-[2px] border border-line-control bg-white px-2 py-2 text-slate-900 focus:border-primary'
 
 function TimeInput12({
   value,
   onChange,
   label,
+  className = '',
 }: {
   value: number
   onChange: (minutes: number) => void
   // Screen-reader name for the group, e.g. "Default trip start time".
   label: string
+  // Optional sizing, e.g. to fill a row beside other inputs.
+  className?: string
 }) {
   const hour24 = Math.floor(value / 60) % 24
   const minute = value % 60
@@ -30,7 +33,7 @@ function TimeInput12({
   }
 
   return (
-    <div role="group" aria-label={label} className="flex items-center gap-1">
+    <div role="group" aria-label={label} className={`flex items-center gap-1 ${className}`}>
       <select
         aria-label="Hour"
         value={hour12}
