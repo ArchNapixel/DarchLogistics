@@ -1210,7 +1210,7 @@ function FinancialSection() {
                             <td className={TD}>
                               {/* At most one primary action -- the row's next step --
                                   then Manage / Billing as matching secondary buttons. */}
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                                 {downpayment && !downpayment.met && !downpayment.waived ? (
                                   <button
                                     onClick={() => {
@@ -1284,10 +1284,6 @@ function FinancialSection() {
                 <span className="font-semibold">{rule}</span>
               </div>
             ))}
-            <p className="mt-3 text-[13px] leading-[18px] text-ink-muted">
-              Each trip is billed when it is delivered, at the booking's rate per trip, plus any damage charged to the client.
-              Before any trip can start, the client pays the downpayment (or an admin waives it).
-            </p>
           </aside>
         </div>
       )}
