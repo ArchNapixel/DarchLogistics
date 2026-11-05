@@ -1,7 +1,6 @@
 // SetUpStaffAccountModal: creates a real login for an employee (Admin,
-// Dispatcher, Driver, or Mechanic) in one step -- same
-// create-user-account Edge Function used by SetUpClientAccountModal.tsx,
-// just passing employee_id instead of client_id. The function itself
+// Dispatcher, Driver, or Mechanic) in one step, through the
+// create-user-account Edge Function. The function itself
 // already checks the caller is staff and creates the Auth account +
 // linked `public.users` row together.
 import { useState } from 'react'

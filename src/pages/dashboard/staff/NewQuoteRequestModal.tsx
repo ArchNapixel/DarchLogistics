@@ -13,6 +13,7 @@
 // left, a live summary (same QuoteSummary as the landing page) on the
 // right, and a confirmation with the Q-XXXXXX reference code after saving.
 import { useEffect, useState, type ReactNode } from 'react'
+import { emailTakenError } from '../../../lib/clientAccount'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   CargoFields,
@@ -157,8 +158,15 @@ function NewQuoteRequestModal({
       if (!clientFields.clientName.trim()) foundClientErrors.clientName = 'Enter a name.'
       const phone = phoneError(clientFields.contactNumber)
       if (phone) foundClientErrors.contactNumber = phone
-      const email = emailError(clientFields.contactEmail)
+      // Required: the client links their own sign-up to this record by email.
+      const email = clientFields.contactEmail.trim() ? emailError(clientFields.contactEmail) : 'Enter an email.'
       if (email) foundClientErrors.contactEmail = email
+      else {
+        setSubmitting(true)
+        const taken = await emailTakenError(clientFields.contactEmail)
+        setSubmitting(false)
+        if (taken) foundClientErrors.contactEmail = taken
+      }
     }
     setClientErrors(foundClientErrors)
 
@@ -369,7 +377,7 @@ function NewQuoteRequestModal({
                     invalid={!!clientErrors.contactNumber}
                   />
                 </Field>
-                <Field label="Email" hint="(optional)" error={clientErrors.contactEmail} wide>
+                <Field label="Email" error={clientErrors.contactEmail} wide>
                   <TextInput
                     type="email"
                     value={clientFields.contactEmail}

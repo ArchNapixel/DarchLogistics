@@ -3,6 +3,7 @@
 // (ClientAccountSection), so both check the same thing. The database
 // function change_my_username() repeats the username rule -- change both
 // together.
+import { supabase } from './supabaseClient'
 
 // Max characters per field (also the inputs' maxLength). Password is 72
 // because Supabase silently ignores anything past 72 bytes.
@@ -14,6 +15,22 @@ const USERNAME_RULE = /^[A-Za-z0-9._-]{3,30}$/
 
 // Typing filter: drops anything a username can't contain.
 export const filterUsername = (v: string) => v.replace(/[^A-Za-z0-9._-]/g, '')
+
+// Staff typing a client's email: one email can only have one login, so an
+// address another login already uses would stop this client ever signing up.
+// ownClientId = the client being edited (their own login is fine).
+// ponytail: reads public.users, so an Auth account with no users row isn't
+// seen -- a staff-only function over auth.users would cover that.
+export async function emailTakenError(email: string, ownClientId?: number): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('client_id')
+    .ilike('email', email.trim().replace(/[\\%_]/g, '\\$&'))
+  if (error) return `Could not check that email: ${error.message}`
+  return data.some((row) => row.client_id === null || row.client_id !== ownClientId)
+    ? 'This email is already used by another account. Use a different email.'
+    : null
+}
 
 export function usernameError(username: string): string | null {
   return USERNAME_RULE.test(username.trim())

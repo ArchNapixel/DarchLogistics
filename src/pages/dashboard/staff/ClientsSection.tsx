@@ -1,8 +1,9 @@
 // ClientsSection: lists every client -- created when staff approve a quote
 // (QuoteReviewModal) or when a client signs up at Client Login -- and
-// whether they can log in. "Set Up Account" creates a real login for the
-// client in one step (SetUpClientAccountModal -> create-user-account Edge
-// Function). The Account column reads the client's `users` row:
+// whether they can log in. Staff can't create or change a client's login:
+// clients make their own at Client Login, and a sign-up with the email on a
+// client's record links to that record. Edit Client only changes the
+// contact details. The Account column reads the client's `users` row:
 //   Has login      = a users row linked to a Supabase Auth account
 //   Login pending  = an old-style users row with no Auth account yet
 //                    (auth_user_id null -- from before the Edge Function)
@@ -20,9 +21,8 @@ import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import { fetchAll } from '../../../lib/dashboardExpenses'
-import SetUpClientAccountModal from './SetUpClientAccountModal'
 import ClientBookingHistoryModal from './ClientBookingHistoryModal'
-import AddClientModal, { type EditableClient } from './AddClientModal'
+import EditClientModal, { type EditableClient } from './EditClientModal'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
 import { confirmDialog, promptDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
@@ -99,10 +99,9 @@ function ClientsSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [viewingClient, setViewingClient] = useState<Client | null>(null)
-  // Add Client (true) / Edit Client (that client) form.
-  const [clientForm, setClientForm] = useState<EditableClient | true | null>(null)
+  // The client open in Edit Client.
+  const [clientForm, setClientForm] = useState<EditableClient | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('Active')
   const [bookingsByClient, setBookingsByClient] = useState<Map<number, ClientBooking[]>>(new Map())
@@ -221,12 +220,6 @@ function ClientsSection() {
     setLoading(false)
   }
 
-  // Called by the modal after the login was created.
-  function handleAccountCreated(clientId: number) {
-    setAccountByClient((prev) => new Map(prev).set(clientId, 'login'))
-    setSelectedClient(null)
-  }
-
   // Deactivate (reason required) or reactivate a client. Warns first if
   // the client still has an unfinished booking or owes money -- allowed
   // anyway, the bookings and balance stay on record.
@@ -330,14 +323,6 @@ function ClientsSection() {
       <PageHeader
         title="Clients"
         subtitle="Client accounts, their bookings and what they owe."
-        actions={
-          <button onClick={() => setClientForm(true)} className="btn-primary flex items-center gap-2 px-5 text-sm">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 5v14 M5 12h14" />
-            </svg>
-            Add Client
-          </button>
-        }
       />
 
       {actionError && (
@@ -530,13 +515,6 @@ function ClientsSection() {
                   {paneClient.deactivated_at && <StatusBadge status="Deactivated" />}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {/* Only with no users row at all -- a "Login pending" client
-                      already has one, and the Edge Function would add a second. */}
-                  {paneAccount === undefined && !paneClient.deactivated_at && (
-                    <button onClick={() => setSelectedClient(paneClient)} className="btn-secondary px-4 text-sm font-medium">
-                      Set Up Account
-                    </button>
-                  )}
                   <button onClick={() => setClientForm(paneClient)} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
@@ -699,24 +677,15 @@ function ClientsSection() {
       )}
 
       {clientForm && (
-        <AddClientModal
-          client={clientForm === true ? undefined : clientForm}
-          existing={clients}
+        <EditClientModal
+          client={clientForm}
           onClose={() => setClientForm(null)}
           onSaved={(clientId) => {
-            showToast(clientForm === true ? 'Client added.' : 'Client details saved.')
+            showToast('Client details saved.')
             setClientForm(null)
             setPaneId(clientId)
             loadClients()
           }}
-        />
-      )}
-
-      {selectedClient && (
-        <SetUpClientAccountModal
-          client={selectedClient}
-          onClose={() => setSelectedClient(null)}
-          onCreated={handleAccountCreated}
         />
       )}
 

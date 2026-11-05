@@ -1,15 +1,13 @@
-// AddClientModal: staff add a client by hand (a walk-in or phone-in
-// customer) or edit one's details -- the canvas's "Add Client" / "Edit
-// Client" on the Clients page. Pass `client` to edit that row; leave it out
-// to add a new one. Name and phone are required; email, address and
-// notes are optional. Phone and email use the same rules as
-// every other form (lib/quoteRequest.ts). Adding warns first when another
-// client already has the same name, phone or email (likely a duplicate).
-// Logins are separate: "Set Up Account" on the Clients page.
+// EditClientModal: staff edit a client's contact details -- "Edit Client" on
+// the Clients page. Name and phone are required; email, address and notes are
+// optional. Phone and email use the same rules as every other form
+// (lib/quoteRequest.ts). Staff can't add clients here or touch their logins:
+// clients sign up themselves at Client Login, and a walk-in client comes from
+// a phone quote (NewQuoteRequestModal).
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { emailError, phoneDigits, phoneError, phoneInput } from '../../../lib/quoteRequest'
-import { confirmDialog } from '../../../components/ConfirmDialog'
+import { emailTakenError } from '../../../lib/clientAccount'
 
 export type EditableClient = {
   client_id: number
@@ -20,23 +18,20 @@ export type EditableClient = {
   notes: string | null
 }
 
-function AddClientModal({
+function EditClientModal({
   client,
-  existing,
   onClose,
   onSaved,
 }: {
-  client?: EditableClient
-  // Every client on file, for the duplicate warning.
-  existing: { client_id: number; client_name: string; email: string | null; phone_number: string | null }[]
+  client: EditableClient
   onClose: () => void
   onSaved: (clientId: number) => void
 }) {
-  const [name, setName] = useState(client?.client_name ?? '')
-  const [phone, setPhone] = useState(phoneInput(client?.phone_number ?? ''))
-  const [email, setEmail] = useState(client?.email ?? '')
-  const [address, setAddress] = useState(client?.address ?? '')
-  const [notes, setNotes] = useState(client?.notes ?? '')
+  const [name, setName] = useState(client.client_name ?? '')
+  const [phone, setPhone] = useState(phoneInput(client.phone_number ?? ''))
+  const [email, setEmail] = useState(client.email ?? '')
+  const [address, setAddress] = useState(client.address ?? '')
+  const [notes, setNotes] = useState(client.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,31 +39,16 @@ function AddClientModal({
     const problem = !name.trim() ? 'Enter the client name.' : (phoneError(phone) ?? emailError(email))
     if (problem) return setError(problem)
 
-    // Adding: look for a client that is probably the same one.
-    if (!client) {
-      const digits = phoneDigits(phone)
-      const lowerName = name.trim().toLowerCase()
-      const lowerEmail = email.trim().toLowerCase()
-      const twin = existing.find(
-        (c) =>
-          c.client_name.trim().toLowerCase() === lowerName ||
-          (c.phone_number ?? '').replace(/\D/g, '') === digits ||
-          (lowerEmail !== '' && (c.email ?? '').trim().toLowerCase() === lowerEmail),
-      )
-      if (
-        twin &&
-        !(await confirmDialog({
-          title: 'This client may already exist',
-          message: `"${twin.client_name}" has the same name, phone or email. Add a new client anyway?`,
-          confirmLabel: 'Add anyway',
-        }))
-      ) {
-        return
-      }
-    }
-
     setSaving(true)
     setError(null)
+    // Only a changed email -- an old clash mustn't block fixing a phone number.
+    if (email.trim() && email.trim().toLowerCase() !== (client.email ?? '').toLowerCase()) {
+      const taken = await emailTakenError(email, client.client_id)
+      if (taken) {
+        setSaving(false)
+        return setError(taken)
+      }
+    }
     const row = {
       client_name: name.trim(),
       phone_number: phoneDigits(phone),
@@ -76,9 +56,12 @@ function AddClientModal({
       address: address.trim() || null,
       notes: notes.trim() || null,
     }
-    const result = client
-      ? await supabase.from('clients').update(row).eq('client_id', client.client_id).select('client_id').maybeSingle()
-      : await supabase.from('clients').insert(row).select('client_id').single()
+    const result = await supabase
+      .from('clients')
+      .update(row)
+      .eq('client_id', client.client_id)
+      .select('client_id')
+      .maybeSingle()
     setSaving(false)
 
     if (result.error) return setError(result.error.message)
@@ -97,7 +80,7 @@ function AddClientModal({
       <div role="dialog" aria-modal="true" aria-labelledby="client-form-title" className="card flex w-full max-w-lg flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
           <h2 id="client-form-title" className="text-lg font-bold text-ink">
-            {client ? `Edit ${client.client_name}` : 'Add Client'}
+            Edit {client.client_name}
           </h2>
           <button
             type="button"
@@ -153,7 +136,7 @@ function AddClientModal({
             Cancel
           </button>
           <button type="button" onClick={() => void save()} disabled={saving} className="btn-primary px-6 text-sm">
-            {saving ? 'Saving...' : client ? 'Save Changes' : 'Add Client'}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </footer>
       </div>
@@ -161,4 +144,4 @@ function AddClientModal({
   )
 }
 
-export default AddClientModal
+export default EditClientModal

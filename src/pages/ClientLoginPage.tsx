@@ -329,6 +329,9 @@ function ClientLoginPage() {
                   autoComplete="email"
                   className={fieldClasses}
                 />
+                <span className="text-[13px] font-normal text-ink-muted">
+                  Booked with us before? Use the same email so your bookings appear.
+                </span>
               </label>
               <label className={labelClasses}>
                 Phone number

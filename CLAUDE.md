@@ -1288,6 +1288,24 @@ extra charge; no-work days only block STARTING a trip). Phase A built:
   `employee_attendance` (attendance_date). Before these, each table had only
   its primary key and unique constraint. `cash_advances` skipped (6 rows).
 
+## 2026-11-06: Staff can't touch client logins
+Set Up Account and Add Client were removed. Supersedes older lines above that
+mention `SetUpClientAccountModal`, `AddClientModal` or staff-made client logins.
+- Clients make their own login at Client Login (the quote form already needs
+  one). A sign-up with the email on a client's record links to it
+  (`handle_client_signup()`) -- a different email makes a duplicate client.
+- `create-user-account` refuses anything but an employee login (redeploy
+  needed after this change). `update-user-account` was already employee-only.
+- `staff/EditClientModal.tsx` (was AddClientModal) edits contact details only.
+  New client records come only from a sign-up or a walk-in / phone quote
+  (`NewQuoteRequestModal`), where email is now required for a new client.
+- `users` RLS fixed 2026-11-06 (SQL run by user): dropped `Authenticated can
+  insert users` (WITH CHECK true -- anyone logged in could add an Admin row) and
+  `Authenticated can select users` (USING true). Added `Users can see own
+  unclaimed profile`. Nothing in the browser may insert into `users`.
+- Edit Client needs the `clients_update_admin` UPDATE policy (`is_admin()`, SQL
+  given in chat); clients had only `clients_update_own` before.
+
 ## 2026-10-23 stress-test fixes (tabs #7–#22; SQL given in chat)
 - **Payroll** no longer rebuilds every draft on page open (that wiped
   admin edits) — opening Payroll only creates/tops up drafts; Regenerate

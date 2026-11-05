@@ -1,6 +1,7 @@
 // create-user-account: staff-only Edge Function that creates a REAL
-// Supabase Auth login (email + password) for a client or employee, and
-// links it to a `public.users` row immediately.
+// Supabase Auth login (email + password) for an EMPLOYEE, and links it to a
+// `public.users` row immediately. Never for clients: they make their own
+// login at Client Login, and staff must not be able to touch it.
 //
 // This has to run server-side because creating another person's Auth
 // account requires the service-role key -- a credential with full admin
@@ -40,16 +41,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, username, password, user_role, client_id, employee_id } =
-      await req.json();
+    const { email, username, password, user_role, employee_id } = await req.json();
 
     if (!email || !username || !password || !user_role) {
       return jsonResponse({ error: "Missing required fields." }, 400);
     }
-    if (!client_id && !employee_id) {
+    if (!employee_id || user_role === "Client") {
       return jsonResponse(
-        { error: "Provide either a client_id or an employee_id." },
-        400,
+        { error: "Only employee logins can be created here." },
+        403,
       );
     }
 
@@ -127,8 +127,7 @@ Deno.serve(async (req) => {
       email,
       username: cleanUsername,
       user_role,
-      client_id: client_id ?? null,
-      employee_id: employee_id ?? null,
+      employee_id,
       auth_user_id: newAuthUser.user.id,
     });
 
