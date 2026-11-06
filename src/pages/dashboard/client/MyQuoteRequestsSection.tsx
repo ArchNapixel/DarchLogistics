@@ -20,6 +20,8 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
@@ -65,6 +67,9 @@ type QuoteRow = {
   decline_reason: string | null
   created_at: string
 }
+
+// These cards are tall, so fewer per page than a table row list.
+const QUOTES_PER_PAGE = 5
 
 // "₱5,500.00", or "₱5,000.00 – ₱8,000.00" when the cargo lines are priced differently.
 const quoteRateLabel = (q: QuoteRow) =>
@@ -128,6 +133,10 @@ function MyQuoteRequestsSection() {
     return () => clearTimeout(timer)
   }, [clientId])
 
+  // Offers waiting for an answer always show; only the rest are paged.
+  const others = quotes.filter((q) => q.request_status !== 'Offered')
+  const paged = usePaged(others, '', QUOTES_PER_PAGE)
+
   if (loading) {
     return <p className="text-slate-500">Loading your quote requests...</p>
   }
@@ -155,7 +164,6 @@ function MyQuoteRequestsSection() {
   }
 
   const offers = quotes.filter((q) => q.request_status === 'Offered')
-  const others = quotes.filter((q) => q.request_status !== 'Offered')
   const selected = offers.find((q) => q.quote_request_id === selectedId) ?? offers[0] ?? null
 
   const reference = (q: QuoteRow) => q.reference_code ?? `Quote #${q.quote_request_id}`
@@ -228,7 +236,7 @@ function MyQuoteRequestsSection() {
           <>
             <h2 className={GROUP}>{offers.length > 0 ? 'Other quotes' : 'Your quotes'}</h2>
             <div className="flex flex-col gap-2 px-5">
-              {others.map((quote) => (
+              {paged.rows.map((quote) => (
                 <article key={quote.quote_request_id} aria-label={`Quote ${reference(quote)}`} className="flex flex-col gap-1.5 border border-line px-4 py-3">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-mono font-bold text-ink">{reference(quote)}</span>
@@ -283,6 +291,7 @@ function MyQuoteRequestsSection() {
                 </article>
               ))}
             </div>
+            <Pager {...paged.pager} className="px-5 pb-2" />
           </>
         )}
       </section>
