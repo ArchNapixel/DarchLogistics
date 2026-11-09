@@ -4,6 +4,7 @@
 // tracks itinerary status changes.
 import { supabase } from './supabaseClient'
 import { releaseVehicleFromShop, setVehicleStatus } from './fleetStatus'
+import { settleLoggedPartsBeforeCancel } from './workOrderPartsLog'
 
 export async function logWorkOrderStatusChange({
   workOrderId,
@@ -37,6 +38,9 @@ const CLOSED_STATUSES = ['Completed', 'Cancelled']
 // except "Completed", which goes through CompleteWorkOrderModal.tsx).
 // Used by MechanicTasks.tsx, the admin WorkOrderDetailModal.tsx, and
 // approving a Status Relog Request. It:
+//   0. Cancelling an open job with logged parts first asks "Return all" or
+//      "Keep as used" (settleLoggedPartsBeforeCancel). Backing out there
+//      returns statusChanged: false with no error -- nothing changed.
 //   1. Updates the status ONLY if it's still `previousStatus` (someone
 //      else may have changed it meanwhile), and uses .select() so an RLS
 //      silent no-op shows up as an error instead of fake success.
@@ -60,6 +64,11 @@ export async function changeWorkOrderStatus({
   newStatus: string
   changedByEmployeeId: number | null
 }): Promise<{ error: string | null; statusChanged: boolean }> {
+  if (newStatus === 'Cancelled' && !CLOSED_STATUSES.includes(previousStatus)) {
+    const parts = await settleLoggedPartsBeforeCancel(workOrderId)
+    if (parts.error || parts.aborted) return { error: parts.error, statusChanged: false }
+  }
+
   const { data: updated, error: updateError } = await supabase
     .from('work_orders')
     .update({ work_order_status: newStatus })

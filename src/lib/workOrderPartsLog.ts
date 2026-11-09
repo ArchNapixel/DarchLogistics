@@ -13,6 +13,7 @@
 // return_logged_part puts a part back into the batch it came from -- only
 // while the job is open and the part isn't on a completion yet.
 import { supabase } from './supabaseClient'
+import { confirmDialog, promptDialog } from '../components/ConfirmDialog'
 
 export type LoggedPart = {
   log_id: number
@@ -114,6 +115,59 @@ export async function logPartUsed({
     p_quantity: quantity,
   })
   return { error: error?.message ?? null }
+}
+
+// Before a job is Cancelled: parts logged on it (and not yet on a
+// completion) are already out of stock. Ask whether to put them all back
+// ("Return all") or keep them as used (a write-off, with a reason -- e.g.
+// already fitted to the truck), then do it via cancel_work_order_parts.
+// `aborted` = the user backed out; the job must stay open.
+// ponytail: the parts step and the status change are two calls, not one
+// transaction -- if the status change then fails (someone else changed the
+// job), returned parts stay returned. Rare; fold both into one DB function
+// if it ever matters.
+export async function settleLoggedPartsBeforeCancel(
+  workOrderId: number,
+): Promise<{ error: string | null; aborted: boolean }> {
+  const { data: open, error } = await supabase
+    .from('work_order_parts_log')
+    .select('item_name_text, quantity')
+    .eq('work_order_id', workOrderId)
+    .is('completion_id', null)
+
+  if (error) return { error: error.message, aborted: false }
+  if (open.length === 0) return { error: null, aborted: false }
+
+  const list = open.map((p) => `${p.item_name_text} × ${Number(p.quantity)}`).join(', ')
+
+  let mode: 'return' | 'write_off' = 'return'
+  let reason: string | null = null
+
+  const returnAll = await confirmDialog({
+    title: 'Parts were logged on this job',
+    message: `${list}. Put them all back in stock before cancelling?`,
+    confirmLabel: 'Return all to stock',
+  })
+  if (!returnAll) {
+    reason = await promptDialog({
+      title: 'Keep the parts as used?',
+      message:
+        'They stay out of stock and are recorded as written off. Why? (Press Cancel to keep the job open instead.)',
+      placeholder: 'e.g. already fitted to the truck',
+      confirmLabel: 'Keep as used',
+      danger: true,
+    })
+    if (reason === null) return { error: null, aborted: true }
+    mode = 'write_off'
+  }
+
+  const { error: rpcError } = await supabase.rpc('cancel_work_order_parts', {
+    p_work_order_id: workOrderId,
+    p_mode: mode,
+    p_reason: reason,
+  })
+  if (rpcError) return { error: `${rpcError.message} The job was not cancelled.`, aborted: false }
+  return { error: null, aborted: false }
 }
 
 // Undoes one logged part: puts it back on the shelf and removes the log row.
