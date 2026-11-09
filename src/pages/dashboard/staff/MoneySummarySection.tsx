@@ -280,7 +280,7 @@ function MoneySummarySection() {
   return (
     <div>
       <PageHeader
-        title="Money Summary"
+        title="Financial Summary"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button

@@ -84,13 +84,13 @@ const staffLinks = [
     ],
   },
   {
-    label: 'Expenses',
+    label: 'Finance',
     children: [
-      { label: 'Money Summary', to: '/dashboard/money-summary' },
+      { label: 'Financial Summary', to: '/dashboard/money-summary' },
       { label: 'Bills Receivable', to: '/dashboard/financial-records' },
       { label: 'Collections', to: '/dashboard/collections' },
-      { label: 'Billing', to: '/dashboard/billing' },
-      { label: 'Statements', to: '/dashboard/statements' },
+      { label: 'Client Billing', to: '/dashboard/billing' },
+      { label: 'Statement of Account', to: '/dashboard/statements' },
     ],
   },
   {

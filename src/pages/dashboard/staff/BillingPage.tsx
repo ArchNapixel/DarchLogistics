@@ -92,7 +92,7 @@ function BillingPage() {
     <div>
       {/* Controls: not printed */}
       <PageHeader
-        title="Billing"
+        title="Client Billing"
         subtitle="One bill per booking: its delivered trips, extra charges and payments."
         actions={
           <label className="flex items-center gap-2.5 text-sm font-medium text-ink-secondary">

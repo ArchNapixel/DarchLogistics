@@ -73,7 +73,7 @@ function StatementsSection() {
     <div>
       {/* Controls: not printed */}
       <PageHeader
-        title="Statements"
+        title="Statement of Account"
         subtitle="Statement of account for one client: every charge and payment, with a running balance."
         actions={
           <div className="flex gap-3">

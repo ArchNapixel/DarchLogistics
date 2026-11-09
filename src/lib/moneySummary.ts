@@ -73,7 +73,7 @@ function csvCell(value: string | number): string {
 // commas) so a spreadsheet can add them up.
 export function buildMoneySummaryCsv(month: string, summary: MoneySummary): string {
   const rows: (string | number)[][] = [
-    [`Darch Logistics Money Summary - ${monthLabel(month)}`],
+    [`Darch Logistics Financial Summary - ${monthLabel(month)}`],
     [],
     ['Totals', 'Amount'],
     ['Revenue', summary.earned],
