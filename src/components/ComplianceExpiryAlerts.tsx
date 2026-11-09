@@ -5,7 +5,8 @@
 // notice a red badge on the board. It reloads every 5 minutes.
 // Admin also gets one stock line: items with a reorder level that are at
 // or below it / out of stock ("N parts need reordering"), linking to the
-// Inventory page filtered to them -- same 5-minute reload.
+// Inventory page filtered to them -- same 5-minute reload. Plus "N part
+// requests from mechanics" (open parts_requests) -> the Inventory page.
 // Surfaces driver licenses expiring within 30 days
 // (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
@@ -27,6 +28,8 @@ import { stockLevel } from '../lib/inventoryItemTypes'
 type StockAlert = { out: number; low: number }
 // Changes when the counts change, so a new shortage shows as unread again.
 const stockKey = (s: StockAlert) => `stock-${s.out}-${s.low}`
+// Open "Request this part" flags from mechanics (count only).
+const requestsKey = (n: number) => `part-requests-${n}`
 
 type ComplianceRow = {
   employee_id: number
@@ -97,15 +100,21 @@ function ComplianceExpiryAlerts() {
   const [open, setOpen] = useState(false)
   const [overdue, setOverdue] = useState<OverdueTrip[]>([])
   const [stock, setStock] = useState<StockAlert | null>(null)
+  const [partRequests, setPartRequests] = useState(0)
 
-  // Admin only: kept-in-stock items (reorder level set) that need reordering.
+  // Admin only: kept-in-stock items (reorder level set) that need
+  // reordering, and parts mechanics asked for.
   const loadStock = useCallback(async () => {
     if (!isAdmin(role)) return
-    const { data } = await supabase
-      .from('inventory_items')
-      .select('quantity, reorder_level')
-      .is('archived_at', null)
-      .not('reorder_level', 'is', null)
+    const [{ data }, { count }] = await Promise.all([
+      supabase
+        .from('inventory_items')
+        .select('quantity, reorder_level')
+        .is('archived_at', null)
+        .not('reorder_level', 'is', null),
+      supabase.from('parts_requests').select('request_id', { count: 'exact', head: true }).eq('status', 'Open'),
+    ])
+    setPartRequests(count ?? 0)
     const counts = { out: 0, low: 0 }
     for (const item of data ?? []) {
       const level = stockLevel(Number(item.quantity), Number(item.reorder_level))
@@ -256,21 +265,28 @@ function ComplianceExpiryAlerts() {
   )
   const visibleOverdue = overdue.filter((t) => !dismissedKeys.includes(overdueKey(t)))
   const visibleStock = stock && !dismissedKeys.includes(stockKey(stock)) ? stock : null
+  const visibleRequests = partRequests > 0 && !dismissedKeys.includes(requestsKey(partRequests)) ? partRequests : 0
   const unreadCount =
     visibleAlerts.filter((alert) => !readKeys.includes(alertKey(alert))).length +
     visibleOverdue.filter((t) => !readKeys.includes(overdueKey(t))).length +
-    (visibleStock && !readKeys.includes(stockKey(visibleStock)) ? 1 : 0)
+    (visibleStock && !readKeys.includes(stockKey(visibleStock)) ? 1 : 0) +
+    (visibleRequests && !readKeys.includes(requestsKey(visibleRequests)) ? 1 : 0)
 
   function handleToggle() {
     const nextOpen = !open
     setOpen(nextOpen)
     if (nextOpen) {
-      setReadKeys([...alerts.map(alertKey), ...overdue.map(overdueKey), ...(stock ? [stockKey(stock)] : [])])
+      setReadKeys([
+        ...alerts.map(alertKey),
+        ...overdue.map(overdueKey),
+        ...(stock ? [stockKey(stock)] : []),
+        ...(partRequests > 0 ? [requestsKey(partRequests)] : []),
+      ])
     }
   }
 
   // Nothing expiring (or a role that never gets these) -- no bell at all.
-  if (alerts.length === 0 && overdue.length === 0 && !stock) return null
+  if (alerts.length === 0 && overdue.length === 0 && !stock && partRequests === 0) return null
 
   return (
     <div className="relative">
@@ -308,12 +324,30 @@ function ComplianceExpiryAlerts() {
               </button>
             </div>
 
-            {visibleAlerts.length === 0 && visibleOverdue.length === 0 && !visibleStock ? (
+            {visibleAlerts.length === 0 && visibleOverdue.length === 0 && !visibleStock && !visibleRequests ? (
               <p className="px-4 py-3 text-sm text-slate-500">
                 No notifications.
               </p>
             ) : (
               <div className="max-h-80 overflow-y-auto">
+                {visibleRequests > 0 && (
+                  <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
+                    <Link to="/dashboard/inventory" onClick={() => setOpen(false)} className="block flex-1 text-sm hover:bg-slate-50">
+                      <p className="font-medium text-slate-900">
+                        {visibleRequests} part {visibleRequests === 1 ? 'request' : 'requests'} from mechanics
+                      </p>
+                      <p className="text-orange-800">Out of stock on a job -- restock or close</p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-600 underline">Open Inventory →</p>
+                    </Link>
+                    <button
+                      onClick={() => setDismissedKeys((prev) => [...prev, requestsKey(visibleRequests)])}
+                      aria-label="Dismiss notification"
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {visibleStock && (
                   <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
                     <Link

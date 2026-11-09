@@ -2149,6 +2149,19 @@ numbers / truck fit, bins, tool check-out.
   counted), Post -> `post_stock_count(p_counts jsonb, p_note)` with only the
   differing items `{item_id, expected, counted}`; refuses the whole post if
   any item's stock changed since the list loaded (names them).
-- **Roadmap phases 0-6 done 2026-11-10.** Still out of scope (user asked to
-  keep tracking): tyre tracking, part numbers / truck fit, storage
-  locations / bins, tool check-out; mechanic "Request this part" skipped.
+- **Roadmap phases 0-6 done 2026-11-10.** Dropped by the user (not wanted):
+  tyre tracking, part numbers / truck fit, storage locations / bins, tool
+  check-out.
+- **Request this part (2026-11-10, SQL given in chat):** table
+  `parts_requests` (item_id, work_order_id, employee_id, note, status
+  Open / Done, resolved_at / _by, resolution_note; unique index = ONE open
+  request per item; SELECT staff + Mechanic, no write policies). RPCs
+  `request_part(p_item_id, p_work_order_id, p_note)` (Mechanic / Admin; a
+  second request names who already asked) and Admin
+  `close_part_request(p_request_id, p_note)`. Trigger
+  `inventory_movements_close_part_requests`: a 'receive' movement closes the
+  item's open request ("Stock received"). App: `lib/partsRequests.ts`;
+  AccessWorkOrderModal out-of-stock rows show **Request** / "Requested by X";
+  Inventory page "Requested by mechanics" card (Receive Stock / Close; a
+  failed load is only a banner); Admin bell line "N part requests from
+  mechanics".

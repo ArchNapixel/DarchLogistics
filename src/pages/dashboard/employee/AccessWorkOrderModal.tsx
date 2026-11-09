@@ -23,6 +23,9 @@ import {
   type LoggedPart,
   type InventoryItemOption,
 } from '../../../lib/workOrderPartsLog'
+import { loadOpenPartRequests, requestPart, type PartRequest } from '../../../lib/partsRequests'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { showToast } from '../../../components/Toast'
 import { ALL_STATUSES, type WorkOrder } from '../../../lib/mechanicWorkOrders'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDateTime, formatDate } from '../../../lib/format'
@@ -56,6 +59,8 @@ function AccessWorkOrderModal({
   const [partsLoading, setPartsLoading] = useState(true)
   const [partsError, setPartsError] = useState<string | null>(null)
   const [partSearch, setPartSearch] = useState('')
+  // open "Request this part" flags, so an out-of-stock item shows who asked
+  const [requests, setRequests] = useState<PartRequest[]>([])
   // true while a use/return is saving -- blocks double clicks
   const [busy, setBusy] = useState(false)
 
@@ -63,10 +68,13 @@ function AccessWorkOrderModal({
   async function loadParts(quiet = false) {
     if (!quiet) setPartsLoading(true)
 
-    const [logResult, inventoryResult] = await Promise.all([
+    const [logResult, inventoryResult, requestResult] = await Promise.all([
       loadWorkOrderPartsLog(order.work_order_id),
       loadInventoryItems(),
+      loadOpenPartRequests(),
     ])
+    // A failed request list only hides "Requested by" -- not worth blocking.
+    setRequests(requestResult.requests)
 
     if (logResult.error) {
       setPartsError(logResult.error)
@@ -99,6 +107,26 @@ function AccessWorkOrderModal({
     })
 
     if (error) setPartsError(error)
+    await loadParts(true)
+    setBusy(false)
+  }
+
+  // Out of stock: ask Admin to restock it (one open request per item).
+  async function handleRequestPart(item: InventoryItemOption) {
+    if (
+      !(await confirmDialog({
+        title: `Request ${item.name}?`,
+        message: `It's out of stock. Admin gets a notice to restock it for ${order.work_order_number}.`,
+        confirmLabel: 'Request Part',
+      }))
+    ) {
+      return
+    }
+    setBusy(true)
+    setPartsError(null)
+    const { error } = await requestPart(item.item_id, order.work_order_id)
+    if (error) setPartsError(error)
+    else showToast(`${item.name} requested. Admin will restock it.`)
     await loadParts(true)
     setBusy(false)
   }
@@ -265,6 +293,31 @@ function AccessWorkOrderModal({
                 ) : (
                   visibleStockItems.map((item) => {
                     const out = item.quantity <= 0
+                    if (out) {
+                      const requested = requests.find((r) => r.item_id === item.item_id)
+                      return (
+                        <div key={item.item_id} className={partButton}>
+                          <span>
+                            <strong className="text-ink">{item.name}</strong>
+                            <span className="block text-[13px] text-red-800">
+                              Out of stock{requested ? ` · requested by ${requested.requested_by}` : ''}
+                            </span>
+                          </span>
+                          {requested ? (
+                            <span className="text-[13px] font-semibold whitespace-nowrap text-ink-muted">Requested</span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void handleRequestPart(item)}
+                              className="min-h-11 px-2 text-[13px] font-semibold whitespace-nowrap text-primary hover:underline"
+                            >
+                              Request
+                            </button>
+                          )}
+                        </div>
+                      )
+                    }
                     return (
                       <button key={item.item_id} type="button" disabled={out || busy} onClick={() => handleUsePart(item)} className={partButton}>
                         <span>

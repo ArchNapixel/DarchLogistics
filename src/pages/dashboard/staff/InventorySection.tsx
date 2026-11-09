@@ -11,6 +11,8 @@
 // and every change is a row in inventory_movements (the history shown here).
 // Items are archived, not deleted (Archive only at 0 stock; Restore undoes
 // it) -- an item that was ever stocked has history that must stay.
+// "Requested by mechanics" (lib/partsRequests.ts): out-of-stock items a
+// mechanic flagged from a job; Receive Stock closes them automatically.
 // "Needs price" = added by a mechanic on a job with no price; Set Price
 // fixes it and fills in the cost of the uses already recorded.
 // Stock value = sum over open batches of quantity x what that batch cost.
@@ -29,6 +31,7 @@ import StockActionModal, { type StockAction } from './StockActionModal'
 import { ITEM_TYPES, needsReorder, stockLevel } from '../../../lib/inventoryItemTypes'
 import InventoryReportModal from './InventoryReportModal'
 import StocktakeModal from './StocktakeModal'
+import { closePartRequest, loadOpenPartRequests, type PartRequest } from '../../../lib/partsRequests'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
 import PageHeader from '../../../components/PageHeader'
@@ -145,6 +148,7 @@ function StockHistory({ item, refreshKey }: { item: InventoryItem; refreshKey: n
 function InventorySection() {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [lots, setLots] = useState<OpenLot[]>([])
+  const [partRequests, setPartRequests] = useState<PartRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -179,7 +183,7 @@ function InventorySection() {
   async function loadItems() {
     setLoading(true)
 
-    const [itemsResult, lotsResult] = await Promise.all([
+    const [itemsResult, lotsResult, requestsResult] = await Promise.all([
       fetchAll<InventoryItem>((from, to) =>
         supabase
           .from('inventory_items')
@@ -188,9 +192,12 @@ function InventorySection() {
           .range(from, to),
       ),
       loadOpenLots(),
+      loadOpenPartRequests(),
     ])
 
     const loadError = itemsResult.error ?? lotsResult.error
+    // The part-request list failing shouldn't take the whole page down.
+    if (requestsResult.error) setActionError(`Couldn't load mechanics' part requests (${requestsResult.error}).`)
     if (loadError) {
       setError(loadError)
       setLoading(false)
@@ -206,8 +213,31 @@ function InventorySection() {
       })),
     )
     setLots(lotsResult.lots)
+    setPartRequests(requestsResult.requests)
     setError(null)
     setLoading(false)
+  }
+
+  // Close a mechanic's part request without restocking (receiving stock
+  // closes it by itself).
+  async function handleCloseRequest(request: PartRequest) {
+    if (
+      !(await confirmDialog({
+        title: `Close the request for ${request.item_name}?`,
+        message: `${request.requested_by} asked for it. Close it without restocking (e.g. not needed any more)? Receiving stock closes it automatically.`,
+        confirmLabel: 'Close Request',
+      }))
+    ) {
+      return
+    }
+    setActionError(null)
+    const { error: closeError } = await closePartRequest(request.request_id)
+    if (closeError) {
+      setActionError(closeError)
+      return
+    }
+    showToast(`Request for ${request.item_name} closed.`)
+    void loadItems()
   }
 
   async function handleArchive(item: InventoryItem, archive: boolean) {
@@ -331,6 +361,45 @@ function InventorySection() {
       </section>
 
       {actionError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
+
+      {!loading && partRequests.length > 0 && (
+        <section aria-labelledby="part-requests-title" className="card mb-4 border-amber-300">
+          <h2 id="part-requests-title" className="border-b border-line px-5 py-3 text-sm font-semibold text-ink">
+            Requested by mechanics ({partRequests.length})
+            <span className="ml-2 font-normal text-ink-muted">Receiving stock closes a request by itself.</span>
+          </h2>
+          {partRequests.map((request) => {
+            const item = items.find((i) => i.item_id === request.item_id)
+            return (
+              <div key={request.request_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 px-5 py-2.5 text-sm last:border-0">
+                <span className="min-w-0 flex-1">
+                  <strong className="text-ink">{request.item_name}</strong>
+                  <span className="block text-[13px] text-ink-secondary">
+                    {request.requested_by} · {formatDateTime(request.created_at)}
+                    {request.work_order_id !== null && (
+                      <>
+                        {' · '}
+                        <Link to={`/dashboard/maintenance?wo=${request.work_order_id}`} className="font-semibold text-primary hover:underline">
+                          {request.work_order_number}
+                        </Link>
+                      </>
+                    )}
+                    {item && ` · ${item.quantity} ${item.unit} on hand`}
+                  </span>
+                </span>
+                <button type="button" onClick={() => void handleCloseRequest(request)} className="btn-secondary px-4 text-sm font-medium">
+                  Close
+                </button>
+                {item && !item.archived_at && (
+                  <button type="button" onClick={() => setStockAction({ item, action: 'receive' })} className="btn-primary px-4 text-sm">
+                    Receive Stock
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </section>
+      )}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <label className={FILTER_LABEL}>
