@@ -35,7 +35,7 @@ import {
   type InventoryItemOption,
   type LoggedPart,
 } from '../../../lib/workOrderPartsLog'
-import { ITEM_UNITS, WHOLE_UNITS } from '../../../lib/inventoryItemTypes'
+import { ITEM_UNITS, WHOLE_UNITS, filterQuantity } from '../../../lib/inventoryItemTypes'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary disabled:bg-slate-50 disabled:text-ink-muted'
@@ -73,15 +73,6 @@ function makeEmptyRow(): PartRow {
     quantityUsed: '',
     error: null,
   }
-}
-
-// Quantity box filter: whole numbers for pcs / set, up to 2 decimals for
-// L / kg / m.
-function filterQuantity(value: string, unit: string): string {
-  if (WHOLE_UNITS.includes(unit)) return value.replace(/[^\d]/g, '')
-  const cleaned = value.replace(/[^\d.]/g, '')
-  const [whole, ...rest] = cleaned.split('.')
-  return rest.length === 0 ? whole : `${whole}.${rest.join('').slice(0, 2)}`
 }
 
 function CompleteWorkOrderModal({

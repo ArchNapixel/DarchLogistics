@@ -6,8 +6,9 @@
 // first batch (with its price) in the stock history.
 // Editing changes name / type / unit / price only. The quantity is
 // read-only here -- stock only changes through stock movements (parts used
-// on work orders, and Receive / Adjust Stock, coming in a later phase), so
-// nobody can type over the count and lose the record of why it changed.
+// on work orders, Receive / Adjust Stock on the Inventory page), so nobody
+// can type over the count and lose the record of why it changed. The price
+// is the item's LISTED (latest) price; each batch keeps what it really cost.
 // Unit price is required -- every use of the item on a work order is
 // charged at a price in the maintenance cost report.
 import { useState } from 'react'
@@ -25,6 +26,8 @@ export type EditableInventoryItem = {
   unit: ItemUnit
   quantity: number
   unit_cost: number | null
+  // added by a mechanic on a job -- priced through Set Price, not here
+  needs_price: boolean
 }
 
 function AddInventoryItemModal({
@@ -37,6 +40,7 @@ function AddInventoryItemModal({
   onSaved: () => void
 }) {
   const isEditing = !!item
+  const priceViaSetPrice = !!item?.needs_price
 
   const [name, setName] = useState(item?.name ?? '')
   const [itemType, setItemType] = useState<(typeof ITEM_TYPES)[number]>(
@@ -57,7 +61,7 @@ function AddInventoryItemModal({
     }
 
     const unitCostValue = Number(unitCost)
-    if (unitCost === '' || Number.isNaN(unitCostValue) || unitCostValue < 0) {
+    if (!priceViaSetPrice && (unitCost === '' || Number.isNaN(unitCostValue) || unitCostValue < 0)) {
       setError('Enter the unit price (0 or more).')
       return
     }
@@ -82,7 +86,11 @@ function AddInventoryItemModal({
       // .select() so an RLS silent no-op shows up as an error.
       const { data: updated, error: saveError } = await supabase
         .from('inventory_items')
-        .update({ name: name.trim(), item_type: itemType, unit, unit_cost: unitCostValue })
+        .update(
+          priceViaSetPrice
+            ? { name: name.trim(), item_type: itemType, unit }
+            : { name: name.trim(), item_type: itemType, unit, unit_cost: unitCostValue },
+        )
         .eq('item_id', item.item_id)
         .select('item_id')
         .maybeSingle()
@@ -193,7 +201,7 @@ function AddInventoryItemModal({
                 {item.quantity} {item.unit}
               </p>
               <p className="text-xs font-normal text-slate-500">
-                Stock changes only through parts used on work orders, and Receive / Adjust Stock (coming soon).
+                Stock changes only through parts used on work orders, and Receive / Adjust Stock.
               </p>
             </div>
           ) : (
@@ -210,17 +218,26 @@ function AddInventoryItemModal({
             </label>
           )}
 
-          <label className={labelClasses}>
-            Unit price (₱)
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
+          {priceViaSetPrice ? (
+            <div className={labelClasses}>
+              Unit price
+              <p className="text-sm font-normal text-amber-800">
+                Needs a price -- use Set Price on the item, so the uses already recorded get it too.
+              </p>
+            </div>
+          ) : (
+            <label className={labelClasses}>
+              Unit price (₱)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                className={fieldClasses}
+              />
+            </label>
+          )}
         </div>
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">

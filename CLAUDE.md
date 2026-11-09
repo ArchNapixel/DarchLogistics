@@ -2090,6 +2090,26 @@ numbers / truck fit, bins, tool check-out.
     transaction); a direct INSERT must be quantity 0. **Never write
     `inventory_items.quantity`, `inventory_lots` or `inventory_movements`
     from the app -- add a function instead.**
-- Next: 3 Admin Receive / Adjust / Stock history / Archive / Needs price,
-  4 costing flags (dashboard by completion month), 5 reorder level + bell,
-  6 reports from the ledger + stocktake.
+- **Phase 3 (built 2026-11-10, no SQL -- uses the Phase 1 functions):**
+  Inventory page (`InventorySection.tsx`) loads items + open batches past
+  1000 rows (`fetchAll`); Stock filter All / In stock / Out of stock / Needs
+  price / Archived (archived hidden otherwise); Stock value tile = open
+  batches' quantity x their own cost (`loadOpenLots` in
+  `lib/inventoryMovements.ts`), not the listed price. Side panel: listed
+  (latest) price, batches on hand oldest first ("next to use"), Stock
+  history (`loadStockHistory`, 10 at a time, links to the work order), and
+  buttons Archive / Restore (`set_item_archived`, only at 0 stock -- **Delete
+  was removed**), Adjust Stock, Receive Stock, and Set Price (Needs price
+  items) or Edit. `staff/StockActionModal.tsx` = Receive (`receive_stock`,
+  price via `parseAmount`), Adjust (admin types how many to Remove / Add,
+  not the new total -> `adjust_stock_by(p_item_id, p_change, ...)`, which
+  works out the total inside the DB lock and calls `adjust_stock`; SQL given
+  in chat 2026-11-10. Reasons per direction in `ADJUST_REASONS` + rules in
+  `adjustError()`, `lib/inventoryItemTypes.ts`, mirror the SQL -- change
+  both; self-check `node scripts/check-inventory-rules.ts`), Set Price
+  (`set_item_price`). `filterQuantity()` moved to `inventoryItemTypes.ts`
+  (shared with CompleteWorkOrderModal). Edit hides the price for Needs price
+  items (Set Price fills in earlier uses too).
+- Next: 4 costing flags (₱0 like no price; dashboard maintenance by
+  completion month), 5 reorder level + bell, 6 reports from the ledger +
+  stocktake.

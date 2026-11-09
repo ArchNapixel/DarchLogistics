@@ -1,23 +1,35 @@
-// InventorySection: the Inventory page (the canvas's board) -- tiles (items
-// tracked, out of stock, stock value, parts cost this month), Type / Stock /
-// Search filters, the items table and a side panel for the selected item:
-// its details and the completed work orders it was last used on. Add / Edit
-// (AddInventoryItemModal) and Delete work as before (a delete that's blocked
-// by a reference shows a message and keeps the list). Stock is set when an
-// item is added and then only changes through parts used on work orders;
-// Edit can't change it (Receive / Adjust Stock come in a later phase).
+// InventorySection: the Inventory page (the canvas's board, Admin only) --
+// tiles (items tracked, out of stock, stock value, parts cost this month),
+// Type / Stock / Search filters, the items table and a side panel for the
+// selected item: details, the batches on hand (each delivery keeps its own
+// price; the oldest is used first) and its stock history.
+//
+// Stock never changes by typing over a number. It changes through:
+//   Add Item (starting stock)  -> create_inventory_item (AddInventoryItemModal)
+//   Receive Stock / Adjust Stock / Set Price -> StockActionModal
+//   parts used / returned on work orders     -> the mechanic screens
+// and every change is a row in inventory_movements (the history shown here).
+// Items are archived, not deleted (Archive only at 0 stock; Restore undoes
+// it) -- an item that was ever stocked has history that must stay.
+// "Needs price" = added by a mechanic on a job with no price; Set Price
+// fixes it and fills in the cost of the uses already recorded.
+// Stock value = sum over open batches of quantity x what that batch cost.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
+import { fetchAll } from '../../../lib/dashboardExpenses'
 import { currentReportMonth, loadMaintenanceCostReport } from '../../../lib/maintenanceCostReport'
+import { loadOpenLots, loadStockHistory, MOVEMENT_LABELS, type OpenLot, type StockMove } from '../../../lib/inventoryMovements'
 import AddInventoryItemModal, { type EditableInventoryItem } from './AddInventoryItemModal'
+import StockActionModal, { type StockAction } from './StockActionModal'
 import { ITEM_TYPES } from '../../../lib/inventoryItemTypes'
 import InventoryReportModal from './InventoryReportModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import { showToast } from '../../../components/Toast'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
-import { formatDate, formatMoney } from '../../../lib/format'
+import { formatDate, formatDateTime, formatMoney } from '../../../lib/format'
 
 type InventoryItem = {
   item_id: number
@@ -26,10 +38,14 @@ type InventoryItem = {
   unit: string
   quantity: number
   unit_cost: number | null
+  needs_price: boolean
+  archived_at: string | null
 }
 
-const STOCK_FILTERS = ['All', 'In stock', 'Out of stock'] as const
+const STOCK_FILTERS = ['All', 'In stock', 'Out of stock', 'Needs price', 'Archived'] as const
 type StockFilter = (typeof STOCK_FILTERS)[number]
+
+const HISTORY_PAGE = 10
 
 const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
 const TD = 'px-2 py-2 first:pl-5 last:pr-5'
@@ -39,78 +55,84 @@ const VALUE = 'm-0 text-[15px] leading-[22px] font-medium text-ink'
 const FILTER_LABEL = 'flex items-center gap-2.5 text-sm font-medium text-ink-secondary'
 const FILTER_CONTROL =
   'min-h-11 rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-medium text-ink-metric focus:border-primary'
+const CHIP = 'rounded-[2px] px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
 
-function StockChip({ quantity }: { quantity: number }) {
-  return quantity > 0 ? (
-    <span className="rounded-[2px] bg-green-100 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-green-800">In stock</span>
+function StockChip({ item }: { item: InventoryItem }) {
+  if (item.archived_at) return <span className={`${CHIP} bg-slate-100 text-slate-700`}>Archived</span>
+  return item.quantity > 0 ? (
+    <span className={`${CHIP} bg-green-100 text-green-800`}>In stock</span>
   ) : (
-    <span className="rounded-[2px] bg-red-100 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-red-800">Out of stock</span>
+    <span className={`${CHIP} bg-red-100 text-red-800`}>Out of stock</span>
   )
 }
 
-// The last 5 completed work orders this item was used on.
-function RecentUse({ itemId }: { itemId: number }) {
-  const [rows, setRows] = useState<{ key: string; workOrderId: number; number: string; date: string; quantity: number }[] | null>(null)
+function lotsValue(lots: OpenLot[]): number {
+  return lots.reduce((sum, l) => sum + (l.unit_cost ?? 0) * l.qty_remaining, 0)
+}
+
+// One item's stock history, newest first, with "Show older".
+// `refreshKey` changes after a stock action, so it reloads.
+function StockHistory({ item, refreshKey }: { item: InventoryItem; refreshKey: number }) {
+  const [limit, setLimit] = useState(HISTORY_PAGE)
+  // Stored with the key it was loaded for -- "loading" = no result for the
+  // current key yet (see "Loading derived, not set" in CLAUDE.md).
+  const [result, setResult] = useState<{ key: string; moves: StockMove[]; more: boolean; error: string | null } | null>(null)
+  const key = `${item.item_id}|${limit}|${refreshKey}`
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      const { data: used } = await supabase
-        .from('work_order_parts_used')
-        .select('completion_id, quantity')
-        .eq('item_id', itemId)
-        .order('completion_id', { ascending: false })
-        .limit(5)
-      const completionIds = (used ?? []).map((u) => u.completion_id)
-      const { data: completions } = completionIds.length
-        ? await supabase.from('work_order_completions').select('completion_id, work_order_id, completed_at').in('completion_id', completionIds)
-        : { data: [] as { completion_id: number; work_order_id: number; completed_at: string }[] }
-      const orderIds = [...new Set((completions ?? []).map((c) => c.work_order_id))]
-      const { data: orders } = orderIds.length
-        ? await supabase.from('work_orders').select('work_order_id, work_order_number').in('work_order_id', orderIds)
-        : { data: [] as { work_order_id: number; work_order_number: string }[] }
-      if (cancelled) return
-      const completionById = new Map((completions ?? []).map((c) => [c.completion_id, c]))
-      const numberById = new Map((orders ?? []).map((o) => [o.work_order_id, o.work_order_number]))
-      setRows(
-        (used ?? []).flatMap((u, i) => {
-          const c = completionById.get(u.completion_id)
-          if (!c) return []
-          return [
-            {
-              key: `${u.completion_id}-${i}`,
-              workOrderId: c.work_order_id,
-              number: numberById.get(c.work_order_id) ?? `Work order #${c.work_order_id}`,
-              date: c.completed_at,
-              quantity: Number(u.quantity),
-            },
-          ]
-        }),
-      )
-    }
-    void load()
+    void loadStockHistory(item.item_id, limit).then((r) => {
+      if (!cancelled) setResult({ key, ...r })
+    })
     return () => {
       cancelled = true
     }
-  }, [itemId])
+  }, [item.item_id, limit, refreshKey, key])
+
+  const current = result?.key === key ? result : null
 
   return (
     <section>
-      <h3 className={GROUP}>Recently used on</h3>
-      {rows === null ? (
+      <h3 className={GROUP}>Stock history</h3>
+      {current === null ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-ink-muted">Not used on a completed work order yet.</p>
+      ) : current.error ? (
+        <p className="text-sm text-red-700">{current.error}</p>
+      ) : current.moves.length === 0 ? (
+        <p className="text-sm text-ink-muted">No stock changes recorded yet.</p>
       ) : (
-        rows.map((r) => (
-          <div key={r.key} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm last:border-0">
-            <Link to={`/dashboard/maintenance?tab=Completed&wo=${r.workOrderId}`} className="font-semibold text-primary hover:underline">
-              {r.number}
-            </Link>
-            <span className="flex-1 text-ink-secondary">{formatDate(r.date)}</span>
-            <span className="font-semibold tabular-nums">× {r.quantity}</span>
-          </div>
-        ))
+        <>
+          {current.moves.map((m) => (
+            <div key={m.movement_id} className="border-b border-slate-200 py-2 text-sm last:border-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-semibold text-ink">{MOVEMENT_LABELS[m.reason] ?? m.reason}</span>
+                <span className={`font-semibold tabular-nums ${m.qty_change < 0 ? 'text-red-700' : 'text-green-800'}`}>
+                  {m.qty_change > 0 ? '+' : '−'}
+                  {Math.abs(m.qty_change)} {item.unit}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-x-2 text-[13px] text-ink-secondary">
+                <span>{formatDateTime(m.created_at)}</span>
+                <span>· {m.by}</span>
+                {m.unit_cost !== null && <span>· {formatMoney(m.unit_cost)} each</span>}
+                {m.work_order_id !== null && (
+                  <Link
+                    to={`/dashboard/maintenance?${m.work_order_closed ? 'tab=Completed&' : ''}wo=${m.work_order_id}`}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    · {m.work_order_number}
+                  </Link>
+                )}
+              </div>
+              {m.note && <p className="text-[13px] text-ink-muted">{m.note}</p>}
+            </div>
+          ))}
+          {current.more && (
+            <button type="button" onClick={() => setLimit((n) => n + HISTORY_PAGE)} className="btn-secondary mt-2 px-4 text-sm font-medium">
+              Show older
+            </button>
+          )}
+        </>
       )}
     </section>
   )
@@ -118,6 +140,7 @@ function RecentUse({ itemId }: { itemId: number }) {
 
 function InventorySection() {
   const [items, setItems] = useState<InventoryItem[]>([])
+  const [lots, setLots] = useState<OpenLot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -129,7 +152,9 @@ function InventorySection() {
   const [showAdd, setShowAdd] = useState(false)
   const [showReport, setShowReport] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [stockAction, setStockAction] = useState<{ item: InventoryItem; action: StockAction } | null>(null)
+  const [archivingId, setArchivingId] = useState<number | null>(null)
+  const [historyKey, setHistoryKey] = useState(0)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -145,79 +170,102 @@ function InventorySection() {
   async function loadItems() {
     setLoading(true)
 
-    const { data, error: loadError } = await supabase
-      .from('inventory_items')
-      .select('item_id, name, item_type, unit, quantity, unit_cost')
-      .order('name', { ascending: true })
+    const [itemsResult, lotsResult] = await Promise.all([
+      fetchAll<InventoryItem>((from, to) =>
+        supabase
+          .from('inventory_items')
+          .select('item_id, name, item_type, unit, quantity, unit_cost, needs_price, archived_at')
+          .order('name', { ascending: true })
+          .range(from, to),
+      ),
+      loadOpenLots(),
+    ])
 
+    const loadError = itemsResult.error ?? lotsResult.error
     if (loadError) {
-      setError(loadError.message)
+      setError(loadError)
       setLoading(false)
       return
     }
 
-    setItems(data)
+    setItems(
+      itemsResult.rows.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity),
+        unit_cost: item.unit_cost === null ? null : Number(item.unit_cost),
+      })),
+    )
+    setLots(lotsResult.lots)
     setError(null)
     setLoading(false)
   }
 
-  async function handleDelete(item: InventoryItem) {
+  async function handleArchive(item: InventoryItem, archive: boolean) {
+    setActionError(null)
+    if (archive && item.quantity > 0) {
+      setActionError(
+        `${item.name} still has ${item.quantity} ${item.unit} on hand. Use Adjust Stock to take it to 0 first (e.g. Damaged / Lost / Count correction).`,
+      )
+      return
+    }
     if (
+      archive &&
       !(await confirmDialog({
-        title: `Delete ${item.name}?`,
-        message: 'This cannot be undone.',
-        confirmLabel: 'Delete',
-        danger: true,
+        title: `Archive ${item.name}?`,
+        message: 'It disappears from the lists and mechanics can no longer pick it. Its history is kept, and Restore brings it back.',
+        confirmLabel: 'Archive',
       }))
     ) {
       return
     }
 
-    setDeletingId(item.item_id)
-    setActionError(null)
+    setArchivingId(item.item_id)
+    const { error: archiveError } = await supabase.rpc('set_item_archived', {
+      p_item_id: item.item_id,
+      p_archived: archive,
+    })
+    setArchivingId(null)
 
-    const { error: deleteError } = await supabase.from('inventory_items').delete().eq('item_id', item.item_id)
-
-    setDeletingId(null)
-
-    if (deleteError) {
-      // '23503' is Postgres's error code for a foreign key violation.
-      // Uses a separate actionError state (not the page-load `error`)
-      // so a failed delete shows a banner without hiding the whole list.
-      if (deleteError.code === '23503') {
-        setActionError(
-          `Can't delete ${item.name} -- it's still referenced elsewhere. ` + `Remove those references first, then try again.`,
-        )
-      } else {
-        setActionError(deleteError.message)
-      }
+    if (archiveError) {
+      setActionError(archiveError.message)
       return
     }
-
-    setPaneId(null)
-    loadItems()
+    showToast(archive ? `${item.name} archived.` : `${item.name} restored.`)
+    void loadItems()
   }
 
+  const lotsByItem = new Map<number, OpenLot[]>()
+  for (const lot of lots) {
+    lotsByItem.set(lot.item_id, [...(lotsByItem.get(lot.item_id) ?? []), lot])
+  }
+
+  const active = items.filter((item) => !item.archived_at)
   const term = search.trim().toLowerCase()
-  const shown = items.filter(
+  const shown = (stockFilter === 'Archived' ? items.filter((item) => item.archived_at) : active).filter(
     (item) =>
       (!typeFilter || item.item_type === typeFilter) &&
-      (stockFilter === 'All' || (stockFilter === 'In stock' ? item.quantity > 0 : item.quantity <= 0)) &&
+      (stockFilter === 'All' ||
+        stockFilter === 'Archived' ||
+        (stockFilter === 'In stock' && item.quantity > 0) ||
+        (stockFilter === 'Out of stock' && item.quantity <= 0) ||
+        (stockFilter === 'Needs price' && item.needs_price)) &&
       (!term || item.name.toLowerCase().includes(term) || String(item.item_id) === term.replace(/^#/, '')),
   )
-  const outOfStock = items.filter((item) => item.quantity <= 0).length
-  const stockValue = items.reduce((sum, item) => sum + (item.unit_cost ?? 0) * Math.max(0, item.quantity), 0)
-  const unpriced = items.filter((item) => item.unit_cost === null && item.quantity > 0).length
+  const outOfStock = active.filter((item) => item.quantity <= 0).length
+  const stockValue = lotsValue(lots)
+  const unpricedLots = lots.filter((l) => l.unit_cost === null).length
+  const needsPrice = active.filter((item) => item.needs_price).length
 
   // One page at a time (back to page 1 when the filters change).
   const paged = usePaged(shown, `${typeFilter}|${stockFilter}|${search}`)
   const pane = paged.rows.find((item) => item.item_id === paneId) ?? paged.rows[0] ?? null
+  const paneLots = pane ? (lotsByItem.get(pane.item_id) ?? []) : []
 
   return (
     <div>
       <PageHeader
         title="Inventory"
-        subtitle="Parts, tools and supplies on hand. Parts used on work orders are taken out automatically."
+        subtitle="Parts, tools and supplies on hand. Parts used on work orders are taken out automatically, oldest batch first."
         actions={
           <>
             <button type="button" onClick={() => setShowReport(true)} className="btn-secondary px-4 text-sm font-medium">
@@ -235,9 +283,17 @@ function InventorySection() {
 
       <section aria-label="Stock totals" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: 'Items tracked', value: String(items.length) },
+          {
+            label: 'Items tracked',
+            value: String(active.length),
+            note: needsPrice > 0 ? `${needsPrice} ${needsPrice === 1 ? 'needs' : 'need'} a price` : undefined,
+          },
           { label: 'Out of stock', value: String(outOfStock), bad: outOfStock > 0 },
-          { label: 'Stock value', value: formatMoney(stockValue), note: unpriced > 0 ? `${unpriced} in-stock ${unpriced === 1 ? 'item has' : 'items have'} no price` : undefined },
+          {
+            label: 'Stock value',
+            value: formatMoney(stockValue),
+            note: unpricedLots > 0 ? `${unpricedLots} ${unpricedLots === 1 ? 'batch has' : 'batches have'} no price` : undefined,
+          },
           { label: 'Parts cost, this month', value: partsCost === null ? '—' : formatMoney(partsCost) },
         ].map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3">
@@ -300,7 +356,7 @@ function InventorySection() {
                       <th className={TH}>Item Name</th>
                       <th className={TH}>Type</th>
                       <th className={`${TH} text-right`}>On Hand</th>
-                      <th className={`${TH} text-right`}>Unit Cost</th>
+                      <th className={`${TH} text-right`}>Listed Price</th>
                       <th className={TH}>Stock</th>
                       <th className={TH}>
                         <span className="sr-only">Open</span>
@@ -326,10 +382,14 @@ function InventorySection() {
                             {item.quantity} <span className="text-xs font-medium text-ink-muted">{item.unit}</span>
                           </td>
                           <td className={`${TD} text-right tabular-nums`}>
-                            {item.unit_cost !== null ? formatMoney(item.unit_cost) : <span className="text-xs font-medium text-amber-700">No price set</span>}
+                            {item.needs_price || item.unit_cost === null ? (
+                              <span className={`${CHIP} bg-amber-100 text-amber-800`}>Needs price</span>
+                            ) : (
+                              formatMoney(item.unit_cost)
+                            )}
                           </td>
                           <td className={TD}>
-                            <StockChip quantity={item.quantity} />
+                            <StockChip item={item} />
                           </td>
                           <td className={TD}>
                             <button
@@ -355,7 +415,7 @@ function InventorySection() {
             </div>
             <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
               <span>
-                {shown.length} of {items.length} items
+                {shown.length} of {stockFilter === 'Archived' ? items.length - active.length : active.length} items
               </span>
               {paged.pager.pageCount > 1 && (
                 <span className="flex gap-2">
@@ -386,7 +446,8 @@ function InventorySection() {
                 <h2 id="inv-title" className="text-lg leading-[26px] font-bold text-ink">
                   {pane.name}
                 </h2>
-                <StockChip quantity={pane.quantity} />
+                <StockChip item={pane} />
+                {pane.needs_price && <span className={`${CHIP} bg-amber-100 text-amber-800`}>Needs price</span>}
               </div>
               <div className="flex flex-col gap-[18px] px-5 py-4">
                 <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
@@ -405,29 +466,82 @@ function InventorySection() {
                     </dd>
                   </div>
                   <div>
-                    <dt className={LABEL}>Unit cost</dt>
-                    <dd className={`${VALUE} tabular-nums`}>{pane.unit_cost !== null ? formatMoney(pane.unit_cost) : 'No price set'}</dd>
-                  </div>
-                  <div className="col-span-full">
-                    <dt className={LABEL}>Stock value</dt>
+                    <dt className={LABEL}>Listed price (latest)</dt>
                     <dd className={`${VALUE} tabular-nums`}>
-                      {pane.unit_cost !== null ? formatMoney(pane.unit_cost * Math.max(0, pane.quantity)) : '—'}
+                      {pane.unit_cost !== null && !pane.needs_price ? formatMoney(pane.unit_cost) : 'Needs price'}
                     </dd>
                   </div>
+                  <div className="col-span-full">
+                    <dt className={LABEL}>Stock value (what the batches on hand cost)</dt>
+                    <dd className={`${VALUE} tabular-nums`}>{formatMoney(lotsValue(paneLots))}</dd>
+                  </div>
                 </dl>
-                <RecentUse itemId={pane.item_id} />
+
+                <section>
+                  <h3 className={GROUP}>
+                    <span>Batches on hand</span>
+                    <span className="text-[13px] font-medium text-ink-muted">Oldest used first</span>
+                  </h3>
+                  {paneLots.length === 0 ? (
+                    <p className="text-sm text-ink-muted">Nothing on hand.</p>
+                  ) : (
+                    paneLots.map((lot, i) => (
+                      <div key={lot.lot_id} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm last:border-0">
+                        <span className="text-ink-secondary">
+                          {formatDate(lot.received_at)}
+                          {i === 0 && paneLots.length > 1 && <span className="ml-2 text-[13px] font-semibold text-primary">next to use</span>}
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {lot.qty_remaining} {pane.unit} @ {lot.unit_cost !== null ? formatMoney(lot.unit_cost) : 'no price'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </section>
+
+                <StockHistory item={pane} refreshKey={historyKey} />
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
-                <button type="button" onClick={() => void handleDelete(pane)} disabled={deletingId === pane.item_id} className="btn-danger px-4 text-sm">
-                  {deletingId === pane.item_id ? 'Deleting...' : 'Delete'}
-                </button>
-                <span className="flex-1" />
-                <button type="button" onClick={() => setEditingItem(pane)} className="btn-primary flex items-center gap-2 px-5 text-sm">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
-                  </svg>
-                  Edit
-                </button>
+                {pane.archived_at ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleArchive(pane, false)}
+                    disabled={archivingId === pane.item_id}
+                    className="btn-secondary px-4 text-sm font-medium"
+                  >
+                    {archivingId === pane.item_id ? 'Restoring...' : 'Restore'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleArchive(pane, true)}
+                      disabled={archivingId === pane.item_id}
+                      className="btn-secondary px-4 text-sm font-medium"
+                    >
+                      {archivingId === pane.item_id ? 'Archiving...' : 'Archive'}
+                    </button>
+                    <span className="flex-1" />
+                    <button type="button" onClick={() => setStockAction({ item: pane, action: 'adjust' })} className="btn-secondary px-4 text-sm font-medium">
+                      Adjust Stock
+                    </button>
+                    <button type="button" onClick={() => setStockAction({ item: pane, action: 'receive' })} className="btn-secondary px-4 text-sm font-medium">
+                      Receive Stock
+                    </button>
+                  </>
+                )}
+                {pane.needs_price && !pane.archived_at ? (
+                  <button type="button" onClick={() => setStockAction({ item: pane, action: 'price' })} className="btn-primary px-5 text-sm">
+                    Set Price
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setEditingItem(pane)} className="btn-primary flex items-center gap-2 px-5 text-sm">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4" />
+                    </svg>
+                    Edit
+                  </button>
+                )}
               </div>
             </aside>
           )}
@@ -435,6 +549,20 @@ function InventorySection() {
       )}
 
       {showReport && <InventoryReportModal onClose={() => setShowReport(false)} />}
+
+      {stockAction && (
+        <StockActionModal
+          item={stockAction.item}
+          action={stockAction.action}
+          onClose={() => setStockAction(null)}
+          onSaved={(message) => {
+            setStockAction(null)
+            showToast(message)
+            setHistoryKey((k) => k + 1)
+            void loadItems()
+          }}
+        />
+      )}
 
       {(showAdd || editingItem) && (
         <AddInventoryItemModal
@@ -446,7 +574,7 @@ function InventorySection() {
           onSaved={() => {
             setShowAdd(false)
             setEditingItem(null)
-            loadItems()
+            void loadItems()
           }}
         />
       )}
