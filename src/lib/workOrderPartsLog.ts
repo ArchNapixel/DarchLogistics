@@ -1,17 +1,17 @@
 // workOrderPartsLog: lets a mechanic log a part as used WHILE working a
-// job (AccessWorkOrderModal.tsx), immediately decrementing inventory --
-// instead of only being able to record parts all at once at the very
-// end (CompleteWorkOrderModal.tsx). Deliberately a separate table from
-// work_order_parts_used: that one only exists once a
-// work_order_completions row exists (i.e. the job is actually marked
-// Completed), so there's nothing to attach a mid-job part to yet.
-// CompleteWorkOrderModal.tsx reads these back and copies them into
-// work_order_parts_used at completion time WITHOUT decrementing stock
-// again -- the deduction already happened here.
+// job (AccessWorkOrderModal.tsx), instead of only being able to record
+// parts all at once at the very end (CompleteWorkOrderModal.tsx).
+// Deliberately a separate table from work_order_parts_used: that one only
+// exists once a work_order_completions row exists. At completion the
+// complete_work_order database function copies these rows onto the
+// completion (setting their completion_id) without taking stock out again.
 //
-// unit_cost is copied from inventory_items at the moment the part is
-// logged, so a later price change never rewrites what this job cost
-// (the maintenance cost report sums quantity x unit_cost).
+// Stock changes go through database functions, never a direct write:
+// log_part_used takes stock out of the oldest batch first (FIFO) and
+// records the log row + stock history in one transaction; a use that
+// spans two batches becomes two log rows, each at its batch's real price.
+// return_logged_part puts a part back into the batch it came from -- only
+// while the job is open and the part isn't on a completion yet.
 import { supabase } from './supabaseClient'
 
 export type LoggedPart = {
@@ -22,6 +22,8 @@ export type LoggedPart = {
   unit_cost: number | null
   employee_name: string
   used_at: string
+  // set once the part is on a completion record -- can't be returned then
+  completion_id: number | null
 }
 
 export async function loadWorkOrderPartsLog(workOrderId: number): Promise<{
@@ -30,7 +32,7 @@ export async function loadWorkOrderPartsLog(workOrderId: number): Promise<{
 }> {
   const { data: rows, error } = await supabase
     .from('work_order_parts_log')
-    .select('log_id, item_id, item_name_text, quantity, unit_cost, employee_id, used_at')
+    .select('log_id, item_id, item_name_text, quantity, unit_cost, employee_id, used_at, completion_id')
     .eq('work_order_id', workOrderId)
     .order('used_at', { ascending: false })
 
@@ -58,10 +60,11 @@ export async function loadWorkOrderPartsLog(workOrderId: number): Promise<{
       log_id: row.log_id,
       item_id: row.item_id,
       item_name_text: row.item_name_text,
-      quantity: row.quantity,
+      quantity: Number(row.quantity),
       unit_cost: row.unit_cost,
       employee_name: nameById.get(row.employee_id) ?? `Employee #${row.employee_id}`,
       used_at: row.used_at,
+      completion_id: row.completion_id,
     })),
     error: null,
   }
@@ -71,149 +74,50 @@ export type InventoryItemOption = {
   item_id: number
   name: string
   item_type: string
+  unit: string
   quantity: number
 }
 
+// Items a mechanic can use up on a job: not archived, and not Tools /
+// Equipment (those are counted, not consumed -- the DB refuses them too).
 export async function loadInventoryItems(): Promise<{
   items: InventoryItemOption[]
   error: string | null
 }> {
   const { data, error } = await supabase
     .from('inventory_items')
-    .select('item_id, name, item_type, quantity')
+    .select('item_id, name, item_type, unit, quantity')
+    .is('archived_at', null)
+    .not('item_type', 'in', '("Tools","Equipment")')
     .order('name', { ascending: true })
 
   if (error) {
     return { items: [], error: error.message }
   }
 
-  return { items: data, error: null }
+  return { items: data.map((item) => ({ ...item, quantity: Number(item.quantity) })), error: null }
 }
 
-// Takes `quantity` off an item's stock (a negative quantity puts stock
-// back). The write only lands if stock is STILL the value just read
-// (.eq('quantity', ...)), so two mechanics using the same part at the
-// same moment can't overwrite each other's deduction -- a plain
-// read-then-write would silently lose one of them. If someone else got
-// in between, it re-reads and tries again (a few times).
-// Shared by logPartUsed() below and CompleteWorkOrderModal.tsx.
-export async function decrementStock(
-  itemId: number,
-  quantity: number,
-): Promise<{ error: string | null }> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { data: current, error: readError } = await supabase
-      .from('inventory_items')
-      .select('quantity')
-      .eq('item_id', itemId)
-      .single()
-
-    if (readError || !current) {
-      return { error: readError?.message ?? 'Could not read current stock.' }
-    }
-    if (current.quantity < quantity) {
-      return { error: `Only ${current.quantity} in stock -- not enough for ${quantity}.` }
-    }
-
-    const { data: updated, error: updateError } = await supabase
-      .from('inventory_items')
-      .update({ quantity: current.quantity - quantity })
-      .eq('item_id', itemId)
-      .eq('quantity', current.quantity)
-      .select('item_id')
-      .maybeSingle()
-
-    if (updateError) {
-      return { error: updateError.message }
-    }
-    if (updated) {
-      return { error: null }
-    }
-    // 0 rows matched: stock changed since we read it -- loop and re-read.
-  }
-
-  return { error: 'Stock for this item kept changing while saving. Try again.' }
-}
-
-// Deducts stock FIRST (race-guarded, see decrementStock), then records
-// the log row. If recording fails, the stock is put back so the two
-// never disagree.
+// Takes `quantity` of an item out of stock for this work order.
 export async function logPartUsed({
   workOrderId,
   itemId,
-  itemName,
   quantity,
-  employeeId,
 }: {
   workOrderId: number
   itemId: number
-  itemName: string
   quantity: number
-  employeeId: number
 }): Promise<{ error: string | null }> {
-  const { data: item, error: readError } = await supabase
-    .from('inventory_items')
-    .select('unit_cost')
-    .eq('item_id', itemId)
-    .single()
-
-  if (readError || !item) {
-    return { error: readError?.message ?? 'Could not read this item.' }
-  }
-
-  const { error: stockError } = await decrementStock(itemId, quantity)
-  if (stockError) {
-    return { error: stockError }
-  }
-
-  const { error: logError } = await supabase.from('work_order_parts_log').insert({
-    work_order_id: workOrderId,
-    item_id: itemId,
-    item_name_text: itemName,
-    quantity,
-    unit_cost: item.unit_cost,
-    employee_id: employeeId,
+  const { error } = await supabase.rpc('log_part_used', {
+    p_work_order_id: workOrderId,
+    p_item_id: itemId,
+    p_quantity: quantity,
   })
-
-  if (logError) {
-    const { error: restoreError } = await decrementStock(itemId, -quantity)
-    return {
-      error: restoreError
-        ? `Could not log the part (${logError.message}), and ${quantity} was already taken off stock and could not be put back. This needs manual review.`
-        : `Could not log the part (${logError.message}). Stock was not changed.`,
-    }
-  }
-
-  return { error: null }
+  return { error: error?.message ?? null }
 }
 
-// Undoes one logged part: deletes the log row, then puts its quantity
-// back on the shelf. Delete goes first and is checked with
-// .select().maybeSingle() -- a blocked DELETE (no RLS policy) reports
-// success with 0 rows, and we must not add stock back in that case.
-export async function returnPart(
-  part: LoggedPart,
-): Promise<{ error: string | null }> {
-  const { data: deleted, error: deleteError } = await supabase
-    .from('work_order_parts_log')
-    .delete()
-    .eq('log_id', part.log_id)
-    .select('log_id')
-    .maybeSingle()
-
-  if (deleteError) {
-    return { error: deleteError.message }
-  }
-  if (!deleted) {
-    return { error: 'Could not remove this part (not allowed or already removed).' }
-  }
-
-  const { error: restoreError } = await decrementStock(part.item_id, -part.quantity)
-  if (restoreError) {
-    return {
-      error: `Removed ${part.item_name_text} from the job, but could not put it back in stock (${restoreError}). This needs manual review.`,
-    }
-  }
-
-  return { error: null }
+// Undoes one logged part: puts it back on the shelf and removes the log row.
+export async function returnPart(part: LoggedPart): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('return_logged_part', { p_log_id: part.log_id })
+  return { error: error?.message ?? null }
 }

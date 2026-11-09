@@ -79,7 +79,9 @@ function AccessWorkOrderModal({
       return
     }
 
-    setLoggedParts(logResult.parts)
+    // Only this round's parts: on a reopened job, parts already on the
+    // earlier completion record can't be returned (the DB refuses too).
+    setLoggedParts(logResult.parts.filter((p) => p.completion_id === null))
     setInventoryItems(inventoryResult.items)
     setPartsError(null)
     setPartsLoading(false)
@@ -93,9 +95,7 @@ function AccessWorkOrderModal({
     const { error } = await logPartUsed({
       workOrderId: order.work_order_id,
       itemId: item.item_id,
-      itemName: item.name,
       quantity: 1,
-      employeeId,
     })
 
     if (error) setPartsError(error)
@@ -270,7 +270,7 @@ function AccessWorkOrderModal({
                         <span>
                           <strong className="text-ink">{item.name}</strong>
                           <span className={`block text-[13px] ${out ? 'text-red-800' : 'text-ink-muted'}`}>
-                            {out ? 'Out of stock' : `${item.quantity} in stock`}
+                            {out ? 'Out of stock' : `${item.quantity} ${item.unit} in stock`}
                           </span>
                         </span>
                         <span className={`text-[13px] font-semibold whitespace-nowrap ${out ? 'text-ink-muted' : 'text-primary'}`}>
@@ -282,7 +282,7 @@ function AccessWorkOrderModal({
                 )}
               </div>
               <p className="mt-2.5 text-[13px] text-ink-muted">
-                Comes out of stock right away. Stock is checked first, so it never goes below zero.
+                Comes out of stock right away. Stock is checked first, so it never goes below zero. Tools and equipment aren't listed: they're counted, not used up.
               </p>
             </section>
 
