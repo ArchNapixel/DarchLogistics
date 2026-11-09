@@ -3,9 +3,9 @@
 // Search filters, the items table and a side panel for the selected item:
 // its details and the completed work orders it was last used on. Add / Edit
 // (AddInventoryItemModal) and Delete work as before (a delete that's blocked
-// by a reference shows a message and keeps the list). Stock only changes
-// through Add / Edit and parts used on work orders -- there's no separate
-// stock-adjustment log or reorder level.
+// by a reference shows a message and keeps the list). Stock is set when an
+// item is added and then only changes through parts used on work orders;
+// Edit can't change it (Receive / Adjust Stock come in a later phase).
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
@@ -23,6 +23,7 @@ type InventoryItem = {
   item_id: number
   name: string
   item_type: string
+  unit: string
   quantity: number
   unit_cost: number | null
 }
@@ -146,7 +147,7 @@ function InventorySection() {
 
     const { data, error: loadError } = await supabase
       .from('inventory_items')
-      .select('item_id, name, item_type, quantity, unit_cost')
+      .select('item_id, name, item_type, unit, quantity, unit_cost')
       .order('name', { ascending: true })
 
     if (loadError) {
@@ -321,7 +322,9 @@ function InventorySection() {
                           <td className={`${TD} text-ink-muted tabular-nums`}>#{item.item_id}</td>
                           <td className={`${TD} font-semibold text-ink`}>{item.name}</td>
                           <td className={TD}>{item.item_type}</td>
-                          <td className={`${TD} text-right font-semibold tabular-nums ${item.quantity <= 0 ? 'text-red-700' : ''}`}>{item.quantity}</td>
+                          <td className={`${TD} text-right font-semibold tabular-nums ${item.quantity <= 0 ? 'text-red-700' : ''}`}>
+                            {item.quantity} <span className="text-xs font-medium text-ink-muted">{item.unit}</span>
+                          </td>
                           <td className={`${TD} text-right tabular-nums`}>
                             {item.unit_cost !== null ? formatMoney(item.unit_cost) : <span className="text-xs font-medium text-amber-700">No price set</span>}
                           </td>
@@ -397,7 +400,9 @@ function InventorySection() {
                   </div>
                   <div>
                     <dt className={LABEL}>On hand</dt>
-                    <dd className={`${VALUE} tabular-nums`}>{pane.quantity}</dd>
+                    <dd className={`${VALUE} tabular-nums`}>
+                      {pane.quantity} {pane.unit}
+                    </dd>
                   </div>
                   <div>
                     <dt className={LABEL}>Unit cost</dt>
