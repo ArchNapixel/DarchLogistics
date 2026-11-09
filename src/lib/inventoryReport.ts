@@ -1,33 +1,18 @@
-// inventoryReport.ts: builds the data behind the Inventory page's
-// "Print Inventory Report" button -- a CSV snapshot of current stock
-// levels plus everything used out of stock during one Sunday-through-
-// Saturday week (same weekly-period idea as payslip.ts's
-// getDefaultPayPeriod, just anchored on Sunday instead of Saturday).
-//
-// "Used stock" is read from work_order_parts_used (joined to
-// work_order_completions for the date) rather than work_order_parts_log,
-// because work_order_parts_used is the final, reconciled record of every
-// part consumed on a work order -- it already includes both parts logged
-// mid-job AND parts entered fresh at completion (see
-// CompleteWorkOrderModal.tsx step 3), so there's no risk of double-
-// counting or missing anything.
+// inventoryReport.ts: the data behind the Inventory page's "Inventory
+// Report" -- one Sunday-through-Saturday week (same weekly-period idea as
+// payslip.ts's getDefaultPayPeriod, anchored on Sunday), built from the
+// stock history (inventory_movements): per item opening / in / used /
+// returned / adjusted / written off / closing, which always add up (math
+// + self-check in inventoryReportTotals.ts), plus every movement of the
+// week. Parts used on jobs that are still open count in the week they
+// were taken off the shelf -- this is a STOCK report (what left the
+// shelf), not the cost report (which counts by completion date).
+// csvField is also used by other reports' CSVs.
 import { supabase } from './supabaseClient'
 import { toManilaDate } from './payslip'
-
-export type CurrentStockRow = {
-  item_id: number
-  name: string
-  item_type: string
-  quantity: number
-}
-
-export type UsedStockRow = {
-  item_id: number
-  item_name_text: string
-  quantity: number
-  work_order_number: string
-  completed_at: string
-}
+import { fetchAll } from './dashboardExpenses'
+import { MOVEMENT_LABELS } from './inventoryMovements'
+import { buildItemWeeks, type ItemWeek, type ReportMove } from './inventoryReportTotals'
 
 // Sunday through Saturday, the week containing `anchorDate` (a
 // yyyy-mm-dd string, e.g. from an <input type="date">). The date math
@@ -116,131 +101,124 @@ function buildReportWeekOptions(earliestDataDate: string | null): ReportWeekOpti
   return weeks
 }
 
+// The week picker starts at the first week with stock history.
 export async function loadReportWeekOptions(): Promise<{
   weeks: ReportWeekOption[]
   error: string | null
 }> {
   const { data, error } = await supabase
-    .from('work_order_completions')
-    .select('completed_at')
-    .order('completed_at', { ascending: true })
+    .from('inventory_movements')
+    .select('created_at')
+    .order('created_at', { ascending: true })
     .limit(1)
 
   if (error) {
     return { weeks: [], error: error.message }
   }
 
-  const earliestDataDate = data.length > 0 ? toManilaDate(data[0].completed_at) : null
+  const earliestDataDate = data.length > 0 ? toManilaDate(data[0].created_at) : null
   return { weeks: buildReportWeekOptions(earliestDataDate), error: null }
 }
 
+export type ReportRow = ItemWeek & {
+  name: string
+  item_type: string
+  unit: string
+  archived: boolean
+}
+
+export type ReportLine = {
+  created_at: string
+  item_name: string
+  unit: string
+  reason: string
+  qty_change: number
+  unit_cost: number | null
+  work_order_number: string | null
+  note: string | null
+}
+
+type MoveRow = ReportMove & { work_order_id: number | null; note: string | null }
+
+// One week's report: per item opening / in / used / returned / adjusted /
+// written off / closing (math in inventoryReportTotals.ts), plus every
+// movement in the week. `historyStart` = the first day anything was
+// recorded (stock before it wasn't tracked, so earlier weeks start at 0).
 export async function loadInventoryReport(
   weekStart: string,
   weekEnd: string,
-): Promise<{
-  currentStock: CurrentStockRow[]
-  usedStock: UsedStockRow[]
-  error: string | null
-}> {
-  const { data: currentStock, error: stockError } = await supabase
-    .from('inventory_items')
-    .select('item_id, name, item_type, quantity')
-    .order('name', { ascending: true })
+): Promise<{ rows: ReportRow[]; lines: ReportLine[]; historyStart: string | null; error: string | null }> {
+  const startTs = `${weekStart}T00:00:00+08:00`
+  const dayAfter = new Date(`${weekEnd}T00:00:00Z`)
+  dayAfter.setUTCDate(dayAfter.getUTCDate() + 1)
+  const endTs = `${dayAfter.toISOString().slice(0, 10)}T00:00:00+08:00`
 
-  if (stockError) {
-    return { currentStock: [], usedStock: [], error: stockError.message }
-  }
+  const [items, moves, first] = await Promise.all([
+    fetchAll<{ item_id: number; name: string; item_type: string; unit: string; quantity: number; archived_at: string | null }>(
+      (from, to) =>
+        supabase
+          .from('inventory_items')
+          .select('item_id, name, item_type, unit, quantity, archived_at')
+          .order('name', { ascending: true })
+          .range(from, to),
+    ),
+    // ponytail: reads every movement from the week until today -- fine for
+    // recent weeks; a year-old week on a busy shop would want an SQL sum.
+    fetchAll<MoveRow>((from, to) =>
+      supabase
+        .from('inventory_movements')
+        .select('item_id, reason, qty_change, unit_cost, created_at, work_order_id, note')
+        .gte('created_at', startTs)
+        .order('created_at', { ascending: true })
+        .order('movement_id', { ascending: true })
+        .range(from, to),
+    ),
+    supabase.from('inventory_movements').select('created_at').order('created_at', { ascending: true }).limit(1),
+  ])
+  const firstError = items.error ?? moves.error ?? first.error?.message ?? null
+  if (firstError) return { rows: [], lines: [], historyStart: null, error: firstError }
 
-  // Week bounds in Manila time (+08:00), filtered in the DB rather than
-  // loading every completion ever and slicing UTC dates in JS.
-  const { data: weekCompletions, error: completionsError } = await supabase
-    .from('work_order_completions')
-    .select('completion_id, work_order_id, completed_at')
-    .gte('completed_at', `${weekStart}T00:00:00+08:00`)
-    .lte('completed_at', `${weekEnd}T23:59:59.999+08:00`)
+  const sinceStart = moves.rows.map((m) => ({
+    ...m,
+    qty_change: Number(m.qty_change),
+    unit_cost: m.unit_cost === null ? null : Number(m.unit_cost),
+  }))
+  const weeks = buildItemWeeks(new Map(items.rows.map((i) => [i.item_id, Number(i.quantity)])), sinceStart, endTs)
 
-  if (completionsError) {
-    return { currentStock, usedStock: [], error: completionsError.message }
-  }
-
-  if (weekCompletions.length === 0) {
-    return { currentStock, usedStock: [], error: null }
-  }
-
-  const completionIds = weekCompletions.map((c) => c.completion_id)
-  const { data: partsUsed, error: partsError } = await supabase
-    .from('work_order_parts_used')
-    .select('completion_id, item_id, item_name_text, quantity')
-    .in('completion_id', completionIds)
-
-  if (partsError) {
-    return { currentStock, usedStock: [], error: partsError.message }
-  }
-
-  const workOrderIds = Array.from(new Set(weekCompletions.map((c) => c.work_order_id)))
-  const { data: workOrders, error: workOrdersError } = await supabase
-    .from('work_orders')
-    .select('work_order_id, work_order_number')
-    .in('work_order_id', workOrderIds)
-
-  if (workOrdersError) {
-    return { currentStock, usedStock: [], error: workOrdersError.message }
-  }
-
-  const completedAtByCompletionId = new Map(
-    weekCompletions.map((c) => [c.completion_id, c.completed_at]),
-  )
-  const workOrderIdByCompletionId = new Map(
-    weekCompletions.map((c) => [c.completion_id, c.work_order_id]),
-  )
-  const workOrderNumberById = new Map(workOrders.map((w) => [w.work_order_id, w.work_order_number]))
-
-  const usedStock: UsedStockRow[] = partsUsed.map((p) => {
-    const workOrderId = workOrderIdByCompletionId.get(p.completion_id)
-    return {
-      item_id: p.item_id,
-      item_name_text: p.item_name_text,
-      quantity: p.quantity,
-      work_order_number:
-        workOrderId !== undefined
-          ? (workOrderNumberById.get(workOrderId) ?? `#${workOrderId}`)
-          : 'Unknown',
-      completed_at: completedAtByCompletionId.get(p.completion_id) ?? '',
-    }
+  const rows: ReportRow[] = items.rows.flatMap((item) => {
+    const w = weeks.get(item.item_id)
+    if (!w) return []
+    const active = w.in || w.used || w.returned || w.adjusted || w.written_off
+    // archived items only when they had stock or activity that week
+    if (item.archived_at && !active && !w.opening && !w.closing) return []
+    return [{ ...w, name: item.name, item_type: item.item_type, unit: item.unit, archived: !!item.archived_at }]
   })
 
-  return { currentStock, usedStock, error: null }
-}
+  const endMs = new Date(endTs).getTime()
+  const inWeek = sinceStart.filter((m) => new Date(m.created_at).getTime() < endMs)
+  const orderIds = [...new Set(inWeek.map((m) => m.work_order_id).filter((id): id is number => id !== null))]
+  const orders = orderIds.length
+    ? await supabase.from('work_orders').select('work_order_id, work_order_number').in('work_order_id', orderIds)
+    : { data: [] as { work_order_id: number; work_order_number: string }[], error: null }
+  if (orders.error) return { rows: [], lines: [], historyStart: null, error: orders.error.message }
+  const numberById = new Map((orders.data ?? []).map((o) => [o.work_order_id, o.work_order_number]))
+  const itemById = new Map(items.rows.map((i) => [i.item_id, i]))
 
-export type UsageTotalRow = {
-  item_id: number
-  name: string
-  total_used: number
-  work_order_count: number
-}
-
-// "How much of each part went out this week" -- the used-stock entries
-// summed per inventory item (by item_id, so a renamed item still counts
-// as one), most-used first.
-export function summarizeUsageByItem(usedStock: UsedStockRow[]): UsageTotalRow[] {
-  const byItem = new Map<number, { name: string; total: number; workOrders: Set<string> }>()
-  for (const row of usedStock) {
-    const entry = byItem.get(row.item_id) ?? {
-      name: row.item_name_text,
-      total: 0,
-      workOrders: new Set<string>(),
-    }
-    entry.total += Number(row.quantity)
-    entry.workOrders.add(row.work_order_number)
-    byItem.set(row.item_id, entry)
+  return {
+    rows,
+    lines: inWeek.map((m) => ({
+      created_at: m.created_at,
+      item_name: itemById.get(m.item_id)?.name ?? `Item #${m.item_id}`,
+      unit: itemById.get(m.item_id)?.unit ?? '',
+      reason: m.reason,
+      qty_change: m.qty_change,
+      unit_cost: m.unit_cost,
+      work_order_number: m.work_order_id !== null ? (numberById.get(m.work_order_id) ?? `#${m.work_order_id}`) : null,
+      note: m.note,
+    })),
+    historyStart: first.data && first.data.length > 0 ? toManilaDate(first.data[0].created_at) : null,
+    error: null,
   }
-
-  return Array.from(byItem, ([item_id, e]) => ({
-    item_id,
-    name: e.name,
-    total_used: e.total,
-    work_order_count: e.workOrders.size,
-  })).sort((a, b) => b.total_used - a.total_used)
 }
 
 export function csvField(value: string | number): string {
@@ -248,60 +226,72 @@ export function csvField(value: string | number): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
+// Manila date + time for the CSV (the same on every laptop).
+function manilaDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
+}
+
 export function buildInventoryReportCsv({
   weekStart,
   weekEnd,
-  currentStock,
-  usedStock,
+  rows,
+  lines,
+  historyStart,
 }: {
   weekStart: string
   weekEnd: string
-  currentStock: CurrentStockRow[]
-  usedStock: UsedStockRow[]
+  rows: ReportRow[]
+  lines: ReportLine[]
+  historyStart: string | null
 }): string {
-  const lines: string[] = []
+  const out: string[] = []
+  const row = (cells: (string | number)[]) => out.push(cells.map(csvField).join(','))
 
-  lines.push('Darch Logistics Inventory Report')
-  lines.push(`Week: ${formatReportWeekLabel(weekStart, weekEnd)}`)
-  lines.push('')
+  out.push('Darch Logistics Inventory Report')
+  out.push(`Week: ${formatReportWeekLabel(weekStart, weekEnd)}`)
+  if (historyStart && historyStart > weekStart) {
+    out.push(csvField(`Stock history starts ${historyStart} -- stock before that was not tracked, so it shows as 0.`))
+  }
+  out.push('')
 
-  lines.push('Current Stock')
-  lines.push(['Item Name', 'Type', 'Quantity'].map(csvField).join(','))
-  for (const item of currentStock) {
-    lines.push([item.name, item.item_type, item.quantity].map(csvField).join(','))
+  out.push('Stock by Item')
+  row(['Item', 'Type', 'Unit', 'Opening', 'In', 'Used', 'Returned', 'Adjusted', 'Written off', 'Closing', 'Used value', 'Written-off value'])
+  for (const r of rows) {
+    row([
+      r.archived ? `${r.name} (archived)` : r.name,
+      r.item_type,
+      r.unit,
+      r.opening,
+      r.in,
+      r.used,
+      r.returned,
+      r.adjusted,
+      r.written_off,
+      r.closing,
+      r.used_value.toFixed(2),
+      r.written_off_value.toFixed(2),
+    ])
+  }
+  const usedTotal = rows.reduce((s, r) => s + r.used_value, 0)
+  const writtenOffTotal = rows.reduce((s, r) => s + r.written_off_value, 0)
+  row(['Total', '', '', '', '', '', '', '', '', '', usedTotal.toFixed(2), writtenOffTotal.toFixed(2)])
+
+  out.push('')
+  out.push('Movements This Week')
+  row(['Date', 'Item', 'What', 'Quantity', 'Unit', 'Unit cost', 'Work order', 'Note'])
+  if (lines.length === 0) out.push('No stock movements this week.')
+  for (const l of lines) {
+    row([
+      manilaDateTime(l.created_at),
+      l.item_name,
+      MOVEMENT_LABELS[l.reason] ?? l.reason,
+      l.qty_change,
+      l.unit,
+      l.unit_cost === null ? '' : l.unit_cost.toFixed(2),
+      l.work_order_number ?? '',
+      l.note ?? '',
+    ])
   }
 
-  lines.push('')
-  lines.push('Usage by Item')
-  lines.push(['Item Name', 'Total Used', 'Work Orders'].map(csvField).join(','))
-  const totals = summarizeUsageByItem(usedStock)
-  if (totals.length === 0) {
-    lines.push('No stock used this week.')
-  } else {
-    for (const row of totals) {
-      lines.push([row.name, row.total_used, row.work_order_count].map(csvField).join(','))
-    }
-  }
-
-  lines.push('')
-  lines.push('Stock Used This Week')
-  lines.push(['Item Name', 'Quantity Used', 'Work Order', 'Completed At'].map(csvField).join(','))
-  if (usedStock.length === 0) {
-    lines.push('No stock used this week.')
-  } else {
-    for (const row of usedStock) {
-      lines.push(
-        [
-          row.item_name_text,
-          row.quantity,
-          row.work_order_number,
-          new Date(row.completed_at).toLocaleString(),
-        ]
-          .map(csvField)
-          .join(','),
-      )
-    }
-  }
-
-  return lines.join('\n')
+  return out.join('\n')
 }

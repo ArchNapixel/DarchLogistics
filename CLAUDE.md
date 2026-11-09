@@ -2131,5 +2131,24 @@ numbers / truck fit, bins, tool check-out.
   (`ComplianceExpiryAlerts`, Admin only): one line "N parts need reordering
   (X out of stock, Y low)" -> the filtered Inventory page, reloads every 5
   min. Mechanic "Request this part" was skipped (YAGNI; add if asked).
-- Next: 6 Inventory Report from the stock history (opening / received /
-  used / adjusted / closing) + stocktake page.
+- **Phase 6 (built 2026-11-10; `post_stock_count` SQL given in chat):**
+  Inventory Report (`InventoryReportModal`, `lib/inventoryReport.ts`) is
+  built from `inventory_movements`: per item and Sun-Sat week, opening /
+  in (receive + opening) / used / returned / adjusted (adjust + count) /
+  written off / closing, plus used and written-off VALUE (batch prices) and
+  every movement in the CSV (Manila times). Opening is worked BACKWARDS
+  from today's stock (needs `quantity` = sum of movements -- checked live
+  2026-11-10, guaranteed by the guard trigger). Math in
+  `lib/inventoryReportTotals.ts` (pure, self-check
+  `node scripts/check-inventory-report.ts`). Weeks before the first movement
+  start at 0 (amber note). It's a STOCK report (when parts left the shelf);
+  the Cost Report / dashboard count by completion date -- they differ on
+  purpose. `csvField` still lives in inventoryReport.ts (other CSVs import
+  it). **Stocktake** (`staff/StocktakeModal.tsx`, Inventory header button):
+  blind count-sheet CSV (no system numbers), enter counts (blank = not
+  counted), Post -> `post_stock_count(p_counts jsonb, p_note)` with only the
+  differing items `{item_id, expected, counted}`; refuses the whole post if
+  any item's stock changed since the list loaded (names them).
+- **Roadmap phases 0-6 done 2026-11-10.** Still out of scope (user asked to
+  keep tracking): tyre tracking, part numbers / truck fit, storage
+  locations / bins, tool check-out; mechanic "Request this part" skipped.

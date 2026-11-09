@@ -1,33 +1,34 @@
-// InventoryReportModal: "Print Inventory Report" on the Inventory page --
-// pick any date and it snaps to that Sunday-through-Saturday week,
-// previews a CSV of current stock levels plus everything used out of
-// stock that week, and lets staff download it. See
-// lib/inventoryReport.ts for how "used stock" is sourced.
+// InventoryReportModal: "Inventory Report" on the Inventory page -- pick a
+// Sunday-through-Saturday week, preview per item opening / in / used /
+// returned / adjusted / written off / closing (from the stock history,
+// lib/inventoryReport.ts) and download it as a CSV with every movement of
+// the week.
 import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadReportWeekOptions,
   loadInventoryReport,
   buildInventoryReportCsv,
-  summarizeUsageByItem,
   type ReportWeekOption,
-  type CurrentStockRow,
-  type UsedStockRow,
+  type ReportRow,
+  type ReportLine,
 } from '../../../lib/inventoryReport'
-import { formatDate } from '../../../lib/format'
+import { formatDate, formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
+const TH = 'px-2 py-2 text-right first:pl-3 first:text-left last:pr-3'
+const TD = 'px-2 py-2 text-right tabular-nums first:pl-3 first:text-left last:pr-3'
 
 function InventoryReportModal({ onClose }: { onClose: () => void }) {
   const [weekOptions, setWeekOptions] = useState<ReportWeekOption[]>([])
   const [selectedWeek, setSelectedWeek] = useState<ReportWeekOption | null>(null)
-  const [currentStock, setCurrentStock] = useState<CurrentStockRow[]>([])
-  const [usedStock, setUsedStock] = useState<UsedStockRow[]>([])
+  const [rows, setRows] = useState<ReportRow[]>([])
+  const [lines, setLines] = useState<ReportLine[]>([])
+  const [historyStart, setHistoryStart] = useState<string | null>(null)
   const [loadingWeeks, setLoadingWeeks] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const usageTotals = summarizeUsageByItem(usedStock)
 
   async function loadWeeks() {
     setLoadingWeeks(true)
@@ -58,26 +59,22 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
     if (!selectedWeek) return
 
     setLoading(true)
-    const {
-      currentStock: stock,
-      usedStock: used,
-      error: loadError,
-    } = await loadInventoryReport(selectedWeek.start, selectedWeek.end)
+    const result = await loadInventoryReport(selectedWeek.start, selectedWeek.end)
 
-    if (loadError) {
-      setError(loadError)
+    if (result.error) {
+      setError(result.error)
       setLoading(false)
       return
     }
 
-    setCurrentStock(stock)
-    setUsedStock(used)
+    setRows(result.rows)
+    setLines(result.lines)
+    setHistoryStart(result.historyStart)
     setError(null)
     setLoading(false)
   }
 
   // Load when this opens and whenever selectedWeek changes.
-  // (useEffectEvent + 0 ms timer: see "Loading data in an effect" in CLAUDE.md.)
   const loadNow2 = useEffectEvent(() => {
     if (selectedWeek) load()
   })
@@ -92,8 +89,9 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
     const csv = buildInventoryReportCsv({
       weekStart: selectedWeek.start,
       weekEnd: selectedWeek.end,
-      currentStock,
-      usedStock,
+      rows,
+      lines,
+      historyStart,
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -106,12 +104,16 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
     URL.revokeObjectURL(url)
   }
 
+  const usedValue = rows.reduce((s, r) => s + r.used_value, 0)
+  const writtenOffValue = rows.reduce((s, r) => s + r.written_off_value, 0)
+  const beforeHistory = historyStart !== null && selectedWeek !== null && historyStart > selectedWeek.start
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto bg-white p-6 border-2 border-line-card">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto bg-white p-6 border-2 border-line-card">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">Print Inventory Report</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+          <h3 className="text-lg font-bold text-slate-900">Inventory Report</h3>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">
             ✕
           </button>
         </div>
@@ -138,115 +140,90 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
           )}
         </label>
 
-        {error && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-        )}
+        {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
         {loadingWeeks || loading ? (
           <p className="mt-4 text-slate-500">Loading...</p>
         ) : (
-          <div className="mt-4 grid gap-6">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-700">
-                Current Stock ({currentStock.length} items)
-              </h4>
-              <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                <table className="w-full text-left text-sm text-ink-metric">
-                  <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
+          <div className="mt-4 grid gap-4">
+            {beforeHistory && (
+              <p className="bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Stock history starts {formatDate(historyStart)}. Stock before that wasn't tracked, so this week starts at 0.
+              </p>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="card px-4 py-3">
+                <p className="text-sm text-ink-secondary">Parts used (value)</p>
+                <p className="text-xl font-bold tabular-nums text-ink">{formatMoney(usedValue)}</p>
+              </div>
+              <div className="card px-4 py-3">
+                <p className="text-sm text-ink-secondary">Written off (value)</p>
+                <p className={`text-xl font-bold tabular-nums ${writtenOffValue > 0 ? 'text-red-700' : 'text-ink'}`}>
+                  {formatMoney(writtenOffValue)}
+                </p>
+              </div>
+              <div className="card px-4 py-3">
+                <p className="text-sm text-ink-secondary">Stock movements</p>
+                <p className="text-xl font-bold tabular-nums text-ink">{lines.length}</p>
+              </div>
+            </div>
+
+            {rows.length === 0 ? (
+              <EmptyState message="No items to report for this week." />
+            ) : (
+              <div className="overflow-x-auto border border-slate-200">
+                <table className="w-full min-w-[760px] text-sm text-ink-metric">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Type</th>
-                      <th className="px-3 py-2">Quantity</th>
+                      <th className={TH}>Item</th>
+                      <th className={TH}>Opening</th>
+                      <th className={TH}>In</th>
+                      <th className={TH}>Used</th>
+                      <th className={TH}>Returned</th>
+                      <th className={TH}>Adjusted</th>
+                      <th className={TH}>Written off</th>
+                      <th className={TH}>Closing</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {currentStock.map((item) => (
-                      <tr key={item.item_id} className="border-b border-slate-200 last:border-0">
-                        <td className="px-3 py-2 text-slate-900">{item.name}</td>
-                        <td className="px-3 py-2 text-slate-600">{item.item_type}</td>
-                        <td className="px-3 py-2 text-slate-600">{item.quantity}</td>
+                    {rows.map((r) => (
+                      <tr key={r.item_id} className="border-b border-slate-200 last:border-0">
+                        <td className={TD}>
+                          <span className="font-semibold text-ink">{r.name}</span>
+                          <span className="ml-1.5 text-xs text-ink-muted">
+                            {r.unit}
+                            {r.archived ? ' · archived' : ''}
+                          </span>
+                        </td>
+                        <td className={TD}>{r.opening}</td>
+                        <td className={TD}>{r.in || '—'}</td>
+                        <td className={TD}>{r.used || '—'}</td>
+                        <td className={TD}>{r.returned || '—'}</td>
+                        <td className={TD}>{r.adjusted ? (r.adjusted > 0 ? `+${r.adjusted}` : r.adjusted) : '—'}</td>
+                        <td className={`${TD} ${r.written_off ? 'text-red-700' : ''}`}>{r.written_off || '—'}</td>
+                        <td className={`${TD} font-semibold text-ink`}>{r.closing}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold text-slate-700">Usage by Item</h4>
-              {usageTotals.length === 0 ? (
-                <EmptyState message="No stock used this week." className="mt-2" />
-              ) : (
-                <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                  <table className="w-full text-left text-sm text-ink-metric">
-                    <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-3 py-2">Item</th>
-                        <th className="px-3 py-2">Total Used</th>
-                        <th className="px-3 py-2">Work Orders</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usageTotals.map((row) => (
-                        <tr key={row.item_id} className="border-b border-slate-200 last:border-0">
-                          <td className="px-3 py-2 text-slate-900">{row.name}</td>
-                          <td className="px-3 py-2 font-medium text-slate-900">{row.total_used}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.work_order_count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold text-slate-700">
-                Stock Used This Week ({usedStock.length} entries)
-              </h4>
-              {usedStock.length === 0 ? (
-                <EmptyState message="No stock used this week." className="mt-2" />
-              ) : (
-                <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200">
-                  <table className="w-full text-left text-sm text-ink-metric">
-                    <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-3 py-2">Item</th>
-                        <th className="px-3 py-2">Qty Used</th>
-                        <th className="px-3 py-2">Work Order</th>
-                        <th className="px-3 py-2">Completed</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usedStock.map((row, index) => (
-                        <tr key={index} className="border-b border-slate-200 last:border-0">
-                          <td className="px-3 py-2 text-slate-900">{row.item_name_text}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.quantity}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.work_order_number}</td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {formatDate(row.completed_at)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            )}
+            <p className="text-[13px] text-ink-muted">
+              Opening + In − Used + Returned ± Adjusted − Written off = Closing. "In" is deliveries and starting stock. The CSV also
+              lists every movement of the week.
+            </p>
           </div>
         )}
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          >
+          <button onClick={onClose} className="btn-secondary px-4 text-sm font-medium">
             Close
           </button>
           <button
             onClick={handleDownload}
             disabled={loading || loadingWeeks || !selectedWeek}
-            className="btn-primary px-4 py-2 text-sm font-medium"
+            className="btn-primary px-4 text-sm font-medium"
           >
             Download CSV
           </button>
