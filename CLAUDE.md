@@ -2031,3 +2031,41 @@ and `flowAfterDelivery` / `chainSlots`. Decided with the user:
 - Deliberate limits (ponytail comments): one-hop swaps, new trips carry no
   rate inside one quote's fairness, plan not re-checked against leave /
   shop at Accept.
+
+## 2026-11-10: Inventory overhaul (roadmap phases 0-6; Phase 1 SQL run by user)
+Strict audit found stock could change with no record and mechanics could
+write stock/prices directly. Decisions: cancelled job -> "Return all" or
+"Keep as used" (write-off + reason); a mechanic-added item gets no price and
+no extra stock (received N + used N, `needs_price`); **FIFO batches** -- one
+item, many `inventory_lots` (own price + qty left), oldest used first, each
+use charged its batch's real price (a use spanning two batches = two rows);
+maintenance cost by completion month; Tools / Equipment can't be used up
+(item #7 Chain stays a Tool). Out of scope, still tracked: tyres, part
+numbers / truck fit, bins, tool check-out.
+- **Phase 1 (live, app not wired yet):** `inventory_items.quantity` and
+  `work_order_parts_log.quantity` are numeric(12,2); new `unit`
+  (pcs/L/kg/m/set), `reorder_level`, `archived_at`, `needs_price`;
+  CHECK quantity >= 0; unique index on lower(trimmed, single-spaced name);
+  `work_order_parts_log.completion_id` (backfilled 7/7); `updated_at` trigger.
+  Tables `inventory_lots` and `inventory_movements` (reason opening / receive
+  / use / return / adjust / write_off / count) -- staff SELECT only, written
+  only by functions. Inventory RLS: SELECT staff + Mechanic (clients/drivers
+  can't read it any more), INSERT/UPDATE/DELETE Admin only (Dispatcher
+  removed); `inventory_items_insert/update_mechanic` still there until Phase 2.
+  Functions (SECURITY DEFINER): `log_part_used`, `return_logged_part`
+  (refuses parts already on a completion / written off),
+  `cancel_work_order_parts(mode 'return'|'write_off')`, `complete_work_order`
+  (completion + logged parts + form parts summed per item + new items +
+  status Completed + truck odometer / service dates, one transaction, server
+  time), Admin `create_inventory_item`, `receive_stock`, `adjust_stock`
+  (Count correction / Damaged / Lost / Found / Other), `set_item_price`
+  (fills every unpriced use), `set_item_archived` (only at 0 stock). Internal
+  `_inventory_*` helpers aren't callable from the app. Status log and
+  `releaseVehicleFromShop` stay in the app.
+- **No batches exist yet**, so the functions refuse to take stock ("batches
+  short") until the Phase 2 switch-over creates one opening batch per item.
+  Until then the old screens write `inventory_items` directly as before.
+- Next: Phase 2 (mechanic screens -> functions, opening batches, re-run the
+  completion_id backfill, drop mechanic write policies, block direct quantity
+  writes), 3 Admin Receive / Adjust / history / Archive, 4 costing flags,
+  5 reorder alerts, 6 reports from the ledger + stocktake.
