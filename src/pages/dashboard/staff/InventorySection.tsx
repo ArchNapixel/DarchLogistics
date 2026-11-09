@@ -253,7 +253,8 @@ function InventorySection() {
   )
   const outOfStock = active.filter((item) => item.quantity <= 0).length
   const stockValue = lotsValue(lots)
-  const unpricedLots = lots.filter((l) => l.unit_cost === null).length
+  // ₱0 is flagged like no price (almost always a price nobody set)
+  const unpricedLots = lots.filter((l) => l.unit_cost === null || l.unit_cost === 0).length
   const needsPrice = active.filter((item) => item.needs_price).length
 
   // One page at a time (back to page 1 when the filters change).
@@ -292,7 +293,10 @@ function InventorySection() {
           {
             label: 'Stock value',
             value: formatMoney(stockValue),
-            note: unpricedLots > 0 ? `${unpricedLots} ${unpricedLots === 1 ? 'batch has' : 'batches have'} no price` : undefined,
+            note:
+              unpricedLots > 0
+                ? `${unpricedLots} ${unpricedLots === 1 ? 'batch has' : 'batches have'} no price or ₱0`
+                : undefined,
           },
           { label: 'Parts cost, this month', value: partsCost === null ? '—' : formatMoney(partsCost) },
         ].map((tile) => (

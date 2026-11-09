@@ -2110,6 +2110,16 @@ numbers / truck fit, bins, tool check-out.
   (`set_item_price`). `filterQuantity()` moved to `inventoryItemTypes.ts`
   (shared with CompleteWorkOrderModal). Edit hides the price for Needs price
   items (Set Price fills in earlier uses too).
-- Next: 4 costing flags (₱0 like no price; dashboard maintenance by
-  completion month), 5 reorder level + bell, 6 reports from the ledger +
-  stocktake.
+- **Phase 4 (built 2026-11-10, no SQL):** a ₱0 price is flagged like no
+  price (counted as ₱0) in `summarizeParts` (expenseTotals.ts, self-check
+  `node scripts/check-expense-totals.ts`), the Maintenance Cost Report
+  (`unpriced_lines`) and the Inventory stock-value tile. The dashboard's
+  Maintenance Expenses card (`loadMaintenanceExpenses`) now counts ONLY
+  parts on work orders completed in the period, by completion date -- the
+  "parts on open work orders" part (`inProgressCost`) was removed, so the
+  card, Cost Report and P&L use one rule and past months don't change.
+  Write-offs (Damaged / Lost, cancelled-job "Keep as used") are NOT in
+  maintenance cost; they show in the stock history (Phase 6 reports).
+- Next: 5 reorder level + low-stock filter / tile + Admin bell (optional
+  mechanic "Request this part"), 6 Inventory Report from the stock history
+  (opening / received / used / adjusted / closing) + stocktake page.

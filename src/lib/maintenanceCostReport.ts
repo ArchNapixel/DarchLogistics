@@ -9,8 +9,9 @@
 // A work order counts in the month it was COMPLETED (work_order_completions
 // .completed_at, Manila time) -- same "final record" source as
 // inventoryReport.ts, so the two reports always agree on what was used.
-// Parts used before prices existed have unit_cost null: they're counted
-// as ₱0 but flagged, never silently hidden.
+// Parts with no price (used before prices existed, or a mechanic-added item
+// Admin hasn't priced yet) or a ₱0 price are counted as ₱0 but flagged,
+// never silently hidden.
 import { supabase } from './supabaseClient'
 import { toManilaDate } from './payslip'
 import { csvField } from './inventoryReport'
@@ -139,7 +140,8 @@ export async function loadMaintenanceCostReport(month: string): Promise<{
       completed_at: c.completed_at,
       lines,
       total: lines.reduce((sum, l) => sum + (l.line_total ?? 0), 0),
-      unpriced_lines: lines.filter((l) => l.line_total === null).length,
+      // ₱0 is flagged like no price (almost always a price nobody set)
+      unpriced_lines: lines.filter((l) => l.unit_cost === null || l.unit_cost === 0).length,
     }
   })
 

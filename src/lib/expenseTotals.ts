@@ -89,7 +89,8 @@ export function summarizeParts(lines: PartLine[]) {
 
   for (const line of lines) {
     const quantity = num(line.quantity)
-    if (line.unit_cost === null) unpricedLines += 1
+    // ₱0 is flagged like no price -- almost always a price nobody set
+    if (line.unit_cost === null || num(line.unit_cost) === 0) unpricedLines += 1
     const cost = quantity * num(line.unit_cost)
     total += cost
     byType.set(line.item_type, (byType.get(line.item_type) ?? 0) + cost)

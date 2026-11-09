@@ -43,9 +43,10 @@ const parts = summarizeParts([
   { item_name: 'Oil filter', item_type: 'Parts', quantity: 1, unit_cost: 300 },
   { item_name: 'Wrench', item_type: 'Tools', quantity: 1, unit_cost: 1_000 },
   { item_name: 'Rags', item_type: 'Supplies', quantity: 5, unit_cost: null },
+  { item_name: 'Grease', item_type: 'Supplies', quantity: 1, unit_cost: 0 }, // ₱0 = flagged too
 ])
 assert.equal(parts.total, 1_900)
-assert.equal(parts.unpricedLines, 1)
+assert.equal(parts.unpricedLines, 2)
 assert.deepEqual(parts.byType, [
   { type: 'Tools', cost: 1_000 },
   { type: 'Parts', cost: 900 },

@@ -12,9 +12,9 @@
 //     Fuel logged on a trip that isn't delivered yet counts as actual.
 //     A delivered trip's date is its latest Delivered row in
 //     dispatch_status_logs (Manila time), the same date payroll uses.
-// MAINTENANCE = parts used (quantity x unit_cost copied at time of use):
-//   completed work orders by completion date, plus parts logged on work
-//   orders still in progress (stock is already taken off at that point).
+// MAINTENANCE = parts used (quantity x unit_cost copied at time of use) on
+//   work orders completed in the period, by completion date (same rule as
+//   the Maintenance Cost Report and P&L).
 //
 // Every row is counted once; every query is paged past Supabase's
 // 1000-row default so a long range can't silently cap.
@@ -298,73 +298,45 @@ export async function loadPayrollExpenses(
   return { data: { draft, payslips: slips.rows.length, total, earners }, error: null }
 }
 
-export type MaintenanceExpenses =ReturnType<typeof summarizeParts> & {
-  inProgressCost: number // part of total from work orders not completed yet
-}
+export type MaintenanceExpenses = ReturnType<typeof summarizeParts>
 
 type CompletionRow = { completion_id: number; work_order_id: number }
 type UsedRow = { item_id: number | null; item_name_text: string; quantity: number; unit_cost: number | null }
-type LogPartRow = UsedRow & { work_order_id: number }
 type ItemTypeRow = { item_id: number; item_type: string | null }
 
+// Parts on work orders COMPLETED in the period, by completion date -- the
+// same rule as the Maintenance Cost Report and P&L, so a month never
+// changes after the fact. Parts on jobs still open count once the job is
+// completed.
 export async function loadMaintenanceExpenses(
   period: Period,
 ): Promise<{ data: MaintenanceExpenses | null; error: string | null }> {
   const cutoffTs = `${rangeStartManila(period)}T00:00:00+08:00`
   const endTs = `${rangeEndManila(period)}T00:00:00+08:00`
 
-  const [completions, logged] = await Promise.all([
-    fetchAll<CompletionRow>((from, to) =>
-      supabase
-        .from('work_order_completions')
-        .select('completion_id, work_order_id')
-        .gte('completed_at', cutoffTs)
-        .lt('completed_at', endTs)
-        .range(from, to),
-    ),
-    fetchAll<LogPartRow>((from, to) =>
-      supabase
-        .from('work_order_parts_log')
-        .select('work_order_id, item_id, item_name_text, quantity, unit_cost')
-        .gte('used_at', cutoffTs)
-        .lt('used_at', endTs)
-        .range(from, to),
-    ),
-  ])
-  const firstError = completions.error ?? logged.error
-  if (firstError) return { data: null, error: firstError }
+  const completions = await fetchAll<CompletionRow>((from, to) =>
+    supabase
+      .from('work_order_completions')
+      .select('completion_id, work_order_id')
+      .gte('completed_at', cutoffTs)
+      .lt('completed_at', endTs)
+      .range(from, to),
+  )
+  if (completions.error) return { data: null, error: completions.error }
 
-  // A work order that has a completion row had its logged parts copied
-  // into work_order_parts_used -- so only logged parts of work orders
-  // with NO completion are "in progress" (otherwise they'd count twice).
-  const loggedOrderIds = Array.from(new Set(logged.rows.map((r) => r.work_order_id)))
-  const [used, completedOrders] = await Promise.all([
-    fetchIn<UsedRow>(
-      completions.rows.map((c) => c.completion_id),
-      (chunk, from, to) =>
-        supabase
-          .from('work_order_parts_used')
-          .select('item_id, item_name_text, quantity, unit_cost')
-          .in('completion_id', chunk)
-          .range(from, to),
-    ),
-    fetchIn<{ work_order_id: number }>(loggedOrderIds, (chunk, from, to) =>
+  const used = await fetchIn<UsedRow>(
+    completions.rows.map((c) => c.completion_id),
+    (chunk, from, to) =>
       supabase
-        .from('work_order_completions')
-        .select('work_order_id')
-        .in('work_order_id', chunk)
+        .from('work_order_parts_used')
+        .select('item_id, item_name_text, quantity, unit_cost')
+        .in('completion_id', chunk)
         .range(from, to),
-    ),
-  ])
-  const secondError = used.error ?? completedOrders.error
-  if (secondError) return { data: null, error: secondError }
-
-  const completedSet = new Set(completedOrders.rows.map((c) => c.work_order_id))
-  const inProgress = logged.rows.filter((r) => !completedSet.has(r.work_order_id))
-  const allParts = [...used.rows, ...inProgress]
+  )
+  if (used.error) return { data: null, error: used.error }
 
   const itemIds = Array.from(
-    new Set(allParts.map((p) => p.item_id).filter((id): id is number => id !== null)),
+    new Set(used.rows.map((p) => p.item_id).filter((id): id is number => id !== null)),
   )
   const items = await fetchIn<ItemTypeRow>(itemIds, (chunk, from, to) =>
     supabase
@@ -383,11 +355,5 @@ export async function loadMaintenanceExpenses(
     unit_cost: p.unit_cost,
   })
 
-  return {
-    data: {
-      ...summarizeParts(allParts.map(toLine)),
-      inProgressCost: summarizeParts(inProgress.map(toLine)).total,
-    },
-    error: null,
-  }
+  return { data: summarizeParts(used.rows.map(toLine)), error: null }
 }

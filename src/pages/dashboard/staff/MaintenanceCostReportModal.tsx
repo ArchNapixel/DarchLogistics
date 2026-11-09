@@ -108,9 +108,9 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
 
             {unpricedTotal > 0 && (
               <p className="bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {unpricedTotal} part {unpricedTotal === 1 ? 'entry has' : 'entries have'} no price
-                on record (used before prices were set), so {unpricedTotal === 1 ? "it isn't" : "they aren't"}{' '}
-                in the totals.
+                {unpricedTotal} part {unpricedTotal === 1 ? 'entry has' : 'entries have'} no price or a ₱0
+                price, so {unpricedTotal === 1 ? "it isn't" : "they aren't"} in the totals. Give the item a price
+                with Set Price (or Edit) on the Inventory page.
               </p>
             )}
 

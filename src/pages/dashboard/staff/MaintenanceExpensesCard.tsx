@@ -123,14 +123,9 @@ function MaintenanceExpensesCard({
             >
             <div className="overflow-hidden">
             <div className="max-sm:hidden">
-              {data.inProgressCost > 0 && (
-                <p className="mt-1 font-ui text-xs text-neutral-500">
-                  Includes {formatMoney(data.inProgressCost)} from open work orders.
-                </p>
-              )}
               {data.unpricedLines > 0 && (
                 <p className="mt-1 font-ui text-xs text-amber-700">
-                  {data.unpricedLines} {data.unpricedLines === 1 ? 'part has' : 'parts have'} no price
+                  {data.unpricedLines} {data.unpricedLines === 1 ? 'part has' : 'parts have'} no price or ₱0
                   (counted as ₱0).
                 </p>
               )}
