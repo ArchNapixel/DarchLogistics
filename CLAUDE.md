@@ -2062,10 +2062,34 @@ numbers / truck fit, bins, tool check-out.
   (fills every unpriced use), `set_item_archived` (only at 0 stock). Internal
   `_inventory_*` helpers aren't callable from the app. Status log and
   `releaseVehicleFromShop` stay in the app.
-- **No batches exist yet**, so the functions refuse to take stock ("batches
-  short") until the Phase 2 switch-over creates one opening batch per item.
-  Until then the old screens write `inventory_items` directly as before.
-- Next: Phase 2 (mechanic screens -> functions, opening batches, re-run the
-  completion_id backfill, drop mechanic write policies, block direct quantity
-  writes), 3 Admin Receive / Adjust / history / Archive, 4 costing flags,
-  5 reorder alerts, 6 reports from the ledger + stocktake.
+- **Phase 2 (built 2026-11-10, switch-over + lock-down SQL given in chat;
+  supersedes the 6-step Mark Complete list in the "Mechanic work orders"
+  bullet near the top):**
+  - 2A: Admin Add Item -> `create_inventory_item` (first batch + duplicate-name
+    check), Unit dropdown (`ITEM_UNITS` / `WHOLE_UNITS` in
+    `lib/inventoryItemTypes.ts`, mirrors the DB CHECK); Edit can't change
+    quantity (name / type / unit / price only).
+  - 2B: `workOrderPartsLog.ts` "Log 1" / "Return" call `log_part_used` /
+    `return_logged_part` (`decrementStock` deleted); the mechanic picker leaves
+    out Tools / Equipment / archived; "Used" shows only parts with no
+    `completion_id`. `CompleteWorkOrderModal` = ONE `complete_work_order` call
+    (all or nothing), then status log + `releaseVehicleFromShop`
+    (`savedCompletionId` makes a retry redo only the vehicle step); new items
+    ask type (Parts / Supplies / Other) + unit only; decimals for L / kg / m.
+    Switch-over SQL made one "Opening balance" batch per item (checked:
+    quantity = sum of batches for all 3 items).
+  - 2C: `changeWorkOrderStatus` -> Cancelled first runs
+    `settleLoggedPartsBeforeCancel` (workOrderPartsLog.ts): "Return all to
+    stock" or "Keep as used" + reason (write-off); backing out keeps the job
+    open. Parts step and status change are two calls (ponytail comment).
+  - 2D: dropped mechanic INSERT / UPDATE on `inventory_items`, mechanic
+    INSERT / DELETE on `work_order_parts_log`, all INSERT on
+    `work_order_parts_used` and `work_order_completions` (functions do it).
+    Trigger `inventory_items_guard_quantity`: quantity can only change inside
+    the stock functions (they set `darch.inventory_write` for the
+    transaction); a direct INSERT must be quantity 0. **Never write
+    `inventory_items.quantity`, `inventory_lots` or `inventory_movements`
+    from the app -- add a function instead.**
+- Next: 3 Admin Receive / Adjust / Stock history / Archive / Needs price,
+  4 costing flags (dashboard by completion month), 5 reorder level + bell,
+  6 reports from the ledger + stocktake.
