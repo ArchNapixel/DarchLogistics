@@ -3,6 +3,9 @@
 // their end time by more than app_settings.overdue_alert_hours, default 2,
 // and not delivered / cancelled), linking to the trip -- so nobody has to
 // notice a red badge on the board. It reloads every 5 minutes.
+// Admin also gets one stock line: items with a reorder level that are at
+// or below it / out of stock ("N parts need reordering"), linking to the
+// Inventory page filtered to them -- same 5-minute reload.
 // Surfaces driver licenses expiring within 30 days
 // (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
@@ -19,6 +22,11 @@ import { Link } from 'react-router-dom'
 import { isAdmin, isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
+import { stockLevel } from '../lib/inventoryItemTypes'
+
+type StockAlert = { out: number; low: number }
+// Changes when the counts change, so a new shortage shows as unread again.
+const stockKey = (s: StockAlert) => `stock-${s.out}-${s.low}`
 
 type ComplianceRow = {
   employee_id: number
@@ -88,6 +96,33 @@ function ComplianceExpiryAlerts() {
   const [readKeys, setReadKeys] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [overdue, setOverdue] = useState<OverdueTrip[]>([])
+  const [stock, setStock] = useState<StockAlert | null>(null)
+
+  // Admin only: kept-in-stock items (reorder level set) that need reordering.
+  const loadStock = useCallback(async () => {
+    if (!isAdmin(role)) return
+    const { data } = await supabase
+      .from('inventory_items')
+      .select('quantity, reorder_level')
+      .is('archived_at', null)
+      .not('reorder_level', 'is', null)
+    const counts = { out: 0, low: 0 }
+    for (const item of data ?? []) {
+      const level = stockLevel(Number(item.quantity), Number(item.reorder_level))
+      if (level !== 'ok') counts[level] += 1
+    }
+    setStock(counts.out + counts.low > 0 ? counts : null)
+  }, [role])
+
+  useEffect(() => {
+    if (!isAdmin(role)) return
+    const first = window.setTimeout(() => void loadStock(), 0)
+    const every = window.setInterval(() => void loadStock(), 5 * 60_000)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(every)
+    }
+  }, [loadStock, role])
 
   // Staff only: trips more than `overdue_alert_hours` past their end time.
   const loadOverdue = useCallback(async () => {
@@ -220,20 +255,22 @@ function ComplianceExpiryAlerts() {
     (alert) => !dismissedKeys.includes(alertKey(alert)),
   )
   const visibleOverdue = overdue.filter((t) => !dismissedKeys.includes(overdueKey(t)))
+  const visibleStock = stock && !dismissedKeys.includes(stockKey(stock)) ? stock : null
   const unreadCount =
     visibleAlerts.filter((alert) => !readKeys.includes(alertKey(alert))).length +
-    visibleOverdue.filter((t) => !readKeys.includes(overdueKey(t))).length
+    visibleOverdue.filter((t) => !readKeys.includes(overdueKey(t))).length +
+    (visibleStock && !readKeys.includes(stockKey(visibleStock)) ? 1 : 0)
 
   function handleToggle() {
     const nextOpen = !open
     setOpen(nextOpen)
     if (nextOpen) {
-      setReadKeys([...alerts.map(alertKey), ...overdue.map(overdueKey)])
+      setReadKeys([...alerts.map(alertKey), ...overdue.map(overdueKey), ...(stock ? [stockKey(stock)] : [])])
     }
   }
 
   // Nothing expiring (or a role that never gets these) -- no bell at all.
-  if (alerts.length === 0 && overdue.length === 0) return null
+  if (alerts.length === 0 && overdue.length === 0 && !stock) return null
 
   return (
     <div className="relative">
@@ -271,12 +308,42 @@ function ComplianceExpiryAlerts() {
               </button>
             </div>
 
-            {visibleAlerts.length === 0 && visibleOverdue.length === 0 ? (
+            {visibleAlerts.length === 0 && visibleOverdue.length === 0 && !visibleStock ? (
               <p className="px-4 py-3 text-sm text-slate-500">
                 No notifications.
               </p>
             ) : (
               <div className="max-h-80 overflow-y-auto">
+                {visibleStock && (
+                  <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
+                    <Link
+                      to="/dashboard/inventory?stock=reorder"
+                      onClick={() => setOpen(false)}
+                      className="block flex-1 text-sm hover:bg-slate-50"
+                    >
+                      <p className="font-medium text-slate-900">
+                        {visibleStock.out + visibleStock.low}{' '}
+                        {visibleStock.out + visibleStock.low === 1 ? 'part needs' : 'parts need'} reordering
+                      </p>
+                      <p className="text-orange-800">
+                        {[
+                          visibleStock.out > 0 ? `${visibleStock.out} out of stock` : null,
+                          visibleStock.low > 0 ? `${visibleStock.low} low` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-600 underline">Open Inventory →</p>
+                    </Link>
+                    <button
+                      onClick={() => setDismissedKeys((prev) => [...prev, stockKey(visibleStock)])}
+                      aria-label="Dismiss notification"
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {visibleOverdue.map((trip) => (
                   <div key={overdueKey(trip)} className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
                     <Link

@@ -21,6 +21,20 @@ export function filterQuantity(value: string, unit: string): string {
   return (rest.length === 0 ? whole : `${whole}.${rest.join('').slice(0, 2)}`).slice(0, 10)
 }
 
+// Stock level of an item. A reorder level is how Admin says "we keep this
+// in stock": only items WITH one count as needing reordering (low or out)
+// -- otherwise every item a mechanic added on a job (received N, used N,
+// so 0 left) would raise an alert forever.
+export type StockLevel = 'out' | 'low' | 'ok'
+export function stockLevel(quantity: number, reorderLevel: number | null): StockLevel {
+  if (quantity <= 0) return 'out'
+  if (reorderLevel !== null && quantity <= reorderLevel) return 'low'
+  return 'ok'
+}
+export function needsReorder(quantity: number, reorderLevel: number | null): boolean {
+  return reorderLevel !== null && stockLevel(quantity, reorderLevel) !== 'ok'
+}
+
 // Adjust Stock: the admin types how many to REMOVE or ADD (not the new
 // total). Reasons per direction -- same rules as the adjust_stock DB
 // function (Damaged / Lost only take off, Found only adds), change both

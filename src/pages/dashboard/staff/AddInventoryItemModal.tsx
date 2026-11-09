@@ -13,7 +13,7 @@
 // charged at a price in the maintenance cost report.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import { ITEM_TYPES, ITEM_UNITS, WHOLE_UNITS, type ItemUnit } from '../../../lib/inventoryItemTypes'
+import { ITEM_TYPES, ITEM_UNITS, WHOLE_UNITS, filterQuantity, type ItemUnit } from '../../../lib/inventoryItemTypes'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
@@ -28,6 +28,8 @@ export type EditableInventoryItem = {
   unit_cost: number | null
   // added by a mechanic on a job -- priced through Set Price, not here
   needs_price: boolean
+  // alert when stock drops to this; null = not kept in stock, no alerts
+  reorder_level: number | null
 }
 
 function AddInventoryItemModal({
@@ -51,6 +53,9 @@ function AddInventoryItemModal({
   const [unitCost, setUnitCost] = useState(
     item?.unit_cost != null ? String(item.unit_cost) : '',
   )
+  const [reorderLevel, setReorderLevel] = useState(
+    item?.reorder_level != null ? String(item.reorder_level) : '',
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -64,6 +69,19 @@ function AddInventoryItemModal({
     if (!priceViaSetPrice && (unitCost === '' || Number.isNaN(unitCostValue) || unitCostValue < 0)) {
       setError('Enter the unit price (0 or more).')
       return
+    }
+
+    // Empty = not kept in stock (no low-stock alerts).
+    const reorderValue = reorderLevel === '' ? null : Number(reorderLevel)
+    if (reorderValue !== null) {
+      if (Number.isNaN(reorderValue) || reorderValue < 0) {
+        setError('Enter a valid reorder level (0 or more), or leave it empty.')
+        return
+      }
+      if (WHOLE_UNITS.includes(unit) && !Number.isInteger(reorderValue)) {
+        setError(`Reorder level in ${unit} must be a whole number.`)
+        return
+      }
     }
 
     const quantityValue = Number(quantity)
@@ -88,8 +106,8 @@ function AddInventoryItemModal({
         .from('inventory_items')
         .update(
           priceViaSetPrice
-            ? { name: name.trim(), item_type: itemType, unit }
-            : { name: name.trim(), item_type: itemType, unit, unit_cost: unitCostValue },
+            ? { name: name.trim(), item_type: itemType, unit, reorder_level: reorderValue }
+            : { name: name.trim(), item_type: itemType, unit, unit_cost: unitCostValue, reorder_level: reorderValue },
         )
         .eq('item_id', item.item_id)
         .select('item_id')
@@ -116,6 +134,7 @@ function AddInventoryItemModal({
         p_unit: unit,
         p_quantity: quantityValue,
         p_unit_cost: unitCostValue,
+        p_reorder_level: reorderValue,
       })
       setSubmitting(false)
       if (saveError) {
@@ -238,6 +257,21 @@ function AddInventoryItemModal({
               />
             </label>
           )}
+
+          <label className={labelClasses}>
+            <span>
+              Reorder level ({unit}) <span className="font-normal text-slate-500">(optional)</span>
+            </span>
+            <input
+              inputMode={WHOLE_UNITS.includes(unit) ? 'numeric' : 'decimal'}
+              value={reorderLevel}
+              onChange={(e) => setReorderLevel(filterQuantity(e.target.value, unit))}
+              className={fieldClasses}
+            />
+            <span className="text-xs font-normal text-slate-500">
+              You get an alert when stock drops to this. Leave empty for items you don't keep in stock.
+            </span>
+          </label>
         </div>
 
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4">

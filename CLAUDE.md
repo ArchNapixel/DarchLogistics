@@ -2120,6 +2120,16 @@ numbers / truck fit, bins, tool check-out.
   card, Cost Report and P&L use one rule and past months don't change.
   Write-offs (Damaged / Lost, cancelled-job "Keep as used") are NOT in
   maintenance cost; they show in the stock history (Phase 6 reports).
-- Next: 5 reorder level + low-stock filter / tile + Admin bell (optional
-  mechanic "Request this part"), 6 Inventory Report from the stock history
-  (opening / received / used / adjusted / closing) + stocktake page.
+- **Phase 5 (built 2026-11-10, no SQL):** optional Reorder level on Add /
+  Edit item (`inventory_items.reorder_level`, empty = not kept in stock).
+  `stockLevel()` / `needsReorder()` in `lib/inventoryItemTypes.ts`
+  (self-check `node scripts/check-inventory-rules.ts`): "Low stock" at or
+  below the level; ONLY items with a level count as needing reordering
+  (else every mechanic-added item, net 0, would alert forever). Inventory:
+  Low stock chip, "Needs reordering" filter (`?stock=reorder` opens on it),
+  note on the Out of stock tile, Reorder level in the side panel. Header bell
+  (`ComplianceExpiryAlerts`, Admin only): one line "N parts need reordering
+  (X out of stock, Y low)" -> the filtered Inventory page, reloads every 5
+  min. Mechanic "Request this part" was skipped (YAGNI; add if asked).
+- Next: 6 Inventory Report from the stock history (opening / received /
+  used / adjusted / closing) + stocktake page.

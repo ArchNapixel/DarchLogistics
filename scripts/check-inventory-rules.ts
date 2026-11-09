@@ -2,7 +2,18 @@
 //   node scripts/check-inventory-rules.ts
 // Prints "ok" or throws on the first wrong answer.
 import assert from 'node:assert/strict'
-import { adjustError, filterQuantity } from '../src/lib/inventoryItemTypes.ts'
+import { adjustError, filterQuantity, needsReorder, stockLevel } from '../src/lib/inventoryItemTypes.ts'
+
+// Stock level + reorder alerts
+assert.equal(stockLevel(0, null), 'out')
+assert.equal(stockLevel(0, 5), 'out')
+assert.equal(stockLevel(5, 5), 'low') // AT the reorder level = time to reorder
+assert.equal(stockLevel(6, 5), 'ok')
+assert.equal(stockLevel(3, null), 'ok') // no reorder level = never "low"
+assert.equal(needsReorder(0, null), false) // not kept in stock -> no alert
+assert.equal(needsReorder(0, 5), true)
+assert.equal(needsReorder(4, 5), true)
+assert.equal(needsReorder(9, 5), false)
 
 // Quantity typing filter
 assert.equal(filterQuantity('12a', 'pcs'), '12')

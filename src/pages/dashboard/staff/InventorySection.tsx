@@ -14,8 +14,11 @@
 // "Needs price" = added by a mechanic on a job with no price; Set Price
 // fixes it and fills in the cost of the uses already recorded.
 // Stock value = sum over open batches of quantity x what that batch cost.
+// Reorder level (optional, per item): "Low stock" at or below it, and only
+// items WITH one show under "Needs reordering" / in the Admin header bell
+// (needsReorder in lib/inventoryItemTypes.ts).
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
 import { fetchAll } from '../../../lib/dashboardExpenses'
@@ -23,7 +26,7 @@ import { currentReportMonth, loadMaintenanceCostReport } from '../../../lib/main
 import { loadOpenLots, loadStockHistory, MOVEMENT_LABELS, type OpenLot, type StockMove } from '../../../lib/inventoryMovements'
 import AddInventoryItemModal, { type EditableInventoryItem } from './AddInventoryItemModal'
 import StockActionModal, { type StockAction } from './StockActionModal'
-import { ITEM_TYPES } from '../../../lib/inventoryItemTypes'
+import { ITEM_TYPES, needsReorder, stockLevel } from '../../../lib/inventoryItemTypes'
 import InventoryReportModal from './InventoryReportModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
@@ -40,9 +43,10 @@ type InventoryItem = {
   unit_cost: number | null
   needs_price: boolean
   archived_at: string | null
+  reorder_level: number | null
 }
 
-const STOCK_FILTERS = ['All', 'In stock', 'Out of stock', 'Needs price', 'Archived'] as const
+const STOCK_FILTERS = ['All', 'In stock', 'Out of stock', 'Needs reordering', 'Needs price', 'Archived'] as const
 type StockFilter = (typeof STOCK_FILTERS)[number]
 
 const HISTORY_PAGE = 10
@@ -59,11 +63,10 @@ const CHIP = 'rounded-[2px] px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
 
 function StockChip({ item }: { item: InventoryItem }) {
   if (item.archived_at) return <span className={`${CHIP} bg-slate-100 text-slate-700`}>Archived</span>
-  return item.quantity > 0 ? (
-    <span className={`${CHIP} bg-green-100 text-green-800`}>In stock</span>
-  ) : (
-    <span className={`${CHIP} bg-red-100 text-red-800`}>Out of stock</span>
-  )
+  const level = stockLevel(item.quantity, item.reorder_level)
+  if (level === 'out') return <span className={`${CHIP} bg-red-100 text-red-800`}>Out of stock</span>
+  if (level === 'low') return <span className={`${CHIP} bg-amber-100 text-amber-800`}>Low stock</span>
+  return <span className={`${CHIP} bg-green-100 text-green-800`}>In stock</span>
 }
 
 function lotsValue(lots: OpenLot[]): number {
@@ -146,7 +149,11 @@ function InventorySection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [partsCost, setPartsCost] = useState<number | null>(null)
   const [typeFilter, setTypeFilter] = useState('')
-  const [stockFilter, setStockFilter] = useState<StockFilter>('All')
+  // ?stock=reorder (the header bell's link) opens on "Needs reordering".
+  const [searchParams] = useSearchParams()
+  const [stockFilter, setStockFilter] = useState<StockFilter>(
+    searchParams.get('stock') === 'reorder' ? 'Needs reordering' : 'All',
+  )
   const [search, setSearch] = useState('')
   const [paneId, setPaneId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -174,7 +181,7 @@ function InventorySection() {
       fetchAll<InventoryItem>((from, to) =>
         supabase
           .from('inventory_items')
-          .select('item_id, name, item_type, unit, quantity, unit_cost, needs_price, archived_at')
+          .select('item_id, name, item_type, unit, quantity, unit_cost, needs_price, archived_at, reorder_level')
           .order('name', { ascending: true })
           .range(from, to),
       ),
@@ -193,6 +200,7 @@ function InventorySection() {
         ...item,
         quantity: Number(item.quantity),
         unit_cost: item.unit_cost === null ? null : Number(item.unit_cost),
+        reorder_level: item.reorder_level === null ? null : Number(item.reorder_level),
       })),
     )
     setLots(lotsResult.lots)
@@ -248,10 +256,12 @@ function InventorySection() {
         stockFilter === 'Archived' ||
         (stockFilter === 'In stock' && item.quantity > 0) ||
         (stockFilter === 'Out of stock' && item.quantity <= 0) ||
+        (stockFilter === 'Needs reordering' && needsReorder(item.quantity, item.reorder_level)) ||
         (stockFilter === 'Needs price' && item.needs_price)) &&
       (!term || item.name.toLowerCase().includes(term) || String(item.item_id) === term.replace(/^#/, '')),
   )
   const outOfStock = active.filter((item) => item.quantity <= 0).length
+  const toReorder = active.filter((item) => needsReorder(item.quantity, item.reorder_level)).length
   const stockValue = lotsValue(lots)
   // ₱0 is flagged like no price (almost always a price nobody set)
   const unpricedLots = lots.filter((l) => l.unit_cost === null || l.unit_cost === 0).length
@@ -289,7 +299,12 @@ function InventorySection() {
             value: String(active.length),
             note: needsPrice > 0 ? `${needsPrice} ${needsPrice === 1 ? 'needs' : 'need'} a price` : undefined,
           },
-          { label: 'Out of stock', value: String(outOfStock), bad: outOfStock > 0 },
+          {
+            label: 'Out of stock',
+            value: String(outOfStock),
+            bad: outOfStock > 0,
+            note: toReorder > 0 ? `${toReorder} at or below reorder level` : undefined,
+          },
           {
             label: 'Stock value',
             value: formatMoney(stockValue),
@@ -475,8 +490,14 @@ function InventorySection() {
                       {pane.unit_cost !== null && !pane.needs_price ? formatMoney(pane.unit_cost) : 'Needs price'}
                     </dd>
                   </div>
-                  <div className="col-span-full">
-                    <dt className={LABEL}>Stock value (what the batches on hand cost)</dt>
+                  <div>
+                    <dt className={LABEL}>Reorder level</dt>
+                    <dd className={`${VALUE} tabular-nums`}>
+                      {pane.reorder_level !== null ? `${pane.reorder_level} ${pane.unit}` : 'Not set'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className={LABEL}>Stock value (batches on hand)</dt>
                     <dd className={`${VALUE} tabular-nums`}>{formatMoney(lotsValue(paneLots))}</dd>
                   </div>
                 </dl>
