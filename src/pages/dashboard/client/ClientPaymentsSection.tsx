@@ -1,4 +1,4 @@
-// ClientPaymentsSection: the client portal's Payments page (the canvas's
+﻿// ClientPaymentsSection: the client portal's Payments page (the canvas's
 // Client Payments boards). Three tiles (balance due, next payment due,
 // bookings paid in full), then one card per booking: its state (Downpayment
 // due / Downpayment paid / Overdue / Paid in full -- lib/clientPaymentState.ts),
@@ -14,6 +14,10 @@ import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { formatDaysUntilDue } from '../../../lib/paymentDue'
 import { formatMoney, formatDate } from '../../../lib/format'
 import { bookingRateLabel } from '../../../lib/lineRates'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
+
+const TH = 'px-4 py-2.5 text-xs font-semibold tracking-[0.04em] text-ink-secondary uppercase'
 
 // Card order: what needs paying first, settled bookings last.
 const STATE_ORDER: Record<PaymentStateKey, number> = { overdue: 0, downpaymentDue: 1, due: 2, none: 3, paid: 4 }
@@ -35,6 +39,14 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
       cancelled = true
     }
   }, [clientId])
+
+  // Ongoing (still to pay, soonest first) and Paid in full are separate tabs,
+  // 8 rows per page. (Hooks sit above the early returns.)
+  const [showPaid, setShowPaid] = useState(false)
+  const ongoingCards = (cards ?? []).filter((c) => c.state.key !== 'paid').toSorted((a, b) => STATE_ORDER[a.state.key] - STATE_ORDER[b.state.key])
+  const paidCards = (cards ?? []).filter((c) => c.state.key === 'paid')
+  const shownCards = showPaid ? paidCards : ongoingCards
+  const paged = usePaged(shownCards, String(showPaid), 8)
 
   if (error) return <p className="text-red-700">{error}</p>
   if (!cards) return <p className="text-ink-muted">Loading your payments...</p>
@@ -85,53 +97,85 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
           <p className="mt-1 text-[13px] text-ink-muted">A booking shows here once you accept one of our offers.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {/* Unpaid first (stable sort: each group keeps its soonest-due order). */}
-          {cards.toSorted((a, b) => STATE_ORDER[a.state.key] - STATE_ORDER[b.state.key]).map(({ row, reference, state }) => {
-            const style = PAYMENT_STATE_STYLES[state.key]
-            return (
-              <article key={row.booking_id} aria-labelledby={`pc-${row.booking_id}`} className="card flex flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
-                  <h2 id={`pc-${row.booking_id}`} className="text-base font-semibold text-ink">
-                    Booking #{row.booking_id}
-                    {reference && <span className="ml-2 font-mono text-[13px] font-medium text-ink-muted">{reference}</span>}
-                  </h2>
-                  <span className={`rounded-[2px] px-2 py-0.5 text-xs font-semibold ${style.chip}`}>{state.label}</span>
-                </div>
-                <dl className="grid flex-1 grid-cols-2 gap-x-5 gap-y-3 px-5 py-4 text-sm">
-                  <div>
-                    <dt className="text-[13px] font-medium text-ink-muted">Trips delivered</dt>
-                    <dd className="font-semibold text-ink">
-                      {row.completed_trips} of {row.total_trips}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-medium text-ink-muted">Terms</dt>
-                    <dd className="font-semibold text-ink">{termsLabel(row.payment_terms)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-medium text-ink-muted">Rate per trip</dt>
-                    <dd className="font-semibold text-ink tabular-nums">{bookingRateLabel(row.trip_rates, row.rate_per_trip)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-medium text-ink-muted">Total</dt>
-                    {/* every trip's rate added up; the balance below is what's billed so far */}
-                    <dd className="font-semibold text-ink tabular-nums">{formatMoney(row.total_contract_value)}</dd>
-                  </div>
-                  <div className="col-span-2 border-t border-slate-200 pt-3">
-                    <dt className="text-[13px] font-medium text-ink-muted">Balance</dt>
-                    <dd className="text-xl font-bold text-ink tabular-nums">{formatMoney(Math.max(row.balance_due, 0))}</dd>
-                    {row.amount_paid > 0 && <dd className="text-[13px] text-ink-muted">{formatMoney(row.amount_paid)} paid so far</dd>}
-                    {row.damage_charges > 0 && (
-                      <dd className="text-[13px] text-ink-muted">Includes {formatMoney(row.damage_charges)} extra charges (damage, added charges)</dd>
-                    )}
-                  </div>
-                </dl>
-                <p className={`border-t border-line px-5 py-3 text-sm font-medium ${style.foot}`}>{state.detail}</p>
-              </article>
-            )
-          })}
-        </div>
+        <>
+          {/* Ongoing and paid-in-full bookings are kept apart. */}
+          <div className="mb-4 flex gap-2">
+            {[
+              { label: 'Ongoing', count: ongoingCards.length, paid: false },
+              { label: 'Paid in full', count: paidCards.length, paid: true },
+            ].map((t) => (
+              <button
+                key={t.label}
+                type="button"
+                aria-pressed={showPaid === t.paid}
+                onClick={() => setShowPaid(t.paid)}
+                className={`flex h-11 items-center gap-2 rounded-[2px] border px-4 text-sm font-semibold ${
+                  showPaid === t.paid ? 'border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-metric hover:bg-slate-50'
+                }`}
+              >
+                {t.label}
+                <span className={`rounded-[2px] px-1.5 text-xs ${showPaid === t.paid ? 'bg-white text-primary' : 'bg-primary text-white'}`}>{t.count}</span>
+              </button>
+            ))}
+          </div>
+
+          <section aria-label="Payments" className="card">
+            {shownCards.length === 0 ? (
+              <p className="px-5 py-8 text-center font-semibold text-ink">
+                {showPaid ? 'No bookings paid in full yet' : 'Nothing to pay right now'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1000px] text-left text-sm text-ink-metric">
+                  <thead>
+                    <tr className="border-b border-line bg-slate-100">
+                      <th className={TH}>Booking</th>
+                      <th className={TH}>Status</th>
+                      <th className={TH}>Trips delivered</th>
+                      <th className={TH}>Terms</th>
+                      <th className={`${TH} text-right`}>Rate per trip</th>
+                      <th className={`${TH} text-right`}>Total</th>
+                      <th className={`${TH} text-right`}>Paid</th>
+                      <th className={`${TH} text-right`}>Balance</th>
+                      <th className={TH}>Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.rows.map(({ row, reference, state }) => {
+                      const style = PAYMENT_STATE_STYLES[state.key]
+                      return (
+                        <tr key={row.booking_id} className="border-b border-slate-200 last:border-0">
+                          <td className="px-4 py-3">
+                            <span className="font-semibold text-ink">#{row.booking_id}</span>
+                            {reference && <span className="block font-mono text-xs text-ink-muted">{reference}</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-[2px] px-2 py-0.5 text-xs font-semibold ${style.chip}`}>{state.label}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {row.completed_trips} of {row.total_trips}
+                          </td>
+                          <td className="px-4 py-3">{termsLabel(row.payment_terms)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{bookingRateLabel(row.trip_rates, row.rate_per_trip)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{formatMoney(row.total_contract_value)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{formatMoney(row.amount_paid)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-ink tabular-nums">
+                            {formatMoney(Math.max(row.balance_due, 0))}
+                            {row.damage_charges > 0 && (
+                              <span className="block text-xs font-normal text-ink-muted">incl. {formatMoney(row.damage_charges)} extra charges</span>
+                            )}
+                          </td>
+                          <td className={`px-4 py-3 font-medium ${style.foot}`}>{state.detail}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {shownCards.length > 0 && <Pager {...paged.pager} className="px-5 py-2" />}
+          </section>
+        </>
       )}
     </div>
   )

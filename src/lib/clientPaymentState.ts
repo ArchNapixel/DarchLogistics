@@ -53,6 +53,9 @@ export function clientPaymentState(row: DueInfo | undefined, downpayment: Downpa
     }
   }
   if (balance <= 0) {
+    // No live trips left (every trip cancelled) and nothing owed: it's settled,
+    // there is no "rest to be billed", so it belongs with the paid ones.
+    if (row.total_trips === 0) return { key: 'paid', label: 'Nothing to pay', detail: 'All trips cancelled · nothing due' }
     return row.completed_trips >= row.total_trips && row.total_trips > 0
       ? { key: 'paid', label: 'Paid in full', detail: 'Nothing due' }
       : {

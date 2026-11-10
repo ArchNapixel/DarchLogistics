@@ -15,6 +15,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import ClientStatusRequestModal from './ClientStatusRequestModal'
 import StatusBadge from '../../../components/StatusBadge'
+import Pager from '../../../components/Pager'
+import { usePaged } from '../../../lib/usePaged'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
 import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { showToast } from '../../../components/Toast'
@@ -64,12 +66,16 @@ function MyBookingsSection() {
     }
   }, [clientId])
 
+  // 8 bookings per page; back to page 1 when switching Active / Past.
+  // (A hook, so it sits above the early returns.)
+  const visible = (bookings ?? []).filter((b) => isActiveBooking(b) !== showPast)
+  const paged = usePaged(visible, String(showPast), 8)
+
   if (!clientId) return <p className="text-ink-muted">Your login isn't linked to a client account.</p>
   if (error) return <p className="text-red-700">{error}</p>
   if (!bookings) return <p className="text-ink-muted">Loading your bookings...</p>
 
   const activeCount = bookings.filter(isActiveBooking).length
-  const visible = bookings.filter((b) => isActiveBooking(b) !== showPast)
 
   const tab = (label: string, count: number, past: boolean) => (
     <button
@@ -121,7 +127,7 @@ function MyBookingsSection() {
                 <span className="sr-only">Trips</span>
               </div>
 
-              {visible.map((booking) => {
+              {paged.rows.map((booking) => {
                 const isOpen = openId === booking.booking_id
                 const trips = billableTrips(booking)
                 // Each trip has its own rate (cargo lines can be priced differently).
@@ -248,6 +254,7 @@ function MyBookingsSection() {
             </div>
           </div>
         )}
+        {visible.length > 0 && <Pager {...paged.pager} className="px-5 py-2" />}
       </section>
 
       {asking && (

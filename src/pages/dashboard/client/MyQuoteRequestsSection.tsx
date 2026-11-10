@@ -68,8 +68,7 @@ type QuoteRow = {
   created_at: string
 }
 
-// These cards are tall, so fewer per page than a table row list.
-const QUOTES_PER_PAGE = 5
+const QUOTES_PER_PAGE = 8
 
 // "₱5,500.00", or "₱5,000.00 – ₱8,000.00" when the cargo lines are priced differently.
 const quoteRateLabel = (q: QuoteRow) =>
