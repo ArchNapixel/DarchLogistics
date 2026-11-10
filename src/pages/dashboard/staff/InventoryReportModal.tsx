@@ -3,6 +3,7 @@
 // returned / adjusted / written off / closing (from the stock history,
 // lib/inventoryReport.ts) and download it as a CSV with every movement of
 // the week.
+import { previewCsv } from '../../../components/CsvPreview'
 import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadReportWeekOptions,
@@ -93,15 +94,7 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
       lines,
       historyStart,
     })
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `inventory-report_${selectedWeek.start}_to_${selectedWeek.end}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    previewCsv(csv, `inventory-report_${selectedWeek.start}_to_${selectedWeek.end}.csv`)
   }
 
   const usedValue = rows.reduce((s, r) => s + r.used_value, 0)

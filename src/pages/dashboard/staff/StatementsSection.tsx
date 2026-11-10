@@ -138,22 +138,6 @@ function StatementsSection() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-px border-b border-line bg-line sm:grid-cols-4">
-            {(
-              [
-                ['Opening balance', statement.opening, ''],
-                ['Charges', statement.billed, ''],
-                ['Payments', statement.paid, ''],
-                ['Closing balance', statement.closing, 'text-primary'],
-              ] as const
-            ).map(([label, amount, tone]) => (
-              <div key={label} className="bg-white px-6 py-3.5">
-                <p className="text-sm font-medium text-ink-secondary">{label}</p>
-                <p className={`text-[22px] leading-[30px] font-bold tabular-nums ${tone || 'text-ink'}`}>{formatMoney(amount)}</p>
-              </div>
-            ))}
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm text-ink-metric">
               <thead>

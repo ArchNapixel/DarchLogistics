@@ -2,6 +2,7 @@
 // pick a month, see what the fleet's maintenance cost in parts (per
 // vehicle, then per work order), and download it as a CSV. See
 // lib/maintenanceCostReport.ts for how costs are counted.
+import { previewCsv } from '../../../components/CsvPreview'
 import { useEffect, useEffectEvent, useState } from 'react'
 import {
   loadMaintenanceCostReport,
@@ -52,16 +53,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
   }, [month])
 
   function handleDownload() {
-    const csv = buildMaintenanceCostCsv(month, workOrders)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `maintenance-cost-report_${month}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    previewCsv(buildMaintenanceCostCsv(month, workOrders), `maintenance-cost-report_${month}.csv`)
   }
 
   return (

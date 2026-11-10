@@ -9,6 +9,7 @@
 //      down, the listed price when it goes up). If an item's stock changed
 //      after this list was loaded (a part was used meanwhile), the DB
 //      refuses the whole post and names it -- reload and recount those.
+import { previewCsv } from '../../../components/CsvPreview'
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { fetchAll } from '../../../lib/dashboardExpenses'
@@ -61,14 +62,7 @@ function StocktakeModal({ onClose, onPosted }: { onClose: () => void; onPosted: 
       ['Item', 'Type', 'Unit', 'Counted'].map(csvField).join(','),
       ...items.map((i) => [i.name, i.item_type, i.unit, ''].map(csvField).join(',')),
     ].join('\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `stocktake-count-sheet_${today}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    previewCsv(csv, `stocktake-count-sheet_${today}.csv`)
   }
 
   const counted = (items ?? []).filter((i) => (counts[i.item_id] ?? '') !== '')

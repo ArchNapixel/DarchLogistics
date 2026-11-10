@@ -19,6 +19,7 @@
 // same month. The dashboard cards link here (#op / #pay / #mt scrolls to
 // the one clicked). Those cards use their own loaders (dashboardExpenses.ts),
 // so their totals can differ a little from the Summary tab's Expenses.
+import { previewCsv } from '../../../components/CsvPreview'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
@@ -260,15 +261,7 @@ function MoneySummarySection() {
   // Downloads the summary shown as money_summary_YYYY-MM.csv.
   function handleExport() {
     if (!summary) return
-    const blob = new Blob([buildMoneySummaryCsv(month, summary)], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `money_summary_${month}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    previewCsv(buildMoneySummaryCsv(month, summary), `money_summary_${month}.csv`)
   }
 
   function go(delta: number) {

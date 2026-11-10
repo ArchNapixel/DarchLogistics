@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './context/AuthProvider'
 import { ConfirmHost } from './components/ConfirmDialog'
+import { CsvPreviewHost } from './components/CsvPreview'
 import { ToastHost } from './components/Toast'
 
 // Scrolling the mouse wheel over a focused number field would silently
@@ -21,6 +22,7 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <App />
         <ConfirmHost />
+        <CsvPreviewHost />
         <ToastHost />
       </AuthProvider>
     </BrowserRouter>

@@ -5,6 +5,7 @@
 // dimmed and struck through, and stops counting toward the totals and
 // toward the booking's amount paid (a DB trigger does that).
 // Totals math: lib/paymentTotals.ts. Loading/saving: lib/bookingPayments.ts.
+import { previewCsv } from '../../../components/CsvPreview'
 import { useEffect, useMemo, useState } from 'react'
 import { usePaged } from '../../../lib/usePaged'
 import { Link, useNavigate } from 'react-router-dom'
@@ -127,16 +128,7 @@ function CollectionsSection() {
   const totals = summarizePayments(visible)
 
   function handleDownload() {
-    const csv = buildCollectionsCsv(from, to, visible)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `collections_${from}_to_${to}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    previewCsv(buildCollectionsCsv(from, to, visible), `collections_${from}_to_${to}.csv`)
   }
 
   const fieldClass =
