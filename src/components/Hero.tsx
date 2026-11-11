@@ -52,12 +52,6 @@ function Hero() {
             >
               Request a Quote
             </Link>
-            <a
-              href="tel:09660475467"
-              className="border border-slate-400/60 px-6 py-3 text-center text-sm font-medium text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/10"
-            >
-              Dispatch: 09660475467
-            </a>
           </div>
         </div>
       </div>
