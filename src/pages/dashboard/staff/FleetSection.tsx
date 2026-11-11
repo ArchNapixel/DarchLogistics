@@ -1,7 +1,8 @@
 // FleetSection: the Fleet page (the canvas's board) -- Trucks / Trailers
 // tabs with a plate search, a table, and a side panel for the selected
 // vehicle: its details, open work orders and pending maintenance schedules,
-// and its last trips (with the driver). Panel buttons: Deactivate / Reactivate (is_active;
+// and every trip it has run -- trucks and trailers alike (with the driver,
+// 5 per page). Panel buttons: Deactivate / Reactivate (is_active;
 // blocked while the vehicle has an open trip), Create Work Order,
 // Assign Schedule (trucks), Edit. ?tab=Trailers opens the Trailers tab.
 import { useEffect, useState } from 'react'
@@ -18,6 +19,7 @@ import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
+import Pager from '../../../components/Pager'
 import EmptyState from '../../../components/EmptyState'
 import { formatDate } from '../../../lib/format'
 
@@ -77,26 +79,42 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const trailerName = (t: { trailer_id: number; plate_number: string | null }) => t.plate_number || `Trailer #${t.trailer_id}`
 
-// The vehicle's last 5 trips (not cancelled), newest first, with the driver
-// and the truck/trailer it ran with.
-function RecentTrips({ vehicle }: { vehicle: PreselectedVehicle }) {
-  const [rows, setRows] = useState<{ id: number; bookingId: number; date: string | null; status: string; text: string }[] | null>(null)
-  const key = vehicle.type === 'truck' ? vehicle.plateNumber : vehicle.trailerId
+const TRIPS_PER_PAGE = 5
+
+type TripRow = { id: number; bookingId: number; date: string | null; status: string; text: string }
+
+// Every trip the truck or trailer has run (not cancelled), newest first, with
+// the driver and the truck/trailer it ran with. Loaded one page at a time
+// (.range + exact count) so the driver/trailer lookups only ask about the 5
+// trips on screen. Note: a vehicle swapped off a trip (e.g. breakdown) loses
+// it -- itineraries keeps only the vehicle it ended with.
+function TripHistory({ vehicle }: { vehicle: PreselectedVehicle }) {
+  const vehicleKey = vehicle.type === 'truck' ? `truck|${vehicle.plateNumber}` : `trailer|${vehicle.trailerId}`
+  // The page is stored with the vehicle it was picked for, so choosing
+  // another vehicle starts at page 1 (same idea as lib/usePaged.ts).
+  const [chosen, setChosen] = useState({ vehicleKey, page: 0 })
+  const page = chosen.vehicleKey === vehicleKey ? chosen.page : 0
+  const loadKey = `${vehicleKey}|${page}`
+  // The last result, with the vehicle+page it was loaded for; "loading" =
+  // no result for what's on screen yet.
+  const [result, setResult] = useState<{ loadKey: string; rows: TripRow[]; total: number } | null>(null)
+  const current = result?.loadKey === loadKey ? result : null
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       const base = supabase
         .from('itineraries')
-        .select('itinerary_id, booking_id, trip_date_from, itinerary_status, plate_number, trailer_id')
+        .select('itinerary_id, booking_id, trip_date_from, itinerary_status, plate_number, trailer_id', { count: 'exact' })
         .neq('itinerary_status', 'Cancelled')
-      const { data: trips } = await (vehicle.type === 'truck'
+      const from = page * TRIPS_PER_PAGE
+      const { data: trips, count } = await (vehicle.type === 'truck'
         ? base.eq('plate_number', vehicle.plateNumber)
         : base.eq('trailer_id', vehicle.trailerId)
       )
         .order('trip_date_from', { ascending: false })
         .order('itinerary_id', { ascending: false })
-        .limit(5)
+        .range(from, from + TRIPS_PER_PAGE - 1)
       const tripIds = (trips ?? []).map((t) => t.itinerary_id)
       const trailerIds = [...new Set((trips ?? []).map((t) => t.trailer_id).filter((id): id is number => id !== null))]
       const [crewResult, trailersResult] = await Promise.all([
@@ -120,8 +138,10 @@ function RecentTrips({ vehicle }: { vehicle: PreselectedVehicle }) {
       if (cancelled) return
       const nameById = new Map((people ?? []).map((p) => [p.employee_id, p.full_name]))
       const trailerById = new Map((trailersResult.data ?? []).map((t) => [t.trailer_id, t]))
-      setRows(
-        (trips ?? []).map((t) => {
+      setResult({
+        loadKey,
+        total: count ?? 0,
+        rows: (trips ?? []).map((t) => {
           const driverId = crew.find((c) => c.itinerary_id === t.itinerary_id)?.employee_id
           const partner =
             vehicle.type === 'truck'
@@ -137,25 +157,34 @@ function RecentTrips({ vehicle }: { vehicle: PreselectedVehicle }) {
             text: [driverId !== undefined ? (nameById.get(driverId) ?? 'Driver') : 'No driver yet', partner].filter(Boolean).join(' · '),
           }
         }),
-      )
+      })
     }
     void load()
     return () => {
       cancelled = true
     }
-    // `key` stands for the vehicle (the object itself is rebuilt every render).
+    // `loadKey` stands for the vehicle + page (the vehicle object is rebuilt every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicle.type, key])
+  }, [loadKey])
+
+  const pageCount = current ? Math.max(1, Math.ceil(current.total / TRIPS_PER_PAGE)) : 1
 
   return (
     <section>
-      <h3 className={GROUP}>Recent trips</h3>
-      {rows === null ? (
+      <h3 className={GROUP}>
+        <span>Trip history</span>
+        {current && (
+          <span className="font-medium text-ink-muted">
+            {current.total} {current.total === 1 ? 'trip' : 'trips'}
+          </span>
+        )}
+      </h3>
+      {current === null ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : rows.length === 0 ? (
+      ) : current.rows.length === 0 ? (
         <p className="text-sm text-ink-muted">No trips yet.</p>
       ) : (
-        rows.map((r) => (
+        current.rows.map((r) => (
           <div key={r.id} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm last:border-0">
             <Link to={`/dashboard/bookings?booking=${r.bookingId}&trip=${r.id}`} className="font-semibold text-primary hover:underline">
               Trip #{r.id}
@@ -167,6 +196,7 @@ function RecentTrips({ vehicle }: { vehicle: PreselectedVehicle }) {
           </div>
         ))
       )}
+      {current && <Pager page={page} pageCount={pageCount} onChange={(next) => setChosen({ vehicleKey, page: next })} />}
     </section>
   )
 }
@@ -581,7 +611,7 @@ function FleetSection() {
                   )}
                 </section>
 
-                <RecentTrips vehicle={selected} />
+                <TripHistory vehicle={selected} />
               </div>
 
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
