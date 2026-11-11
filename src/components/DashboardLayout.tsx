@@ -236,7 +236,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
             with the steel-blue accent. Colors: index.css. */}
             <aside
               id="dashboard-sidebar"
-              className={`fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col overflow-y-auto print:hidden bg-navy px-3 py-2 transition-transform md:static md:translate-x-0 ${
+              className={`fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col overflow-y-auto no-scrollbar print:hidden bg-navy px-3 py-2 transition-transform md:static md:translate-x-0 ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             >

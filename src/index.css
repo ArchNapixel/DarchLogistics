@@ -202,3 +202,11 @@ select,
     overflow: visible;
   }
 }
+
+/* Scrolls, but hides the scrollbar (the dashboard sidebar). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
