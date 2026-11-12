@@ -17,6 +17,7 @@ import { csvField } from './inventoryReport'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { nextMonthStart } from './remittanceTotals'
 import { tripProfit, type TripProfit } from './tripProfitTotals'
+import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 
 export function currentTripProfitMonth(): string {
   return toManilaDate(new Date()).slice(0, 7)
@@ -47,7 +48,7 @@ type BookingRow = {
   estimated_distance_km: number | string | null
 }
 type ExpenseRow = { itinerary_id: number; amount: number | string; category: string }
-type DamageRow = { itinerary_id: number; estimated_damage_cost: number | string | null }
+type DamageRow = DamageCostRow & { itinerary_id: number }
 
 export async function loadTripProfitReport(month: string): Promise<{
   rows: TripProfitRow[]
@@ -125,10 +126,11 @@ export async function loadTripProfitReport(month: string): Promise<{
     fetchIn<DamageRow>(tripIds, (chunk, a, b) =>
       supabase
         .from('delivery_damage_records')
-        .select('itinerary_id, estimated_damage_cost')
+        .select('itinerary_id, charge_to, estimated_damage_cost, insurance_covered_amount, claim_status')
         .in('itinerary_id', chunk)
         .eq('damage_status', 'Approved')
-        .eq('charge_to', 'Company')
+        // Insurance: only the part the insurer doesn't cover (companyDamageShare).
+        .in('charge_to', ['Company', 'Insurance'])
         .range(a, b),
     ),
   ])
@@ -151,7 +153,7 @@ export async function loadTripProfitReport(month: string): Promise<{
   })
   const damageByTrip = new Map<number, number>()
   damage.rows.forEach((d) =>
-    damageByTrip.set(d.itinerary_id, (damageByTrip.get(d.itinerary_id) ?? 0) + Number(d.estimated_damage_cost ?? 0)),
+    damageByTrip.set(d.itinerary_id, (damageByTrip.get(d.itinerary_id) ?? 0) + companyDamageShare(d)),
   )
 
   const rows: TripProfitRow[] = delivered.flatMap((trip) => {

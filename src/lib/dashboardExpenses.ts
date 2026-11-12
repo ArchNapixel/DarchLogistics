@@ -4,7 +4,8 @@
 //
 // OPERATIONAL = payroll (gross + employer shares, DRAFT payslips included
 // so this week's run shows live) + trip expenses the crew logged +
-// diesel + damage charged to the Company.
+// diesel + the company's share of damage (charged to the Company, or the
+// part an insurer didn't cover -- insuranceRules.ts companyDamageShare).
 //   - Commission and the per-trip fee are NOT added again: they're already
 //     inside drivers' gross_pay.
 //   - Diesel is counted once per delivered trip: the Fuel the crew logged
@@ -20,6 +21,7 @@
 // 1000-row default so a long range can't silently cap.
 import { supabase } from './supabaseClient'
 import { dieselForTrip } from './tripCost'
+import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 import {
   payslipCost,
   rangeEndManila,
@@ -83,7 +85,7 @@ type LogRow = { itinerary_id: number }
 type TripRow = { itinerary_id: number; booking_id: number; itinerary_status: string | null }
 type BookingRow = { booking_id: number; estimated_distance_km: number | string | null }
 type ExpenseRow = { expense_id: number; itinerary_id: number; amount: number | string; category: string }
-type DamageRow = { estimated_damage_cost: number | string | null }
+type DamageRow = DamageCostRow
 
 export async function loadOperationalExpenses(
   period: Period,
@@ -167,10 +169,11 @@ export async function loadOperationalExpenses(
     fetchIn<DamageRow>(deliveredIds, (chunk, from, to) =>
       supabase
         .from('delivery_damage_records')
-        .select('estimated_damage_cost')
+        .select('charge_to, estimated_damage_cost, insurance_covered_amount, claim_status')
         .in('itinerary_id', chunk)
         .eq('damage_status', 'Approved')
-        .eq('charge_to', 'Company')
+        // Insurance: only the part the insurer doesn't cover (companyDamageShare).
+        .in('charge_to', ['Company', 'Insurance'])
         .range(from, to),
     ),
   ])
@@ -226,7 +229,7 @@ export async function loadOperationalExpenses(
     }
   }
 
-  const damageCompany = damage.rows.reduce((s, d) => s + Number(d.estimated_damage_cost ?? 0), 0)
+  const damageCompany = damage.rows.reduce((s, d) => s + companyDamageShare(d), 0)
 
   return {
     data: {

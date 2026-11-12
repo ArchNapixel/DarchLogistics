@@ -2167,3 +2167,27 @@ numbers / truck fit, bins, tool check-out.
   Inventory page "Requested by mechanics" card (Receive Stock / Close; a
   failed load is only a banner); Admin bell line "N part requests from
   mechanics".
+
+## 2026-11-12: Damage covered by insurance (SQL given in chat)
+- Damage Charges "Who Pays" = **Client | Company | Insurance**. Insurance opens
+  `staff/InsuranceClaimModal.tsx`: pick a policy (not archived, dates cover the
+  day the damage was reported), amount the insurer covers (<= damage cost and
+  <= cover left), claim status Filed / Paid / Denied (changeable later on the
+  row), optional claim reference. Picking Client / Company clears the claim.
+  Table uses the shared `Pager` now.
+- Table `insurance_companies` (company_name, policy_number = "insurance
+  number", amount_insured, limit_type 'Total' (aggregate for the period) |
+  'PerClaim', valid_from, valid_until (default +1 year, editable), note,
+  archived_at; unique name + policy number). RLS: staff SELECT, Admin
+  INSERT / UPDATE, no delete (archive). List = `staff/InsuranceCompaniesPanel.tsx`
+  under the damage table (used / remaining), form `InsuranceCompanyModal.tsx`,
+  loader `lib/insuranceCompanies.ts`.
+- `delivery_damage_records` gained insurance_company_id, insurance_covered_amount,
+  claim_status, claim_reference; `charge_to` allows 'Insurance'.
+- **Company cost of a damage record = `companyDamageShare()`** in
+  `lib/insuranceRules.ts` (self-check `node scripts/check-insurance-rules.ts`):
+  Company = full cost, Insurance = cost - covered (full cost if Denied),
+  Client = 0. Used by dashboardExpenses.ts and tripProfit.ts (so the dashboard
+  card, Trip Profitability, P&L, Money Summary). Client billing unchanged.
+- ponytail: "cover left" is checked in the browser, so two people approving
+  claims on one policy at the same second could go past its total.
