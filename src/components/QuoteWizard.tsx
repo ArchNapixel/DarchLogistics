@@ -1,5 +1,5 @@
 // QuoteWizard: the step-by-step quote form customers see --
-// ClientQuoteForm (the /quote-request page and the portal). Route -> Cargo ->
+// ClientQuoteForm (the portal's New Quote Request page). Route -> Cargo ->
 // Schedule & terms -> Review, with a live summary beside the steps on
 // wide screens. Each "Continue" only checks the current step's fields
 // (errors show under each field); Submit re-checks everything and jumps

@@ -1,5 +1,5 @@
-// LandingPage: the public homepage at "/". The quote form now lives on
-// its own page (/quote-request) instead of being embedded here.
+// LandingPage: the public homepage at "/". No quote form here: "Get a
+// Quote" goes to /quote-request, which forwards to sign-up / the portal.
 import NavBar from '../components/NavBar'
 import Hero from '../components/Hero'
 import WhatWeHaul from '../components/WhatWeHaul'

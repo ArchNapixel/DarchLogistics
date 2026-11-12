@@ -793,12 +793,14 @@ before creating it.
   rules shared with sign-up in `lib/clientAccount.ts` — the SQL function
   repeats the username rule, change both together.
 - Quotes need a client account (2026-10-22) — the public anonymous
-  quote form (`components/QuoteForm.tsx`) was deleted. `/quote-request`
-  shows a sign up / log in panel when logged out (links to
-  `/client-login?next=/quote-request[&mode=signup]`; ClientLoginPage
-  honours `next`, same-site paths only) and `client/ClientQuoteForm.tsx`
-  when logged in as a Client — the same form the portal's
-  New Quote Request page (`/dashboard/quotes/new`) now shows. Rejected quotes get **Edit & resubmit** in
+  quote form (`components/QuoteForm.tsx`) was deleted. **Since 2026-11-12
+  the public site has no quote form at all:** `/quote-request` (every
+  "Get a Quote" button) only forwards -- logged out →
+  `/client-login?mode=signup&next=/dashboard/quotes/new` (ClientLoginPage
+  honours `next`, same-site paths only, also through the email-confirm
+  link), Client → `/dashboard/quotes/new`, other roles → SignedInPanel.
+  Quotes come in only from the portal's New Quote Request page
+  (`client/ClientQuoteForm.tsx`) or staff's NewQuoteRequestModal. Rejected quotes get **Edit & resubmit** in
   `MyQuoteRequestsSection` (pre-filled via `quoteToForm()` /
   `SHIPMENT_COLUMNS` in `lib/quoteRequest.ts`) → RPC
   `resubmit_quote_request(p_quote_id, p_changes)` (SECURITY DEFINER,

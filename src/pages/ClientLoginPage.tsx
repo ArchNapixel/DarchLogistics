@@ -36,7 +36,8 @@ const filterName = (v: string) =>
 const filterNoSpaces = (v: string) => v.replace(/\s/g, '')
 
 function ClientLoginPage() {
-  // ?next=/quote-request sends them back there after logging in; only
+  // ?next=/dashboard/quotes/new (set by "Get a Quote") sends them there
+  // after signing up / logging in, incl. via the email-confirm link; only
   // same-site paths are allowed ("//evil.com" would leave the site).
   // ?mode=signup opens the sign-up form straight away.
   const [params] = useSearchParams()

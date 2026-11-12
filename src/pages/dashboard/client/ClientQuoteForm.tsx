@@ -1,9 +1,9 @@
 // ClientQuoteForm: the quote form for a logged-in client -- the shared
 // step-by-step QuoteWizard (fields/validation/column mapping in
-// lib/quoteRequest.ts) plus the confirmation screen. Used in three places:
-// the /quote-request page, the portal's New Quote Request page
-// (ClientNewQuotePage in ClientPages.tsx), and "Edit & resubmit" on a
-// rejected quote (the same page with ?resubmit=<quote id>).
+// lib/quoteRequest.ts) plus the confirmation screen. Used on the portal's
+// New Quote Request page (ClientNewQuotePage in ClientPages.tsx), incl.
+// "Edit & resubmit" on a rejected quote (?resubmit=<quote id>). The public
+// /quote-request page only forwards there -- no form on the public site.
 //
 // It does NOT ask for client name/contact number/email -- the client
 // already has these on file (`clients`, looked up via clientId). They're
@@ -19,7 +19,7 @@
 // (rejection_tag), outlined in red -- and Send calls the resubmit_quote_request database
 // function instead of inserting -- same row, same reference code, back
 // to Pending (SQL given in chat).
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import QuoteWizard from '../../../components/QuoteWizard'
 import { QuoteSubmitted } from '../../../components/QuoteSummary'
@@ -50,7 +50,6 @@ function ClientQuoteForm({
   clientId,
   resubmit,
   nextSteps,
-  aside,
   actionLabel,
   onDone,
   secondaryLabel,
@@ -60,8 +59,6 @@ function ClientQuoteForm({
   clientId: number
   resubmit?: ResubmitTarget
   nextSteps: string[]
-  // Side content shown under the live summary (page version only).
-  aside?: ReactNode
   // Button on the confirmation screen, and what it does.
   actionLabel: string
   onDone: () => void
@@ -199,7 +196,6 @@ function ClientQuoteForm({
       submitting={submitting}
       submitError={submitError}
       submitLabel={resubmit ? 'Resubmit Quote Request' : 'Send Quote Request'}
-      aside={aside}
       onCancel={onCancel}
       contactSection={
         <p className="border border-line bg-white px-4 py-3 text-sm text-ink-secondary">

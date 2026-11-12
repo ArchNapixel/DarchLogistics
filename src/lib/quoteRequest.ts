@@ -1,8 +1,8 @@
 // quoteRequest: the one shared definition of a quote's shipment fields
 // (route, cargo, schedule, commercial terms) -- their blank state, their
 // validation, and how they map onto quote_requests columns. Used by both
-// ways a quote gets in: a logged-in client (ClientQuoteForm, on the
-// /quote-request page and in the portal) and staff's NewQuoteRequestModal.
+// ways a quote gets in: a logged-in client (ClientQuoteForm, in the
+// portal) and staff's NewQuoteRequestModal.
 // Each channel only adds its own client-identity columns on top of
 // buildQuoteRow().
 import { useEffect, useState } from 'react'
