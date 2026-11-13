@@ -114,7 +114,8 @@ export function ClientNewQuotePage() {
     : "Four short steps. You'll get a reference code like Q-7F3K9A when you send it."
 
   return (
-    <div>
+    // Capped width + centred, so the form doesn't stretch across wide screens.
+    <div className="mx-auto max-w-6xl">
       <PageHeader title={title} subtitle={subtitle} />
       {!clientId ? (
         <p className="text-ink-muted">Your login isn't linked to a client account.</p>

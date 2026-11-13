@@ -153,7 +153,8 @@ const CHOICE_PICTURES: Record<string, { src: string; caption: string }> = {
 }
 
 // Picture of the client's current choice; nothing until something is picked.
-// Pictures share the row's width (flex-1), wrapping on narrow screens.
+// Each picture keeps a fixed half-width slot (cargo left, trailer right), so
+// picking the second one doesn't shrink the first.
 function ChoicePicture({ name }: { name: string }) {
   const picture = CHOICE_PICTURES[name]
   // The src that failed to load (file missing) -- tracked in state so the
@@ -161,7 +162,7 @@ function ChoicePicture({ name }: { name: string }) {
   const [failedSrc, setFailedSrc] = useState('')
   if (!picture || failedSrc === picture.src) return null
   return (
-    <figure className="flex min-w-32 flex-1 flex-col">
+    <figure className="flex flex-col">
       <img
         src={picture.src}
         alt={picture.caption}
@@ -289,7 +290,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
             {/* Pictures of what the client picked, so they see what
                 "Container" / "Skeletal" etc. look like. key = choice so a
                 new pick gets a fresh picture (and a fresh load check). */}
-            <div className="col-span-full flex flex-wrap gap-3 empty:hidden">
+            <div className="col-span-full grid gap-3 empty:hidden sm:grid-cols-2">
               <ChoicePicture key={line.cargoType} name={line.cargoType} />
               <ChoicePicture key={line.trailerType} name={line.trailerType} />
             </div>
