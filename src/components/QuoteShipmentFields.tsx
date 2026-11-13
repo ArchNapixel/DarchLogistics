@@ -142,6 +142,37 @@ export function RouteFields({
   )
 }
 
+// Picture of a cargo / trailer choice. Loose reuses a landing
+// page photo; the others are in
+// public/cargo/. A picture whose file isn't there is hidden.
+const CHOICE_PICTURES: Record<string, { src: string; caption: string }> = {
+  Container: { src: '/cargo/container.png', caption: 'Container' },
+  Loose: { src: '/images/warehouse-loading.jpg', caption: 'Loose cargo' },
+  Flatbed: { src: '/cargo/flatbed.png', caption: 'Flatbed trailer' },
+  Skeletal: { src: '/cargo/skeletal.png', caption: 'Skeletal trailer' },
+}
+
+// Picture of the client's current choice; nothing until something is picked.
+// Pictures share the row's width (flex-1), wrapping on narrow screens.
+function ChoicePicture({ name }: { name: string }) {
+  const picture = CHOICE_PICTURES[name]
+  // The src that failed to load (file missing) -- tracked in state so the
+  // picture comes back once the file exists and the page reloads.
+  const [failedSrc, setFailedSrc] = useState('')
+  if (!picture || failedSrc === picture.src) return null
+  return (
+    <figure className="flex min-w-32 flex-1 flex-col">
+      <img
+        src={picture.src}
+        alt={picture.caption}
+        className="h-44 w-full object-cover"
+        onError={() => setFailedSrc(picture.src)}
+      />
+      <figcaption className="mt-1 text-center text-xs text-slate-600">{picture.caption}</figcaption>
+    </figure>
+  )
+}
+
 // Cargo as lines: each line is `quantity` trips carrying the same cargo
 // (e.g. 8 x 40ft container + 2 x loose on a flatbed). The total trips is
 // the sum of the quantities. Per-line problems (cargoLineErrors) show
@@ -254,6 +285,14 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
                 className={inputClasses(!!weightError)}
               />
             </Field>
+
+            {/* Pictures of what the client picked, so they see what
+                "Container" / "Skeletal" etc. look like. key = choice so a
+                new pick gets a fresh picture (and a fresh load check). */}
+            <div className="col-span-full flex flex-wrap gap-3 empty:hidden">
+              <ChoicePicture key={line.cargoType} name={line.cargoType} />
+              <ChoicePicture key={line.trailerType} name={line.trailerType} />
+            </div>
 
             <Field label="Number of cargos" error={lineErrors.quantity}>
               <input
