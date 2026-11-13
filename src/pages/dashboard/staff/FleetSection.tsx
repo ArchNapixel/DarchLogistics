@@ -38,6 +38,7 @@ type Trailer = {
   trailer_id: number
   plate_number: string | null
   trailer_type: string
+  trailer_size: string | null // '20ft' / '40ft', null = not set yet
   registration_number: string | null
   current_status: string | null
   last_maintenance_date: string | null
@@ -246,7 +247,7 @@ function FleetSection() {
 
       const { data: trailerData, error: trailerError } = await supabase
         .from('trailers')
-        .select('trailer_id, plate_number, trailer_type, registration_number, current_status, last_maintenance_date, is_active')
+        .select('trailer_id, plate_number, trailer_type, trailer_size, registration_number, current_status, last_maintenance_date, is_active')
         .order('trailer_id', { ascending: true })
       if (trailerError) throw trailerError
 
@@ -501,7 +502,7 @@ function FleetSection() {
                   <thead>
                     <tr>
                       <th className={TH}>Plate No.</th>
-                      <th className={TH}>Trailer Type</th>
+                      <th className={TH}>Size &amp; Type</th>
                       <th className={TH}>Status</th>
                       <th className={TH}>Registration No.</th>
                       <th className={TH}>Last Maintenance</th>
@@ -517,7 +518,16 @@ function FleetSection() {
                       return (
                         <tr key={t.trailer_id} onClick={() => setPaneTrailer(t.trailer_id)} className={rowClass(trailer?.trailer_id === t.trailer_id)}>
                           <td className={`${TD} font-semibold ${down(t.current_status) ? 'text-ink-muted' : 'text-ink'}`}>{trailerName(t)}</td>
-                          <td className={TD}>{t.trailer_type}</td>
+                          <td className={TD}>
+                            {t.trailer_size ? (
+                              `${t.trailer_size} ${t.trailer_type}`
+                            ) : (
+                              <>
+                                {t.trailer_type}
+                                <span className="block text-xs font-semibold text-amber-800">Size not set</span>
+                              </>
+                            )}
+                          </td>
                           <td className={TD}>
                             <StatusBadge status={t.current_status ?? 'Available'} icon />
                           </td>
@@ -580,6 +590,9 @@ function FleetSection() {
                   ) : (
                     <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
                       <Field label="Trailer Type">{trailer!.trailer_type}</Field>
+                      <Field label="Trailer Size">
+                        {trailer!.trailer_size ?? <span className="text-amber-800">Not set -- Edit to add it</span>}
+                      </Field>
                       <Field label="Registration No.">{trailer!.registration_number}</Field>
                       <Field label="Last Maintenance">{trailer!.last_maintenance_date ? formatDate(trailer!.last_maintenance_date) : null}</Field>
                     </dl>

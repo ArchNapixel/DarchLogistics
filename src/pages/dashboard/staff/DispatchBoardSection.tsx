@@ -85,7 +85,7 @@ import { groupTripRates, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
 import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
-import { substituteNote, trailerAllowed } from '../../../lib/trailerRules'
+import { substituteNote, trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
 import {
   SUGGESTED_COUNT,
   findClash,
@@ -168,6 +168,8 @@ type DispatchRow = {
   required_trailer_type: string | null
   // 'Container' / 'Loose': a container may also ride the other trailer type.
   cargo_type: string | null
+  // Asked trailer size '20ft' / '40ft' (a 40ft trailer may take a 20ft trip).
+  container_type: string | null
   // This trip's cargo, shown under the route ("Loose cargo · 20ft flatbed · 18 t").
   cargo_label: string
   cargo_description: string | null
@@ -240,6 +242,7 @@ type TrailerOption = {
   trailer_id: number
   plate_number: string | null
   trailer_type: string | null
+  trailer_size: string | null // '20ft' / '40ft', null = not set yet
   current_status: string | null
 }
 
@@ -484,9 +487,11 @@ function trailerCandidates(trailers: TrailerOption[], service: VehicleService): 
     const s = service.get(`R:${t.trailer_id}`)
     return {
       id: `R:${t.trailer_id}`,
-      label: t.plate_number ?? `#${t.trailer_id}`,
+      // "TR-3 · 40ft" so the size shows in the dropdown.
+      label: [t.plate_number ?? `#${t.trailer_id}`, t.trailer_size].filter(Boolean).join(' · '),
       current_status: t.current_status,
       trailer_type: t.trailer_type,
+      trailer_size: t.trailer_size,
       workOrders: s?.workOrders ?? [],
       serviceDue: s?.serviceDue ?? [],
     }
@@ -782,7 +787,12 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
   const topPick = currentId === null && row.trip_start_at ? suggested[0] : undefined
   // "Skeletal instead of the Flatbed asked for" when the assigned trailer isn't the asked type.
   const usingNote =
-    kind === 'Trailer' ? substituteNote(row.required_trailer_type, ranked.find((v) => v.id === currentId)?.trailer_type) : null
+    kind === 'Trailer'
+      ? (() => {
+          const current = ranked.find((v) => v.id === currentId)
+          return substituteNote(row.required_trailer_type, current?.trailer_type, row.container_type, current?.trailer_size)
+        })()
+      : null
 
   // Option value -> what the handlers take (plate / trailer id).
   const pick = (id: string | null) =>
@@ -792,8 +802,9 @@ function VehicleSelect({ kind, row, ctx }: { kind: 'Truck' | 'Trailer'; row: Dis
   // Just the plate: the "this booking" / "service due" / "work order
   // pending" hints only decide the order, and the Unavailable group is
   // greyed out. The reason shows as a tooltip on hover (title).
-  // A container on the other trailer type than asked for says so.
-  const label = (v: (typeof ranked)[number]) => (v.substitute ? `${v.label} (substitute: ${v.trailer_type})` : v.label)
+  // A trailer of another type or size than asked for says so.
+  const label = (v: (typeof ranked)[number]) =>
+    v.substitute ? `${v.label} (substitute: ${trailerLabel(v.trailer_type, v.trailer_size)})` : v.label
 
   return (
     <div className="flex flex-col gap-1">
@@ -1478,7 +1489,7 @@ function DispatchBoardSection() {
     // regardless.
     const [trucksResult, trailersResult, startSettingResult] = await Promise.all([
       supabase.from('truck_profiles').select('plate_number, current_status, next_service_date').eq('is_active', true).order('plate_number'),
-      supabase.from('trailers').select('trailer_id, plate_number, trailer_type, current_status').eq('is_active', true).order('trailer_id'),
+      supabase.from('trailers').select('trailer_id, plate_number, trailer_type, trailer_size, current_status').eq('is_active', true).order('trailer_id'),
       supabase
         .from('app_settings')
         .select('setting_value')
@@ -1778,6 +1789,7 @@ function DispatchBoardSection() {
           plate_number: it.plate_number,
           trailer_id: it.trailer_id,
           required_trailer_type: it.trailer_type,
+          container_type: it.container_type,
           cargo_type: it.cargo_type,
           cargo_label: tripCargoLabel(it),
           cargo_description: it.cargo_description,
@@ -2125,11 +2137,12 @@ function DispatchBoardSection() {
     // Guard the dropdown filter: the trailer must match this trip's cargo.
     const row = rows.find((r) => r.itinerary_id === itineraryId)
     const picked = trailers.find((t) => t.trailer_id === trailerId)
-    if (row && picked && !trailerAllowed(row.cargo_type, row.required_trailer_type, picked.trailer_type)) {
+    if (row && picked && !trailerAllowed(row.cargo_type, row.required_trailer_type, picked.trailer_type, row.container_type, picked.trailer_size)) {
+      const size = row.container_type === '40ft' ? '40ft ' : ''
       setError(
         row.cargo_type === 'Container'
-          ? `This container trip needs a Flatbed or Skeletal trailer.`
-          : `This trip needs a ${row.required_trailer_type} trailer.`,
+          ? `This container trip needs a ${size}Flatbed or Skeletal trailer.`
+          : `This trip needs a ${size}${row.required_trailer_type} trailer.`,
       )
       return false
     }
@@ -2236,7 +2249,7 @@ function DispatchBoardSection() {
     if (!row.trip_start_at || !row.trip_end_at) return
     const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
     const demand = {
-      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, cargoType: row.cargo_type }],
+      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, trailerSize: row.container_type, cargoType: row.cargo_type }],
       requestedStart: Math.ceil(Date.now() / STEP_MS) * STEP_MS,
       deadlineEnd: row.delivery_by ? Date.parse(manilaTimestamp(row.delivery_by, 24 * 60)) - 1 : null,
     }

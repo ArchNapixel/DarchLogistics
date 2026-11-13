@@ -27,7 +27,15 @@ import {
 // trip_id: the window is a booked trip (planTrips reads those from `trips` instead).
 type RawBusy = { start: number; end: number; reason: string | null; trip_id?: number | null }
 // truck: drivers only, his assigned_plate_number.
-type RawResource = { id: string | number; label: string | null; trailer_type?: string | null; truck?: string | null; busy: RawBusy[] }
+// trailer_size: trailers only, once get_capacity_inputs returns it (2026-11-13 SQL).
+type RawResource = {
+  id: string | number
+  label: string | null
+  trailer_type?: string | null
+  trailer_size?: string | null
+  truck?: string | null
+  busy: RawBusy[]
+}
 type RawTrip = {
   itinerary_id: number
   status: string
@@ -37,6 +45,8 @@ type RawTrip = {
   truck: string | null
   trailer_id: number | null
   trailer_type: string | null
+  // The trip's asked size (itineraries.container_type), once the SQL returns it.
+  container_type?: string | null
   cargo_type: string | null
   // Staff only.
   rate: number | null
@@ -94,6 +104,7 @@ export function buildDemand(args: {
   const trips = expandCargoLines(parseCargoLines(args.cargoLines)).map((t) => ({
     hours: args.hours,
     trailerType: t.trailer_type,
+    trailerSize: t.container_type,
     cargoType: t.cargo_type,
   }))
   const dayStart = new Date(manilaTimestamp(args.pickupDate, args.defaultStartMinutes)).getTime()
@@ -136,6 +147,7 @@ const toResource = (kind: Resource['kind'], prefix: string, fallback: string) =>
   kind,
   label: r.label ?? fallback,
   trailerType: r.trailer_type ?? null,
+  trailerSize: r.trailer_size ?? null,
   truckId: r.truck ? `T${r.truck}` : null,
   busy: r.busy.map((b): BusyWindow => ({ start: b.start, end: b.end, reason: b.reason ?? 'Busy', tripId: b.trip_id ?? null })),
 })
@@ -186,6 +198,7 @@ export async function loadCapacityInputs(
     truckId: t.truck === null ? null : `T${t.truck}`,
     trailerId: t.trailer_id === null ? null : `R${t.trailer_id}`,
     trailerType: t.trailer_type,
+    trailerSize: t.container_type ?? null,
     cargoType: t.cargo_type,
     rate: t.rate,
   }))
@@ -199,7 +212,7 @@ export async function loadCapacityInputs(
     .map((o) => ({
       label: o.label,
       demand: {
-        trips: expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type, cargoType: t.cargo_type })),
+        trips: expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type, trailerSize: t.container_type, cargoType: t.cargo_type })),
         requestedStart: new Date(manilaTimestamp(o.pickup_date, defaultStartMinutes)).getTime(),
         deadlineEnd: null,
       },

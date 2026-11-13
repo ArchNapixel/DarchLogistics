@@ -147,6 +147,38 @@ const held2 = withPlannedHolds(world([own('D1', 'T1'), own('D2', 'T2'), truck('T
 assert.equal(held2.resources.find((r) => r.id === 'D1')!.busy[0].reason, 'Held by Quote #61')
 assert.equal(planTrips(trips(1), held2).trips[0].driverId, 'D2')
 
+// Trailer SIZE (2026-11-13): a 40ft trailer may take a 20ft trip, never the reverse.
+const sized = (id: string, type: string, size: string | null, busy: Resource['busy'] = []): Resource => ({
+  ...trailer(id, type, busy),
+  trailerSize: size,
+})
+const box40 = (n: number): Demand => ({
+  trips: Array.from({ length: n }, () => ({ hours: 6, trailerType: 'Skeletal', trailerSize: '40ft', cargoType: 'Container' })),
+  requestedStart: oct24,
+  deadlineEnd: null,
+})
+const box20: Demand = { ...box40(1), trips: [{ hours: 6, trailerType: 'Skeletal', trailerSize: '20ft', cargoType: 'Container' }] }
+// Only a 20ft trailer: a 40ft container can't go -- "fleet too small".
+const only20 = planTrips(box40(1), world([own('D1', 'T1'), truck('T1'), sized('S20', 'Skeletal', '20ft')]))
+assert.equal(only20.status, 'none')
+assert.deepEqual([only20.shortage?.kind, only20.shortage?.missing], ['Trailer', true])
+assert.equal(shortageLabel(only20.shortage!), 'No 40ft Skeletal trailer free')
+// A 20ft container takes the 20ft trailer even with a 40ft one free...
+const fleet = [own('D1', 'T1'), truck('T1'), sized('S40', 'Skeletal', '40ft'), sized('S20', 'Skeletal', '20ft')]
+assert.equal(planTrips(box20, world(fleet)).trips[0].trailerId, 'S20')
+// ...and the 40ft one when the 20ft is busy.
+const busy20 = [own('D1', 'T1'), truck('T1'), sized('S40', 'Skeletal', '40ft'), sized('S20', 'Skeletal', '20ft', [{ start: oct24, end: oct24 + 24 * HOUR_MS, reason: 'Shop' }])]
+assert.equal(planTrips(box20, world(busy20)).trips[0].trailerId, 'S40')
+// Two 40ft trips, one 40ft trailer (+ a 20ft one, 2 drivers): they can't run at
+// once -- the second waits for the 40ft trailer instead of using the 20ft.
+const two40 = planTrips(
+  box40(2),
+  world([own('D1', 'T1'), own('D2', 'T2'), truck('T1'), truck('T2'), sized('S40', 'Skeletal', '40ft'), sized('S20', 'Skeletal', '20ft')]),
+)
+assert.deepEqual(two40.trips.map((t) => [t.trailerId, t.start]), [['S40', oct24], ['S40', oct24 + 6 * HOUR_MS]])
+// A trailer whose size isn't set yet still counts (until it's entered in Fleet).
+assert.equal(planTrips(box40(1), world([own('D1', 'T1'), truck('T1'), sized('S?', 'Skeletal', null)])).status, 'fits')
+
 // Labels for the card.
 assert.equal(shortageLabel({ kind: 'Trailer', trailerType: 'Flatbed', tripIndex: 0 }), 'No Flatbed trailer free')
 assert.equal(shortageLabel({ kind: 'Driver', trailerType: null, tripIndex: 0 }), 'No driver free')

@@ -2233,3 +2233,21 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
   - Undecided damage: Admin bell line + Reports Overview card -> Damage
     Charges, which lists undecided rows first. The table's Who Pays box no
     longer shows insurance details (side panel only).
+
+## 2026-11-13: Trailer size (20ft / 40ft) is matched, not just shown
+- `trailers.trailer_size` ('20ft' / '40ft', CHECK; null = not set yet -- set it
+  in Fleet -> Edit trailer, required there; Fleet flags "Size not set").
+  Trip's asked size = `itineraries.container_type` (the quote's "Trailer size").
+- Rule in `lib/trailerRules.ts` (`sizeAllowed`, `trailerAllowed(..., askedSize,
+  vehicleSize)`, `trailerRank`, `substituteNote`, `trailerLabel`; self-check
+  `node scripts/check-trailer-rules.ts`): a 40ft trailer may take a 20ft trip,
+  never the reverse; the asked size is used first. Unknown size on either side
+  = no requirement. Used by Capacity (`TripNeed.trailerSize`,
+  `Resource.trailerSize`; cases in `scripts/check-capacity.ts`), Fleet Match,
+  Dispatch Board (dropdown labels "TR-3 · 40ft", guard), Edit Cargo, and the DB
+  trigger `itinerary_trailer_fits` (repeats the rule -- change both).
+- Capacity reads trailer size / trip size from `get_capacity_inputs`
+  (`trailers[].trailer_size`, `trips[].container_type`); until that SQL is
+  updated it treats every trailer as size unknown.
+- Edit trailer refuses making a trailer 20ft while it's on an unfinished 40ft
+  trip.

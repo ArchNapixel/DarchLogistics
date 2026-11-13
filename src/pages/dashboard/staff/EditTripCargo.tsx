@@ -14,7 +14,7 @@
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { MAX_WEIGHT_TONS, type TripCargo } from '../../../lib/quoteRequest'
-import { trailerAllowed } from '../../../lib/trailerRules'
+import { trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
 
 // Not Delivered and not Cancelled (null status counts as Awaiting).
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
@@ -67,18 +67,19 @@ function EditTripCargo({
     if (trip.trailer_id !== null) {
       const { data: trailer, error: trailerError } = await supabase
         .from('trailers')
-        .select('plate_number, trailer_type')
+        .select('plate_number, trailer_type, trailer_size')
         .eq('trailer_id', trip.trailer_id)
         .maybeSingle()
       if (trailerError) {
         setSaving(false)
         return setError(trailerError.message)
       }
-      // A container may ride a Skeletal or a Flatbed whichever was asked for.
-      if (trailer?.trailer_type && !trailerAllowed(cargoType, trailerType, trailer.trailer_type)) {
+      // A container may ride a Skeletal or a Flatbed whichever was asked for;
+      // a 40ft trip needs a 40ft trailer.
+      if (trailer?.trailer_type && !trailerAllowed(cargoType, trailerType, trailer.trailer_type, containerType, trailer.trailer_size)) {
         setSaving(false)
         return setError(
-          `This trip has a ${trailer.trailer_type} trailer assigned (${trailer.plate_number ?? `#${trip.trailer_id}`}). ` +
+          `This trip has a ${trailerLabel(trailer.trailer_type, trailer.trailer_size)} trailer assigned (${trailer.plate_number ?? `#${trip.trailer_id}`}). ` +
             'Unassign it on the Dispatch Board first, then change the cargo.',
         )
       }
