@@ -1368,8 +1368,8 @@ function DispatchBoardSection() {
   const [breakdownRow, setBreakdownRow] = useState<DispatchRow | null>(null)
   // The day shown ('YYYY-MM-DD', Manila), or 'all' = every trip not delivered yet.
   const [day, setDay] = useState<string>(() => toManilaDate(new Date()))
-  // Day view or the Sun-Sat week (the payroll week) around `day`.
-  const [view, setView] = useState<'day' | 'week'>('day')
+  // Day view or the Sun-Sat week (the payroll week) around `day`. Opens on the week.
+  const [view, setView] = useState<'day' | 'week'>('week')
   const dateInputRef = useRef<HTMLInputElement>(null)
   // Filters: status ('all' | 'needs' | 'atrisk' | a status), driver ('all' | 'none' | employee id), booking / trip #.
   // Starts on "Needs assignment" -- what dispatch has to deal with first.
