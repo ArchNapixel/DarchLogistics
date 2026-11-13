@@ -77,6 +77,17 @@ export function coverageLeft(
 export const policyCovers = (policy: { valid_from: string; valid_until: string }, date: string) =>
   policy.valid_from <= date && date <= policy.valid_until
 
+// The policies offered for damage reported on `date` (not archived, dates
+// cover it), the one picked (companyId, else the first offered) and how
+// much cover it has left.
+export function policyChoice<
+  P extends { insurance_company_id: number; amount_insured: number; limit_type: LimitType; valid_from: string; valid_until: string; archived_at: string | null },
+>(companies: P[], claims: ClaimRow[], companyId: number | null, date: string, exceptDamageId?: number) {
+  const offered = companies.filter((c) => !c.archived_at && policyCovers(c, date))
+  const policy = offered.find((c) => c.insurance_company_id === companyId) ?? offered[0] ?? null
+  return { offered, policy, left: policy ? coverageLeft(policy, claims, exceptDamageId) : 0 }
+}
+
 // Covered-amount check -- null when OK.
 export function coveredAmountError(covered: number, damageCost: number, left: number): string | null {
   if (covered > cents(damageCost)) return "The insurance can't cover more than the damage cost."

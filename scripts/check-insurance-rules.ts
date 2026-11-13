@@ -8,6 +8,7 @@ import {
   coverageUsed,
   coveredAmountError,
   oneYearAfter,
+  policyChoice,
   policyCovers,
   type ClaimRow,
 } from '../src/lib/insuranceRules.ts'
@@ -64,5 +65,15 @@ assert.equal(policyCovers({ valid_from: '2026-01-01', valid_until: '2026-12-31' 
 assert.equal(policyCovers({ valid_from: '2026-01-01', valid_until: '2026-12-31' }, '2027-01-01'), false)
 assert.equal(oneYearAfter('2026-11-12'), '2027-11-12')
 assert.equal(oneYearAfter('2028-02-29'), '2029-03-01')
+
+// Picking a policy for a damage date.
+const policyA = { ...total, valid_from: '2026-01-01', valid_until: '2026-12-31', archived_at: null }
+const policyB = { ...policyA, insurance_company_id: 8, archived_at: '2026-06-01' } // archived
+const policyC = { ...policyA, insurance_company_id: 9, valid_from: '2027-01-01', valid_until: '2027-12-31' }
+const pick = policyChoice([policyB, policyA, policyC], claims, null, '2026-11-13')
+assert.deepEqual(pick.offered.map((p) => p.insurance_company_id), [7]) // archived / not yet valid left out
+assert.equal(pick.policy?.insurance_company_id, 7) // none picked -> first offered
+assert.equal(pick.left, 50000)
+assert.equal(policyChoice([policyC], claims, 9, '2026-11-13').policy, null) // picked one doesn't cover the date
 
 console.log('ok')

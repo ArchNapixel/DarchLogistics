@@ -2,15 +2,29 @@
 // table -- for damage found or reported AFTER a trip was marked Delivered
 // (e.g. the client calls the next day). Pick one of the last 200 delivered
 // trips, describe the damage, and it's saved as a delivery_damage_records
-// row, same as reporting it from MarkDeliveredModal on the Dispatch Board.
+// row. This is the only place damage is reported (Mark Delivered stopped
+// asking 2026-11-13). An Admin can also pick who pays here (WhoPaysFields)
+// so it's saved already decided; a Dispatcher's report stays "Not decided
+// yet" until an Admin decides it from the table.
 // Once a trip is picked, photos / documents can be attached to it
 // (TripDocuments -- they upload on their own, straight away).
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import { damageInputError, insertDamageRecord, type DamageInput } from '../../../lib/damageCharges'
+import {
+  UNDECIDED,
+  damageInputError,
+  decideDamage,
+  insertDamageRecord,
+  type DamageInput,
+  type WhoPaysInput,
+} from '../../../lib/damageCharges'
+import type { InsuranceCompany } from '../../../lib/insuranceCompanies'
+import type { ClaimRow } from '../../../lib/insuranceRules'
+import { useAuth } from '../../../context/AuthContext'
 import DamageFields from './DamageFields'
+import WhoPaysFields from './WhoPaysFields'
 import TripDocuments from './TripDocuments'
-import { formatDate } from '../../../lib/format'
+import { formatDate, splitManila } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
 
 type DeliveredTrip = {
@@ -26,12 +40,25 @@ function shortPlace(name: string | undefined) {
   return name.split(',')[0].replace(/^Brgy\.?\s*/i, '')
 }
 
-const EMPTY: DamageInput = { condition: 'Damaged', description: '', cost: '', chargeTo: 'Client' }
+const EMPTY: DamageInput = { condition: 'Damaged', description: '', cost: '' }
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric focus:border-primary'
 
-function ReportDamageForm({ onReported }: { onReported: () => void }) {
+function ReportDamageForm({
+  companies,
+  claims,
+  insuranceUnavailable,
+  onReported,
+}: {
+  companies: InsuranceCompany[]
+  claims: ClaimRow[]
+  insuranceUnavailable: boolean
+  onReported: () => void
+}) {
+  const { role, employeeId } = useAuth()
+  const isAdmin = role === 'Admin'
+  const [whoPays, setWhoPays] = useState<WhoPaysInput>(UNDECIDED)
   const [trips, setTrips] = useState<DeliveredTrip[] | null>(null)
   const [itineraryId, setItineraryId] = useState('')
   const [damage, setDamage] = useState<DamageInput>(EMPTY)
@@ -87,6 +114,7 @@ function ReportDamageForm({ onReported }: { onReported: () => void }) {
   function clear() {
     setItineraryId('')
     setDamage(EMPTY)
+    setWhoPays(UNDECIDED)
     setError(null)
   }
 
@@ -101,16 +129,39 @@ function ReportDamageForm({ onReported }: { onReported: () => void }) {
       return
     }
 
+    // Admin may decide who pays now; leaving it unpicked saves it undecided.
+    let decision
+    if (isAdmin && whoPays.chargeTo) {
+      const decided = decideDamage(whoPays, {
+        cost: Number(damage.cost),
+        date: splitManila(new Date()).date,
+        companies,
+        claims,
+        employeeId,
+      })
+      if ('error' in decided) {
+        setError(decided.error)
+        return
+      }
+      decision = decided.columns
+    }
+
     setSubmitting(true)
     setError(null)
-    const saveError = await insertDamageRecord(Number(itineraryId), damage)
+    const saveError = await insertDamageRecord(Number(itineraryId), damage, decision)
     setSubmitting(false)
 
     if (saveError) {
       setError(saveError)
       return
     }
-    showToast('Damage reported. Choose who pays in the table.')
+    showToast(
+      decision
+        ? `Damage reported, charged to ${decision.charge_to}.`
+        : isAdmin
+          ? 'Damage reported. Click it in the table to choose who pays.'
+          : 'Damage reported. An Admin will decide who pays.',
+    )
     clear()
     onReported()
   }
@@ -147,7 +198,22 @@ function ReportDamageForm({ onReported }: { onReported: () => void }) {
           {picked && <span className="text-[13px] text-ink-muted">{picked.route}</span>}
         </label>
 
-        <DamageFields value={damage} onChange={setDamage} allowGood={false} />
+        <DamageFields value={damage} onChange={setDamage} />
+
+        {isAdmin && (
+          <div className="flex flex-col gap-1">
+            <WhoPaysFields
+              value={whoPays}
+              onChange={setWhoPays}
+              cost={Number(damage.cost) || 0}
+              date={splitManila(new Date()).date}
+              companies={companies}
+              claims={claims}
+              insuranceUnavailable={insuranceUnavailable}
+            />
+            {!whoPays.chargeTo && <span className="text-[13px] text-ink-muted">Leave it unpicked to decide later.</span>}
+          </div>
+        )}
 
         {picked && (
           <div className="flex flex-col gap-1.5">

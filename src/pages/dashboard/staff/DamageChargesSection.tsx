@@ -1,54 +1,38 @@
 // DamageChargesSection: Damage Charges page (Dispatcher + Admin; the
 // canvas's Dispatcher Damage board). Damage recorded on delivered trips --
 // from Mark Delivered on the Dispatch Board or the Report Damage form beside
-// the table -- and who pays for it: Client (added to the client's bill on
-// top of the delivery amount), Company (a company cost) or Insurance (an
-// insurer covers part or all of it -- InsuranceClaimModal; the rest is a
-// company cost, see insuranceRules.ts). Picking one approves the record.
-// Search by booking # or client, 10 rows a page. Below the table: the
-// Insurance Companies list (InsuranceCompaniesPanel, Admin edits it).
+// the table, the only place damage is reported since 2026-11-13 -- and who
+// pays for it: Client (added to the client's bill on top of the delivery
+// amount), Company (a company cost) or Insurance (an insurer covers part or
+// all of it; the rest is a company cost, see insuranceRules.ts). The table
+// only SHOWS who pays; clicking a row opens it in the right panel
+// (DamageDecisionPanel), where an Admin decides -- deciding approves the
+// record. Dispatchers can report damage but not decide (Admin only, also
+// enforced by RLS). Search by booking # or client, 10 rows a page. Below
+// the table: the Insurance Companies list (InsuranceCompaniesPanel).
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import ReportDamageForm from './ReportDamageForm'
-import InsuranceClaimModal from './InsuranceClaimModal'
+import DamageDecisionPanel, { type DamageCharge } from './DamageDecisionPanel'
 import InsuranceCompaniesPanel from './InsuranceCompaniesPanel'
 import PageHeader from '../../../components/PageHeader'
 import Pager from '../../../components/Pager'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { usePaged } from '../../../lib/usePaged'
 import { loadInsuranceCompanies, type InsuranceCompany } from '../../../lib/insuranceCompanies'
-import { CLAIM_STATUSES, companyDamageShare } from '../../../lib/insuranceRules'
-
-type ChargeTo = 'Client' | 'Company' | 'Insurance'
-
-type DamageCharge = {
-  damage_id: number
-  itinerary_id: number
-  booking_id: number
-  client_name: string
-  route: string
-  damage_description: string
-  estimated_damage_cost: number | null
-  charge_to: ChargeTo
-  damage_status: string
-  created_at: string | null
-  insurance_company_id: number | null
-  insurance_covered_amount: number | null
-  claim_status: string | null
-  claim_reference: string | null
-}
+import { companyDamageShare } from '../../../lib/insuranceRules'
 
 function DamageChargesSection() {
-  const { employeeId, role } = useAuth()
+  const { role } = useAuth()
   const [damageCharges, setDamageCharges] = useState<DamageCharge[]>([])
   const [companies, setCompanies] = useState<InsuranceCompany[]>([])
   const [insuranceError, setInsuranceError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [savingId, setSavingId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
-  const [claimFor, setClaimFor] = useState<DamageCharge | null>(null)
+  // The row open in the right panel; null = the Report Damage form.
+  const [selectedId, setSelectedId] = useState<number | null>(null)
 
   useEffect(() => {
     loadDamageCharges()
@@ -86,8 +70,7 @@ function DamageChargesSection() {
       return
     }
 
-    // Damage is reported per trip when it's marked Delivered on the
-    // Dispatch Board (MarkDeliveredModal).
+    // Damage is reported per trip (itinerary_id).
     const itineraryIds = Array.from(new Set(damageRows.map((row) => row.itinerary_id)))
     const { data: itineraryRows, error: itineraryError } = await supabase
       .from('itineraries')
@@ -170,80 +153,6 @@ function DamageChargesSection() {
     setLoading(false)
   }
 
-  // Client / Company: approves the record and clears any insurance claim
-  // it had (switching away from Insurance).
-  async function approveCharge(damage: DamageCharge, chargeTo: 'Client' | 'Company') {
-    if (!employeeId) {
-      setError('Your account is not linked to an employee record.')
-      return
-    }
-
-    setSavingId(damage.damage_id)
-    setError(null)
-
-    // .select() so a silent RLS no-op shows as an error, not fake success.
-    const { data: updated, error: updateError } = await supabase
-      .from('delivery_damage_records')
-      .update({
-        charge_to: chargeTo,
-        damage_status: 'Approved',
-        approved_by: employeeId,
-        approved_at: new Date().toISOString(),
-        insurance_company_id: null,
-        insurance_covered_amount: null,
-        claim_status: null,
-        claim_reference: null,
-      })
-      .eq('damage_id', damage.damage_id)
-      .select('damage_id')
-      .maybeSingle()
-
-    setSavingId(null)
-
-    if (updateError) {
-      setError(updateError.message)
-      return
-    }
-    if (!updated) {
-      setError('The decision was not saved -- you may not have permission, or the record was removed. Reload the page.')
-      return
-    }
-
-    setDamageCharges((current) =>
-      current.map((item) =>
-        item.damage_id === damage.damage_id
-          ? {
-              ...item,
-              charge_to: chargeTo,
-              damage_status: 'Approved',
-              insurance_company_id: null,
-              insurance_covered_amount: null,
-              claim_status: null,
-              claim_reference: null,
-            }
-          : item,
-      ),
-    )
-  }
-
-  // Later news from the insurer: Filed -> Paid / Denied.
-  async function changeClaimStatus(damage: DamageCharge, claimStatus: string) {
-    setSavingId(damage.damage_id)
-    setError(null)
-    const { data: updated, error: updateError } = await supabase
-      .from('delivery_damage_records')
-      .update({ claim_status: claimStatus })
-      .eq('damage_id', damage.damage_id)
-      .select('damage_id')
-      .maybeSingle()
-    setSavingId(null)
-    if (updateError) return setError(updateError.message)
-    if (!updated) return setError('The claim status was not saved. Reload the page.')
-    setDamageCharges((current) =>
-      current.map((item) => (item.damage_id === damage.damage_id ? { ...item, claim_status: claimStatus } : item)),
-    )
-  }
-
   // Booking # (with or without "#") or client name.
   const query = search.trim().toLowerCase().replace(/^#/, '')
   const visible = query
@@ -254,10 +163,7 @@ function DamageChargesSection() {
 
   const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
   const TD = 'px-2 py-2 first:pl-5 last:pr-5'
-  const segButton = (on: boolean) =>
-    `min-h-11 flex-1 border px-2 text-sm font-semibold disabled:opacity-50 ${
-      on ? 'relative border-primary bg-primary text-white' : 'border-line-control bg-white text-ink-metric hover:bg-slate-50'
-    }`
+  const selected = damageCharges.find((d) => d.damage_id === selectedId) ?? null
 
   return (
     <div>
@@ -291,7 +197,7 @@ function DamageChargesSection() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] table-fixed text-left text-sm text-ink-muted">
               <colgroup>
-                {['150px', '120px', '', '', '120px', '310px'].map((width, i) => (
+                {['150px', '120px', '', '', '120px', '220px'].map((width, i) => (
                   <col key={i} style={width ? { width } : undefined} />
                 ))}
               </colgroup>
@@ -317,18 +223,32 @@ function DamageChargesSection() {
                     <td colSpan={6} className="px-5 py-8 text-center">
                       <p className="font-semibold text-ink">{query ? 'No damage matches that search.' : 'No delivery damage has been reported.'}</p>
                       {!query && (
-                        <p className="mt-1 text-[13px] text-ink-muted">Use Report Damage, or record it when marking a trip delivered on the Dispatch Board.</p>
+                        <p className="mt-1 text-[13px] text-ink-muted">Use the Report Damage form on the right.</p>
                       )}
                     </td>
                   </tr>
                 ) : (
                   paged.rows.map((damage) => {
                     const decided = damage.damage_status === 'Approved'
-                    const insured = decided && damage.charge_to === 'Insurance'
+                    const isSelected = damage.damage_id === selectedId
                     return (
-                      <tr key={damage.damage_id} className="h-[68px] border-b border-slate-200">
+                      <tr
+                        key={damage.damage_id}
+                        onClick={() => setSelectedId(damage.damage_id)}
+                        className={`h-[68px] cursor-pointer border-b border-slate-200 ${
+                          isSelected ? 'bg-primary-soft shadow-[inset_4px_0_0_var(--color-primary)]' : 'hover:bg-slate-50'
+                        }`}
+                      >
                         <td className={TD}>
-                          <span className="block font-semibold text-ink-metric">Booking #{damage.booking_id}</span>
+                          {/* A real button so the row can be opened from the keyboard. */}
+                          <button
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => setSelectedId(damage.damage_id)}
+                            className="block text-left font-semibold text-ink-metric hover:underline"
+                          >
+                            Booking #{damage.booking_id}
+                          </button>
                           <span className="block text-[13px] leading-[18px]">
                             Trip #{damage.itinerary_id}
                             {damage.created_at ? ` · ${formatDate(damage.created_at)}` : ''}
@@ -349,57 +269,23 @@ function DamageChargesSection() {
                         </td>
                         <td className={`${TD} text-right tabular-nums`}>{formatMoney(damage.estimated_damage_cost)}</td>
                         <td className={TD}>
-                          <div role="group" aria-label={`Who pays for booking #${damage.booking_id}`} className="flex">
-                            <button
-                              type="button"
-                              aria-pressed={decided && damage.charge_to === 'Client'}
-                              onClick={() => approveCharge(damage, 'Client')}
-                              disabled={savingId === damage.damage_id}
-                              className={segButton(decided && damage.charge_to === 'Client')}
-                            >
-                              Client
-                            </button>
-                            <button
-                              type="button"
-                              aria-pressed={decided && damage.charge_to === 'Company'}
-                              onClick={() => approveCharge(damage, 'Company')}
-                              disabled={savingId === damage.damage_id}
-                              className={`-ml-px ${segButton(decided && damage.charge_to === 'Company')}`}
-                            >
-                              Company
-                            </button>
-                            <button
-                              type="button"
-                              aria-pressed={insured}
-                              onClick={() => setClaimFor(damage)}
-                              disabled={savingId === damage.damage_id || Boolean(insuranceError)}
-                              className={`-ml-px ${segButton(insured)}`}
-                            >
-                              Insurance
-                            </button>
-                          </div>
-                          {!decided && <span className="mt-1 block text-xs font-medium text-amber-800">Not decided yet</span>}
-                          {insured && (
-                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                              <span className="tabular-nums" title={damage.claim_reference ? `Claim ${damage.claim_reference}` : undefined}>
-                                {companyNameById.get(damage.insurance_company_id ?? -1) ?? 'Insurance'}{' '}
-                                {formatMoney(damage.insurance_covered_amount)} · Company{' '}
-                                {formatMoney(companyDamageShare(damage))}
+                          {/* One box, same size for every state; insurance details under it. */}
+                          <span
+                            className={`inline-flex min-h-8 w-[120px] items-center justify-center rounded-[2px] border text-xs font-semibold ${
+                              decided ? 'border-line-control bg-white text-ink-metric' : 'border-amber-300 bg-amber-50 text-amber-800'
+                            }`}
+                          >
+                            {decided ? damage.charge_to : 'Not decided yet'}
+                          </span>
+                          {decided && damage.charge_to === 'Insurance' && (
+                            <span className="mt-1 block text-xs leading-[18px] tabular-nums">
+                              {companyNameById.get(damage.insurance_company_id ?? -1) ?? 'Insurance'}{' '}
+                              {formatMoney(damage.insurance_covered_amount)} ·{' '}
+                              <span className={damage.claim_status === 'Denied' ? 'font-semibold text-red-700' : ''}>
+                                {damage.claim_status ?? 'Filed'}
                               </span>
-                              <select
-                                aria-label={`Claim status for booking #${damage.booking_id}`}
-                                value={damage.claim_status ?? 'Filed'}
-                                onChange={(e) => void changeClaimStatus(damage, e.target.value)}
-                                disabled={savingId === damage.damage_id}
-                                className={`min-h-8 rounded-[2px] border border-line-control bg-white px-1.5 text-xs ${
-                                  damage.claim_status === 'Denied' ? 'text-red-700' : 'text-ink-metric'
-                                }`}
-                              >
-                                {CLAIM_STATUSES.map((s) => (
-                                  <option key={s}>{s}</option>
-                                ))}
-                              </select>
-                            </div>
+                              <span className="block">Company {formatMoney(companyDamageShare(damage))}</span>
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -421,7 +307,25 @@ function DamageChargesSection() {
         </div>
 
         <aside className="flex flex-col gap-4">
-          <ReportDamageForm onReported={() => void loadDamageCharges()} />
+          {selected ? (
+            <DamageDecisionPanel
+              // Re-keyed on the saved decision so the form resets to it after a save.
+              key={`${selected.damage_id}-${selected.damage_status}-${selected.charge_to}-${selected.insurance_company_id}-${selected.insurance_covered_amount}-${selected.claim_status}-${selected.claim_reference}`}
+              damage={selected}
+              companies={companies}
+              claims={damageCharges}
+              insuranceUnavailable={Boolean(insuranceError)}
+              onBack={() => setSelectedId(null)}
+              onSaved={() => void loadDamageCharges()}
+            />
+          ) : (
+            <ReportDamageForm
+              companies={companies}
+              claims={damageCharges}
+              insuranceUnavailable={Boolean(insuranceError)}
+              onReported={() => void loadDamageCharges()}
+            />
+          )}
           <section aria-labelledby="wp-h" className="card px-5 py-3.5 text-sm">
             <h2 id="wp-h" className="mb-1 font-semibold text-ink">
               Who pays
@@ -445,18 +349,6 @@ function DamageChargesSection() {
         </aside>
       </div>
 
-      {claimFor && (
-        <InsuranceClaimModal
-          damage={claimFor}
-          companies={companies}
-          claims={damageCharges}
-          onClose={() => setClaimFor(null)}
-          onSaved={() => {
-            setClaimFor(null)
-            void loadDamageCharges()
-          }}
-        />
-      )}
     </div>
   )
 }

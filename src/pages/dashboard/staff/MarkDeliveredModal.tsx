@@ -1,24 +1,14 @@
 // MarkDeliveredModal: opened from the Dispatch Board when Dispatcher/Admin
 // picks "Delivered" for a trip (or clicks "Mark delivered"). Marks the
 // itinerary Delivered, logs it in dispatch_status_logs (that log's
-// timestamp is the trip's delivery date for payroll and Payments Due),
-// and -- if cargo arrived damaged, short or missing -- records a
-// delivery_damage_records row for the Damage Charges page. Staff can also
-// attach the signed DO here (TripDocuments, uploads independently).
-//
-// Steps aren't in a DB transaction: the status goes first, then the
-// damage row. If the damage row fails, the trip is already Delivered, so
-// the modal stays open and "Save" only retries the damage part.
+// timestamp is the trip's delivery date for payroll and Payments Due).
+// Staff can also attach the signed DO here (TripDocuments, uploads
+// independently). Damage isn't asked here any more (2026-11-13): it's
+// reported on the Damage Charges page, where who pays is decided too.
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import {
-  EMPTY_DAMAGE,
-  damageInputError,
-  insertDamageRecord,
-  type DamageInput,
-} from '../../../lib/damageCharges'
-import DamageFields from './DamageFields'
 import TripDocuments from './TripDocuments'
 import { showToast } from '../../../components/Toast'
 import { retimeAfterDelivery } from '../../../lib/tripRetime'
@@ -40,7 +30,6 @@ function MarkDeliveredModal({
   onDelivered: () => void
 }) {
   const { employeeId } = useAuth()
-  const [damage, setDamage] = useState<DamageInput>(EMPTY_DAMAGE)
   // When it was really delivered (defaults to now). This is the delivery date
   // for payroll and Payments Due, and what the later trips re-time from.
   const [deliveredAt, setDeliveredAt] = useState(nowRounded)
@@ -50,16 +39,9 @@ function MarkDeliveredModal({
   }, [itineraryId])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // True once the trip is Delivered -- a retry then only saves the damage.
-  const [statusDone, setStatusDone] = useState(false)
 
   async function handleSubmit() {
-    const inputError = damageInputError(damage)
-    if (inputError) {
-      setError(inputError)
-      return
-    }
-    const timeError = statusDone ? null : statusTimeError(deliveredAt, lastChange)
+    const timeError = statusTimeError(deliveredAt, lastChange)
     if (timeError) {
       setError(timeError)
       return
@@ -70,73 +52,57 @@ function MarkDeliveredModal({
 
     // 1. Mark the trip Delivered -- only if it's still at the status the
     // board showed, and check a row really changed (RLS no-op).
-    if (!statusDone) {
-      const { data: updated, error: statusError } = await supabase
-        .from('itineraries')
-        .update({ itinerary_status: 'Delivered' })
-        .eq('itinerary_id', itineraryId)
-        .eq('itinerary_status', currentStatus)
-        .select('itinerary_id')
-        .maybeSingle()
+    const { data: updated, error: statusError } = await supabase
+      .from('itineraries')
+      .update({ itinerary_status: 'Delivered' })
+      .eq('itinerary_id', itineraryId)
+      .eq('itinerary_status', currentStatus)
+      .select('itinerary_id')
+      .maybeSingle()
 
-      if (statusError) {
-        setError(statusError.message)
-        setSubmitting(false)
-        return
-      }
-      if (!updated) {
-        setError(
-          'This trip was not updated -- its status was changed by someone ' +
-            'else in the meantime. Close this and reload the board.',
-        )
-        setSubmitting(false)
-        return
-      }
-      setStatusDone(true)
-
-      // The booking's own status and freeing the truck/trailer follow
-      // automatically (sync_booking_status / free_vehicles_on_delivery
-      // triggers on itineraries).
-
-      // 2. Log it -- this row's timestamp is the delivery date.
-      const { error: logError } = await supabase
-        .from('dispatch_status_logs')
-        .insert({
-          itinerary_id: itineraryId,
-          previous_status: currentStatus,
-          new_status: 'Delivered',
-          changed_by: employeeId,
-          status_changed_at: new Date(deliveredAt).toISOString(),
-        })
-
-      if (logError) {
-        showToast(
-          `Trip marked Delivered, but recording it in the dispatch log ` +
-            `failed (${logError.message}). Its delivery date will be missing ` +
-            `from payroll and Payments Due -- tell an admin.`,
-          'error',
-        )
-      }
-
-      // The slot ends at the real delivery time; later trips follow it.
-      const retime = await retimeAfterDelivery(itineraryId, deliveredAt)
-      if (retime.warning) showToast(retime.warning, 'error')
-      // At the current pace a booking misses its delivery-by date: remind the admin.
-      for (const message of retime.late) showToast(message, 'error')
+    if (statusError) {
+      setError(statusError.message)
+      setSubmitting(false)
+      return
+    }
+    if (!updated) {
+      setError(
+        'This trip was not updated -- its status was changed by someone ' +
+          'else in the meantime. Close this and reload the board.',
+      )
+      setSubmitting(false)
+      return
     }
 
-    // 3. Damage, if any.
-    if (damage.condition !== 'Good') {
-      const damageError = await insertDamageRecord(itineraryId, damage)
-      if (damageError) {
-        setError(
-          `The trip is marked Delivered, but the damage report wasn't saved ` +
-            `(${damageError}). Press Save to try again.`,
-        )
-        setSubmitting(false)
-        return
-      }
+    // The booking's own status and freeing the truck/trailer follow
+    // automatically (sync_booking_status / free_vehicles_on_delivery
+    // triggers on itineraries).
+
+    // 2. Log it -- this row's timestamp is the delivery date.
+    const { error: logError } = await supabase
+      .from('dispatch_status_logs')
+      .insert({
+        itinerary_id: itineraryId,
+        previous_status: currentStatus,
+        new_status: 'Delivered',
+        changed_by: employeeId,
+        status_changed_at: new Date(deliveredAt).toISOString(),
+      })
+
+    if (logError) {
+      showToast(
+        `Trip marked Delivered, but recording it in the dispatch log ` +
+          `failed (${logError.message}). Its delivery date will be missing ` +
+          `from payroll and Payments Due -- tell an admin.`,
+        'error',
+      )
     }
+
+    // The slot ends at the real delivery time; later trips follow it.
+    const retime = await retimeAfterDelivery(itineraryId, deliveredAt)
+    if (retime.warning) showToast(retime.warning, 'error')
+    // At the current pace a booking misses its delivery-by date: remind the admin.
+    for (const message of retime.late) showToast(message, 'error')
 
     setSubmitting(false)
     onDelivered()
@@ -154,9 +120,7 @@ function MarkDeliveredModal({
           </div>
           <button
             type="button"
-            // Once the trip is Delivered, closing still has to move it to
-            // the Completed table on the board.
-            onClick={statusDone ? onDelivered : onClose}
+            onClick={onClose}
             disabled={submitting}
             aria-label="Close"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50"
@@ -170,16 +134,12 @@ function MarkDeliveredModal({
         <div className="flex flex-col gap-4 px-6 py-5">
           {error && <p className="bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-          {!statusDone && (
-            <div className="flex flex-col gap-1.5">
-              <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
-              <span className="text-[13px] leading-[18px] text-ink-muted">
-                Starts at the current time. The booking's later trips are re-timed from this.
-              </span>
-            </div>
-          )}
-
-          <DamageFields value={damage} onChange={setDamage} allowGood />
+          <div className="flex flex-col gap-1.5">
+            <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
+            <span className="text-[13px] leading-[18px] text-ink-muted">
+              Starts at the current time. The booking's later trips are re-timed from this.
+            </span>
+          </div>
 
           {/* Optional: the signed DO usually comes back at delivery. Files
               upload right away, on their own -- separate from the button below. */}
@@ -190,19 +150,25 @@ function MarkDeliveredModal({
             <span className="text-[13px] leading-[18px] text-ink-muted">Delivery receipt, waybill or photos. They upload as soon as you pick them.</span>
             <TripDocuments itineraryId={itineraryId} canEdit />
           </div>
+
+          <p className="text-[13px] leading-[18px] text-ink-secondary">
+            Cargo damaged, short or missing? After marking it delivered, report it on{' '}
+            <Link to="/dashboard/damage-charges" className="font-semibold text-primary underline">
+              Damage Charges
+            </Link>
+            .
+          </p>
         </div>
 
         <footer className="flex justify-end gap-3 border-t border-line px-6 py-4">
-          <button type="button" onClick={statusDone ? onDelivered : onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
-            {statusDone ? 'Close' : 'Cancel'}
+          <button type="button" onClick={onClose} disabled={submitting} className="btn-secondary px-5 text-sm font-medium">
+            Cancel
           </button>
           <button type="button" onClick={() => void handleSubmit()} disabled={submitting} className="btn-primary inline-flex items-center gap-2 px-6 text-sm">
-            {!statusDone && (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M5 12l5 5 9-10" />
-              </svg>
-            )}
-            {submitting ? 'Saving...' : statusDone ? 'Save Damage Report' : 'Mark Delivered'}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12l5 5 9-10" />
+            </svg>
+            {submitting ? 'Saving...' : 'Mark Delivered'}
           </button>
         </footer>
       </div>

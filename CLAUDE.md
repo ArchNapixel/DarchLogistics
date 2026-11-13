@@ -2169,8 +2169,9 @@ numbers / truck fit, bins, tool check-out.
   mechanics".
 
 ## 2026-11-12: Damage covered by insurance (SQL given in chat)
-- Damage Charges "Who Pays" = **Client | Company | Insurance**. Insurance opens
-  `staff/InsuranceClaimModal.tsx`: pick a policy (not archived, dates cover the
+- Damage Charges "Who Pays" = **Client | Company | Insurance** (moved into the
+  right panel 2026-11-13, see below; `InsuranceClaimModal.tsx` was deleted).
+  Insurance asks for: pick a policy (not archived, dates cover the
   day the damage was reported), amount the insurer covers (<= damage cost and
   <= cover left), claim status Filed / Paid / Denied (changeable later on the
   row), optional claim reference. Picking Client / Company clears the claim.
@@ -2191,3 +2192,22 @@ numbers / truck fit, bins, tool check-out.
   card, Trip Profitability, P&L, Money Summary). Client billing unchanged.
 - ponytail: "cover left" is checked in the browser, so two people approving
   claims on one policy at the same second could go past its total.
+
+## 2026-11-13: Who pays moved to the side panel; damage only reported on Damage Charges
+Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
+- Damage Charges table only SHOWS who pays (one fixed-size badge per row:
+  Client / Company / Insurance / Not decided yet; insurance details under it).
+  Clicking a row opens `staff/DamageDecisionPanel.tsx` in the right panel
+  (details + decide / change; also where a claim goes Filed -> Paid / Denied);
+  "Report new damage" goes back to `ReportDamageForm`.
+- **Only Admin decides who pays.** Shared fields `staff/WhoPaysFields.tsx`
+  (was InsuranceClaimModal), rules `decideDamage()` in `lib/damageCharges.ts`
+  + `policyChoice()` in `lib/insuranceRules.ts` (self-check
+  `node scripts/check-insurance-rules.ts`). The Report Damage form shows Who
+  pays to Admin (optional -- unpicked saves it undecided); Dispatchers report
+  only. RLS (run by user 2026-11-13): `delivery_damage_records_update_admin`
+  (`is_admin()`, replaced `_update_staff`); `_insert_staff` = staff, but a
+  non-Admin row must be 'Reported' with no approval / insurance.
+- **Mark Delivered no longer asks about damage** (no cargo condition, no
+  retry step) -- just a link to Damage Charges. `DamageFields` lost "Good"
+  and `DamageInput` lost `chargeTo`; `EMPTY_DAMAGE` removed.
