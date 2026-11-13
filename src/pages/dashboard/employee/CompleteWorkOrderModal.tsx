@@ -24,6 +24,11 @@
 // vehicle (releaseVehicleFromShop). If freeing fails, clicking Mark
 // Complete again only retries that step -- `savedCompletionId` remembers
 // the completion is already saved.
+//
+// PMS work orders (work_orders.pms_target_km set -- created automatically
+// every app_settings.pms_interval_km): the odometer reading is required,
+// and a DB trigger on work_order_completions makes it the truck's new
+// "Last PMS at" so the next PMS counts from it.
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
@@ -104,6 +109,8 @@ function CompleteWorkOrderModal({
   const [description, setDescription] = useState('')
   const [parts, setParts] = useState<PartRow[]>([])
   const [odometerReading, setOdometerReading] = useState('')
+  // The PMS reading this work order is for, or null when it isn't a PMS.
+  const [pmsTarget, setPmsTarget] = useState<number | null>(null)
   const [nextServiceDate, setNextServiceDate] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -140,6 +147,12 @@ function CompleteWorkOrderModal({
   const loadNow = useEffectEvent(() => {
     loadInventory()
     loadAlreadyLoggedParts()
+    void supabase
+      .from('work_orders')
+      .select('pms_target_km')
+      .eq('work_order_id', workOrderId)
+      .maybeSingle()
+      .then(({ data }) => setPmsTarget(data?.pms_target_km != null ? Number(data.pms_target_km) : null))
   })
   useEffect(() => {
     const timer = setTimeout(loadNow, 0)
@@ -253,6 +266,11 @@ function CompleteWorkOrderModal({
 
       if (!validateRows()) {
         setFormError('Fix the errors in the parts list before submitting.')
+        return
+      }
+
+      if (pmsTarget !== null && plateNumber && !odometerReading) {
+        setFormError("This is a PMS: enter the truck's odometer reading. The next PMS counts from it.")
         return
       }
 
@@ -396,13 +414,19 @@ function CompleteWorkOrderModal({
 
               <div className="border border-line bg-slate-50 px-4 py-3.5">
                 <h3 className={SECTION_TITLE}>
-                  Truck only <span className="font-normal text-ink-muted">· optional</span>
+                  Truck only{' '}
+                  <span className="font-normal text-ink-muted">
+                    · {pmsTarget !== null ? `PMS due at ${pmsTarget.toLocaleString()} km` : 'optional'}
+                  </span>
                 </h3>
                 {plateNumber ? (
                   <>
                     <div className="grid gap-3.5 sm:grid-cols-2">
                       <label className={labelClasses}>
-                        Odometer reading (km)
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span>Odometer reading (km)</span>
+                          {pmsTarget !== null && <span className="text-xs text-amber-800">Required</span>}
+                        </span>
                         <input
                           inputMode="numeric"
                           value={odometerReading}
@@ -415,7 +439,11 @@ function CompleteWorkOrderModal({
                         <input type="date" value={nextServiceDate} onChange={(e) => setNextServiceDate(e.target.value)} className={fieldClasses} />
                       </label>
                     </div>
-                    <p className="mt-2 text-[13px] text-ink-muted">The reading must be higher than the truck's current one.</p>
+                    <p className="mt-2 text-[13px] text-ink-muted">
+                      The reading must be higher than the truck's current one.
+                      {pmsTarget !== null &&
+                        ' The next PMS counts from this reading. If the dashboard shows less than the system has, ask Admin to enter the real reading on Truck Monitoring first.'}
+                    </p>
                   </>
                 ) : (
                   <p className="text-[13px] text-ink-muted">Not applicable -- this work order is for a trailer.</p>

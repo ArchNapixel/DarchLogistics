@@ -2313,3 +2313,29 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
 - `truck_profiles.last_pms_odometer` (blank = not set): Add / Edit Truck
   ("Last PMS at"), Fleet panel. Add Truck takes the starting odometer;
   Edit shows it read-only.
+- **Phase 2 + 3 (built 2026-11-13, SQL given in chat):** `work_orders.pms_target_km`
+  (the reading the PMS is for; null = not a PMS). Trigger `pms_auto_schedule`
+  (AFTER UPDATE OF current_odometer, last_pms_odometer on truck_profiles):
+  once a truck with "Last PMS at" set is within `pms_due_soon_km` of
+  last PMS + `pms_interval_km`, it inserts ONE Preventive, unassigned work
+  order (Task Board), unique index `work_orders_one_open_pms` (+ ON CONFLICT
+  DO NOTHING so it can never fail a trip). **No scheduled_start_date on
+  purpose** -- Fleet Match / Capacity block a truck whose Created WO is dated
+  on a trip day; "warn only" was decided. Expected date (last 30 days' trip
+  km) is in the description. Trucks without "Last PMS at" get no auto PMS.
+  Cancelled PMS WO -> a new one on the next odometer change. Reset: trigger
+  `pms_reset_on_completion` (AFTER INSERT on work_order_completions) sets
+  `last_pms_odometer` = the completion's odometer_reading (else the truck's
+  current). CompleteWorkOrderModal requires the reading on a PMS work order.
+  complete_work_order itself is unchanged (still needs a reading higher than
+  the current one -- Admin enters a lower real reading first).
+- **Phase 4 (built 2026-11-13, no SQL):** `lib/pms.ts` (pure, self-check
+  `node scripts/check-pms.ts`): `pmsStatus(current, lastPms, settings)` ->
+  nextAt / used / left / pct / stage ok | soon (<= due-soon km left) | due
+  (reached or past); null when "Last PMS at" isn't set. `byPmsUrgency` sorts.
+  `loadPmsSettings()` in lib/odometer.ts (defaults 1000 / 200, same as the
+  trigger). Bar = `components/PmsProgress.tsx` (green / amber / red; "PMS start
+  not set · Set in Fleet" -> `/dashboard/fleet?truck=PLATE`, which Fleet now
+  opens). Truck Monitoring: "Next PMS" column (trucks nearest PMS first, link
+  to the open PMS work order), tile "Trucks due for PMS". Fleet truck panel:
+  Next PMS bar.

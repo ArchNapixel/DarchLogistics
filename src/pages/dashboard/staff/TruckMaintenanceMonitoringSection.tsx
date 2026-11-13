@@ -1,6 +1,7 @@
 // TruckMaintenanceMonitoringSection: Truck Monitoring (Maintenance ->
 // Truck Monitoring, the canvas's board). One screen for "which trucks can
-// run": fleet tiles, the Trucks table (status, odometer, last trips, next
+// run": fleet tiles, the Trucks table (status, odometer, next PMS bar,
+// last trips, next
 // maintenance), Alerts worked out from data the app already keeps (truck /
 // trailer not operational, service date due, a schedule due soon, a work
 // order past its scheduled date) and the Odometer panel. Each delivered
@@ -36,12 +37,22 @@ import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate, formatDateTime } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import PmsProgress from '../../../components/PmsProgress'
+import { loadPmsSettings } from '../../../lib/odometer'
+import {
+  DEFAULT_PMS_DUE_SOON_KM,
+  DEFAULT_PMS_INTERVAL_KM,
+  byPmsUrgency,
+  pmsStatus,
+  type PmsSettings,
+} from '../../../lib/pms'
 
 type Truck = {
   plate_number: string
   model: string | null
   current_status: string | null
   current_odometer: number | null
+  last_pms_odometer: number | null
   next_service_date: string | null
 }
 
@@ -57,6 +68,7 @@ type OpenWorkOrder = {
   maintenance_type: string
   work_order_status: string
   scheduled_start_date: string | null
+  pms_target_km: number | null
 }
 
 type Alert = {
@@ -287,6 +299,10 @@ function TruckMaintenanceMonitoringSection() {
   const [schedules, setSchedules] = useState<PendingMaintenanceSchedule[]>([])
   const [uncounted, setUncounted] = useState<DeliveredTrip[]>([])
   const [odometerLog, setOdometerLog] = useState<OdometerLogEntry[]>([])
+  const [pmsSettings, setPmsSettings] = useState<PmsSettings>({
+    intervalKm: DEFAULT_PMS_INTERVAL_KM,
+    dueSoonKm: DEFAULT_PMS_DUE_SOON_KM,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [createFor, setCreateFor] = useState<PreselectedVehicle | null>(null)
@@ -294,10 +310,10 @@ function TruckMaintenanceMonitoringSection() {
   async function load() {
     setLoading(true)
     setError(null)
-    const [trucksResult, trailersResult, tripsResult, ordersResult, schedulesResult, uncountedResult, logResult] = await Promise.all([
+    const [trucksResult, trailersResult, tripsResult, ordersResult, schedulesResult, uncountedResult, logResult, pms] = await Promise.all([
       supabase
         .from('truck_profiles')
-        .select('plate_number, model, current_status, current_odometer, next_service_date')
+        .select('plate_number, model, current_status, current_odometer, last_pms_odometer, next_service_date')
         .eq('is_active', true)
         .order('plate_number'),
       supabase.from('trailers').select('trailer_id, plate_number, current_status').eq('is_active', true).order('trailer_id'),
@@ -312,11 +328,12 @@ function TruckMaintenanceMonitoringSection() {
         .limit(300),
       supabase
         .from('work_orders')
-        .select('work_order_id, work_order_number, plate_number, trailer_id, maintenance_type, work_order_status, scheduled_start_date')
+        .select('work_order_id, work_order_number, plate_number, trailer_id, maintenance_type, work_order_status, scheduled_start_date, pms_target_km')
         .in('work_order_status', OPEN_WORK_ORDER_STATUSES),
       loadPendingMaintenanceSchedules(),
       loadUncountedTrips(),
       loadOdometerLog(),
+      loadPmsSettings(),
     ])
     const loadError =
       trucksResult.error?.message ??
@@ -329,6 +346,7 @@ function TruckMaintenanceMonitoringSection() {
     if (loadError) setError(loadError)
     setUncounted(uncountedResult.trips)
     setOdometerLog(logResult.entries)
+    setPmsSettings(pms)
     setTrucks(trucksResult.data ?? [])
     setTrailers(trailersResult.data ?? [])
     setTrips((tripsResult.data ?? []) as RecentTrip[])
@@ -422,13 +440,25 @@ function TruckMaintenanceMonitoringSection() {
     return options[0] ?? null
   }
 
-  const pagedTrucks = usePaged(trucks, '')
+  // PMS cycle per truck; the table lists the truck nearest its PMS first.
+  const pmsOf = (t: Truck) =>
+    pmsStatus(
+      t.current_odometer != null ? Number(t.current_odometer) : null,
+      t.last_pms_odometer != null ? Number(t.last_pms_odometer) : null,
+      pmsSettings,
+    )
+  const trucksByPms = [...trucks].sort((a, b) => byPmsUrgency(pmsOf(a), pmsOf(b)))
+  const trucksDueForPms = trucks.filter((t) => {
+    const stage = pmsOf(t)?.stage
+    return stage === 'soon' || stage === 'due'
+  })
+  const pagedTrucks = usePaged(trucksByPms, '')
 
   return (
     <div>
       <PageHeader
         title="Truck Monitoring"
-        subtitle="Which trucks can run, odometer readings to confirm, and maintenance alerts."
+        subtitle="Which trucks can run, how close each one is to its PMS, odometer readings and maintenance alerts."
         actions={
           <button type="button" onClick={() => void load()} disabled={loading} className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -440,12 +470,13 @@ function TruckMaintenanceMonitoringSection() {
       />
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <section aria-label="Fleet status" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Fleet status" className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {[
           { label: 'Trucks operational', value: trucks.length - trucksDown.length, of: trucks.length },
           { label: 'Trucks not operational', value: trucksDown.length, bad: trucksDown.length > 0 },
           { label: 'Trailers operational', value: trailers.length - trailersDown.length, of: trailers.length },
           { label: 'Trips not counted on odometer', value: uncounted.length, bad: uncounted.length > 0 },
+          { label: 'Trucks due for PMS', value: trucksDueForPms.length, bad: trucksDueForPms.length > 0 },
         ].map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3.5">
             <p className="text-sm font-medium text-ink-secondary">{tile.label}</p>
@@ -477,12 +508,13 @@ function TruckMaintenanceMonitoringSection() {
               <EmptyState message="No trucks yet." className="m-5" />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm text-ink-metric">
+                <table className="w-full min-w-[860px] text-left text-sm text-ink-metric">
                   <thead>
                     <tr>
                       <th className={TH}>Plate No.</th>
                       <th className={TH}>Status</th>
                       <th className={`${TH} text-right`}>Odometer</th>
+                      <th className={`${TH} w-48`}>Next PMS</th>
                       <th className={TH}>Last Trips</th>
                       <th className={TH}>Next Maintenance</th>
                     </tr>
@@ -492,6 +524,8 @@ function TruckMaintenanceMonitoringSection() {
                       const last = trips.filter((trip) => trip.plate_number === t.plate_number).slice(0, 2)
                       const next = nextMaintenance(t)
                       const overdue = next ? next.date < today : false
+                      const pms = pmsOf(t)
+                      const pmsOrder = workOrders.find((o) => o.plate_number === t.plate_number && o.pms_target_km !== null)
                       return (
                         <tr key={t.plate_number} className="h-[60px] border-b border-slate-200">
                           <td className={`${TD} font-semibold ${down(t.current_status) ? 'text-ink-muted' : 'text-ink'}`}>{t.plate_number}</td>
@@ -500,6 +534,18 @@ function TruckMaintenanceMonitoringSection() {
                           </td>
                           <td className={`${TD} text-right tabular-nums`}>
                             {t.current_odometer != null ? `${Number(t.current_odometer).toLocaleString()} km` : '—'}
+                          </td>
+                          <td className={`${TD} py-3`}>
+                            {pms && <span className="mb-1 block text-[12px] text-ink-muted">at {pms.nextAt.toLocaleString()} km</span>}
+                            <PmsProgress status={pms} settings={pmsSettings} plate={t.plate_number} />
+                            {pmsOrder && (
+                              <Link
+                                to={`/dashboard/maintenance?wo=${pmsOrder.work_order_id}`}
+                                className="mt-1 block text-[12px] font-semibold text-primary underline"
+                              >
+                                PMS work order · {pmsOrder.work_order_status}
+                              </Link>
+                            )}
                           </td>
                           <td className={`${TD} ${last.length ? '' : 'text-ink-muted'}`}>
                             {last.length === 0

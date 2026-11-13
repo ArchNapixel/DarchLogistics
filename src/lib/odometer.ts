@@ -14,6 +14,21 @@ import { supabase } from './supabaseClient'
 import { fetchAll } from './dashboardExpenses'
 import { fetchDrivingDistanceKm, geocodePlace } from './geocoding'
 import { goesHome, tripLegs, uncountedTrips, type DeliveredTrip } from './odometerRules'
+import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, type PmsSettings } from './pms'
+
+// The two PMS settings (Settings page); defaults if a row is missing --
+// the same fallbacks the pms_auto_schedule trigger uses.
+export async function loadPmsSettings(): Promise<PmsSettings> {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('setting_key, setting_value')
+    .in('setting_key', ['pms_interval_km', 'pms_due_soon_km'])
+  const value = (key: string) => data?.find((row) => row.setting_key === key)?.setting_value
+  return {
+    intervalKm: Number(value('pms_interval_km') ?? DEFAULT_PMS_INTERVAL_KM),
+    dueSoonKm: Number(value('pms_due_soon_km') ?? DEFAULT_PMS_DUE_SOON_KM),
+  }
+}
 
 // Where every truck starts and ends its day.
 const BASE = { city: 'Panabo City', barangay: 'J.P. Laurel' }

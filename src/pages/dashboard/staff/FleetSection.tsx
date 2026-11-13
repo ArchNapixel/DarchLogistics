@@ -18,6 +18,9 @@ import AssignScheduleModal from './AssignScheduleModal'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
 import PageHeader from '../../../components/PageHeader'
+import PmsProgress from '../../../components/PmsProgress'
+import { loadPmsSettings } from '../../../lib/odometer'
+import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, pmsStatus, type PmsSettings } from '../../../lib/pms'
 import StatusBadge from '../../../components/StatusBadge'
 import Pager from '../../../components/Pager'
 import EmptyState from '../../../components/EmptyState'
@@ -221,7 +224,12 @@ function FleetSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
-  const [paneTruck, setPaneTruck] = useState<string | null>(null)
+  // ?truck=PLATE (Truck Monitoring's "Set in Fleet") opens that truck.
+  const [paneTruck, setPaneTruck] = useState<string | null>(searchParams.get('truck'))
+  const [pmsSettings, setPmsSettings] = useState<PmsSettings>({
+    intervalKm: DEFAULT_PMS_INTERVAL_KM,
+    dueSoonKm: DEFAULT_PMS_DUE_SOON_KM,
+  })
   const [paneTrailer, setPaneTrailer] = useState<number | null>(null)
   const [showAddTruck, setShowAddTruck] = useState(false)
   const [showAddTrailer, setShowAddTrailer] = useState(false)
@@ -252,15 +260,17 @@ function FleetSection() {
         .order('trailer_id', { ascending: true })
       if (trailerError) throw trailerError
 
-      const [ordersResult, schedulesResult, driversResult] = await Promise.all([
+      const [ordersResult, schedulesResult, driversResult, pms] = await Promise.all([
         supabase
           .from('work_orders')
           .select('work_order_id, work_order_number, plate_number, trailer_id, maintenance_type, work_order_status')
           .in('work_order_status', OPEN_WORK_ORDER_STATUSES),
         loadPendingMaintenanceSchedules(),
         supabase.from('employees').select('full_name, assigned_plate_number').not('assigned_plate_number', 'is', null),
+        loadPmsSettings(),
       ])
       if (ordersResult.error) throw ordersResult.error
+      setPmsSettings(pms)
       setDriverByPlate(new Map((driversResult.data ?? []).map((e) => [e.assigned_plate_number as string, e.full_name as string])))
 
       setTrucks((truckData ?? []) as Truck[])
@@ -332,7 +342,8 @@ function FleetSection() {
   const pagedTrucks = usePaged(shownTrucks, `${activeTab}|${search}|${showInactive}`)
   const pagedTrailers = usePaged(shownTrailers, `${activeTab}|${search}|${showInactive}`)
   const pager = activeTab === 'Trucks' ? pagedTrucks.pager : pagedTrailers.pager
-  const truck = pagedTrucks.rows.find((t) => t.plate_number === paneTruck) ?? pagedTrucks.rows[0] ?? null
+  // shownTrucks, not just this page, so a ?truck= link opens a truck on any page.
+  const truck = shownTrucks.find((t) => t.plate_number === paneTruck) ?? pagedTrucks.rows[0] ?? null
   const trailer = pagedTrailers.rows.find((t) => t.trailer_id === paneTrailer) ?? pagedTrailers.rows[0] ?? null
 
   const down = (status: string | null) => NOT_OPERATIONAL.includes(status ?? '')
@@ -588,6 +599,28 @@ function FleetSection() {
                       <Field label="Last PMS at">{truck!.last_pms_odometer != null ? `${Number(truck!.last_pms_odometer).toLocaleString()} km` : null}</Field>
                       <Field label="Last Service">{truck!.last_service_date ? formatDate(truck!.last_service_date) : null}</Field>
                       <Field label="Next Service">{truck!.next_service_date ? formatDate(truck!.next_service_date) : null}</Field>
+                      <div className="col-span-2 flex flex-col gap-1.5">
+                        <dt className={LABEL}>
+                          Next PMS
+                          {truck!.last_pms_odometer != null &&
+                            ` at ${(Number(truck!.last_pms_odometer) + pmsSettings.intervalKm).toLocaleString()} km`}
+                        </dt>
+                        <dd>
+                          {truck!.last_pms_odometer != null ? (
+                            <PmsProgress
+                              plate={truck!.plate_number}
+                              settings={pmsSettings}
+                              status={pmsStatus(
+                                truck!.current_odometer != null ? Number(truck!.current_odometer) : null,
+                                Number(truck!.last_pms_odometer),
+                                pmsSettings,
+                              )}
+                            />
+                          ) : (
+                            <span className="text-[13px] text-amber-800">Not set -- Edit to add "Last PMS at"</span>
+                          )}
+                        </dd>
+                      </div>
                     </dl>
                   ) : (
                     <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
