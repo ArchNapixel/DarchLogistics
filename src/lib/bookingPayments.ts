@@ -83,12 +83,11 @@ function paymentNote(details: PaymentDetails): string | null {
   return [details.note.trim(), bank].filter(Boolean).join(' · ') || null
 }
 
-// Opens an attached proof in a new tab (signed link, valid 1 minute).
-export async function openPaymentProof(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(PROOF_BUCKET).createSignedUrl(path, 60)
-  if (error || !data) return error?.message ?? 'Could not open the proof.'
-  window.open(data.signedUrl, '_blank', 'noopener')
-  return null
+// Signed link to an attached proof, for the in-app preview (valid 10 minutes).
+export async function paymentProofUrl(path: string): Promise<{ url: string } | { error: string }> {
+  const { data, error } = await supabase.storage.from(PROOF_BUCKET).createSignedUrl(path, 600)
+  if (error || !data) return { error: error?.message ?? 'Could not open the proof.' }
+  return { url: data.signedUrl }
 }
 
 // Error text for a bad "date received", or null when it's fine.

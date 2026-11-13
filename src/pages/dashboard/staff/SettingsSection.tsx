@@ -76,6 +76,12 @@ function SettingsSection() {
     const isPercent = setting.unit?.includes('%') || setting.setting_key.endsWith('_rate')
     if (isPercent && value > 100) return `"${setting.label}" is a percentage -- 100 at most.`
     if (setting.unit === 'time' && value >= 24 * 60) return `"${setting.label}" must be a time within the day.`
+    // PMS: every N km (N > 0), warn M km before (M below N).
+    if (setting.setting_key === 'pms_interval_km' && value <= 0) return `"${setting.label}" must be more than 0 km.`
+    if (setting.setting_key === 'pms_due_soon_km') {
+      const interval = Number(values.pms_interval_km)
+      if (Number.isFinite(interval) && value >= interval) return `"${setting.label}" must be less than the PMS interval (${interval} km).`
+    }
     return null
   }
 

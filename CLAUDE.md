@@ -2284,3 +2284,32 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
 - **Edit Cargo is back** in BookingDetailModal's trips table ("Edit cargo" under
   the Cargo cell, staff Bookings only, until the trip is delivered / cancelled)
   -- it had been unmounted since the 2026-10-23 Bookings redesign.
+
+## 2026-11-13: Odometer log + PMS every N km (Phase 0 + 1 built; SQL given in chat)
+Plan decided with the user: odometer -> PMS (preventive maintenance) every
+`app_settings.pms_interval_km` (global, starts at 1,000) with a warning
+`pms_due_soon_km` (200) before. Phases 2-5 (auto PMS work order, reset on
+completion, progress bars, bell / alerts / Dispatch Board warn-only labels)
+are NOT built yet. Supersedes the "Confirm odometer readings" description
+in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
+- `truck_odometer_log` (source opening / trip / reading / edit; out_km /
+  trip_km / back_km per trip; one 'trip' row per itinerary). Staff SELECT
+  only; written ONLY by `record_trip_km` (staff) and
+  `record_odometer_reading` (Admin; can go below the estimate, never below
+  the last real reading). Trigger `truck_odometer_log_direct` logs any
+  other change to `current_odometer` ('edit', e.g. complete_work_order) and
+  a new truck's starting reading ('opening'); the two functions set
+  `darch.odometer_write` so they aren't double-logged.
+- Trip km are recorded automatically by MarkDeliveredModal (in the
+  background; a failure = toast). Rules in `lib/odometerRules.ts`
+  (self-check `node scripts/check-odometer-rules.ts`): out from base, or
+  from the previous counted trip's delivery spot if it had no drive back;
+  no drive back if the truck has an open trip starting within 12 h. A trip
+  delivered before the truck's latest real reading isn't counted (the
+  reading includes it). Routing / loading in `lib/odometer.ts`.
+- Truck Monitoring: Odometer panel (Enter a real reading, Trips not counted
+  yet -> Count / Count All, oldest first, Latest entries). Tile "Trips not
+  counted on odometer".
+- `truck_profiles.last_pms_odometer` (blank = not set): Add / Edit Truck
+  ("Last PMS at"), Fleet panel. Add Truck takes the starting odometer;
+  Edit shows it read-only.

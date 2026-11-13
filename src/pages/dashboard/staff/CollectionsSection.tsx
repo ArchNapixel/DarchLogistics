@@ -14,7 +14,7 @@ import {
   PAYMENT_METHODS,
   buildCollectionsCsv,
   loadPayments,
-  openPaymentProof,
+  paymentProofUrl,
   voidBookingPayment,
   type PaymentRow,
 } from '../../../lib/bookingPayments'
@@ -38,6 +38,27 @@ function CollectionsSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
+  // Proof preview pop-up (image or PDF shown inside the app).
+  const [proof, setProof] = useState<{ url: string; isPdf: boolean; title: string } | null>(null)
+  useEffect(() => {
+    if (!proof) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setProof(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [proof])
+
+  async function handleViewProof(r: PaymentRow) {
+    const result = await paymentProofUrl(r.proof_path!)
+    if ('error' in result) {
+      setActionError(result.error)
+      return
+    }
+    setProof({
+      url: result.url,
+      isPdf: r.proof_path!.toLowerCase().endsWith('.pdf'),
+      title: `Proof of payment #${r.payment_id} · Booking #${r.booking_id}`,
+    })
+  }
   // "Record Payment" panel: bookings that still owe something.
   const navigate = useNavigate()
   const [owing, setOwing] = useState<PaymentDueRow[]>([])
@@ -251,10 +272,7 @@ function CollectionsSection() {
                             {r.proof_path && (
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  const openError = await openPaymentProof(r.proof_path!)
-                                  if (openError) setError(openError)
-                                }}
+                                onClick={() => handleViewProof(r)}
                                 className="font-semibold text-primary underline"
                               >
                                 📎 Proof
@@ -390,6 +408,37 @@ function CollectionsSection() {
           </section>
         </div>
       </div>
+
+      {proof && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setProof(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proof-preview-title"
+            onClick={(e) => e.stopPropagation()}
+            className="flex h-[90vh] w-full max-w-4xl flex-col border-2 border-line-card bg-white p-6"
+          >
+            <h3 id="proof-preview-title" className="text-lg font-bold text-ink">
+              {proof.title}
+            </h3>
+            <div className="mt-4 flex min-h-0 flex-1 items-center justify-center overflow-auto border border-line bg-slate-50">
+              {proof.isPdf ? (
+                <iframe src={proof.url} title={proof.title} className="h-full w-full" />
+              ) : (
+                <img src={proof.url} alt={proof.title} className="max-h-full max-w-full object-contain" />
+              )}
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <a href={proof.url} target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex items-center px-4 text-sm">
+                Open in new tab
+              </a>
+              <button type="button" autoFocus onClick={() => setProof(null)} className="btn-primary px-4 text-sm">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -4,8 +4,15 @@
 // does an INSERT). plate_number is the table's primary key (and is
 // referenced by work_orders), so it's locked/read-only while editing --
 // only model/year can change.
+//
+// Odometer: a new truck can be given its starting reading (a DB trigger
+// logs it as the truck's "Starting reading"). After that the odometer only
+// changes through trips and real readings on Truck Monitoring, so it's
+// read-only here. "Last PMS at" is where the PMS counter starts (blank =
+// not set yet: the counter runs from the starting reading).
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { filterAmountInput } from '../../../lib/amountInput'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
@@ -17,6 +24,8 @@ export type EditableTruck = {
   plate_number: string
   model: string | null
   year: number | null
+  current_odometer: number | null
+  last_pms_odometer: number | null
 }
 
 function AddTruckModal({
@@ -35,6 +44,8 @@ function AddTruckModal({
   const [plateNumber, setPlateNumber] = useState(truck?.plate_number ?? '')
   const [model, setModel] = useState(truck?.model ?? '')
   const [year, setYear] = useState(truck?.year != null ? String(truck.year) : '')
+  const [odometer, setOdometer] = useState(truck?.current_odometer != null ? String(truck.current_odometer) : '')
+  const [lastPms, setLastPms] = useState(truck?.last_pms_odometer != null ? String(truck.last_pms_odometer) : '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +59,21 @@ function AddTruckModal({
     const thisYear = new Date().getFullYear()
     if (year && (!Number.isInteger(Number(year)) || Number(year) < 1950 || Number(year) > thisYear + 1)) {
       setError(`Enter a year between 1950 and ${thisYear + 1}.`)
+      return
+    }
+
+    const odometerValue = odometer.trim() === '' ? 0 : Number(odometer)
+    if (!Number.isFinite(odometerValue) || odometerValue < 0) {
+      setError('Enter a valid odometer reading.')
+      return
+    }
+    const lastPmsValue = lastPms.trim() === '' ? null : Number(lastPms)
+    if (lastPmsValue !== null && !Number.isFinite(lastPmsValue)) {
+      setError('Enter a valid "Last PMS at" reading.')
+      return
+    }
+    if (lastPmsValue !== null && lastPmsValue > odometerValue) {
+      setError(`"Last PMS at" can't be past the odometer (${odometerValue.toLocaleString()} km).`)
       return
     }
 
@@ -68,6 +94,7 @@ function AddTruckModal({
     const values = {
       model: model.trim() || null,
       year: year ? Number(year) : null,
+      last_pms_odometer: lastPmsValue,
     }
 
     const { error: saveError } = isEditing
@@ -77,7 +104,7 @@ function AddTruckModal({
           .eq('plate_number', truck.plate_number)
       : await supabase
           .from('truck_profiles')
-          .insert({ ...values, plate_number: plate })
+          .insert({ ...values, plate_number: plate, current_odometer: odometerValue })
 
     setSubmitting(false)
 
@@ -141,6 +168,36 @@ function AddTruckModal({
               onChange={(e) => setYear(e.target.value)}
               className={fieldClasses}
             />
+          </label>
+
+          <label className={labelClasses}>
+            Odometer (km)
+            <input
+              inputMode="decimal"
+              value={odometer}
+              onChange={(e) => setOdometer(filterAmountInput(e.target.value))}
+              disabled={isEditing}
+              placeholder={isEditing ? '' : '0'}
+              className={isEditing ? disabledFieldClasses : fieldClasses}
+            />
+            {isEditing && (
+              <span className="text-[13px] font-normal text-slate-500">Change it with a real reading on Truck Monitoring.</span>
+            )}
+          </label>
+
+          <label className={labelClasses}>
+            <span>
+              Last PMS at (km) <span className="font-normal text-slate-500">(optional)</span>
+            </span>
+            <input
+              inputMode="decimal"
+              value={lastPms}
+              onChange={(e) => setLastPms(filterAmountInput(e.target.value))}
+              className={fieldClasses}
+            />
+            <span className="text-[13px] font-normal text-slate-500">
+              The odometer reading at this truck's last PMS. Blank = the PMS count starts from the odometer when it was added.
+            </span>
           </label>
         </div>
 

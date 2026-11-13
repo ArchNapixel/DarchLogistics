@@ -3,18 +3,27 @@
 // run": fleet tiles, the Trucks table (status, odometer, last trips, next
 // maintenance), Alerts worked out from data the app already keeps (truck /
 // trailer not operational, service date due, a schedule due soon, a work
-// order past its scheduled date) and "Confirm odometer readings" -- the
-// suggested reading after each delivered trip (base -> pickup + trip +
-// delivery -> base), which staff confirm, optionally typing the real
-// reading instead. Maintenance schedules (and Assign Schedule) moved to the
-// Maintenance page's Schedules tab.
+// order past its scheduled date) and the Odometer panel. Each delivered
+// trip's km are added to the truck's odometer automatically when it's
+// marked Delivered (lib/odometer.ts); the panel lists any trip that wasn't
+// counted, takes the real reading off the dashboard, and shows the log.
+// Maintenance schedules (and Assign Schedule) moved to the Maintenance
+// page's Schedules tab.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Pager from '../../../components/Pager'
 import { usePaged } from '../../../lib/usePaged'
 import { supabase } from '../../../lib/supabaseClient'
-import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
-import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
+import {
+  ODOMETER_SOURCE_LABELS,
+  loadOdometerLog,
+  loadUncountedTrips,
+  recordOdometerReading,
+  recordTripKm,
+  type OdometerLogEntry,
+} from '../../../lib/odometer'
+import type { DeliveredTrip } from '../../../lib/odometerRules'
+import { showToast } from '../../../components/Toast'
 import {
   formatScheduleDueDate,
   loadPendingMaintenanceSchedules,
@@ -25,24 +34,8 @@ import { filterAmountInput } from '../../../lib/amountInput'
 import CreateWorkOrderModal, { type PreselectedVehicle } from './CreateWorkOrderModal'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
-import { formatDate } from '../../../lib/format'
+import { formatDate, formatDateTime } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
-
-type OdometerSuggestion = {
-  itinerary_id: number
-  plate_number: string
-  trip_date: string
-  // Base -> pickup. 0 (and flagged) when it couldn't be routed.
-  out_km: number
-  out_is_fallback: boolean
-  trip_km: number
-  return_km: number
-  // True when the drive back to base couldn't be routed and the trip
-  // distance was used for it instead (same road back).
-  return_is_fallback: boolean
-  current_odometer: number
-  suggested_odometer: number
-}
 
 type Truck = {
   plate_number: string
@@ -89,324 +82,198 @@ const PANEL_HEAD = 'flex min-h-[56px] flex-wrap items-center justify-between gap
 const daysUntil = (date: string, today: string) =>
   Math.round((new Date(`${date}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) / 86_400_000)
 
-// Every truck leaves from and heads back to here, so the odometer moves
-// by base -> pickup + the delivery trip + delivery -> base. Only this
-// odometer feature uses the two base legs -- the quote's profitability
-// estimate stays one-way (bookings.estimated_distance_km) on purpose.
-const BASE = { city: 'Panabo City', barangay: 'J.P. Laurel' }
+const km = (value: number) => `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} km`
 
-// One end of a booking: its places row plus the exact pin, if any.
-type Stop = {
-  placeId: number | null
-  place: { city: string | null; barangay: string | null } | undefined
-  lat: number | null
-  lng: number | null
-}
-
-// Driving km between a booking's stop (pickup or delivery) and BASE:
-// a distance already cached in route_cache for that barangay pair if
-// there is one, else routed from the stop's pin (or its barangay's
-// centre when there's no pin) to the base barangay's centre. Road
-// distance is treated as the same both ways, same as route_cache.
-// Null when nothing works (no place, geocode/routing failure).
-async function baseLegKm(
-  stop: Stop,
-  basePlaceId: number | null,
-  basePoint: { lat: number; lon: number } | null,
-): Promise<number | null> {
-  if (stop.placeId !== null && basePlaceId !== null) {
-    const [low, high] = [stop.placeId, basePlaceId].sort((a, b) => a - b)
-    const { data: cached } = await supabase
-      .from('route_cache')
-      .select('distance_km')
-      .eq('place_id_a', low)
-      .eq('place_id_b', high)
-      .maybeSingle()
-    if (cached?.distance_km !== undefined && cached?.distance_km !== null) {
-      return Number(cached.distance_km)
-    }
-  }
-
-  if (!basePoint) return null
-  try {
-    const from =
-      typeof stop.lat === 'number' && typeof stop.lng === 'number'
-        ? { lat: stop.lat, lon: stop.lng }
-        : stop.place?.city && stop.place?.barangay
-          ? await geocodePlace(`Barangay ${stop.place.barangay}, ${stop.place.city}, Philippines`)
-          : null
-    if (!from) return null
-    return await fetchDrivingDistanceKm(from, basePoint)
-  } catch {
-    return null
-  }
-}
-
-async function loadOdometerSuggestions(): Promise<{ suggestions: OdometerSuggestion[]; error: string | null }> {
-  // Every page (fetchAll) -- past Supabase's 1000-row cap a truck's
-  // latest delivered trip could otherwise be missing. Logs oldest first,
-  // so the Map below ends up holding each trip's LATEST Delivered time.
-  const [trucksResult, itinerariesResult, logsResult] = await Promise.all([
-    supabase.from('truck_profiles').select('plate_number, current_odometer, updated_at').eq('is_active', true),
-    fetchAll<{ itinerary_id: number; booking_id: number; trip_date_from: string; plate_number: string }>(
-      (from, to) =>
-        supabase
-          .from('itineraries')
-          .select('itinerary_id, booking_id, trip_date_from, plate_number')
-          .eq('itinerary_status', 'Delivered')
-          .not('plate_number', 'is', null)
-          .order('itinerary_id', { ascending: true })
-          .range(from, to),
-    ),
-    fetchAll<{ itinerary_id: number; status_changed_at: string }>((from, to) =>
-      supabase
-        .from('dispatch_status_logs')
-        .select('itinerary_id, status_changed_at')
-        .eq('new_status', 'Delivered')
-        .order('status_changed_at', { ascending: true })
-        .order('itinerary_id', { ascending: true })
-        .range(from, to),
-    ),
-  ])
-
-  const firstError = trucksResult.error?.message ?? itinerariesResult.error ?? logsResult.error
-  if (firstError) return { suggestions: [], error: firstError }
-
-  const deliveredItineraries = itinerariesResult.rows
-  const bookingIds = Array.from(new Set(deliveredItineraries.map((row) => row.booking_id)))
-  const { rows: bookingRows, error: bookingsError } = await fetchIn<{
-    booking_id: number
-    estimated_distance_km: number | null
-    place_of_pickup_id: number | null
-    pickup_lat: number | null
-    pickup_lng: number | null
-    place_of_delivery_id: number | null
-    delivery_lat: number | null
-    delivery_lng: number | null
-  }>(bookingIds, (chunk, from, to) =>
-    supabase
-      .from('bookings')
-      .select(
-        'booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng',
-      )
-      .in('booking_id', chunk)
-      .range(from, to),
-  )
-
-  if (bookingsError) return { suggestions: [], error: bookingsError }
-
-  const truckByPlate = new Map((trucksResult.data ?? []).map((truck) => [truck.plate_number, truck]))
-  const bookingById = new Map(bookingRows.map((booking) => [booking.booking_id, booking]))
-  const deliveredAtByItinerary = new Map(logsResult.rows.map((log) => [log.itinerary_id, log.status_changed_at]))
-  const latestByTruck = new Map<string, (typeof deliveredItineraries)[number]>()
-
-  deliveredItineraries.forEach((itinerary) => {
-    if (!itinerary.plate_number || !deliveredAtByItinerary.get(itinerary.itinerary_id)) return
-    const existing = latestByTruck.get(itinerary.plate_number)
-    if (!existing || itinerary.trip_date_from > existing.trip_date_from) {
-      latestByTruck.set(itinerary.plate_number, itinerary)
-    }
-  })
-
-  const candidates = Array.from(latestByTruck.values()).flatMap((itinerary) => {
-    const truck = truckByPlate.get(itinerary.plate_number)
-    const booking = bookingById.get(itinerary.booking_id)
-    const tripKm = Number(booking?.estimated_distance_km ?? 0)
-    const deliveredAt = deliveredAtByItinerary.get(itinerary.itinerary_id)
-    if (!truck || !booking || !tripKm || !deliveredAt || deliveredAt <= truck.updated_at) return []
-    return [{ itinerary, truck, booking, tripKm }]
-  })
-
-  // Base leg lookups (base -> pickup, delivery -> base), only for the
-  // trucks that actually have a pending suggestion (at most one per truck).
-  const stopPlaceIds = Array.from(
-    new Set(
-      candidates
-        .flatMap((c) => [c.booking.place_of_pickup_id, c.booking.place_of_delivery_id])
-        .filter((id): id is number => id !== null),
-    ),
-  )
-  const [placesResult, baseResult, basePoint] = await Promise.all([
-    stopPlaceIds.length > 0
-      ? supabase.from('places').select('place_id, city, barangay').in('place_id', stopPlaceIds)
-      : Promise.resolve({ data: [] as { place_id: number; city: string | null; barangay: string | null }[] }),
-    supabase
-      .from('places')
-      .select('place_id')
-      .ilike('city', BASE.city)
-      .ilike('barangay', BASE.barangay)
-      .maybeSingle(),
-    candidates.length > 0
-      ? geocodePlace(`Barangay ${BASE.barangay}, ${BASE.city}, Philippines`)
-      : Promise.resolve(null),
-  ])
-  const placeById = new Map((placesResult.data ?? []).map((place) => [place.place_id, place]))
-  const basePlaceId = baseResult.data?.place_id ?? null
-  const stop = (placeId: number | null, lat: number | null, lng: number | null): Stop => ({
-    placeId,
-    place: placeId !== null ? placeById.get(placeId) : undefined,
-    lat,
-    lng,
-  })
-  const round = (km: number) => Math.round(km * 100) / 100
-
-  const nextSuggestions: OdometerSuggestion[] = []
-  for (const { itinerary, truck, booking, tripKm } of candidates) {
-    const routedOutKm = await baseLegKm(
-      stop(booking.place_of_pickup_id, booking.pickup_lat, booking.pickup_lng),
-      basePlaceId,
-      basePoint,
-    )
-    const routedReturnKm = await baseLegKm(
-      stop(booking.place_of_delivery_id, booking.delivery_lat, booking.delivery_lng),
-      basePlaceId,
-      basePoint,
-    )
-    // Can't route the drive out -> leave it out (flagged) rather than
-    // guess. Can't route the drive back -> assume the same road back.
-    const outKm = routedOutKm ?? 0
-    const returnKm = routedReturnKm ?? tripKm
-    const current = Number(truck.current_odometer ?? 0)
-    nextSuggestions.push({
-      itinerary_id: itinerary.itinerary_id,
-      plate_number: itinerary.plate_number,
-      trip_date: itinerary.trip_date_from,
-      out_km: round(outKm),
-      out_is_fallback: routedOutKm === null,
-      trip_km: tripKm,
-      return_km: round(returnKm),
-      return_is_fallback: routedReturnKm === null,
-      current_odometer: current,
-      suggested_odometer: round(current + outKm + tripKm + returnKm),
-    })
-  }
-
-  return { suggestions: nextSuggestions, error: null }
-}
-
-
-// "Confirm odometer readings" -- one row per truck whose latest delivered
-// trip came after its last odometer update.
-function OdometerConfirm({
-  suggestions,
-  onConfirmed,
+// Odometer panel: trips whose km weren't counted (count one / all, oldest
+// first), the real reading off a truck's dashboard, and the latest entries.
+function OdometerPanel({
+  trucks,
+  uncounted,
+  entries,
+  onChanged,
 }: {
-  suggestions: OdometerSuggestion[]
-  onConfirmed: (suggestion: OdometerSuggestion, reading: number) => void
+  trucks: Truck[]
+  uncounted: DeliveredTrip[]
+  entries: OdometerLogEntry[]
+  onChanged: () => void
 }) {
-  const [typed, setTyped] = useState<Record<number, string>>({})
-  const [savingId, setSavingId] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const paged = usePaged(suggestions, '')
+  const [plate, setPlate] = useState('')
+  const [reading, setReading] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [readingError, setReadingError] = useState<string | null>(null)
+  const [counting, setCounting] = useState<number | 'all' | null>(null)
+  const [tripErrors, setTripErrors] = useState<Record<number, string>>({})
+  const pagedEntries = usePaged(entries, '', 8)
+  const current = trucks.find((t) => t.plate_number === plate)?.current_odometer ?? null
 
-  async function confirm(suggestion: OdometerSuggestion) {
-    const text = typed[suggestion.itinerary_id]?.trim() ?? ''
-    // Empty = take the suggestion; a typed reading must be past the current one.
-    const reading = text === '' ? suggestion.suggested_odometer : Number(text)
-    if (!Number.isFinite(reading) || reading <= suggestion.current_odometer) {
-      setError(
-        `${suggestion.plate_number}: the new reading must be higher than the current ${suggestion.current_odometer.toLocaleString()} km.`,
-      )
-      return
-    }
-    setSavingId(suggestion.itinerary_id)
-    setError(null)
-    const { data: updated, error: updateError } = await supabase
-      .from('truck_profiles')
-      .update({ current_odometer: reading, updated_at: new Date().toISOString() })
-      .eq('plate_number', suggestion.plate_number)
-      .eq('current_odometer', suggestion.current_odometer)
-      .select('plate_number')
-      .maybeSingle()
-
-    setSavingId(null)
-    if (updateError) {
-      setError(`Could not confirm ${suggestion.plate_number}: ${updateError.message}`)
-      return
-    }
-    if (!updated) {
-      // The .eq('current_odometer', ...) guard matched 0 rows -- someone
-      // else already updated this truck's odometer since the page loaded.
-      setError(`${suggestion.plate_number}'s odometer was already updated by someone else. Refresh to see the latest value.`)
-      return
-    }
-    onConfirmed(suggestion, reading)
+  async function saveReading() {
+    const value = Number(reading)
+    if (!plate) return setReadingError('Pick a truck.')
+    if (reading.trim() === '' || !Number.isFinite(value) || value < 0) return setReadingError('Enter the reading on the dashboard, in km.')
+    setSaving(true)
+    setReadingError(null)
+    const saveError = await recordOdometerReading(plate, value, note)
+    setSaving(false)
+    if (saveError) return setReadingError(saveError)
+    showToast(`${plate}'s odometer is now ${km(value)}.`)
+    setReading('')
+    setNote('')
+    onChanged()
   }
+
+  // Counts trips one at a time, oldest first: a trip's drive out depends on
+  // where the truck's previous trip ended.
+  async function count(trips: DeliveredTrip[], which: number | 'all') {
+    setCounting(which)
+    const errors: Record<number, string> = {}
+    let done = 0
+    for (const trip of trips) {
+      const result = await recordTripKm(trip.itinerary_id)
+      if ('error' in result) errors[trip.itinerary_id] = result.error
+      else done++
+    }
+    setCounting(null)
+    setTripErrors(errors)
+    if (done > 0) showToast(`${done} ${done === 1 ? 'trip' : 'trips'} added to the odometer.`)
+    if (done > 0) onChanged()
+  }
+
+  const field = 'min-h-11 rounded-[2px] border border-line-control bg-white px-3 text-sm focus:border-primary'
 
   return (
     <section aria-labelledby="odo-h" className="card flex flex-col">
       <div className={PANEL_HEAD}>
         <h2 id="odo-h" className="text-base font-semibold text-ink">
-          Confirm odometer readings
+          Odometer
         </h2>
+        <span className="text-[13px] text-ink-muted">Trip km are added when a trip is marked Delivered.</span>
       </div>
-      {error && <p className="mx-5 mt-3 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {suggestions.length === 0 ? (
-        <EmptyState message="No odometer readings are waiting for confirmation." className="m-5" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm text-ink-metric">
-            <thead>
-              <tr>
-                <th className={TH}>Truck · Trip</th>
-                <th className={`${TH} text-right`}>Current</th>
-                <th className={`${TH} text-right`}>Trip Distance</th>
-                <th className={`${TH} text-right`}>Suggested</th>
-                <th className={TH}>New Reading</th>
-                <th className={TH}>
-                  <span className="sr-only">Confirm</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.rows.map((s) => {
-                const total = Math.round((s.out_km + s.trip_km + s.return_km) * 100) / 100
-                return (
-                  <tr key={s.itinerary_id} className="h-[60px] border-b border-slate-200">
-                    <td className={TD}>
-                      <span className="block font-semibold text-ink">{s.plate_number}</span>
-                      <span className="block text-[13px] text-ink-muted">
-                        Trip #{s.itinerary_id} · {formatDate(s.trip_date)}
-                      </span>
-                    </td>
-                    <td className={`${TD} text-right tabular-nums`}>{s.current_odometer.toLocaleString()} km</td>
-                    <td className={`${TD} text-right tabular-nums`}>
-                      {total.toLocaleString()} km
-                      <span className="block text-[12px] text-ink-muted">
-                        {s.out_km.toLocaleString()} + {s.trip_km.toLocaleString()} + {s.return_km.toLocaleString()}
-                      </span>
-                      {s.out_is_fallback && <span className="block text-xs text-amber-700">Drive out not routed, not counted</span>}
-                      {s.return_is_fallback && <span className="block text-xs text-amber-700">Drive back not routed, same as trip</span>}
-                    </td>
-                    <td className={`${TD} text-right font-semibold text-ink tabular-nums`}>{s.suggested_odometer.toLocaleString()} km</td>
-                    <td className={TD}>
-                      <input
-                        inputMode="decimal"
-                        value={typed[s.itinerary_id] ?? ''}
-                        onChange={(e) => setTyped((prev) => ({ ...prev, [s.itinerary_id]: filterAmountInput(e.target.value) }))}
-                        placeholder="km"
-                        aria-label={`New odometer reading for ${s.plate_number}, trip #${s.itinerary_id}`}
-                        className="min-h-11 w-28 rounded-[2px] border border-line-control bg-white px-3 text-sm tabular-nums placeholder:text-ink-muted focus:border-primary"
-                      />
-                    </td>
-                    <td className={TD}>
-                      <button
-                        type="button"
-                        onClick={() => void confirm(s)}
-                        disabled={savingId === s.itinerary_id}
-                        className="btn-primary px-4 text-sm"
-                      >
-                        {savingId === s.itinerary_id ? 'Saving...' : 'Confirm'}
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <Pager {...paged.pager} />
+
+      {/* Real reading off the dashboard -- always wins over the estimates. */}
+      <div className="flex flex-col gap-3 border-b border-line px-5 py-4">
+        <h3 className="text-sm font-semibold text-ink">Enter a real reading</h3>
+        {readingError && <p className="bg-red-50 px-3 py-2 text-sm text-red-700">{readingError}</p>}
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm font-medium text-ink-secondary">
+            Truck
+            <select value={plate} onChange={(e) => setPlate(e.target.value)} className={`${field} w-40`}>
+              <option value="">Pick a truck</option>
+              {trucks.map((t) => (
+                <option key={t.plate_number} value={t.plate_number}>
+                  {t.plate_number}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-ink-secondary">
+            Reading (km)
+            <input
+              inputMode="decimal"
+              value={reading}
+              onChange={(e) => setReading(filterAmountInput(e.target.value))}
+              className={`${field} w-32 tabular-nums`}
+            />
+          </label>
+          <label className="flex min-w-40 flex-1 flex-col gap-1 text-sm font-medium text-ink-secondary">
+            Note <span className="sr-only">(optional)</span>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" className={`${field} placeholder:text-ink-muted`} />
+          </label>
+          <button type="button" onClick={() => void saveReading()} disabled={saving} className="btn-primary px-4 text-sm">
+            {saving ? 'Saving...' : 'Save Reading'}
+          </button>
+        </div>
+        {plate && current !== null && (
+          <p className="text-[13px] text-ink-muted">
+            The system has {km(Number(current))} for {plate}. A real reading replaces it, even if lower.
+          </p>
+        )}
+      </div>
+
+      {uncounted.length > 0 && (
+        <div className="flex flex-col border-b border-line">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 pb-2">
+            <h3 className="text-sm font-semibold text-ink">Trips not counted yet · {uncounted.length}</h3>
+            <button
+              type="button"
+              onClick={() => void count(uncounted, 'all')}
+              disabled={counting !== null}
+              className="btn-secondary px-4 text-sm font-medium"
+            >
+              {counting === 'all' ? 'Counting...' : 'Count All'}
+            </button>
+          </div>
+          <ul>
+            {uncounted.map((trip) => (
+              <li key={trip.itinerary_id} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-2.5 text-sm">
+                <span className="min-w-0 flex-1">
+                  <strong className="font-semibold text-ink">{trip.plate_number}</strong>
+                  <span className="text-ink-muted"> · Trip #{trip.itinerary_id} · delivered {formatDateTime(trip.delivered_at)}</span>
+                  {tripErrors[trip.itinerary_id] && <span className="block text-[13px] text-red-700">{tripErrors[trip.itinerary_id]}</span>}
+                </span>
+                <button
+                  type="button"
+                  // Earlier uncounted trips of the same truck go first.
+                  onClick={() =>
+                    void count(
+                      uncounted.filter((t) => t.plate_number === trip.plate_number && t.delivered_at <= trip.delivered_at),
+                      trip.itinerary_id,
+                    )
+                  }
+                  disabled={counting !== null}
+                  className="btn-secondary px-4 text-sm font-medium"
+                >
+                  {counting === trip.itinerary_id ? 'Counting...' : 'Count'}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
+
+      <div className="flex flex-col">
+        <h3 className="px-5 pt-4 pb-2 text-sm font-semibold text-ink">Latest entries</h3>
+        {entries.length === 0 ? (
+          <EmptyState message="No odometer entries yet." className="mx-5 mb-5" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm text-ink-metric">
+              <thead>
+                <tr>
+                  <th className={TH}>When</th>
+                  <th className={TH}>Truck · What</th>
+                  <th className={`${TH} text-right`}>Added</th>
+                  <th className={`${TH} text-right`}>Reading</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedEntries.rows.map((e) => (
+                  <tr key={e.log_id} className="border-b border-slate-200">
+                    <td className={`${TD} text-[13px] whitespace-nowrap`}>{formatDateTime(e.recorded_at)}</td>
+                    <td className={TD}>
+                      <span className="block font-semibold text-ink">
+                        {e.plate_number} · {ODOMETER_SOURCE_LABELS[e.source]}
+                        {e.itinerary_id !== null && ` #${e.itinerary_id}`}
+                      </span>
+                      {e.source === 'trip' && (
+                        <span className="block text-[12px] text-ink-muted">
+                          out {e.out_km} + trip {e.trip_km} + back {e.back_km}
+                        </span>
+                      )}
+                      {e.note && <span className="block text-[12px] text-ink-muted">{e.note}</span>}
+                    </td>
+                    <td className={`${TD} text-right whitespace-nowrap tabular-nums ${e.km_added !== null && e.km_added < 0 ? 'text-amber-800' : ''}`}>
+                      {e.km_added === null ? '—' : `${e.km_added > 0 ? '+' : ''}${km(e.km_added)}`}
+                    </td>
+                    <td className={`${TD} text-right font-semibold whitespace-nowrap tabular-nums`}>{km(e.reading)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pager {...pagedEntries.pager} />
+          </div>
+        )}
+      </div>
     </section>
   )
 }
@@ -418,7 +285,8 @@ function TruckMaintenanceMonitoringSection() {
   const [trips, setTrips] = useState<RecentTrip[]>([])
   const [workOrders, setWorkOrders] = useState<OpenWorkOrder[]>([])
   const [schedules, setSchedules] = useState<PendingMaintenanceSchedule[]>([])
-  const [suggestions, setSuggestions] = useState<OdometerSuggestion[] | null>(null)
+  const [uncounted, setUncounted] = useState<DeliveredTrip[]>([])
+  const [odometerLog, setOdometerLog] = useState<OdometerLogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [createFor, setCreateFor] = useState<PreselectedVehicle | null>(null)
@@ -426,14 +294,7 @@ function TruckMaintenanceMonitoringSection() {
   async function load() {
     setLoading(true)
     setError(null)
-    // The odometer suggestions can take a while (routing), so they load on
-    // their own and the rest of the page doesn't wait for them.
-    setSuggestions(null)
-    void loadOdometerSuggestions().then((result) => {
-      if (result.error) setError(result.error)
-      setSuggestions(result.suggestions)
-    })
-    const [trucksResult, trailersResult, tripsResult, ordersResult, schedulesResult] = await Promise.all([
+    const [trucksResult, trailersResult, tripsResult, ordersResult, schedulesResult, uncountedResult, logResult] = await Promise.all([
       supabase
         .from('truck_profiles')
         .select('plate_number, model, current_status, current_odometer, next_service_date')
@@ -454,14 +315,20 @@ function TruckMaintenanceMonitoringSection() {
         .select('work_order_id, work_order_number, plate_number, trailer_id, maintenance_type, work_order_status, scheduled_start_date')
         .in('work_order_status', OPEN_WORK_ORDER_STATUSES),
       loadPendingMaintenanceSchedules(),
+      loadUncountedTrips(),
+      loadOdometerLog(),
     ])
     const loadError =
       trucksResult.error?.message ??
       trailersResult.error?.message ??
       tripsResult.error?.message ??
       ordersResult.error?.message ??
-      schedulesResult.error
+      schedulesResult.error ??
+      uncountedResult.error ??
+      logResult.error
     if (loadError) setError(loadError)
+    setUncounted(uncountedResult.trips)
+    setOdometerLog(logResult.entries)
     setTrucks(trucksResult.data ?? [])
     setTrailers(trailersResult.data ?? [])
     setTrips((tripsResult.data ?? []) as RecentTrip[])
@@ -578,7 +445,7 @@ function TruckMaintenanceMonitoringSection() {
           { label: 'Trucks operational', value: trucks.length - trucksDown.length, of: trucks.length },
           { label: 'Trucks not operational', value: trucksDown.length, bad: trucksDown.length > 0 },
           { label: 'Trailers operational', value: trailers.length - trailersDown.length, of: trailers.length },
-          { label: 'Odometer readings to confirm', value: suggestions?.length ?? null },
+          { label: 'Trips not counted on odometer', value: uncounted.length, bad: uncounted.length > 0 },
         ].map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3.5">
             <p className="text-sm font-medium text-ink-secondary">{tile.label}</p>
@@ -702,16 +569,10 @@ function TruckMaintenanceMonitoringSection() {
           </section>
         </div>
 
-        {suggestions === null ? (
-          <section className="card px-5 py-4 text-ink-muted">Working out odometer suggestions...</section>
+        {loading ? (
+          <section className="card px-5 py-4 text-ink-muted">Loading odometer...</section>
         ) : (
-          <OdometerConfirm
-            suggestions={suggestions}
-            onConfirmed={(done, reading) => {
-              setSuggestions((current) => (current ?? []).filter((s) => s.itinerary_id !== done.itinerary_id))
-              setTrucks((current) => current.map((t) => (t.plate_number === done.plate_number ? { ...t, current_odometer: reading } : t)))
-            }}
-          />
+          <OdometerPanel trucks={trucks} uncounted={uncounted} entries={odometerLog} onChanged={() => void load()} />
         )}
       </div>
 

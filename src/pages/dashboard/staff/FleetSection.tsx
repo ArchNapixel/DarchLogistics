@@ -30,6 +30,7 @@ type Truck = {
   current_status: string | null
   last_service_date: string | null
   current_odometer: number | null
+  last_pms_odometer: number | null
   next_service_date: string | null
   is_active: boolean
 }
@@ -241,7 +242,7 @@ function FleetSection() {
 
       const { data: truckData, error: truckError } = await supabase
         .from('truck_profiles')
-        .select('plate_number, model, year, current_status, last_service_date, current_odometer, next_service_date, is_active')
+        .select('plate_number, model, year, current_status, last_service_date, current_odometer, last_pms_odometer, next_service_date, is_active')
         .order('plate_number', { ascending: true })
       if (truckError) throw truckError
 
@@ -584,6 +585,7 @@ function FleetSection() {
                       <Field label="Model">{truck!.model}</Field>
                       <Field label="Year Model">{truck!.year}</Field>
                       <Field label="Odometer">{truck!.current_odometer != null ? `${Number(truck!.current_odometer).toLocaleString()} km` : null}</Field>
+                      <Field label="Last PMS at">{truck!.last_pms_odometer != null ? `${Number(truck!.last_pms_odometer).toLocaleString()} km` : null}</Field>
                       <Field label="Last Service">{truck!.last_service_date ? formatDate(truck!.last_service_date) : null}</Field>
                       <Field label="Next Service">{truck!.next_service_date ? formatDate(truck!.next_service_date) : null}</Field>
                     </dl>
