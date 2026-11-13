@@ -133,7 +133,8 @@ function Icon({ name, size = 16, className = '' }: { name: keyof typeof ICONS; s
 // not. Capped at 12 so a big fleet doesn't wrap.
 function UnitSquares({ ok, total }: { ok: number; total: number }) {
   return (
-    <span className="inline-flex gap-1" aria-hidden="true">
+    // Wraps onto a second line instead of running out of the tile (11 trailers).
+    <span className="inline-flex min-w-0 flex-wrap gap-1" aria-hidden="true">
       {Array.from({ length: Math.min(total, 12) }, (_, i) => (
         <span
           key={i}
@@ -200,12 +201,12 @@ function StatTile({
   children: React.ReactNode
 }) {
   return (
-    <Link to={to} className="flex flex-col justify-center gap-0.5 border border-line px-3 py-2 hover:border-primary">
+    <Link to={to} className="flex min-w-0 flex-col justify-center gap-0.5 border border-line px-3 py-2 hover:border-primary">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
         <span className="text-sm font-medium text-ink-secondary">{label}</span>
         {note && <span className="text-xs font-semibold text-amber-800">{note}</span>}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <span className="text-2xl font-semibold tracking-[-0.01em] text-ink-metric tabular-nums">{children}</span>
         {squares}
       </div>
