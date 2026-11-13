@@ -1719,12 +1719,15 @@ answers PGRST205 for it). RPCs called by the app now:
 `void_bill_payment`, `complete_client_signup` (2026-10-21). Trigger on
 `auth.users`: `on_client_signup` → `handle_client_signup()`. Storage bucket: `trip-documents` (private). Edge
 Functions: `create-user-account` (deployed), `update-user-account` (NOT
-deployed as of 2026-10-19). **No migration files after
-`20260918130000_add_employee_attendance.sql`** — every table, column,
-trigger (`sync_booking_status`, `free_vehicles_on_delivery`,
-`booking_payments_sync`, `bill_payments_sync`), RPC and RLS policy since
-then was run by hand in the SQL Editor, so the live DB is the only
-record; a fresh Supabase project could not be rebuilt from this repo.
+deployed as of 2026-10-19). **2026-11-13: the three old migrations were
+squashed into `supabase/migrations/20261113000000_baseline_live_schema.sql`**,
+generated from the live catalog (tables, enums, constraints, indexes, all
+77 functions, triggers incl. `on_client_signup`, RLS + storage policies,
+grants, buckets; no data rows). It builds a fresh project from empty
+(tested on PGlite). `docs/database-schema-reference.sql` was regenerated the
+same day (tables / constraints / indexes / enums / function signatures).
+SQL still gets run by hand in the SQL Editor -- every change after
+2026-11-13 needs a new migration file, or the baseline goes stale again.
 
 `work_orders`, `work_order_completions`, `work_order_parts_used`,
 `truck_profiles`, and `inventory_items` had their exact column names
