@@ -2234,6 +2234,14 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
     Charges, which lists undecided rows first. The table's Who Pays box no
     longer shows insurance details (side panel only).
 
+## 2026-11-13: Pay ahead on Bills Receivable (no SQL)
+- Row action **Pay ahead** (`PayAheadModal` in FinancialSection.tsx) when a
+  booking has trips to come, nothing owed now, downpayment met / waived / none,
+  and part of the contract (+ extra charges) unpaid. Saves a normal payment
+  (note "Pay ahead") WITHOUT locking `amount_to_pay`, like a downpayment, so
+  billing still follows delivered trips; the extra shows as "Paid ahead".
+- Table is full width now; "How due dates are set" is a horizontal strip below it.
+
 ## 2026-11-13: Trailer size (20ft / 40ft) is matched, not just shown
 - `trailers.trailer_size` ('20ft' / '40ft', CHECK; null = not set yet -- set it
   in Fleet -> Edit trailer, required there; Fleet flags "Size not set").

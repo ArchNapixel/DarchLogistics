@@ -452,6 +452,130 @@ function DownpaymentModal({
   )
 }
 
+// PayAheadModal: the client pays before the trips are delivered. Saved as a
+// normal payment row WITHOUT locking amount_to_pay (same as a downpayment),
+// so billing still follows the delivered trips and the extra shows as
+// "Paid ahead" until those trips are delivered.
+function PayAheadModal({
+  booking,
+  onClose,
+  onSaved,
+}: {
+  booking: Booking
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [amountText, setAmountText] = useState('')
+  const [details, setDetails] = useState(() => ({ ...emptyPaymentDetails(), note: 'Pay ahead' }))
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const earliest = booking.created_at ? toManilaDate(booking.created_at) : undefined
+  // Can't pay more than the whole contract + extra charges.
+  const contractTotal = booking.total_contract_value + booking.damage_charges
+  const restOfContract = cents(Math.max(contractTotal - booking.amount_paid, 0))
+  const parsed = parseAmount(amountText)
+  const amount = parsed.value ?? 0
+  const amountError =
+    parsed.error ??
+    (parsed.value !== null && parsed.value > restOfContract
+      ? `Can't exceed the rest of the contract (${formatMoney(restOfContract)}).`
+      : null)
+  const dateError = paymentDateError(details.paidOn, earliest)
+  const canSave = parsed.value !== null && !amountError && !paymentDetailsError(details, earliest) && !saving
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+    const recordError = await recordBookingPayment({ bookingId: booking.booking_id, amount, details, earliest })
+    setSaving(false)
+    if (recordError) {
+      setSaveError(recordError)
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
+      <div className="w-full max-w-md bg-white p-6 border-2 border-line-card">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-neutral-500">Pay ahead</p>
+            <h3 className="text-lg font-bold text-slate-900">
+              Booking #{booking.booking_id} · {booking.client_name}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <p className="text-[13px] text-ink-muted">Contract</p>
+            <p className="font-semibold text-slate-900">{formatMoney(contractTotal)}</p>
+          </div>
+          <div>
+            <p className="text-[13px] text-ink-muted">Paid so far</p>
+            <p className="font-semibold text-slate-900">{formatMoney(booking.amount_paid)}</p>
+          </div>
+          <div>
+            <p className="text-[13px] text-ink-muted">Rest of contract</p>
+            <p className="font-semibold text-slate-900">{formatMoney(restOfContract)}</p>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Trips are still billed as they're delivered -- this payment is used up as they are.
+        </p>
+
+        <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="pay-ahead-amount">
+          Amount received (₱)
+        </label>
+        <input
+          id="pay-ahead-amount"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          autoFocus
+          value={amountText}
+          onChange={(e) => setAmountText(filterAmountInput(e.target.value))}
+          onKeyDown={(e) => e.key === 'Enter' && canSave && save()}
+          className="mt-1 w-full border border-line-control bg-white px-3 py-2 text-slate-900 rounded-[2px] min-h-11 focus:border-primary"
+        />
+        {amountError && <p className="mt-1 text-xs text-red-700">{amountError}</p>}
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setAmountText(String(restOfContract))}
+            className="border border-line-control px-3 py-1 text-xs font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
+          >
+            Whole rest of contract
+          </button>
+        </div>
+
+        <PaymentDetailsFields details={details} onChange={setDetails} earliest={earliest} />
+        {dateError && <p className="mt-1 text-xs text-red-700">{dateError}</p>}
+
+        {amountText !== '' && !amountError && (
+          <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            Rest of contract after this:{' '}
+            <span className="font-semibold text-slate-900">{formatMoney(cents(restOfContract - amount))}</span>
+            {cents(restOfContract - amount) === 0 && ' (whole contract paid)'}
+          </p>
+        )}
+
+        {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onClose} className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-slate-100 rounded-[2px]">Cancel</button>
+          <button onClick={save} disabled={!canSave} className="btn-primary px-4 py-2 text-sm font-medium">{saving ? 'Saving…' : 'Record pay ahead'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FinancialActionModal({
   booking,
   onClose,
@@ -785,6 +909,7 @@ function FinancialSection() {
   // Downpayment per booking (null = no requirement) and the one being recorded.
   const [downpaymentById, setDownpaymentById] = useState<Map<number, DownpaymentStatus | null>>(new Map())
   const [downpaymentBooking, setDownpaymentBooking] = useState<Booking | null>(null)
+  const [payAheadBooking, setPayAheadBooking] = useState<Booking | null>(null)
 
   useEffect(() => {
     loadBookings()
@@ -1052,7 +1177,8 @@ function FinancialSection() {
       {error && <p className="text-red-700">{error}</p>}
       {!loading && !error && bookings.length === 0 && <EmptyState message="No bookings yet." />}
       {!loading && !error && bookings.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+        // Table takes the full width; the due-date rules sit underneath as a horizontal strip.
+        <div className="flex flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
               <div role="tablist" aria-label="Receivable status" className="flex flex-wrap gap-2">
@@ -1112,7 +1238,7 @@ function FinancialSection() {
               </p>
             )}
 
-            <section aria-label="Receivables" className="card flex min-h-[calc(100dvh-26rem)] flex-col">
+            <section aria-label="Receivables" className="card flex min-h-[calc(100dvh-34rem)] flex-col">
               {visibleBookings.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
                   <p className="text-base font-semibold text-ink">Nothing in this tab</p>
@@ -1230,6 +1356,18 @@ function FinancialSection() {
                                   <button onClick={() => setSelectedBooking(booking)} className={primaryAction}>
                                     Mark refunded
                                   </button>
+                                ) : tripsToCome &&
+                                  cents(booking.total_contract_value + booking.damage_charges - booking.amount_paid) > 0 ? (
+                                  // Nothing owed yet but trips to come: the client may pay ahead.
+                                  <button
+                                    onClick={() => {
+                                      setActionError(null)
+                                      setPayAheadBooking(booking)
+                                    }}
+                                    className={primaryAction}
+                                  >
+                                    Pay ahead
+                                  </button>
                                 ) : null}
                                 <button onClick={() => setSelectedBooking(booking)} className={secondaryAction}>
                                   Manage
@@ -1278,12 +1416,14 @@ function FinancialSection() {
             <h2 id="terms-h" className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">
               How due dates are set
             </h2>
-            {DUE_RULES.map(([terms, rule]) => (
-              <div key={terms} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm">
-                <span className="text-ink-secondary">{terms}</span>
-                <span className="font-semibold">{rule}</span>
-              </div>
-            ))}
+            <div className="grid sm:grid-cols-2 xl:grid-cols-4 sm:gap-x-6">
+              {DUE_RULES.map(([terms, rule]) => (
+                <div key={terms} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm xl:border-b-0">
+                  <span className="text-ink-secondary">{terms}</span>
+                  <span className="font-semibold">{rule}</span>
+                </div>
+              ))}
+            </div>
           </aside>
         </div>
       )}
@@ -1306,6 +1446,16 @@ function FinancialSection() {
           onClose={() => setDownpaymentBooking(null)}
           onSaved={() => {
             setDownpaymentBooking(null)
+            loadBookings()
+          }}
+        />
+      )}
+      {payAheadBooking && (
+        <PayAheadModal
+          booking={payAheadBooking}
+          onClose={() => setPayAheadBooking(null)}
+          onSaved={() => {
+            setPayAheadBooking(null)
             loadBookings()
           }}
         />
