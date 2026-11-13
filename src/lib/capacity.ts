@@ -49,11 +49,13 @@ export type Resource = {
 // the asked type (lib/trailerRules.ts). rate = the trip's own rate, for the
 // driver's earnings (planTrips fairness); left out = only the per-trip fee counts.
 // trailerSize = the quote's "Trailer size" ('20ft' / '40ft'): a 40ft trailer may
-// take a 20ft trip, not the other way round (trailerRules.ts).
+// take a 20ft trip, not the other way round (trailerRules.ts) -- unless
+// exactSize ("Only a 20 ft trailer" on the quote).
 export type TripNeed = {
   hours: number
   trailerType: string | null
   trailerSize?: string | null
+  exactSize?: boolean | null
   cargoType?: string | null
   rate?: number | null
 }
@@ -132,6 +134,7 @@ export type BookedTrip = {
   trailerId: string | null
   trailerType: string | null
   trailerSize?: string | null
+  exactSize?: boolean | null
   cargoType: string | null
   // Staff only (null for clients).
   rate: number | null
@@ -201,9 +204,16 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
     const spare = spares.find((t) => free(t.id, s, e))
     return spare ? { truck: spare, spare: true } : null
   }
-  const trailerFor = (s: number, e: number, trailerType: string | null, cargoType: string | null, size?: string | null) =>
+  const trailerFor = (
+    s: number,
+    e: number,
+    trailerType: string | null,
+    cargoType: string | null,
+    size?: string | null,
+    exactSize?: boolean | null,
+  ) =>
     trailers
-      .filter((r) => trailerAllowed(cargoType, trailerType, r.trailerType, size, r.trailerSize) && free(r.id, s, e))
+      .filter((r) => trailerAllowed(cargoType, trailerType, r.trailerType, size, r.trailerSize, exactSize) && free(r.id, s, e))
       .sort((a, b) => trailerRank(cargoType, a.trailerType, size, a.trailerSize) - trailerRank(cargoType, b.trailerType, size, b.trailerSize))[0]
 
   // Booked trips missing a driver / truck / trailer hold one free of each.
@@ -218,7 +228,7 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
       if (truck) take(truck.id, hold)
     }
     if (!t.trailerId) {
-      const trailer = trailerFor(t.start, t.end, t.trailerType, t.cargoType, t.trailerSize)
+      const trailer = trailerFor(t.start, t.end, t.trailerType, t.cargoType, t.trailerSize, t.exactSize)
       if (trailer) take(trailer.id, hold)
     }
   }
@@ -254,7 +264,7 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
     for (const s of moments) {
       const e = s + length
       if (e > world.horizon) break
-      const trailer = trailerFor(s, e, need.trailerType, cargoType, need.trailerSize)
+      const trailer = trailerFor(s, e, need.trailerType, cargoType, need.trailerSize, need.exactSize)
       if (!trailer) continue
       let driver: Resource | undefined = drivers.filter((d) => free(d.id, s, e) && truckFor(d, s, e)).sort(fairest(s))[0]
 
@@ -310,7 +320,7 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
           ? drivers.length === 0
           : kind === 'Truck'
             ? trucks.length === 0
-            : !trailers.some((r) => trailerAllowed(cargoType, need.trailerType, r.trailerType, need.trailerSize, r.trailerSize))
+            : !trailers.some((r) => trailerAllowed(cargoType, need.trailerType, r.trailerType, need.trailerSize, r.trailerSize, need.exactSize))
       shortage = {
         kind,
         trailerType: kind === 'Trailer' ? need.trailerType : null,

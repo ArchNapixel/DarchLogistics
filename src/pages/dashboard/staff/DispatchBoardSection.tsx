@@ -107,7 +107,7 @@ const COMPLETED_DAYS = 30
 const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
 
 const ITINERARY_COLUMNS =
-  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description, trip_rate'
+  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, exact_trailer_size, trailer_type, weight, cargo_description, trip_rate'
 
 // One row of ITINERARY_COLUMNS.
 type BoardItineraryRow = {
@@ -125,6 +125,7 @@ type BoardItineraryRow = {
   // This trip's own cargo (cargo per trip since 2026-10-23).
   cargo_type: string | null
   container_type: string | null
+  exact_trailer_size: boolean | null
   trailer_type: string | null
   weight: number | null
   cargo_description: string | null
@@ -168,8 +169,10 @@ type DispatchRow = {
   required_trailer_type: string | null
   // 'Container' / 'Loose': a container may also ride the other trailer type.
   cargo_type: string | null
-  // Asked trailer size '20ft' / '40ft' (a 40ft trailer may take a 20ft trip).
+  // Asked trailer size '20ft' / '40ft' (a 40ft trailer may take a 20ft trip,
+  // unless exact_trailer_size -- the client's "Only a 20 ft trailer").
   container_type: string | null
+  exact_trailer_size: boolean | null
   // This trip's cargo, shown under the route ("Loose cargo · 20ft flatbed · 18 t").
   cargo_label: string
   cargo_description: string | null
@@ -1790,6 +1793,7 @@ function DispatchBoardSection() {
           trailer_id: it.trailer_id,
           required_trailer_type: it.trailer_type,
           container_type: it.container_type,
+          exact_trailer_size: it.exact_trailer_size,
           cargo_type: it.cargo_type,
           cargo_label: tripCargoLabel(it),
           cargo_description: it.cargo_description,
@@ -2137,8 +2141,8 @@ function DispatchBoardSection() {
     // Guard the dropdown filter: the trailer must match this trip's cargo.
     const row = rows.find((r) => r.itinerary_id === itineraryId)
     const picked = trailers.find((t) => t.trailer_id === trailerId)
-    if (row && picked && !trailerAllowed(row.cargo_type, row.required_trailer_type, picked.trailer_type, row.container_type, picked.trailer_size)) {
-      const size = row.container_type === '40ft' ? '40ft ' : ''
+    if (row && picked && !trailerAllowed(row.cargo_type, row.required_trailer_type, picked.trailer_type, row.container_type, picked.trailer_size, row.exact_trailer_size)) {
+      const size = row.container_type === '40ft' || row.exact_trailer_size ? `${row.container_type} ` : ''
       setError(
         row.cargo_type === 'Container'
           ? `This container trip needs a ${size}Flatbed or Skeletal trailer.`
@@ -2249,7 +2253,7 @@ function DispatchBoardSection() {
     if (!row.trip_start_at || !row.trip_end_at) return
     const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
     const demand = {
-      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, trailerSize: row.container_type, cargoType: row.cargo_type }],
+      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, trailerSize: row.container_type, exactSize: row.exact_trailer_size, cargoType: row.cargo_type }],
       requestedStart: Math.ceil(Date.now() / STEP_MS) * STEP_MS,
       deadlineEnd: row.delivery_by ? Date.parse(manilaTimestamp(row.delivery_by, 24 * 60)) - 1 : null,
     }

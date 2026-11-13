@@ -169,6 +169,13 @@ assert.equal(planTrips(box20, world(fleet)).trips[0].trailerId, 'S20')
 // ...and the 40ft one when the 20ft is busy.
 const busy20 = [own('D1', 'T1'), truck('T1'), sized('S40', 'Skeletal', '40ft'), sized('S20', 'Skeletal', '20ft', [{ start: oct24, end: oct24 + 24 * HOUR_MS, reason: 'Shop' }])]
 assert.equal(planTrips(box20, world(busy20)).trips[0].trailerId, 'S40')
+// ..."Only a 20 ft trailer": it waits for the 20ft one instead of using the 40ft.
+const strict20: Demand = { ...box20, trips: [{ ...box20.trips[0], exactSize: true }] }
+const waited = planTrips(strict20, world(busy20)).trips[0]
+assert.deepEqual([waited.trailerId, waited.start], ['S20', oct24 + 24 * HOUR_MS])
+// With no 20ft trailer at all it can't go.
+const no20 = planTrips(strict20, world([own('D1', 'T1'), truck('T1'), sized('S40', 'Skeletal', '40ft')]))
+assert.deepEqual([no20.status, no20.shortage?.kind, no20.shortage?.missing], ['none', 'Trailer', true])
 // Two 40ft trips, one 40ft trailer (+ a 20ft one, 2 drivers): they can't run at
 // once -- the second waits for the 40ft trailer instead of using the 20ft.
 const two40 = planTrips(

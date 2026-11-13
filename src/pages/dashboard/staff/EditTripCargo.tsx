@@ -1,6 +1,6 @@
 // EditTripCargo: staff (Admin/Dispatcher, from Bookings & Trips) change ONE
-// trip's cargo after approval -- type, trailer size, trailer type, weight,
-// details (itineraries.cargo_*). Shown under the trips table in
+// trip's cargo after approval -- type, trailer size (+ "only a 20 ft
+// trailer"), trailer type, weight, details (itineraries.cargo_*). Shown under the trips table in
 // BookingDetailModal, like the documents panel.
 //
 // Rules (same as the quote form, lib/quoteRequest.ts): loose cargo always
@@ -35,6 +35,7 @@ function EditTripCargo({
 }) {
   const [cargoType, setCargoType] = useState(cargo.cargo_type === 'Loose' ? 'Loose' : 'Container')
   const [containerType, setContainerType] = useState(cargo.container_type === '40ft' ? '40ft' : '20ft')
+  const [exactSize, setExactSize] = useState(cargo.exact_trailer_size === true)
   const [trailerType, setTrailerType] = useState(
     cargo.cargo_type === 'Loose' ? 'Flatbed' : (cargo.trailer_type ?? ''),
   )
@@ -53,6 +54,8 @@ function EditTripCargo({
 
     setSaving(true)
     setError(null)
+    // Only means something for 20ft (a 40ft trip is always exact).
+    const exactOnly = containerType === '20ft' && exactSize
 
     // The trailer on the trip RIGHT NOW must fit the new trailer type.
     const { data: trip, error: tripError } = await supabase
@@ -75,8 +78,11 @@ function EditTripCargo({
         return setError(trailerError.message)
       }
       // A container may ride a Skeletal or a Flatbed whichever was asked for;
-      // a 40ft trip needs a 40ft trailer.
-      if (trailer?.trailer_type && !trailerAllowed(cargoType, trailerType, trailer.trailer_type, containerType, trailer.trailer_size)) {
+      // a 40ft trip (or a 20ft "only a 20 ft trailer" one) needs that size.
+      if (
+        trailer?.trailer_type &&
+        !trailerAllowed(cargoType, trailerType, trailer.trailer_type, containerType, trailer.trailer_size, exactOnly)
+      ) {
         setSaving(false)
         return setError(
           `This trip has a ${trailerLabel(trailer.trailer_type, trailer.trailer_size)} trailer assigned (${trailer.plate_number ?? `#${trip.trailer_id}`}). ` +
@@ -92,6 +98,7 @@ function EditTripCargo({
       .update({
         cargo_type: cargoType,
         container_type: containerType,
+        exact_trailer_size: exactOnly,
         trailer_type: trailerType,
         weight: weightValue,
         cargo_description: description.trim(),
@@ -124,13 +131,21 @@ function EditTripCargo({
           <option value="Loose">Loose cargo</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-        Trailer size
-        <select value={containerType} onChange={(e) => setContainerType(e.target.value)} className={inputClasses}>
-          <option value="20ft">20 ft</option>
-          <option value="40ft">40 ft</option>
-        </select>
-      </label>
+      <div className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          Trailer size
+          <select value={containerType} onChange={(e) => setContainerType(e.target.value)} className={inputClasses}>
+            <option value="20ft">20 ft</option>
+            <option value="40ft">40 ft</option>
+          </select>
+        </label>
+        {containerType === '20ft' && (
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input type="checkbox" checked={exactSize} onChange={(e) => setExactSize(e.target.checked)} className="accent-primary" />
+            Only a 20 ft trailer
+          </label>
+        )}
+      </div>
       <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
         Trailer type{cargoType === 'Loose' && <span className="font-normal text-slate-400">(loose cargo goes on a flatbed)</span>}
         <select

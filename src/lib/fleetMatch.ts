@@ -53,6 +53,8 @@ export type MatchTrip = ScheduledTrip & {
   required_trailer_type?: string | null
   cargo_type?: string | null
   container_type?: string | null
+  // "Only a 20 ft trailer" -- no 40ft one for this trip.
+  exact_trailer_size?: boolean | null
 }
 
 // Work order statuses that mean the vehicle is in the shop right now.
@@ -75,7 +77,7 @@ export function rankVehicles(
   const tripFrom = trip.trip_start_at ? manilaDate(Date.parse(trip.trip_start_at)) : null
   const tripTo = trip.trip_end_at ? manilaDate(Date.parse(trip.trip_end_at)) : tripFrom
   return candidates
-    .filter((v) => trailerAllowed(trip.cargo_type, trip.required_trailer_type, v.trailer_type, trip.container_type, v.trailer_size))
+    .filter((v) => trailerAllowed(trip.cargo_type, trip.required_trailer_type, v.trailer_type, trip.container_type, v.trailer_size, trip.exact_trailer_size))
     .map((v) => {
       const theirs = tripsOf(v.id).filter((t) => t.itinerary_id !== trip.itinerary_id)
       const clash = theirs.find((t) => tripsClash(trip, t, now))

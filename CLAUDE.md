@@ -2251,3 +2251,23 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
   updated it treats every trailer as size unknown.
 - Edit trailer refuses making a trailer 20ft while it's on an unfinished 40ft
   trip.
+
+## 2026-11-13: "Only a 20 ft trailer" (exact trailer size; SQL given in chat)
+- Quote form (client + staff, `QuoteShipmentFields.tsx`): per cargo line, a
+  checkbox under Trailer size, shown only for 20 ft. Saved as
+  `cargo_lines[].exact_size` (`CargoLine.exactSize`, `CargoLineRow.exact_size`;
+  old lines = false) and copied to `itineraries.exact_trailer_size` by
+  `create_booking_from_quote`. A 40ft trip is always exact, so no checkbox.
+- Rule: `sizeAllowed` / `trailerAllowed(..., exactSize)` in `lib/trailerRules.ts`
+  -- when on, a 20ft trip refuses a 40ft trailer (unknown sizes still pass).
+  Used by Capacity (`TripNeed.exactSize`, `BookedTrip.exactSize`), Fleet Match
+  (`MatchTrip.exact_trailer_size`), the Dispatch Board, Edit Cargo, and the DB
+  trigger `itinerary_trailer_fits` (change both). `get_capacity_inputs` returns
+  `trips[].exact_trailer_size` -- and, in the same SQL, the missing
+  `trailers[].trailer_size` / `trips[].container_type` from the 2026-11-13 size
+  work (before it Capacity saw every trailer as size unknown).
+  Self-checks: check-trailer-rules, check-capacity.
+- Labels: `tripCargoLabel` adds "(exact size)"; quote summaries say "20 ft only".
+- **Edit Cargo is back** in BookingDetailModal's trips table ("Edit cargo" under
+  the Cargo cell, staff Bookings only, until the trip is delivered / cancelled)
+  -- it had been unmounted since the 2026-10-23 Bookings redesign.

@@ -47,6 +47,8 @@ type RawTrip = {
   trailer_type: string | null
   // The trip's asked size (itineraries.container_type), once the SQL returns it.
   container_type?: string | null
+  // itineraries.exact_trailer_size, once the SQL returns it.
+  exact_trailer_size?: boolean | null
   cargo_type: string | null
   // Staff only.
   rate: number | null
@@ -105,6 +107,7 @@ export function buildDemand(args: {
     hours: args.hours,
     trailerType: t.trailer_type,
     trailerSize: t.container_type,
+    exactSize: t.exact_trailer_size,
     cargoType: t.cargo_type,
   }))
   const dayStart = new Date(manilaTimestamp(args.pickupDate, args.defaultStartMinutes)).getTime()
@@ -199,6 +202,7 @@ export async function loadCapacityInputs(
     trailerId: t.trailer_id === null ? null : `R${t.trailer_id}`,
     trailerType: t.trailer_type,
     trailerSize: t.container_type ?? null,
+    exactSize: t.exact_trailer_size ?? false,
     cargoType: t.cargo_type,
     rate: t.rate,
   }))
@@ -212,7 +216,7 @@ export async function loadCapacityInputs(
     .map((o) => ({
       label: o.label,
       demand: {
-        trips: expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type, trailerSize: t.container_type, cargoType: t.cargo_type })),
+        trips: expandCargoLines(parseCargoLines(o.cargo_lines)).map((t) => ({ hours: o.hours, trailerType: t.trailer_type, trailerSize: t.container_type, exactSize: t.exact_trailer_size, cargoType: t.cargo_type })),
         requestedStart: new Date(manilaTimestamp(o.pickup_date, defaultStartMinutes)).getTime(),
         deadlineEnd: null,
       },

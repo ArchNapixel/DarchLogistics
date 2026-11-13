@@ -27,6 +27,12 @@ assert.equal(sizeAllowed('20ft', '40ft'), true)
 assert.equal(sizeAllowed('40ft', '20ft'), false)
 assert.equal(sizeAllowed('40ft', null), true) // trailer's size not set yet
 assert.equal(sizeAllowed(null, '20ft'), true) // old trip, no size asked
+// "Exact size only": a 20ft trip then refuses a 40ft trailer.
+assert.equal(sizeAllowed('20ft', '40ft', true), false)
+assert.equal(sizeAllowed('20ft', '20ft', true), true)
+assert.equal(sizeAllowed('20ft', null, true), true) // trailer size not set yet
+assert.equal(trailerAllowed('Container', 'Skeletal', 'Skeletal', '20ft', '40ft', true), false)
+assert.equal(trailerAllowed('Container', 'Skeletal', 'Skeletal', '20ft', '40ft', false), true)
 assert.equal(trailerAllowed('Container', 'Skeletal', 'Skeletal', '40ft', '20ft'), false)
 assert.equal(trailerAllowed('Container', 'Flatbed', 'Skeletal', '20ft', '40ft'), true)
 assert.equal(trailerAllowed('Loose', 'Flatbed', 'Skeletal', '20ft', '20ft'), false) // type still checked

@@ -247,15 +247,29 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
               }
             />
 
-            <ToggleGroup
-              label="Trailer size"
-              options={[
-                { value: '20ft', label: '20 ft' },
-                { value: '40ft', label: '40 ft' },
-              ]}
-              value={line.containerType}
-              onChange={(value) => updateLine(index, { containerType: value })}
-            />
+            <div className="flex flex-col gap-2">
+              <ToggleGroup
+                label="Trailer size"
+                options={[
+                  { value: '20ft', label: '20 ft' },
+                  { value: '40ft', label: '40 ft' },
+                ]}
+                value={line.containerType}
+                onChange={(value) => updateLine(index, { containerType: value })}
+              />
+              {/* A 20ft trip may otherwise ride a 40ft trailer; a 40ft one is always exact. */}
+              {line.containerType === '20ft' && (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={line.exactSize}
+                    onChange={(e) => updateLine(index, { exactSize: e.target.checked })}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Only a 20 ft trailer (don't send a 40 ft)
+                </label>
+              )}
+            </div>
 
             <Field
               label="Trailer type"

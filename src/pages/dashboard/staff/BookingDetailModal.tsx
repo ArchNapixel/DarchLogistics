@@ -34,6 +34,7 @@ import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
+import EditTripCargo from './EditTripCargo'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
 import { retimeTrips } from '../../../lib/tripRetime'
@@ -193,7 +194,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     supabase
       .from('itineraries')
       .select(
-        'itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description, trip_rate',
+        'itinerary_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, plate_number, trailer_id, cargo_type, container_type, exact_trailer_size, trailer_type, weight, cargo_description, trip_rate',
       )
       .eq('booking_id', bookingId)
       .order('itinerary_id', { ascending: true }),
@@ -319,6 +320,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
         cargo: {
           cargo_type: t.cargo_type,
           container_type: t.container_type,
+          exact_trailer_size: t.exact_trailer_size,
           trailer_type: t.trailer_type,
           weight: t.weight,
           cargo_description: t.cargo_description,
@@ -362,6 +364,8 @@ function BookingDetailModal({
   const [cancelError, setCancelError] = useState<string | null>(null)
   // Which trip's documents panel is open under the trips table (null = none).
   const [docsTripId, setDocsTripId] = useState<number | null>(null)
+  // The trip whose cargo is being edited (EditTripCargo under its row).
+  const [cargoTripId, setCargoTripId] = useState<number | null>(null)
   // Time the card opened -- enough for the storage badges (render must stay pure).
   const [now] = useState(() => Date.now())
 
@@ -1075,6 +1079,16 @@ function BookingDetailModal({
                           {trip.cargo.cargo_description && (
                             <span className="block max-w-56 text-primary">{trip.cargo.cargo_description}</span>
                           )}
+                          {/* Staff can change a trip's cargo until it's delivered / cancelled. */}
+                          {toRun && onChanged && (
+                            <button
+                              type="button"
+                              onClick={() => setCargoTripId(cargoTripId === trip.itinerary_id ? null : trip.itinerary_id)}
+                              className="mt-1 block text-xs font-semibold text-primary hover:underline"
+                            >
+                              Edit cargo
+                            </button>
+                          )}
                         </td>
                         <td className="px-3 py-3 tabular-nums text-slate-900">{formatMoney(trip.rate)}</td>
                         <td className="px-3 py-3">
@@ -1137,6 +1151,22 @@ function BookingDetailModal({
                           )}
                         </td>
                       </tr>
+                      {cargoTripId === trip.itinerary_id && (
+                        <tr className="bg-slate-50">
+                          <td colSpan={9} className="px-4 pt-2 pb-4">
+                            <p className="mb-2 text-sm font-semibold text-slate-900">Trip #{trip.itinerary_id} · Edit cargo</p>
+                            <EditTripCargo
+                              itineraryId={trip.itinerary_id}
+                              cargo={trip.cargo}
+                              onSaved={() => {
+                                setCargoTripId(null)
+                                reload()
+                              }}
+                              onCancel={() => setCargoTripId(null)}
+                            />
+                          </td>
+                        </tr>
+                      )}
                       {/* The trip's documents, right under its row -- the same box as the
                           DO upload in Mark Delivered. It closes by itself once an upload
                           has gone through (TripDocuments onUploaded). */}

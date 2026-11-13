@@ -102,6 +102,7 @@ export function QuoteSummary({
             {Number(line.quantity) > 0 ? `${line.quantity} × ` : ''}
             {line.cargoType === 'Loose' ? 'Loose cargo' : 'Container'} · {line.containerType}
             {line.trailerType && ` ${line.trailerType.toLowerCase()}`} trailer
+            {line.containerType === '20ft' && line.exactSize && ' (20 ft only)'}
             {Number(line.weight) > 0 && ` · ${line.weight} t`}
             {line.descriptions.some((d) => d.trim()) && (
               <span className="block text-slate-600">

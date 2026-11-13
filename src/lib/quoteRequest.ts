@@ -40,6 +40,9 @@ export const emptyLocationValue: LocationValue = {
 export type CargoLine = {
   cargoType: 'Container' | 'Loose'
   containerType: '20ft' | '40ft'
+  // "Only a 20 ft trailer": never send a 40ft one (lib/trailerRules.ts).
+  // Only means something for 20ft -- a 40ft trip is always exact.
+  exactSize: boolean
   // Flatbed or Skeletal -- '' until the customer picks one (required).
   // Loose cargo is always Flatbed (a skeletal trailer only takes containers).
   trailerType: '' | 'Flatbed' | 'Skeletal'
@@ -51,6 +54,7 @@ export type CargoLine = {
 export const emptyCargoLine: CargoLine = {
   cargoType: 'Container',
   containerType: '20ft',
+  exactSize: false,
   trailerType: '',
   weight: '',
   descriptions: [''],
@@ -70,6 +74,9 @@ export function resizeDescriptions(descriptions: string[], quantity: string): st
 export type CargoLineRow = {
   cargo_type: 'Container' | 'Loose'
   container_type: '20ft' | '40ft'
+  // Copied to itineraries.exact_trailer_size on Approve. Missing on lines
+  // saved before 2026-11-13 = false.
+  exact_size: boolean
   trailer_type: 'Flatbed' | 'Skeletal'
   weight: number
   // One per trip (length = quantity). Lines saved before 2026-10-23 had a
@@ -297,6 +304,7 @@ export function buildQuoteRow(form: ShipmentForm) {
         (line): CargoLineRow => ({
           cargo_type: line.cargoType,
           container_type: line.containerType,
+          exact_size: line.containerType === '20ft' && line.exactSize,
           // Validated above: never '' here.
           trailer_type: line.trailerType as CargoLineRow['trailer_type'],
           weight: Number(line.weight),
@@ -363,6 +371,7 @@ export function parseCargoLines(value: any): CargoLineRow[] {
   return value.map((line) => ({
     cargo_type: line?.cargo_type === 'Loose' ? 'Loose' : 'Container',
     container_type: line?.container_type === '40ft' ? '40ft' : '20ft',
+    exact_size: line?.exact_size === true,
     trailer_type: line?.trailer_type === 'Skeletal' ? 'Skeletal' : 'Flatbed',
     weight: Number(line?.weight) || 0,
     quantity: lineQuantity(line),
@@ -391,6 +400,8 @@ function lineDescriptions(line: any): string[] {
 export type TripCargo = {
   cargo_type: string | null
   container_type: string | null
+  // itineraries.exact_trailer_size (optional: older reads don't select it).
+  exact_trailer_size?: boolean | null
   trailer_type: string | null
   weight: number | null
   cargo_description: string | null
@@ -403,6 +414,7 @@ export function expandCargoLines(rows: CargoLineRow[]): TripCargo[] {
     Array.from({ length: line.quantity }, (_, i) => ({
       cargo_type: line.cargo_type,
       container_type: line.container_type,
+      exact_trailer_size: line.exact_size,
       trailer_type: line.trailer_type,
       weight: line.weight,
       cargo_description: line.cargo_descriptions[i] ?? '',
@@ -411,10 +423,13 @@ export function expandCargoLines(rows: CargoLineRow[]): TripCargo[] {
 }
 
 // "Container · 40ft skeletal · 25 t" for one trip ('—' if none recorded).
-export function tripCargoLabel(cargo: Partial<TripCargo>): string {
+// Takes a trip (exact_trailer_size) or a saved cargo line (exact_size).
+export function tripCargoLabel(cargo: Partial<TripCargo> & { exact_size?: boolean }): string {
   const parts = [
     cargo.cargo_type === 'Loose' ? 'Loose cargo' : cargo.cargo_type,
-    [cargo.container_type, cargo.trailer_type?.toLowerCase()].filter(Boolean).join(' ') || null,
+    [cargo.container_type, cargo.trailer_type?.toLowerCase(), cargo.exact_trailer_size || cargo.exact_size ? '(exact size)' : null]
+      .filter(Boolean)
+      .join(' ') || null,
     cargo.weight != null && cargo.weight > 0 ? `${cargo.weight} t` : null,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' · ') : '—'
@@ -452,6 +467,7 @@ function rowsToCargoLines(value: any): CargoLine[] {
   return value.map((line) => ({
     cargoType: line?.cargo_type === 'Loose' ? 'Loose' : 'Container',
     containerType: line?.container_type === '40ft' ? '40ft' : '20ft',
+    exactSize: line?.exact_size === true,
     trailerType: line?.trailer_type === 'Flatbed' || line?.trailer_type === 'Skeletal' ? line.trailer_type : '',
     weight: line?.weight === null || line?.weight === undefined ? '' : String(line.weight),
     descriptions: lineDescriptions(line),

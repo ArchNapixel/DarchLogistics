@@ -137,7 +137,7 @@ export default function QuoteSummaryDrawer({
                 <div className="flex flex-wrap gap-2">
                   <Chip>× {line.quantity}</Chip>
                   <Chip>{line.cargoType === 'Loose' ? 'Loose cargo' : 'Container'}</Chip>
-                  <Chip>{line.containerType}</Chip>
+                  <Chip>{line.containerType}{line.containerType === '20ft' && line.exactSize && ' only'}</Chip>
                   <Chip>{line.trailerType}</Chip>
                   <Chip>{line.weight} t</Chip>
                 </div>

@@ -12,15 +12,22 @@
 // trailers.trailer_size), since 2026-11-13:
 //   - A 20ft trip may ride a 20ft or a 40ft trailer; a 40ft trip only a 40ft.
 //   - A 20ft trip goes on a 20ft trailer first, so 40ft ones stay free.
+//   - "Exact size only" (the quote's per-line checkbox, cargo_lines.exact_size
+//     -> itineraries.exact_trailer_size, since 2026-11-13): the trailer must be
+//     the asked size -- a 20ft trip then never rides a 40ft trailer.
 // Unknown on either side = no requirement (very old trips, trailers whose size
 // hasn't been set yet).
 
 const CONTAINER_TYPES = ['Flatbed', 'Skeletal']
 
 // Can a `vehicleSize` trailer carry an `askedSize` trip?
-export function sizeAllowed(askedSize: string | null | undefined, vehicleSize: string | null | undefined): boolean {
+export function sizeAllowed(
+  askedSize: string | null | undefined,
+  vehicleSize: string | null | undefined,
+  exactSize?: boolean | null,
+): boolean {
   if (!askedSize || !vehicleSize || askedSize === vehicleSize) return true
-  return askedSize === '20ft' && vehicleSize === '40ft'
+  return !exactSize && askedSize === '20ft' && vehicleSize === '40ft'
 }
 
 // Can a `vehicleType` / `vehicleSize` trailer take a trip that asked for
@@ -31,8 +38,9 @@ export function trailerAllowed(
   vehicleType: string | null | undefined,
   askedSize?: string | null,
   vehicleSize?: string | null,
+  exactSize?: boolean | null,
 ): boolean {
-  if (!sizeAllowed(askedSize, vehicleSize)) return false
+  if (!sizeAllowed(askedSize, vehicleSize, exactSize)) return false
   if (!askedType || !vehicleType || vehicleType === askedType) return true
   return cargoType === 'Container' && CONTAINER_TYPES.includes(askedType) && CONTAINER_TYPES.includes(vehicleType)
 }
