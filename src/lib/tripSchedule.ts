@@ -56,12 +56,12 @@ export function findClash(
 const ON_ROAD = ['Dispatched', 'PickedUp', 'InTransit']
 
 // Is the trip physically out RIGHT NOW (Dispatch Board's Resources panel)?
-// Picked Up / In Transit always are. Dispatched only means "told to go": it
-// counts once its slot has started, so a trip dispatched early for a later
-// day doesn't mark its truck and crew busy today.
-export function isOutNow(trip: { status: string; trip_start_at: string | null }, now: number): boolean {
-  if (trip.status === 'PickedUp' || trip.status === 'InTransit') return true
-  return trip.status === 'Dispatched' && (!trip.trip_start_at || ms(trip.trip_start_at) <= now)
+// Dispatched / Picked Up / In Transit always are -- even a trip dispatched
+// early for a later slot, since the database (require_crew_free_of_road)
+// already treats its crew as on the road. (Before 2026-11-13 Dispatched only
+// counted once its slot started, so the panel showed that crew "Available".)
+export function isOutNow(trip: { status: string }): boolean {
+  return ON_ROAD.includes(trip.status)
 }
 
 // Someone (driver or helper) can't start another trip while one of theirs is

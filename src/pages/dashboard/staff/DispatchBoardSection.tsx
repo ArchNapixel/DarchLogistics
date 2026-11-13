@@ -1267,7 +1267,7 @@ function ResourcesPanel({
   ctx: BoardContext
 }) {
   const noTrips = isToday ? 'No trips today' : 'No trips this day'
-  const outNow = isToday ? ctx.allRows.filter((r) => isOutNow(r, ctx.now)) : []
+  const outNow = isToday ? ctx.allRows.filter((r) => isOutNow(r)) : []
   const isDown = (status: string | null) => status === 'Under Maintenance' || status === 'Out of Service'
   // Today: out on the road at this moment. Another day: has a trip that day.
   const busyChip = isToday ? RESOURCE_CHIP.onTrip : RESOURCE_CHIP.scheduled
@@ -2486,8 +2486,8 @@ function DispatchBoardSection() {
     isAllDays
       ? r.status !== 'Delivered'
       : isWeek
-        ? (tripDay(r) >= weekStart && tripDay(r) <= weekEnd) || (weekHasToday && isOutNow(r, now))
-        : tripDay(r) === day || (day === today && isOutNow(r, now))
+        ? (tripDay(r) >= weekStart && tripDay(r) <= weekEnd) || (weekHasToday && isOutNow(r))
+        : tripDay(r) === day || (day === today && isOutNow(r))
   const startMs = (r: DispatchRow) => Date.parse(r.trip_start_at ?? `${r.trip_date_from}T00:00:00+08:00`)
   const dayRows = rows.filter(onDay).sort((a, b) => startMs(a) - startMs(b) || a.itinerary_id - b.itinerary_id)
   // Planned trips that may not happen as assigned (leave, shop, late trip,

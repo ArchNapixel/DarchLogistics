@@ -109,15 +109,13 @@ assert.equal(tripOnRoad(mine, 97), null) // the trip itself doesn't block itself
 assert.equal(tripOnRoad([{ itinerary_id: 1, status: 'InTransit' }], 2)?.itinerary_id, 1)
 assert.equal(tripOnRoad([{ itinerary_id: 1, status: 'Delivered' }, { itinerary_id: 3, status: 'Cancelled' }], 2), null)
 
-// Out right now: Picked Up / In Transit always; Dispatched only once its slot has started.
-const t0 = Date.parse('2026-10-27T10:00:00+08:00')
+// Out right now: Dispatched / Picked Up / In Transit, whatever the slot says.
 const slot = (start: string) => ({ trip_start_at: start })
-assert.equal(isOutNow({ status: 'InTransit', ...slot('2026-10-29T08:00:00+08:00') }, t0), true)
-assert.equal(isOutNow({ status: 'Dispatched', ...slot('2026-10-29T08:00:00+08:00') }, t0), false) // dispatched 2 days early
-assert.equal(isOutNow({ status: 'Dispatched', ...slot('2026-10-27T08:00:00+08:00') }, t0), true) // slot started
-assert.equal(isOutNow({ status: 'Dispatched', trip_start_at: null }, t0), true) // no slot to judge by
-assert.equal(isOutNow({ status: 'Awaiting', ...slot('2026-10-27T08:00:00+08:00') }, t0), false)
-assert.equal(isOutNow({ status: 'Delivered', ...slot('2026-10-27T08:00:00+08:00') }, t0), false)
+assert.equal(isOutNow({ status: 'InTransit', ...slot('2026-10-29T08:00:00+08:00') }), true)
+assert.equal(isOutNow({ status: 'Dispatched', ...slot('2026-10-29T08:00:00+08:00') }), true) // dispatched 2 days early: crew already busy
+assert.equal(isOutNow({ status: 'Dispatched', ...slot('2026-10-27T08:00:00+08:00') }), true) // slot started
+assert.equal(isOutNow({ status: 'Awaiting', ...slot('2026-10-27T08:00:00+08:00') }), false)
+assert.equal(isOutNow({ status: 'Delivered', ...slot('2026-10-27T08:00:00+08:00') }), false)
 
 // The cascade (reflow): times in hours from a base. Trip = id, status, slot, driver / truck / trailer.
 const base = new Date('2026-10-28T00:00:00+08:00').getTime()
