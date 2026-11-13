@@ -2211,3 +2211,25 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
 - **Mark Delivered no longer asks about damage** (no cargo condition, no
   retry step) -- just a link to Damage Charges. `DamageFields` lost "Good"
   and `DamageInput` lost `chargeTo`; `EMPTY_DAMAGE` removed.
+- **Damage -> money (2026-11-13, no SQL):**
+  - Client: `loadExtraChargesByBooking()` (`lib/bookingCharges.ts`) is the ONE
+    loader for extra charges -- returns `items` (each approved Client damage,
+    dated `approved_at`, + each non-voided added charge, dated `created_at`)
+    and the totals = items added up (`loadClientDamageChargesByBooking` was
+    removed). `PaymentDueRow.extra_items` carries them; Statements / Billing
+    show each as a **Charge** line (`StatementCharge`, `buildStatement`'s
+    optional `charges`); the Adjustment line is now only discount / advance
+    billing. Revenue Reconciliation counts Charge lines with adjustments.
+    Client portal Payments lists each charge by name.
+  - Company / Insurance damage counts in the month it was DECIDED
+    (`loadCompanyDamageCost(fromTs, toTs)` by `approved_at`, in
+    `lib/dashboardExpenses.ts`): dashboard card, P&L, Money Summary. Trip
+    Profitability still puts damage on its trip. Re-deciding re-stamps
+    `approved_at` (a claim later Denied counts in the month it was changed).
+    Known gap left: insurer payouts aren't recorded anywhere.
+  - DamageDecisionPanel: "View in Billing" (Client, Admin) ->
+    `/dashboard/billing/:bookingId`; moving damage onto / off the client's
+    bill on a booking with payments asks first.
+  - Undecided damage: Admin bell line + Reports Overview card -> Damage
+    Charges, which lists undecided rows first. The table's Who Pays box no
+    longer shows insurance details (side panel only).

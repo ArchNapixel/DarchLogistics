@@ -11,6 +11,7 @@
 // enforced by RLS). Search by booking # or client, 10 rows a page. Below
 // the table: the Insurance Companies list (InsuranceCompaniesPanel).
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import ReportDamageForm from './ReportDamageForm'
@@ -21,7 +22,6 @@ import Pager from '../../../components/Pager'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { usePaged } from '../../../lib/usePaged'
 import { loadInsuranceCompanies, type InsuranceCompany } from '../../../lib/insuranceCompanies'
-import { companyDamageShare } from '../../../lib/insuranceRules'
 
 function DamageChargesSection() {
   const { role } = useAuth()
@@ -155,11 +155,11 @@ function DamageChargesSection() {
 
   // Booking # (with or without "#") or client name.
   const query = search.trim().toLowerCase().replace(/^#/, '')
-  const visible = query
-    ? damageCharges.filter((d) => String(d.booking_id) === query || d.client_name.toLowerCase().includes(query))
-    : damageCharges
+  // Not decided yet first (the bell and Reports link here), then newest first.
+  const visible = (
+    query ? damageCharges.filter((d) => String(d.booking_id) === query || d.client_name.toLowerCase().includes(query)) : damageCharges
+  ).toSorted((a, b) => Number(a.damage_status === 'Approved') - Number(b.damage_status === 'Approved'))
   const paged = usePaged(visible, query)
-  const companyNameById = new Map(companies.map((c) => [c.insurance_company_id, c.company_name]))
 
   const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
   const TD = 'px-2 py-2 first:pl-5 last:pr-5'
@@ -197,7 +197,7 @@ function DamageChargesSection() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] table-fixed text-left text-sm text-ink-muted">
               <colgroup>
-                {['150px', '120px', '', '', '120px', '220px'].map((width, i) => (
+                {['150px', '120px', '', '', '120px', '240px'].map((width, i) => (
                   <col key={i} style={width ? { width } : undefined} />
                 ))}
               </colgroup>
@@ -269,24 +269,27 @@ function DamageChargesSection() {
                         </td>
                         <td className={`${TD} text-right tabular-nums`}>{formatMoney(damage.estimated_damage_cost)}</td>
                         <td className={TD}>
-                          {/* One box, same size for every state; insurance details under it. */}
-                          <span
-                            className={`inline-flex min-h-8 w-[120px] items-center justify-center rounded-[2px] border text-xs font-semibold ${
-                              decided ? 'border-line-control bg-white text-ink-metric' : 'border-amber-300 bg-amber-50 text-amber-800'
-                            }`}
-                          >
-                            {decided ? damage.charge_to : 'Not decided yet'}
-                          </span>
-                          {decided && damage.charge_to === 'Insurance' && (
-                            <span className="mt-1 block text-xs leading-[18px] tabular-nums">
-                              {companyNameById.get(damage.insurance_company_id ?? -1) ?? 'Insurance'}{' '}
-                              {formatMoney(damage.insurance_covered_amount)} ·{' '}
-                              <span className={damage.claim_status === 'Denied' ? 'font-semibold text-red-700' : ''}>
-                                {damage.claim_status ?? 'Filed'}
-                              </span>
-                              <span className="block">Company {formatMoney(companyDamageShare(damage))}</span>
+                          <div className="flex items-center gap-2">
+                            {/* One box, same size for every state; details are in the side panel. */}
+                            <span
+                              className={`inline-flex min-h-8 w-[120px] shrink-0 items-center justify-center rounded-[2px] border text-xs font-semibold ${
+                                decided ? 'border-line-control bg-white text-ink-metric' : 'border-amber-300 bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              {decided ? damage.charge_to : 'Not decided yet'}
                             </span>
-                          )}
+                            {/* Client damage is on that booking's bill (Billing is an Admin page). */}
+                            {role === 'Admin' && decided && damage.charge_to === 'Client' && (
+                              <Link
+                                to={`/dashboard/billing/${damage.booking_id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                title={`Open the bill for booking #${damage.booking_id}`}
+                                className="inline-flex min-h-8 w-[64px] shrink-0 items-center justify-center rounded-[2px] border border-primary bg-white text-xs font-semibold text-primary hover:bg-primary-soft"
+                              >
+                                View
+                              </Link>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

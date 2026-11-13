@@ -1,58 +1,14 @@
-// damageCharges: damage the client has to pay for. A delivery_damage_records
-// row counts once staff approved it with charge_to 'Client' on the Damage
-// Charges page. It's added ON TOP of the booking's delivery amount
-// (amount_to_pay override, or rate x delivered trips) everywhere a
-// balance is shown -- Bookings, Financial Records, Payments Due, the
-// client portal. amount_to_pay itself never includes it, so an override
-// can't swallow or double-count a damage charge.
+// damageCharges: damage recorded on delivered trips (delivery_damage_records)
+// -- reporting it, and an Admin deciding who pays (Client / Company /
+// Insurance) on the Damage Charges page. Approved Client damage is billed on
+// top of the booking's delivery amount via loadExtraChargesByBooking()
+// (lib/bookingCharges.ts); Company / Insurance damage is a company cost
+// (companyDamageShare in insuranceRules.ts), counted in the month it was
+// decided (approved_at).
 import { supabase } from './supabaseClient'
-import { fetchIn } from './dashboardExpenses'
 import { parseAmount } from './amountInput'
 import type { InsuranceCompany } from './insuranceCompanies'
 import { coveredAmountError, policyChoice, type ClaimRow, type ClaimStatus } from './insuranceRules'
-
-// booking_id -> total approved Client damage (bookings with none are absent).
-export async function loadClientDamageChargesByBooking(bookingIds: number[]): Promise<{
-  byBooking: Map<number, number>
-  error: string | null
-}> {
-  const byBooking = new Map<number, number>()
-  if (bookingIds.length === 0) return { byBooking, error: null }
-
-  // fetchIn: ids in chunks (a long list makes the URL too big) and every
-  // page past Supabase's 1000-row cap.
-  const { rows: trips, error: tripsError } = await fetchIn<{ itinerary_id: number; booking_id: number }>(
-    bookingIds,
-    (chunk, from, to) =>
-      supabase.from('itineraries').select('itinerary_id, booking_id').in('booking_id', chunk).range(from, to),
-  )
-  if (tripsError) return { byBooking, error: tripsError }
-  if (trips.length === 0) return { byBooking, error: null }
-
-  const { rows: damageRows, error: damageError } = await fetchIn<{
-    itinerary_id: number
-    estimated_damage_cost: number | string | null
-  }>(
-    trips.map((t) => t.itinerary_id),
-    (chunk, from, to) =>
-      supabase
-        .from('delivery_damage_records')
-        .select('itinerary_id, estimated_damage_cost')
-        .in('itinerary_id', chunk)
-        .eq('damage_status', 'Approved')
-        .eq('charge_to', 'Client')
-        .range(from, to),
-  )
-  if (damageError) return { byBooking, error: damageError }
-
-  const bookingByTrip = new Map(trips.map((t) => [t.itinerary_id, t.booking_id]))
-  for (const row of damageRows) {
-    const bookingId = bookingByTrip.get(row.itinerary_id)
-    if (bookingId === undefined) continue
-    byBooking.set(bookingId, (byBooking.get(bookingId) ?? 0) + Number(row.estimated_damage_cost ?? 0))
-  }
-  return { byBooking, error: null }
-}
 
 // ---- Reporting damage (the Report Damage form on the Damage Charges page;
 // Mark Delivered no longer asks, since 2026-11-13) ----

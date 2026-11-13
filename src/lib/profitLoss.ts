@@ -3,12 +3,14 @@
 // with them:
 //   revenue / collected  -> loadRevenueReconciliation (Revenue Reconciliation)
 //   diesel / trip costs  -> loadTripProfitReport      (Trip Profitability)
+//   company damage       -> loadCompanyDamageCost by approved_at (the dashboard
+//                           card's rule; Trip Profitability keeps it per trip)
 //   maintenance parts    -> loadMaintenanceCostReport (Maintenance cost report)
 //   payroll              -> payroll_payslips by payroll_period_end (drafts too)
 //   bills                -> bills by bill_date, not voided (Accounts Payable)
 // What is and isn't counted (and why) is in profitLossTotals.ts.
 import { supabase } from './supabaseClient'
-import { fetchAll } from './dashboardExpenses'
+import { fetchAll, loadCompanyDamageCost } from './dashboardExpenses'
 import { payslipCost, type PayslipCostRow } from './expenseTotals'
 import { loadRevenueReconciliation } from './revenueReconciliation'
 import { loadTripProfitReport } from './tripProfit'
@@ -39,7 +41,7 @@ export async function loadProfitLoss(
   const from = `${month}-01`
   const to = nextMonthStart(month)
 
-  const [recon, trips, maintenance, payslips, bills] = await Promise.all([
+  const [recon, trips, maintenance, payslips, bills, damage] = await Promise.all([
     loadRevenueReconciliation(month),
     loadTripProfitReport(month),
     loadMaintenanceCostReport(month),
@@ -60,10 +62,11 @@ export async function loadProfitLoss(
         .is('voided_at', null)
         .range(a, b),
     ),
+    loadCompanyDamageCost(`${from}T00:00:00+08:00`, `${to}T00:00:00+08:00`),
   ])
 
   const firstError =
-    recon.error ?? trips.error ?? maintenance.error ?? payslips.error ?? bills.error
+    recon.error ?? trips.error ?? maintenance.error ?? payslips.error ?? bills.error ?? damage.error
   if (firstError || !recon.data) return { data: null, error: firstError ?? 'Could not load revenue.' }
 
   let payrollGross = 0
@@ -80,14 +83,13 @@ export async function loadProfitLoss(
   let dieselEstimated = 0
   let dieselEstimatedTrips = 0
   let otherTripExpenses = 0
-  let companyDamage = 0
+  const companyDamage = damage.total
   trips.rows.forEach((t) => {
     if (t.dieselEstimated) {
       dieselEstimated += t.diesel
       dieselEstimatedTrips += 1
     } else dieselLogged += t.diesel
     otherTripExpenses += t.otherExpenses
-    companyDamage += t.companyDamage
   })
 
   const billsByCategory = new Map<string, number>()

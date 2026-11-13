@@ -56,7 +56,8 @@ export function reconcileRevenue(lines: StatementLine[], meta: Map<number, Booki
   lines.forEach((l) => {
     const row = byBooking.get(l.booking_id) ?? { trip: 0, adj: 0, collected: 0 }
     if (l.kind === 'Trip') row.trip += l.amount
-    else if (l.kind === 'Adjustment') row.adj += l.amount
+    // Extra charges (damage, added charges) count with adjustments.
+    else if (l.kind === 'Adjustment' || l.kind === 'Charge') row.adj += l.amount
     else row.collected -= l.amount // payment lines are negative; a refund is positive
     byBooking.set(l.booking_id, row)
   })

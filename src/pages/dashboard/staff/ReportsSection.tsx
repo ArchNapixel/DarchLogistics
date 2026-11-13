@@ -8,6 +8,7 @@
 // src/lib/paymentDue.ts (payments are recorded in Financial Records --
 // FinancialSection.tsx). See paymentDue.ts for the due-date rule.
 import { Fragment, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useCachedLoad } from '../../../lib/useCachedLoad'
 import { SkeletonCards, SkeletonTable } from '../../../components/Skeleton'
 import {
@@ -189,10 +190,13 @@ const GROUPS: Group[] = [
 
 // ---------- Counts (pending work only) ----------
 
+// Not a Reports tab: its Overview card opens the Damage Charges page.
+const DAMAGE_LABEL = 'Damage Charges'
+
 // Loaded once for the page: the same numbers fill the Overview and the
 // badges on the group tabs and chips. Key = chip label.
 async function loadCounts(): Promise<{ counts: Record<string, number> | null; error: string | null }> {
-  const [issues, clientReqs, payslips, mReqs, mScheds, relogs, delinquent] = await Promise.all([
+  const [issues, clientReqs, payslips, mReqs, mScheds, relogs, delinquent, damage] = await Promise.all([
     supabase
       .from('issue_reports')
       .select('*', { count: 'exact', head: true })
@@ -203,6 +207,11 @@ async function loadCounts(): Promise<{ counts: Record<string, number> | null; er
     loadPendingMaintenanceSchedules(),
     loadPendingRelogRequests(),
     loadCurrentlyDelinquentClients(),
+    // Damage nobody has decided who pays for (decided on Damage Charges).
+    supabase
+      .from('delivery_damage_records')
+      .select('damage_id', { count: 'exact', head: true })
+      .or('damage_status.is.null,damage_status.neq.Approved'),
   ])
 
   const loadError =
@@ -212,7 +221,8 @@ async function loadCounts(): Promise<{ counts: Record<string, number> | null; er
     mReqs.error ??
     mScheds.error ??
     relogs.error ??
-    delinquent.error
+    delinquent.error ??
+    damage.error?.message
   if (loadError) return { counts: null, error: loadError }
 
   return {
@@ -225,6 +235,7 @@ async function loadCounts(): Promise<{ counts: Record<string, number> | null; er
       'Maintenance Schedules': mScheds.schedules.length,
       'Status Relog Requests': relogs.requests.length,
       Standing: delinquent.clients.length,
+      [DAMAGE_LABEL]: damage.count ?? 0,
     },
   }
 }
@@ -237,7 +248,9 @@ const OVERVIEW_SUBTITLES: Record<string, string> = {
   'Maintenance Schedules': 'Upcoming',
   'Status Relog Requests': 'Awaiting approval',
   Standing: 'Delinquent clients',
+  [DAMAGE_LABEL]: 'Who pays not chosen yet',
 }
+
 
 function Badge({ n }: { n: number }) {
   if (n <= 0) return null
@@ -267,10 +280,19 @@ function Overview({
       .map((item) => ({ group: group.name, label: item.label, value: counts[item.label] })),
   )
 
-  if (pending.length === 0) return <EmptyState message="Nothing needs action right now." />
+  const undecidedDamage = counts[DAMAGE_LABEL] ?? 0
+
+  if (pending.length === 0 && undecidedDamage === 0) return <EmptyState message="Nothing needs action right now." />
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {undecidedDamage > 0 && (
+        <Link to="/dashboard/damage-charges" className="border-2 border-line-card bg-white p-4 text-left hover:border-slate-400">
+          <p className="text-2xl font-bold text-primary">{undecidedDamage}</p>
+          <p className="mt-1 text-sm font-medium text-slate-700">{DAMAGE_LABEL}</p>
+          <p className="text-xs text-slate-500">{OVERVIEW_SUBTITLES[DAMAGE_LABEL]}</p>
+        </Link>
+      )}
       {pending.map((p) => (
         <button
           key={p.label}

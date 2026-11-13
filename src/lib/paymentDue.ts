@@ -49,7 +49,7 @@
 // whether that's because nothing's billable yet, or because more will
 // become billable as remaining trips complete.
 import { supabase } from './supabaseClient'
-import { loadExtraChargesByBooking } from './bookingCharges'
+import { loadExtraChargesByBooking, type ExtraChargeItem } from './bookingCharges'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { toManilaDate } from './payslip'
 import { groupTripRates, sumRates } from './lineRates'
@@ -103,6 +103,8 @@ export type PaymentDueRow = {
   computed_billable_amount: number
   amount_to_pay_override: number | null
   damage_charges: number
+  // The extra charges one by one (damage, added charges), oldest first.
+  extra_items: ExtraChargeItem[]
   billable_amount: number
   amount_paid: number
   balance_due: number
@@ -214,7 +216,7 @@ export async function loadPaymentDueReport(
     return { rows: [], error: itinerariesResult.error }
   }
 
-  const { byBooking: damageByBooking, error: damageError } = damageResult
+  const { byBooking: damageByBooking, items: extraItemsByBooking, error: damageError } = damageResult
   if (damageError) {
     return { rows: [], error: damageError }
   }
@@ -330,6 +332,7 @@ export async function loadPaymentDueReport(
         computed_billable_amount: computedBillableAmount,
         amount_to_pay_override: booking.amount_to_pay,
         damage_charges: damageCharges,
+        extra_items: extraItemsByBooking.get(booking.booking_id) ?? [],
         billable_amount: billableAmount,
         amount_paid: amountPaid,
         balance_due: balanceDue,

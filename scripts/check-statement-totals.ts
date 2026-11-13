@@ -78,4 +78,31 @@ const mixed = buildStatement(
 assert.deepEqual(mixed.lines.map((l) => [l.kind, l.amount]), [['Trip', 5_500], ['Trip', 8_000]])
 assert.equal(mixed.closing, 13_500)
 
+// Extra charges get their own named lines; the Adjustment keeps only what's
+// left (here a 500 discount), and the closing still equals billable - paid.
+const charged = buildStatement(
+  {
+    bookings: [{ booking_id: 5, booking_date: '2026-11-01', route: 'A -> B', billable_amount: 10_000 + 750 + 250 - 500 }],
+    trips: [{ itinerary_id: 51, booking_id: 5, delivered_on: '2026-11-03', rate: 10_000 }],
+    payments: [],
+    charges: [
+      { id: 9, booking_id: 5, date: '2026-11-05', description: 'Damage, Trip #51 (Damaged: vases)', amount: 750 },
+      { id: 3, booking_id: 5, date: '2026-11-04', description: 'Waiting time', amount: 250 },
+      { id: 4, booking_id: 99, date: '2026-11-04', description: 'Other booking', amount: 1 }, // not in this statement
+    ],
+  },
+  '2026-11-01',
+  '2026-11-30',
+)
+assert.deepEqual(
+  charged.lines.map((l) => [l.date, l.kind, l.amount]),
+  [
+    ['2026-11-03', 'Trip', 10_000],
+    ['2026-11-03', 'Adjustment', -500],
+    ['2026-11-04', 'Charge', 250],
+    ['2026-11-05', 'Charge', 750],
+  ],
+)
+assert.equal(charged.closing, 10_500)
+
 console.log('ok')

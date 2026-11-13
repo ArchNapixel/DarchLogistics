@@ -5,14 +5,15 @@
 // voided_at / voided_by / void_reason (a wrong charge is VOIDED, not
 // deleted, so the bill's history stays readable).
 //
-// A booking's "extra charges" = approved Client damage
-// (lib/damageCharges.ts) + its non-voided added charges. Everything that
-// shows a balance adds that ON TOP of the trips' amount, through
-// loadExtraChargesByBooking() below (the `damage_charges` field on Booking
-// / PaymentDueRow holds this total).
+// A booking's "extra charges" = approved Client damage (decided on Damage
+// Charges) + its non-voided added charges. Everything that shows a balance
+// adds that ON TOP of the trips' amount, through loadExtraChargesByBooking()
+// below (the `damage_charges` field on Booking / PaymentDueRow holds the
+// total). It also returns each charge as its own line (`items`), so Billing,
+// Statements and the client portal can name them instead of one lump.
 import { supabase } from './supabaseClient'
 import { fetchIn } from './dashboardExpenses'
-import { loadClientDamageChargesByBooking } from './damageCharges'
+import { splitManila } from './format'
 
 export type BookingCharge = {
   charge_id: number
@@ -31,27 +32,102 @@ function isMissingTable(message: string) {
   return message.includes('booking_charges') && message.includes('schema cache')
 }
 
-// booking_id -> approved Client damage + added charges (bookings with none are absent).
+// One extra charge on a booking's bill. date = when it was billed (Manila):
+// a damage charge on the day it was decided, an added charge when added.
+export type ExtraChargeItem = {
+  id: number // damage_id or charge_id
+  booking_id: number
+  source: 'Damage' | 'Charge'
+  date: string // YYYY-MM-DD
+  description: string
+  amount: number
+}
+
+// booking_id -> total extra charges (bookings with none are absent), and
+// booking_id -> each charge, oldest first. The total is the items added up,
+// so a bill's lines can't disagree with the balance.
 export async function loadExtraChargesByBooking(bookingIds: number[]): Promise<{
   byBooking: Map<number, number>
+  items: Map<number, ExtraChargeItem[]>
   error: string | null
 }> {
-  const damage = await loadClientDamageChargesByBooking(bookingIds)
-  if (damage.error) return damage
-  const byBooking = new Map(damage.byBooking)
-  if (bookingIds.length === 0) return { byBooking, error: null }
+  const byBooking = new Map<number, number>()
+  const items = new Map<number, ExtraChargeItem[]>()
+  if (bookingIds.length === 0) return { byBooking, items, error: null }
+  const fail = (error: string) => ({ byBooking, items, error })
 
-  const { rows, error } = await fetchIn<{ booking_id: number; amount: number | string }>(bookingIds, (chunk, from, to) =>
-    supabase
-      .from('booking_charges')
-      .select('booking_id, amount')
-      .in('booking_id', chunk)
-      .is('voided_at', null)
-      .range(from, to),
+  // fetchIn: ids in chunks (a long list makes the URL too big) and every
+  // page past Supabase's 1000-row cap.
+  const [trips, charges] = await Promise.all([
+    fetchIn<{ itinerary_id: number; booking_id: number }>(bookingIds, (chunk, from, to) =>
+      supabase.from('itineraries').select('itinerary_id, booking_id').in('booking_id', chunk).range(from, to),
+    ),
+    fetchIn<{ charge_id: number; booking_id: number; description: string; amount: number | string; created_at: string }>(
+      bookingIds,
+      (chunk, from, to) =>
+        supabase
+          .from('booking_charges')
+          .select('charge_id, booking_id, description, amount, created_at')
+          .in('booking_id', chunk)
+          .is('voided_at', null)
+          .range(from, to),
+    ),
+  ])
+  if (trips.error) return fail(trips.error)
+  // booking_charges missing (its SQL not run yet) = no added charges.
+  if (charges.error && !isMissingTable(charges.error)) return fail(charges.error)
+
+  const damage = await fetchIn<{
+    damage_id: number
+    itinerary_id: number
+    damage_description: string
+    estimated_damage_cost: number | string | null
+    approved_at: string | null
+    created_at: string | null
+  }>(
+    trips.rows.map((t) => t.itinerary_id),
+    (chunk, from, to) =>
+      supabase
+        .from('delivery_damage_records')
+        .select('damage_id, itinerary_id, damage_description, estimated_damage_cost, approved_at, created_at')
+        .in('itinerary_id', chunk)
+        .eq('damage_status', 'Approved')
+        .eq('charge_to', 'Client')
+        .range(from, to),
   )
-  if (error) return { byBooking, error: isMissingTable(error) ? null : error }
-  for (const r of rows) byBooking.set(r.booking_id, (byBooking.get(r.booking_id) ?? 0) + Number(r.amount))
-  return { byBooking, error: null }
+  if (damage.error) return fail(damage.error)
+
+  const all: ExtraChargeItem[] = []
+  const bookingByTrip = new Map(trips.rows.map((t) => [t.itinerary_id, t.booking_id]))
+  for (const d of damage.rows) {
+    const bookingId = bookingByTrip.get(d.itinerary_id)
+    if (bookingId === undefined) continue
+    all.push({
+      id: d.damage_id,
+      booking_id: bookingId,
+      source: 'Damage',
+      date: splitManila(d.approved_at ?? d.created_at ?? new Date()).date,
+      description: `Damage, Trip #${d.itinerary_id} (${d.damage_description})`,
+      amount: Number(d.estimated_damage_cost ?? 0),
+    })
+  }
+  for (const c of charges.error ? [] : charges.rows) {
+    all.push({
+      id: c.charge_id,
+      booking_id: c.booking_id,
+      source: 'Charge',
+      date: splitManila(c.created_at).date,
+      description: c.description,
+      amount: Number(c.amount),
+    })
+  }
+
+  all.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+  for (const item of all) {
+    byBooking.set(item.booking_id, (byBooking.get(item.booking_id) ?? 0) + item.amount)
+    items.set(item.booking_id, [...(items.get(item.booking_id) ?? []), item])
+  }
+  return { byBooking, items, error: null }
 }
 
 // One booking's added charges, newest first (voided ones included).

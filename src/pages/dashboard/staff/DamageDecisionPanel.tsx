@@ -3,7 +3,10 @@
 // who pays (WhoPaysFields -- also where a claim's status is moved Filed ->
 // Paid / Denied). Dispatchers see it read-only: only an Admin decides
 // (the DB's UPDATE policy on delivery_damage_records is is_admin()).
+// Damage charged to the Client gets "View in Billing" -> that booking's bill
+// (/dashboard/billing/:bookingId, Admin route), where it's added on top.
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { decideDamage, UNDECIDED, type ChargeTo, type WhoPaysInput } from '../../../lib/damageCharges'
@@ -11,6 +14,7 @@ import type { InsuranceCompany } from '../../../lib/insuranceCompanies'
 import { CLAIM_STATUSES, companyDamageShare, type ClaimRow, type ClaimStatus } from '../../../lib/insuranceRules'
 import { formatDate, formatMoney, splitManila } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 import WhoPaysFields from './WhoPaysFields'
 
 export type DamageCharge = {
@@ -74,6 +78,38 @@ function DamageDecisionPanel({
 
     setSaving(true)
     setError(null)
+
+    // Moving damage onto or off the client's bill after they've paid changes
+    // a settled balance (it can turn into a refund) -- ask first.
+    const billChanges =
+      decided && damage.charge_to !== decision.columns.charge_to && (damage.charge_to === 'Client' || decision.columns.charge_to === 'Client')
+    if (billChanges) {
+      const { data: booking, error: bookingError } = await supabase
+        .from('bookings')
+        .select('amount_paid')
+        .eq('booking_id', damage.booking_id)
+        .maybeSingle()
+      if (bookingError) {
+        setSaving(false)
+        return setError(bookingError.message)
+      }
+      const paid = Number(booking?.amount_paid ?? 0)
+      if (
+        paid > 0 &&
+        !(await confirmDialog({
+          title: 'The client has already paid',
+          message:
+            `Booking #${damage.booking_id} has ${formatMoney(paid)} in payments. ` +
+            (damage.charge_to === 'Client'
+              ? `Taking this ${formatMoney(cost)} damage off the client's bill lowers what they owe -- it may show as a refund in Bills Receivable.`
+              : `Adding this ${formatMoney(cost)} damage to the client's bill raises what they owe on a booking they've paid.`),
+          confirmLabel: `Charge to ${decision.columns.charge_to}`,
+        }))
+      ) {
+        setSaving(false)
+        return
+      }
+    }
     // .select() so a silent RLS no-op shows as an error, not fake success.
     const { data: updated, error: updateError } = await supabase
       .from('delivery_damage_records')
@@ -167,6 +203,11 @@ function DamageDecisionPanel({
 
       {isAdmin && (
         <div className="flex justify-end gap-3 border-t border-line px-5 py-4">
+          {decided && damage.charge_to === 'Client' && (
+            <Link to={`/dashboard/billing/${damage.booking_id}`} className="btn-secondary inline-flex items-center px-4 text-sm font-medium">
+              View in Billing
+            </Link>
+          )}
           <button type="button" onClick={() => void save()} disabled={saving || !whoPays.chargeTo} className="btn-primary px-5 text-sm">
             {saving ? 'Saving...' : decided ? 'Save Changes' : 'Save Decision'}
           </button>

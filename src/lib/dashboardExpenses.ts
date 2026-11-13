@@ -5,7 +5,8 @@
 // OPERATIONAL = payroll (gross + employer shares, DRAFT payslips included
 // so this week's run shows live) + trip expenses the crew logged +
 // diesel + the company's share of damage (charged to the Company, or the
-// part an insurer didn't cover -- insuranceRules.ts companyDamageShare).
+// part an insurer didn't cover -- insuranceRules.ts companyDamageShare),
+// counted in the period it was DECIDED (loadCompanyDamageCost, approved_at).
 //   - Commission and the per-trip fee are NOT added again: they're already
 //     inside drivers' gross_pay.
 //   - Diesel is counted once per delivered trip: the Fuel the crew logged
@@ -75,7 +76,7 @@ export type OperationalExpenses = {
   dieselEstimated: number // calculator estimate for delivered trips with no Fuel logged
   estimatedTrips: number // how many trips the estimate covers
   tripsMissingDistance: number // of those, trips with no distance (estimated as 0)
-  damageCompany: number // approved damage charged to the Company
+  damageCompany: number // company's share of damage decided in the period (Company / Insurance)
   total: number
   dieselPriceMissing: boolean
 }
@@ -86,6 +87,26 @@ type TripRow = { itinerary_id: number; booking_id: number; itinerary_status: str
 type BookingRow = { booking_id: number; estimated_distance_km: number | string | null }
 type ExpenseRow = { expense_id: number; itinerary_id: number; amount: number | string; category: string }
 type DamageRow = DamageCostRow
+
+// What damage cost the COMPANY (Company in full, Insurance minus what the
+// insurer covers -- companyDamageShare) for records DECIDED in
+// [fromTs, toTs), by approved_at. Counted when decided, not by the trip's
+// delivery date, so damage found after a month closed doesn't rewrite it.
+// Re-deciding a record stamps approved_at again and moves it to that month.
+// Used by the dashboard card and Profit & Loss / Money Summary.
+export async function loadCompanyDamageCost(fromTs: string, toTs: string): Promise<{ total: number; error: string | null }> {
+  const { rows, error } = await fetchAll<DamageRow>((from, to) =>
+    supabase
+      .from('delivery_damage_records')
+      .select('charge_to, estimated_damage_cost, insurance_covered_amount, claim_status')
+      .eq('damage_status', 'Approved')
+      .in('charge_to', ['Company', 'Insurance'])
+      .gte('approved_at', fromTs)
+      .lt('approved_at', toTs)
+      .range(from, to),
+  )
+  return { total: rows.reduce((s, d) => s + companyDamageShare(d), 0), error }
+}
 
 export async function loadOperationalExpenses(
   period: Period,
@@ -166,16 +187,7 @@ export async function loadOperationalExpenses(
         .eq('category', 'Fuel')
         .range(from, to),
     ),
-    fetchIn<DamageRow>(deliveredIds, (chunk, from, to) =>
-      supabase
-        .from('delivery_damage_records')
-        .select('charge_to, estimated_damage_cost, insurance_covered_amount, claim_status')
-        .in('itinerary_id', chunk)
-        .eq('damage_status', 'Approved')
-        // Insurance: only the part the insurer doesn't cover (companyDamageShare).
-        .in('charge_to', ['Company', 'Insurance'])
-        .range(from, to),
-    ),
+    loadCompanyDamageCost(cutoffTs, endTs),
   ])
   const secondError = bookings.error ?? deliveredExpenses.error ?? damage.error
   if (secondError) return { data: null, error: secondError }
@@ -229,7 +241,7 @@ export async function loadOperationalExpenses(
     }
   }
 
-  const damageCompany = damage.rows.reduce((s, d) => s + companyDamageShare(d), 0)
+  const damageCompany = damage.total
 
   return {
     data: {

@@ -22,13 +22,13 @@ export type Billing = {
   due_date: string | null
   trips_delivered: number
   trips_total: number
-  billed: number // delivery amount + client damage charges
+  billed: number // delivery amount + extra charges (damage, added charges)
   paid: number // payments received minus refunds
   balance_due: number
   // Trips not delivered yet (cancelled ones left out): listed between the
   // dated lines with no amount, billed once they are delivered.
   pendingTrips: PendingTrip[]
-  // Dated lines (delivered trips, adjustment, payments) with running balance.
+  // Dated lines (delivered trips, charges, adjustment, payments) with running balance.
   lines: ReturnType<typeof buildStatement>['lines']
 }
 
@@ -92,6 +92,7 @@ export async function loadBilling(
       bookings: ledger.input.bookings.filter((b) => b.booking_id === bookingId),
       trips: ledger.input.trips.filter((t) => t.booking_id === bookingId),
       payments: ledger.input.payments.filter((p) => p.booking_id === bookingId),
+      charges: (ledger.input.charges ?? []).filter((c) => c.booking_id === bookingId),
     },
     '0000-01-01',
     '9999-12-31',

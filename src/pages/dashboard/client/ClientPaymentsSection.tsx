@@ -161,9 +161,12 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
                           <td className="px-4 py-3 text-right tabular-nums">{formatMoney(row.amount_paid)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-ink tabular-nums">
                             {formatMoney(Math.max(row.balance_due, 0))}
-                            {row.damage_charges > 0 && (
-                              <span className="block text-xs font-normal text-ink-muted">incl. {formatMoney(row.damage_charges)} extra charges</span>
-                            )}
+                            {/* Each extra charge by name (damage, added charges). */}
+                            {row.extra_items.map((item) => (
+                              <span key={`${item.source}-${item.id}`} className="block text-xs font-normal text-ink-muted">
+                                incl. {item.description} {formatMoney(item.amount)}
+                              </span>
+                            ))}
                           </td>
                           <td className={`px-4 py-3 font-medium ${style.foot}`}>{state.detail}</td>
                         </tr>

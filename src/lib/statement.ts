@@ -24,7 +24,7 @@ export async function loadLedgerInputs(clientId?: number): Promise<{
   rows: Awaited<ReturnType<typeof loadPaymentDueReport>>['rows']
   error: string | null
 }> {
-  const empty = { input: { bookings: [], trips: [], payments: [] }, rows: [] }
+  const empty = { input: { bookings: [], trips: [], payments: [], charges: [] }, rows: [] }
   const report = await loadPaymentDueReport(clientId, { includeSettled: true })
   if (report.error) return { ...empty, error: report.error }
 
@@ -92,6 +92,8 @@ export async function loadLedgerInputs(clientId?: number): Promise<{
       bookings,
       trips: statementTrips,
       payments: payments.rows.map((p) => ({ ...p, amount: Number(p.amount) })),
+      // Damage / added charges, one line each (same items as the balance).
+      charges: report.rows.flatMap((r) => r.extra_items),
     },
     rows: report.rows,
     error: null,
