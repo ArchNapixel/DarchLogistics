@@ -7,7 +7,8 @@
 // or below it / out of stock ("N parts need reordering"), linking to the
 // Inventory page filtered to them -- same 5-minute reload. Plus "N part
 // requests from mechanics" (open parts_requests) -> the Inventory page,
-// and "N damage charges not decided" -> Damage Charges.
+// and "N damage charges not decided" -> Damage Charges, and "N trucks due
+// for PMS (X overdue)" -> Truck Monitoring (lib/pms.ts, amber/red trucks).
 // Surfaces driver licenses expiring within 30 days
 // (Admin and Dispatcher see every driver, a Driver sees only their own) as a
 // dismissible pop-up panel in the upper right, instead of the
@@ -25,6 +26,8 @@ import { isAdmin, isStaff } from '../lib/roles'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
 import { stockLevel } from '../lib/inventoryItemTypes'
+import { loadPmsSettings } from '../lib/odometer'
+import { pmsStatus } from '../lib/pms'
 
 type StockAlert = { out: number; low: number }
 // Changes when the counts change, so a new shortage shows as unread again.
@@ -32,6 +35,9 @@ const stockKey = (s: StockAlert) => `stock-${s.out}-${s.low}`
 // Open "Request this part" flags from mechanics (count only).
 const requestsKey = (n: number) => `part-requests-${n}`
 const damageKey = (n: number) => `damage-undecided-${n}`
+// Trucks within the warning distance of PMS (soon) or past it (due).
+type PmsAlert = { soon: number; due: number }
+const pmsKey = (p: PmsAlert) => `pms-${p.soon}-${p.due}`
 
 type ComplianceRow = {
   employee_id: number
@@ -104,12 +110,13 @@ function ComplianceExpiryAlerts() {
   const [stock, setStock] = useState<StockAlert | null>(null)
   const [partRequests, setPartRequests] = useState(0)
   const [undecidedDamage, setUndecidedDamage] = useState(0)
+  const [pmsDue, setPmsDue] = useState<PmsAlert | null>(null)
 
   // Admin only: kept-in-stock items (reorder level set) that need
   // reordering, parts mechanics asked for, and damage nobody decided yet.
   const loadStock = useCallback(async () => {
     if (!isAdmin(role)) return
-    const [{ data }, { count }, { count: damageCount }] = await Promise.all([
+    const [{ data }, { count }, { count: damageCount }, { data: trucks }, pmsSettings] = await Promise.all([
       supabase
         .from('inventory_items')
         .select('quantity, reorder_level')
@@ -120,7 +127,23 @@ function ComplianceExpiryAlerts() {
         .from('delivery_damage_records')
         .select('damage_id', { count: 'exact', head: true })
         .or('damage_status.is.null,damage_status.neq.Approved'),
+      supabase
+        .from('truck_profiles')
+        .select('current_odometer, last_pms_odometer')
+        .eq('is_active', true)
+        .not('last_pms_odometer', 'is', null),
+      loadPmsSettings(),
     ])
+    const pms = { soon: 0, due: 0 }
+    for (const t of trucks ?? []) {
+      const stage = pmsStatus(
+        t.current_odometer != null ? Number(t.current_odometer) : null,
+        Number(t.last_pms_odometer),
+        pmsSettings,
+      )?.stage
+      if (stage === 'soon' || stage === 'due') pms[stage] += 1
+    }
+    setPmsDue(pms.soon + pms.due > 0 ? pms : null)
     setPartRequests(count ?? 0)
     setUndecidedDamage(damageCount ?? 0)
     const counts = { out: 0, low: 0 }
@@ -275,12 +298,14 @@ function ComplianceExpiryAlerts() {
   const visibleStock = stock && !dismissedKeys.includes(stockKey(stock)) ? stock : null
   const visibleRequests = partRequests > 0 && !dismissedKeys.includes(requestsKey(partRequests)) ? partRequests : 0
   const visibleDamage = undecidedDamage > 0 && !dismissedKeys.includes(damageKey(undecidedDamage)) ? undecidedDamage : 0
+  const visiblePms = pmsDue && !dismissedKeys.includes(pmsKey(pmsDue)) ? pmsDue : null
   const unreadCount =
     visibleAlerts.filter((alert) => !readKeys.includes(alertKey(alert))).length +
     visibleOverdue.filter((t) => !readKeys.includes(overdueKey(t))).length +
     (visibleStock && !readKeys.includes(stockKey(visibleStock)) ? 1 : 0) +
     (visibleRequests && !readKeys.includes(requestsKey(visibleRequests)) ? 1 : 0) +
-    (visibleDamage && !readKeys.includes(damageKey(visibleDamage)) ? 1 : 0)
+    (visibleDamage && !readKeys.includes(damageKey(visibleDamage)) ? 1 : 0) +
+    (visiblePms && !readKeys.includes(pmsKey(visiblePms)) ? 1 : 0)
 
   function handleToggle() {
     const nextOpen = !open
@@ -292,12 +317,13 @@ function ComplianceExpiryAlerts() {
         ...(stock ? [stockKey(stock)] : []),
         ...(partRequests > 0 ? [requestsKey(partRequests)] : []),
         ...(undecidedDamage > 0 ? [damageKey(undecidedDamage)] : []),
+        ...(pmsDue ? [pmsKey(pmsDue)] : []),
       ])
     }
   }
 
   // Nothing expiring (or a role that never gets these) -- no bell at all.
-  if (alerts.length === 0 && overdue.length === 0 && !stock && partRequests === 0 && undecidedDamage === 0) return null
+  if (alerts.length === 0 && overdue.length === 0 && !stock && partRequests === 0 && undecidedDamage === 0 && !pmsDue) return null
 
   return (
     <div className="relative">
@@ -335,12 +361,37 @@ function ComplianceExpiryAlerts() {
               </button>
             </div>
 
-            {visibleAlerts.length === 0 && visibleOverdue.length === 0 && !visibleStock && !visibleRequests && !visibleDamage ? (
+            {visibleAlerts.length === 0 && visibleOverdue.length === 0 && !visibleStock && !visibleRequests && !visibleDamage && !visiblePms ? (
               <p className="px-4 py-3 text-sm text-slate-500">
                 No notifications.
               </p>
             ) : (
               <div className="max-h-80 overflow-y-auto">
+                {visiblePms && (
+                  <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
+                    <Link to="/dashboard/maintenance-monitoring" onClick={() => setOpen(false)} className="block flex-1 text-sm hover:bg-slate-50">
+                      <p className="font-medium text-slate-900">
+                        {visiblePms.soon + visiblePms.due} {visiblePms.soon + visiblePms.due === 1 ? 'truck' : 'trucks'} due for PMS
+                      </p>
+                      <p className={visiblePms.due > 0 ? 'text-red-700' : 'text-orange-800'}>
+                        {[
+                          visiblePms.due > 0 ? `${visiblePms.due} due or overdue` : null,
+                          visiblePms.soon > 0 ? `${visiblePms.soon} coming up` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-600 underline">Open Truck Monitoring →</p>
+                    </Link>
+                    <button
+                      onClick={() => setDismissedKeys((prev) => [...prev, pmsKey(visiblePms)])}
+                      aria-label="Dismiss notification"
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {visibleDamage > 0 && (
                   <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3">
                     <Link to="/dashboard/damage-charges" onClick={() => setOpen(false)} className="block flex-1 text-sm hover:bg-slate-50">

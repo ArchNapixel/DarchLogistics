@@ -2336,6 +2336,18 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
   `loadPmsSettings()` in lib/odometer.ts (defaults 1000 / 200, same as the
   trigger). Bar = `components/PmsProgress.tsx` (green / amber / red; "PMS start
   not set · Set in Fleet" -> `/dashboard/fleet?truck=PLATE`, which Fleet now
-  opens). Truck Monitoring: "Next PMS" column (trucks nearest PMS first, link
-  to the open PMS work order), tile "Trucks due for PMS". Fleet truck panel:
+  opens). Truck Monitoring: "Next PMS" column (trucks nearest PMS first; the
+  PMS work order link is only in Alerts), tile "Trucks due for PMS". Fleet truck panel:
   Next PMS bar.
+- **Phase 5 (built 2026-11-13, no SQL) -- all PMS phases done:** header bell
+  (`ComplianceExpiryAlerts`, Admin): "N trucks due for PMS (X due or overdue,
+  Y coming up)" -> Truck Monitoring, 5-minute reload. Truck Monitoring Alerts:
+  one line per amber / red truck (PMS coming up / due / overdue) with Open
+  Work Order (its PMS WO) or Create Work Order. Toasts via `pmsNotice(plate)`
+  (lib/odometer.ts) after Mark Delivered's km recording, a real reading, and
+  Count / Count All. Dispatch Board truck dropdown: `VehicleCandidate.pmsNote`
+  ("PMS in 58 km" / "PMS overdue by 120 km", from `pmsNote()` in
+  DispatchBoardSection at load) -- a label in `rankVehicles`, moved down like
+  "service due", NEVER blocked; it replaces "work order pending" (that order
+  is the PMS). Not done: "PMS due during this trip" (the board doesn't load
+  trip distance).

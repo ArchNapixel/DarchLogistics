@@ -85,6 +85,8 @@ import { groupTripRates, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
 import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
+import { loadPmsSettings } from '../../../lib/odometer'
+import { pmsStatus, type PmsSettings } from '../../../lib/pms'
 import { substituteNote, trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
 import {
   SUGGESTED_COUNT,
@@ -236,6 +238,22 @@ type TruckOption = {
   plate_number: string
   current_status: string | null
   next_service_date: string | null
+  current_odometer: number | null
+  last_pms_odometer: number | null
+  // "PMS in 58 km" / "PMS overdue by 120 km" -- a label only (warn, not block).
+  pms_note: string | null
+}
+
+// The truck's PMS label for the dropdowns, or null when it's not close.
+function pmsNote(t: Pick<TruckOption, 'current_odometer' | 'last_pms_odometer'>, settings: PmsSettings): string | null {
+  const s = pmsStatus(
+    t.current_odometer != null ? Number(t.current_odometer) : null,
+    t.last_pms_odometer != null ? Number(t.last_pms_odometer) : null,
+    settings,
+  )
+  if (!s || s.stage === 'ok') return null
+  if (s.stage === 'soon') return `PMS in ${Math.round(s.left).toLocaleString()} km`
+  return s.left < 0 ? `PMS overdue by ${Math.round(-s.left).toLocaleString()} km` : 'PMS due now'
 }
 
 // Per vehicle ('T:<plate>' / 'R:<trailer_id>'): open work order, service due dates.
@@ -481,6 +499,7 @@ function truckCandidates(trucks: TruckOption[], service: VehicleService): Vehicl
       current_status: t.current_status,
       workOrders: s?.workOrders ?? [],
       serviceDue: [...(s?.serviceDue ?? []), ...(t.next_service_date ? [t.next_service_date] : [])],
+      pmsNote: t.pms_note,
     }
   })
 }
@@ -1490,14 +1509,19 @@ function DispatchBoardSection() {
     // Trucks/trailers to populate the assignment dropdowns -- needed
     // even when there are no active itineraries yet, so load them
     // regardless.
-    const [trucksResult, trailersResult, startSettingResult] = await Promise.all([
-      supabase.from('truck_profiles').select('plate_number, current_status, next_service_date').eq('is_active', true).order('plate_number'),
+    const [trucksResult, trailersResult, startSettingResult, pmsSettings] = await Promise.all([
+      supabase
+        .from('truck_profiles')
+        .select('plate_number, current_status, next_service_date, current_odometer, last_pms_odometer')
+        .eq('is_active', true)
+        .order('plate_number'),
       supabase.from('trailers').select('trailer_id, plate_number, trailer_type, trailer_size, current_status').eq('is_active', true).order('trailer_id'),
       supabase
         .from('app_settings')
         .select('setting_value')
         .eq('setting_key', 'default_trip_start_time')
         .maybeSingle(),
+      loadPmsSettings(),
     ])
     // Not fatal: without them suggestions skip fairness by pesos.
     loadPayrollSettings().then(({ settings }) => setPay(settings))
@@ -1599,7 +1623,7 @@ function DispatchBoardSection() {
       ]),
     )
 
-    setTrucks(trucksResult.data)
+    setTrucks(trucksResult.data.map((t) => ({ ...t, pms_note: pmsNote(t, pmsSettings) })))
     setTrailers(trailersResult.data)
 
     if (itineraryRows.length === 0) {

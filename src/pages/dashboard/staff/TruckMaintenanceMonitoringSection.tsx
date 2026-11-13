@@ -19,6 +19,7 @@ import {
   ODOMETER_SOURCE_LABELS,
   loadOdometerLog,
   loadUncountedTrips,
+  pmsNotice,
   recordOdometerReading,
   recordTripKm,
   type OdometerLogEntry,
@@ -129,6 +130,8 @@ function OdometerPanel({
     setSaving(false)
     if (saveError) return setReadingError(saveError)
     showToast(`${plate}'s odometer is now ${km(value)}.`)
+    const notice = await pmsNotice(plate)
+    if (notice) showToast(notice.message, notice.due ? 'error' : 'success')
     setReading('')
     setNote('')
     onChanged()
@@ -140,14 +143,22 @@ function OdometerPanel({
     setCounting(which)
     const errors: Record<number, string> = {}
     let done = 0
+    const plates = new Set<string>()
     for (const trip of trips) {
       const result = await recordTripKm(trip.itinerary_id)
       if ('error' in result) errors[trip.itinerary_id] = result.error
-      else done++
+      else {
+        done++
+        plates.add(result.plate)
+      }
     }
     setCounting(null)
     setTripErrors(errors)
     if (done > 0) showToast(`${done} ${done === 1 ? 'trip' : 'trips'} added to the odometer.`)
+    for (const counted of plates) {
+      const notice = await pmsNotice(counted)
+      if (notice) showToast(notice.message, notice.due ? 'error' : 'success')
+    }
     if (done > 0) onChanged()
   }
 
@@ -428,6 +439,37 @@ function TruckMaintenanceMonitoringSection() {
       action: { kind: 'link', label: 'Open Schedules', to: '/dashboard/maintenance?tab=Schedules' },
     })
   }
+
+  // PMS cycle per truck; the table lists the truck nearest its PMS first.
+  const pmsOf = (t: Truck) =>
+    pmsStatus(
+      t.current_odometer != null ? Number(t.current_odometer) : null,
+      t.last_pms_odometer != null ? Number(t.last_pms_odometer) : null,
+      pmsSettings,
+    )
+  // One alert per truck within the warning distance or past its PMS.
+  for (const t of trucks) {
+    const pms = pmsOf(t)
+    if (!pms || pms.stage === 'ok') continue
+    const order = workOrders.find((o) => o.plate_number === t.plate_number && o.pms_target_km !== null)
+    const where =
+      pms.stage === 'soon'
+        ? `${Math.round(pms.left).toLocaleString()} km left`
+        : pms.left < 0
+          ? `over by ${Math.round(-pms.left).toLocaleString()} km`
+          : 'due now'
+    alerts.push({
+      key: `pms-${t.plate_number}`,
+      title: `${t.plate_number} ${pms.stage === 'soon' ? 'PMS coming up' : pms.left < 0 ? 'PMS overdue' : 'PMS due'}`,
+      detail: `PMS at ${pms.nextAt.toLocaleString()} km · ${where} · ${
+        order ? `${order.work_order_number}, ${order.work_order_status}` : 'no open PMS work order'
+      }`,
+      tone: pms.stage === 'due' ? 'bad' : 'warn',
+      action: order
+        ? { kind: 'link', label: 'Open Work Order', to: `/dashboard/maintenance?wo=${order.work_order_id}` }
+        : { kind: 'create', vehicle: { type: 'truck', plateNumber: t.plate_number } },
+    })
+  }
   alerts.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'bad' ? -1 : 1))
 
   // A truck's next maintenance: its next service date or its earliest
@@ -440,13 +482,6 @@ function TruckMaintenanceMonitoringSection() {
     return options[0] ?? null
   }
 
-  // PMS cycle per truck; the table lists the truck nearest its PMS first.
-  const pmsOf = (t: Truck) =>
-    pmsStatus(
-      t.current_odometer != null ? Number(t.current_odometer) : null,
-      t.last_pms_odometer != null ? Number(t.last_pms_odometer) : null,
-      pmsSettings,
-    )
   const trucksByPms = [...trucks].sort((a, b) => byPmsUrgency(pmsOf(a), pmsOf(b)))
   const trucksDueForPms = trucks.filter((t) => {
     const stage = pmsOf(t)?.stage
@@ -525,7 +560,6 @@ function TruckMaintenanceMonitoringSection() {
                       const next = nextMaintenance(t)
                       const overdue = next ? next.date < today : false
                       const pms = pmsOf(t)
-                      const pmsOrder = workOrders.find((o) => o.plate_number === t.plate_number && o.pms_target_km !== null)
                       return (
                         <tr key={t.plate_number} className="h-[60px] border-b border-slate-200">
                           <td className={`${TD} font-semibold ${down(t.current_status) ? 'text-ink-muted' : 'text-ink'}`}>{t.plate_number}</td>
@@ -538,14 +572,6 @@ function TruckMaintenanceMonitoringSection() {
                           <td className={`${TD} py-3`}>
                             {pms && <span className="mb-1 block text-[12px] text-ink-muted">at {pms.nextAt.toLocaleString()} km</span>}
                             <PmsProgress status={pms} settings={pmsSettings} plate={t.plate_number} />
-                            {pmsOrder && (
-                              <Link
-                                to={`/dashboard/maintenance?wo=${pmsOrder.work_order_id}`}
-                                className="mt-1 block text-[12px] font-semibold text-primary underline"
-                              >
-                                PMS work order · {pmsOrder.work_order_status}
-                              </Link>
-                            )}
                           </td>
                           <td className={`${TD} ${last.length ? '' : 'text-ink-muted'}`}>
                             {last.length === 0

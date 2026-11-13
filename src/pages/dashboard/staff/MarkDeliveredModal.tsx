@@ -12,7 +12,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import TripDocuments from './TripDocuments'
 import { showToast } from '../../../components/Toast'
 import { retimeAfterDelivery } from '../../../lib/tripRetime'
-import { recordTripKm } from '../../../lib/odometer'
+import { pmsNotice, recordTripKm } from '../../../lib/odometer'
 import { loadLastStatusTime, nowRounded, statusTimeError } from '../../../lib/statusTime'
 import StatusWhenField from './StatusWhenField'
 
@@ -108,10 +108,14 @@ function MarkDeliveredModal({
     // Add the trip's km to the truck's odometer (PMS counts on it). Runs on
     // its own (routing can take a few seconds); a failure leaves the trip on
     // Truck Monitoring's "Trips not counted yet" list.
-    void recordTripKm(itineraryId).then((result) => {
+    void recordTripKm(itineraryId).then(async (result) => {
       if ('error' in result) {
         showToast(`Trip #${itineraryId}'s km weren't added to the odometer (${result.error}). Count it on Truck Monitoring.`, 'error')
+        return
       }
+      // Close to (or past) PMS now? Say so.
+      const notice = await pmsNotice(result.plate)
+      if (notice) showToast(notice.message, notice.due ? 'error' : 'success')
     })
 
     setSubmitting(false)

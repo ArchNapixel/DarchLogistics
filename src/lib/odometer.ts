@@ -14,7 +14,7 @@ import { supabase } from './supabaseClient'
 import { fetchAll } from './dashboardExpenses'
 import { fetchDrivingDistanceKm, geocodePlace } from './geocoding'
 import { goesHome, tripLegs, uncountedTrips, type DeliveredTrip } from './odometerRules'
-import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, type PmsSettings } from './pms'
+import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, pmsStatus, type PmsSettings } from './pms'
 
 // The two PMS settings (Settings page); defaults if a row is missing --
 // the same fallbacks the pms_auto_schedule trigger uses.
@@ -197,6 +197,39 @@ export async function recordOdometerReading(plate: string, reading: number, note
     p_note: note.trim() || null,
   })
   return error?.message ?? null
+}
+
+// After an odometer change: a toast line when the truck is within the
+// warning distance or past its PMS (and whether its PMS work order is
+// open -- the DB trigger creates it at that point), else null.
+export async function pmsNotice(plate: string): Promise<{ message: string; due: boolean } | null> {
+  const [{ data: truck }, settings, { data: order }] = await Promise.all([
+    supabase.from('truck_profiles').select('current_odometer, last_pms_odometer').eq('plate_number', plate).maybeSingle(),
+    loadPmsSettings(),
+    supabase
+      .from('work_orders')
+      .select('work_order_number')
+      .eq('plate_number', plate)
+      .not('pms_target_km', 'is', null)
+      .in('work_order_status', ['Created', 'Scheduled', 'In Progress', 'On Hold'])
+      .maybeSingle(),
+  ])
+  const s = pmsStatus(
+    truck?.current_odometer != null ? Number(truck.current_odometer) : null,
+    truck?.last_pms_odometer != null ? Number(truck.last_pms_odometer) : null,
+    settings,
+  )
+  if (!s || s.stage === 'ok') return null
+  const where =
+    s.stage === 'soon'
+      ? `${Math.round(s.left).toLocaleString()} km from its PMS`
+      : s.left < 0
+        ? `${Math.round(-s.left).toLocaleString()} km past its PMS`
+        : 'due for PMS now'
+  return {
+    message: `${plate} is ${where}. ${order ? `PMS work order ${order.work_order_number} is open.` : 'No PMS work order is open.'}`,
+    due: s.stage === 'due',
+  }
 }
 
 // Delivered trips not on the odometer yet, oldest first.

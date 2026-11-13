@@ -32,6 +32,9 @@ export type VehicleCandidate = {
   workOrders: { status: string; scheduledDate: string | null }[]
   // Service due dates (YYYY-MM-DD): pending maintenance schedules, next service date.
   serviceDue: string[]
+  // Trucks only: "PMS in 58 km" / "PMS overdue by 120 km" (lib/pms.ts) --
+  // a label like "service due", never a block (decided 2026-11-13).
+  pmsNote?: string | null
 }
 
 export type RankedVehicle = VehicleCandidate & {
@@ -102,7 +105,8 @@ export function rankVehicles(
       return {
         ...v,
         blockedBy,
-        note: due ? `service due ${describeDate(due)}` : pendingWorkOrder ? 'work order pending' : null,
+        // PMS before "work order pending": that pending order is usually the PMS.
+        note: due ? `service due ${describeDate(due)}` : (v.pmsNote ?? (pendingWorkOrder ? 'work order pending' : null)),
         // Set when the trailer's type or size differs from the one asked for.
         substitute: substituteNote(trip.required_trailer_type, v.trailer_type, trip.container_type, v.trailer_size),
         sameBooking: theirs.some((t) => t.booking_id === trip.booking_id && t.status !== 'Cancelled'),

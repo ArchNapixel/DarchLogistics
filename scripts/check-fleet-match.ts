@@ -76,6 +76,22 @@ assert.equal(trailers[1].note, 'work order pending')
 assert.equal(trailers[3].blockedBy, 'in the shop (work order)')
 assert.equal(trailers[4].blockedBy, 'work order scheduled 2026-10-25')
 
+// PMS: labelled and moved down, never blocked; beats "work order pending"
+// (the pending order is the PMS work order itself).
+const pms = rankVehicles(
+  t105,
+  [
+    vehicle('P1', { pmsNote: 'PMS overdue by 120 km', workOrders: [{ status: 'Created', scheduledDate: null }] }),
+    vehicle('P2'),
+  ],
+  () => [],
+  now,
+  slot,
+)
+assert.deepEqual(pms.map((v) => v.id), ['P2', 'P1'])
+assert.equal(pms[1].blockedBy, null)
+assert.equal(pms[1].note, 'PMS overdue by 120 km')
+
 // Earliest free start: the only truck is on 6-9 AM, so a 5 h trip asked for
 // 6 AM can start at 9 AM.
 const onlyT2 = [vehicle('T2')]
