@@ -132,10 +132,29 @@ function PaymentDetailsFields({
         <label className={label} htmlFor="pay-or">OR number (optional)</label>
         <input id="pay-or" type="text" maxLength={50} value={details.orNumber} onChange={(e) => set({ orNumber: e.target.value })} className={input} />
       </div>
-      <div className="sm:col-span-2">
-        <label className={label} htmlFor="pay-note">Note (optional)</label>
-        <input id="pay-note" type="text" maxLength={200} value={details.note} onChange={(e) => set({ note: e.target.value })} className={input} />
-      </div>
+      {/* Bank Transfer: the note box becomes a required bank name (saved into the
+          note as "Bank: X"; a preset note like "Pay ahead" is kept in front). */}
+      {details.method === 'Bank Transfer' ? (
+        <div className="sm:col-span-2">
+          <label className={label} htmlFor="pay-bank">
+            Bank name <span className="text-red-700">(required)</span>
+          </label>
+          <input
+            id="pay-bank"
+            type="text"
+            maxLength={80}
+            value={details.bankName}
+            onChange={(e) => set({ bankName: e.target.value })}
+            aria-invalid={!details.bankName.trim() ? true : undefined}
+            className={`${input} ${!details.bankName.trim() ? 'border-red-400' : ''}`}
+          />
+        </div>
+      ) : (
+        <div className="sm:col-span-2">
+          <label className={label} htmlFor="pay-note">Note (optional)</label>
+          <input id="pay-note" type="text" maxLength={200} value={details.note} onChange={(e) => set({ note: e.target.value })} className={input} />
+        </div>
+      )}
       <div className="sm:col-span-2">
         <label className={label} htmlFor="pay-proof">Proof of payment (optional): screenshot or PDF, max 5 MB</label>
         {/* Native file box hidden behind our own button so the chosen file can be removed again. */}

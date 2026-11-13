@@ -2241,6 +2241,11 @@ Supersedes the Damage Charges / MarkDeliveredModal / DamageFields lines above.
   (note "Pay ahead") WITHOUT locking `amount_to_pay`, like a downpayment, so
   billing still follows delivered trips; the extra shows as "Paid ahead".
 - Table is full width now; "How due dates are set" is a horizontal strip below it.
+- Every payment form (`PaymentDetailsFields`): picking **Bank Transfer** swaps the
+  Note box for a required **Bank name** (`PaymentDetails.bankName`, checked in
+  `paymentDetailsError`). No column -- `paymentNote()` in `lib/bookingPayments.ts`
+  saves it into `booking_payments.note` as "Bank: X" (after any preset note,
+  e.g. "Pay ahead · Bank: BDO").
 
 ## 2026-11-13: Trailer size (20ft / 40ft) is matched, not just shown
 - `trailers.trailer_size` ('20ft' / '40ft', CHECK; null = not set yet -- set it

@@ -29,12 +29,15 @@ export type PaymentDetails = {
   referenceNo: string
   orNumber: string
   note: string
+  // Bank Transfer only (required then). No column for it -- saved into the
+  // note as "Bank: X" by paymentNote().
+  bankName: string
   // Optional screenshot/PDF of the transfer.
   proof: File | null
 }
 
 export function emptyPaymentDetails(): PaymentDetails {
-  return { method: 'Cash', paidOn: toManilaDate(new Date()), referenceNo: '', orNumber: '', note: '', proof: null }
+  return { method: 'Cash', paidOn: toManilaDate(new Date()), referenceNo: '', orNumber: '', note: '', bankName: '', proof: null }
 }
 
 // Amount boxes: see lib/amountInput.ts (re-exported for the payment forms).
@@ -69,8 +72,15 @@ export function paymentDetailsError(details: PaymentDetails, earliest?: string):
     (referenceRequired(details.method) && !details.referenceNo.trim()
       ? `Enter the reference no. for this ${details.method} payment.`
       : null) ??
+    (details.method === 'Bank Transfer' && !details.bankName.trim() ? 'Enter the bank name for this Bank Transfer.' : null) ??
     proofFileError(details.proof)
   )
+}
+
+// The note as saved: a Bank Transfer gets "Bank: X" added (no bank column).
+function paymentNote(details: PaymentDetails): string | null {
+  const bank = details.method === 'Bank Transfer' && details.bankName.trim() ? `Bank: ${details.bankName.trim()}` : ''
+  return [details.note.trim(), bank].filter(Boolean).join(' · ') || null
 }
 
 // Opens an attached proof in a new tab (signed link, valid 1 minute).
@@ -279,7 +289,7 @@ export async function recordBookingPayment(args: {
     p_paid_on: args.details.paidOn || null,
     p_reference_no: args.details.referenceNo.trim() || null,
     p_or_number: args.details.orNumber.trim() || null,
-    p_note: args.details.note.trim() || null,
+    p_note: paymentNote(args.details),
     p_set_amount_to_pay: args.setAmountToPay ?? null,
   })
   if (error) {
