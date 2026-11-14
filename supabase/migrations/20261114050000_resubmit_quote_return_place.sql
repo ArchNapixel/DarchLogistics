@@ -2,6 +2,8 @@
 -- quote sent back by the client) now saves the return place too; before, the
 -- function listed only the old columns, so a changed return place was dropped.
 -- Live definition of 2026-11-14 with only the return_* lines added.
+-- Also get_trip_return_place(): the return place for the trip's own crew
+-- (drivers can't read bookings), used by the driver app (DriverTasks).
 
 CREATE OR REPLACE FUNCTION public.resubmit_quote_request(p_quote_id bigint, p_changes jsonb)
  RETURNS void
@@ -66,6 +68,32 @@ begin
   end if;
 end;
 $function$;
+
+-- Where a trip's empty container goes back to, for the trip's own active
+-- crew only (drivers / helpers can't read bookings -- payment balances).
+-- Empty when the trip doesn't return a container or the caller isn't on it.
+create or replace function public.get_trip_return_place(p_itinerary_id integer)
+returns table (place_name text, address_detail text, landmark text, lat double precision, lng double precision)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $$
+  select p.place_name::text, b.return_address_detail, b.return_landmark, b.return_lat, b.return_lng
+  from itineraries i
+  join bookings b on b.booking_id = i.booking_id
+  join places p on p.place_id = b.place_of_return_id
+  where i.itinerary_id = p_itinerary_id
+    and i.return_container
+    and exists (
+      select 1 from itinerary_crews c
+      join users u on u.employee_id = c.employee_id
+      where c.itinerary_id = i.itinerary_id and c.is_active and u.auth_user_id = auth.uid()
+    )
+$$;
+
+revoke all on function public.get_trip_return_place(integer) from public, anon;
+grant execute on function public.get_trip_return_place(integer) to authenticated;
 
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20261114050000', 'resubmit_quote_return_place') on conflict (version) do nothing;

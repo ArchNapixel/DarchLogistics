@@ -40,6 +40,8 @@ export type ClientBooking = {
   quote_reference: string | null
   pickup_place_name: string
   delivery_place_name: string
+  // Where the empty containers go back to (null = not returned).
+  return_place_name: string | null
   itineraries: ClientTrip[]
 }
 
@@ -78,7 +80,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
   const { data: bookingRows, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'booking_id, booking_status, booking_date, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, quote_request_id, place_of_pickup_id, place_of_delivery_id',
+      'booking_id, booking_status, booking_date, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, quote_request_id, place_of_pickup_id, place_of_delivery_id, place_of_return_id',
     )
     .eq('client_id', clientId)
     .order('booking_date', { ascending: false })
@@ -86,7 +88,11 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
   if (bookingError) return { bookings: [], error: bookingError.message }
 
   // Pickup/delivery place names (bookings only stores IDs).
-  const placeIds = Array.from(new Set(bookingRows.flatMap((b) => [b.place_of_pickup_id, b.place_of_delivery_id])))
+  const placeIds = Array.from(
+    new Set(
+      bookingRows.flatMap((b) => [b.place_of_pickup_id, b.place_of_delivery_id, ...(b.place_of_return_id === null ? [] : [b.place_of_return_id])]),
+    ),
+  )
   const bookingIds = bookingRows.map((b) => b.booking_id)
   const quoteIds = bookingRows.flatMap((b) => (b.quote_request_id ? [b.quote_request_id] : []))
 
@@ -145,6 +151,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
       quote_reference: b.quote_request_id ? (references.get(b.quote_request_id) ?? null) : null,
       pickup_place_name: placeNameById.get(b.place_of_pickup_id) ?? '—',
       delivery_place_name: placeNameById.get(b.place_of_delivery_id) ?? '—',
+      return_place_name: b.place_of_return_id === null ? null : (placeNameById.get(b.place_of_return_id) ?? '—'),
       itineraries: tripsByBooking.get(b.booking_id) ?? [],
     })),
     error: null,

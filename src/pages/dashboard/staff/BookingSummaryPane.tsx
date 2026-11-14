@@ -18,7 +18,12 @@ type PaneTrip = {
   slot: string
 }
 
-const STATUS_LABELS: Record<string, string> = { PickedUp: 'Picked Up', InTransit: 'In Transit' }
+const STATUS_LABELS: Record<string, string> = {
+  PickedUp: 'Picked Up',
+  InTransit: 'In Transit',
+  ReturningContainer: 'Returning Container',
+  ContainerReturned: 'Container Returned',
+}
 
 async function loadPaneTrips(bookingId: number): Promise<{ trips: PaneTrip[]; error: string | null }> {
   const { data: rows, error } = await supabase

@@ -13,6 +13,9 @@ export const TRIP_STATUS_LABELS: Record<string, string> = {
   PickedUp: 'Picked up',
   InTransit: 'In transit',
   Delivered: 'Delivered',
+  Unloading: 'Unloading',
+  ReturningContainer: 'Returning container',
+  ContainerReturned: 'Container returned',
   Cancelled: 'Cancelled',
 }
 

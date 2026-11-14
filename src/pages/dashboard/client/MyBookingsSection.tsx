@@ -152,6 +152,11 @@ function MyBookingsSection() {
                         <span className="block truncate text-ink-muted" title={booking.delivery_place_name}>
                           → {booking.delivery_place_name}
                         </span>
+                        {booking.return_place_name && (
+                          <span className="block truncate text-[13px] text-ink-muted" title={`Empty container back to ${booking.return_place_name}`}>
+                            Empty container back to {booking.return_place_name}
+                          </span>
+                        )}
                       </span>
                       <span>{formatDate(booking.booking_date)}</span>
                       <span className="text-right tabular-nums">{bookingRateLabel(tripRates, booking.rate_of_delivery_service)}</span>

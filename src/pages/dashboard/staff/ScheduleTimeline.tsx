@@ -26,6 +26,8 @@ const STATUS_WORD: Record<string, string> = {
   Dispatched: 'Dispatched',
   PickedUp: 'Picked up',
   InTransit: 'In transit',
+  Unloading: 'Unloading',
+  ReturningContainer: 'Returning container',
 }
 
 // Striped amber, like the canvas's "Not operational" lane.

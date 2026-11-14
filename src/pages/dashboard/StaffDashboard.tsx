@@ -29,7 +29,7 @@ function todaysTripsFilter(today: string) {
   return (
     `and(trip_date_from.eq.${today},itinerary_status.is.null),` +
     `and(trip_date_from.eq.${today},itinerary_status.neq.Cancelled),` +
-    'itinerary_status.in.(Dispatched,PickedUp,InTransit)'
+    `itinerary_status.in.(${ON_ROAD_STATUSES.join(',')})`
   )
 }
 
@@ -847,7 +847,7 @@ function StaffDashboard() {
                   {todayDeliveryRows.slice(0, 10).map((r) => (
                     <span
                       key={r.itinerary_id}
-                      className={`h-2 w-7 ${r.status === 'Delivered' ? 'bg-green-700' : 'bg-slate-200'}`}
+                      className={`h-2 w-7 ${isDelivered(r.status) ? 'bg-green-700' : 'bg-slate-200'}`}
                     />
                   ))}
                 </span>

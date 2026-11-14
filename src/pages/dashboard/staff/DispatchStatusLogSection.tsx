@@ -9,6 +9,7 @@ import {
   type DispatchStatusLogEntry,
 } from '../../../lib/dispatchStatusLog'
 import { formatDateTime } from '../../../lib/format'
+import { TRIP_STATUS_LABELS } from '../../../lib/tripList'
 import EmptyState from '../../../components/EmptyState'
 
 function DispatchStatusLogSection() {
@@ -72,7 +73,8 @@ function DispatchStatusLogSection() {
               <tr key={entry.log_id} className="border-b border-slate-200 last:border-0">
                 <td className="px-4 py-3 text-slate-900">#{entry.itinerary_id}</td>
                 <td className="px-4 py-3 text-slate-600">
-                  {entry.previous_status} → {entry.new_status}
+                  {TRIP_STATUS_LABELS[entry.previous_status] ?? entry.previous_status} →{' '}
+                  {TRIP_STATUS_LABELS[entry.new_status] ?? entry.new_status}
                 </td>
                 <td className="px-4 py-3 text-slate-600">{entry.changed_by_name}</td>
                 <td className="px-4 py-3 text-slate-600">

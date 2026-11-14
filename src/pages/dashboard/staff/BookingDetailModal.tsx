@@ -52,6 +52,9 @@ const TRIP_STATUS_LABELS: Record<string, string> = {
   PickedUp: 'Picked up',
   InTransit: 'In transit',
   Delivered: 'Delivered',
+  Unloading: 'Unloading',
+  ReturningContainer: 'Returning container',
+  ContainerReturned: 'Container returned',
   Cancelled: 'Cancelled',
 }
 const ON_THE_ROAD = new Set(ON_ROAD_STATUSES)
@@ -92,6 +95,11 @@ type Details = {
   delivery_landmark: string | null
   pickup_pin: string | null
   delivery_pin: string | null
+  // Where the empty containers go back to (null = no return), and that leg's km.
+  return_place: string | null
+  return_landmark: string | null
+  return_pin: string | null
+  return_distance_km: number | null
   estimated_distance_km: number | null
   // Length of each trip's time slot (bookings.hours_per_trip).
   hours_per_trip: number | null
@@ -174,7 +182,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -184,7 +192,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     supabase
       .from('places')
       .select('place_id, place_name, city, barangay')
-      .in('place_id', [b.place_of_pickup_id, b.place_of_delivery_id]),
+      .in('place_id', [b.place_of_pickup_id, b.place_of_delivery_id, ...(b.place_of_return_id === null ? [] : [b.place_of_return_id])]),
     b.quote_request_id !== null
       ? supabase
           .from('quote_requests')
@@ -294,6 +302,10 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       delivery_landmark: b.delivery_landmark,
       pickup_pin: pinLink(b.pickup_lat, b.pickup_lng),
       delivery_pin: pinLink(b.delivery_lat, b.delivery_lng),
+      return_place: b.place_of_return_id === null ? null : location(b.place_of_return_id, b.return_address_detail),
+      return_landmark: b.return_landmark,
+      return_pin: pinLink(b.return_lat, b.return_lng),
+      return_distance_km: b.return_distance_km,
       estimated_distance_km: b.estimated_distance_km,
       hours_per_trip: b.hours_per_trip,
       cost_per_trip: b.cost_per_trip,
@@ -752,6 +764,15 @@ function BookingDetailModal({
       {details?.delivery_landmark && <InfoRow label="Delivery landmark" value={details.delivery_landmark} />}
       {details?.estimated_distance_km != null && (
         <InfoRow label="Estimated distance" value={`${details.estimated_distance_km.toLocaleString()} km`} />
+      )}
+      {details?.return_place && (
+        <>
+          <InfoRow label="Return empty container to" value={details.return_place} pin={details.return_pin} />
+          {details.return_landmark && <InfoRow label="Return landmark" value={details.return_landmark} />}
+          {details.return_distance_km != null && (
+            <InfoRow label="Return distance" value={`${details.return_distance_km.toLocaleString()} km (container trips)`} />
+          )}
+        </>
       )}
 
       <SectionTitle>Schedule</SectionTitle>

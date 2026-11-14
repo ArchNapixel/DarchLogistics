@@ -3126,7 +3126,7 @@ function DispatchBoardSection() {
                                 type="button"
                                 onClick={() => setStatusRowId(row.itinerary_id)}
                                 disabled={!canUpdate || savingId === row.itinerary_id}
-                                aria-describedby={row.status === 'Delivered' && !canFreelyEditStatus ? 'final-note' : undefined}
+                                aria-describedby={isCompleted(row.status) && !canFreelyEditStatus ? 'final-note' : undefined}
                                 className="btn-secondary w-[140px] px-0 text-sm font-medium"
                               >
                                 Update Status
