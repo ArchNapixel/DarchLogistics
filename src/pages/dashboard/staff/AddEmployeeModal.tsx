@@ -31,6 +31,11 @@ import {
 import { phoneInput } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
 import { formatMoney } from '../../../lib/format'
+
+// Hire date range, mirrored from the DB trigger employees_hire_date_range
+// (1990-01-01 .. Manila today + 30 days) -- change both together.
+const MIN_HIRE_DATE = '1990-01-01'
+const maxHireDate = () => toManilaDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
 import { RATE_TYPES } from '../../../lib/employeeRateTypes'
 
 const fieldClasses =
@@ -215,6 +220,12 @@ function AddEmployeeModal({
     }
     if (!hireDate) {
       setError('Enter a hire date.')
+      return
+    }
+    // Same range as the database trigger employees_hire_date_range (the
+    // picker's min/max don't stop a typed date, since this isn't a <form>).
+    if (hireDate < MIN_HIRE_DATE || hireDate > maxHireDate()) {
+      setError('Hire date must be between 1990 and 30 days from today.')
       return
     }
     if (position === 'Driver' && !truckPlate) {
@@ -461,6 +472,8 @@ function AddEmployeeModal({
             <input
               type="date"
               value={hireDate}
+              min={MIN_HIRE_DATE}
+              max={maxHireDate()}
               onChange={(e) => setHireDate(e.target.value)}
               className={fieldClasses}
             />

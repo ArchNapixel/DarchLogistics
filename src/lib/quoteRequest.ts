@@ -154,9 +154,16 @@ export function phoneDigits(phone: string): string {
 }
 
 // Use in the phone input's onChange: keeps digits only, caps at 11, and
-// adds spaces as you type: 0966 047 5467.
+// adds spaces as you type: 0966 047 5467. The number must start with 09,
+// so a wrong first digit is refused as it's typed (a lone "3" leaves the box
+// empty). Pasted +63 9171234567 / 9171234567 become 09171234567.
 export function phoneInput(value: string): string {
-  const d = phoneDigits(value).slice(0, 11)
+  let d = phoneDigits(value)
+  if (d.startsWith('639')) d = '0' + d.slice(2)
+  else if (d.startsWith('9')) d = '0' + d
+  if (d[0] && d[0] !== '0') return ''
+  if (d[1] && d[1] !== '9') return '0'
+  d = d.slice(0, 11)
   return [d.slice(0, 4), d.slice(4, 7), d.slice(7)].filter(Boolean).join(' ')
 }
 
