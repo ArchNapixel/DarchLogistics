@@ -6,7 +6,7 @@
 export const cents = (n: number) => Math.round(n * 100) / 100
 
 // Typing filter: digits and ONE dot, at most 2 decimals, max 12 characters.
-// Pasting "₱21,952.50" becomes "21952.50".
+// Pasting "₱21,952.50" becomes "21952.50".dasdsa
 export function filterAmountInput(v: string): string {
   const cleaned = v.replace(/[^0-9.]/g, '')
   const dot = cleaned.indexOf('.')
