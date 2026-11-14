@@ -34,10 +34,12 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   Partial: 'info',
   Leave: 'info',
   PickedUp: 'progress',
+  ReturningContainer: 'progress',
   Pending: 'active',
   InProgress: 'active',
   'In Progress': 'active',
   InTransit: 'active',
+  Unloading: 'active',
   'In Transit': 'active',
   'Under Maintenance': 'active',
   'On Leave': 'active',
@@ -50,6 +52,7 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   Paid: 'good',
   Finalized: 'good',
   Delivered: 'good',
+  ContainerReturned: 'good',
   Completed: 'good',
   Available: 'good',
   Active: 'good',
@@ -75,6 +78,8 @@ const STATUS_LABEL: Record<string, string> = {
   InTransit: 'In Transit',
   PickedUp: 'Picked Up',
   OnHold: 'On Hold',
+  ReturningContainer: 'Returning Container',
+  ContainerReturned: 'Container Returned',
 }
 
 // Small outline icon before the label (opt-in, `icon`): a check for done /

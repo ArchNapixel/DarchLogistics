@@ -100,7 +100,17 @@ import {
   tripOnRoad,
   type ScheduledTrip,
 } from '../../../lib/tripSchedule'
-import { ACTIVE_TRIP_OR, COMPLETED_STATUSES, ON_ROAD_STATUSES, isCompleted, isFinished } from '../../../lib/tripStatusFlow'
+import {
+  ACTIVE_TRIP_OR,
+  COMPLETED_STATUSES,
+  ON_ROAD_STATUSES,
+  isCompleted,
+  isDelivered,
+  isFinished,
+  nextStatus,
+  statusSteps,
+} from '../../../lib/tripStatusFlow'
+import { afterTripFinished } from '../../../lib/tripFinish'
 
 // The Completed tab shows trips delivered (by trip date) in the last this-many days.
 const COMPLETED_DAYS = 30
@@ -110,7 +120,7 @@ const COMPLETED_DAYS = 30
 const ACTIVE_TRIP_FILTER = ACTIVE_TRIP_OR
 
 const ITINERARY_COLUMNS =
-  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, exact_trailer_size, trailer_type, weight, cargo_description, trip_rate'
+  'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, exact_trailer_size, trailer_type, weight, cargo_description, trip_rate, return_container'
 
 // One row of ITINERARY_COLUMNS.
 type BoardItineraryRow = {
@@ -133,6 +143,7 @@ type BoardItineraryRow = {
   weight: number | null
   cargo_description: string | null
   trip_rate: number | string | null
+  return_container: boolean
 }
 
 type BoardBookingRow = {
@@ -144,6 +155,8 @@ type BoardBookingRow = {
   downpayment_waived_at: string | null
   storage_deadline: string | null
   quote_request_id: number | null
+  // Where the empty containers go back to (null = the booking doesn't return them).
+  place_of_return_id: number | null
 }
 
 type DispatchRow = {
@@ -186,6 +199,10 @@ type DispatchRow = {
   delivery_by: string | null
   // This trip's own rate -- the driver's commission (fairness by pesos).
   trip_rate: number | null
+  // Brings the empty container back after delivery: Delivered -> Unloading ->
+  // Returning Container -> Container Returned (lib/tripStatusFlow.ts).
+  return_container: boolean
+  return_location: string | null
 }
 
 // Not picked up yet on a storage-deadline booking: 'pending' (still time)
@@ -538,14 +555,23 @@ function rankFleet(
   }
 }
 
-const STATUS_FLOW = ['Awaiting', 'Dispatched', 'PickedUp', 'InTransit', 'Delivered']
-
+// A trip's steps come from statusSteps(row.return_container) (lib/tripStatusFlow.ts).
 const STATUS_LABELS: Record<string, string> = {
   Awaiting: 'Awaiting',
   Dispatched: 'Dispatched',
   PickedUp: 'Picked Up',
   InTransit: 'In Transit',
   Delivered: 'Delivered',
+  Unloading: 'Unloading',
+  ReturningContainer: 'Returning Container',
+  ContainerReturned: 'Container Returned',
+}
+
+// Picking Delivered -- or jumping past it to a container-return step --
+// goes through MarkDeliveredModal: it logs the delivery date (billing,
+// payroll) and moves a return trip on to Unloading.
+function needsDeliveryForm(row: { status: string }, newStatus: string): boolean {
+  return isDelivered(newStatus) && !isDelivered(row.status)
 }
 
 // Everything the trip tables need from the board.
@@ -667,8 +693,17 @@ const FLOW_TILES: { status: string; label: string; icon: keyof typeof ICONS; chi
   { status: 'Dispatched', label: 'Dispatched', icon: 'truck', chip: 'bg-primary-soft text-primary' },
   { status: 'PickedUp', label: 'Picked up', icon: 'box', chip: 'bg-violet-100 text-violet-800' },
   { status: 'InTransit', label: 'In transit', icon: 'arrow', chip: 'bg-orange-100 text-orange-800' },
+  // Unloading + Returning Container (trips that bring the empty container back).
+  { status: 'EmptyReturn', label: 'Empty return', icon: 'refresh', chip: 'bg-teal-100 text-teal-800' },
   { status: 'Delivered', label: 'Delivered', icon: 'check', chip: 'bg-green-100 text-green-800' },
 ]
+
+// Does a trip with `status` belong under this tile / Status filter value?
+function inTile(tile: string, status: string): boolean {
+  if (tile === 'EmptyReturn') return status === 'Unloading' || status === 'ReturningContainer'
+  if (tile === 'Delivered') return isCompleted(status)
+  return status === tile
+}
 
 // Time slot (date above it when the trip isn't on the day being shown),
 // plus Overdue / storage-deadline flags.
@@ -1013,6 +1048,7 @@ function TripPanel({
               </Link>
               {' · '}
               {row.pickup_location} → {row.delivery_location}
+              {row.return_location && ` → empty back to ${row.return_location}`}
             </p>
           </div>
           <button
@@ -1572,7 +1608,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline, quote_request_id')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline, quote_request_id, place_of_return_id')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1639,12 +1675,13 @@ function DispatchBoardSection() {
     const itineraryIds = itineraryRows.map((r) => r.itinerary_id)
     const placeIds = Array.from(
       new Set(
-        itineraryRows.flatMap((r) => [
-          r.place_of_pickup_id,
-          r.place_of_delivery_id,
-        ]),
+        [
+          ...itineraryRows.flatMap((r) => [r.place_of_pickup_id, r.place_of_delivery_id]),
+          ...bookingTypeRows.flatMap((b) => (b.place_of_return_id === null ? [] : [b.place_of_return_id])),
+        ],
       ),
     )
+    const returnPlaceByBooking = new Map(bookingTypeRows.map((b) => [b.booking_id, b.place_of_return_id]))
 
     // 2. Place names, current crew assignments, and assignable staff -- in parallel.
     const [placesResult, crewResult, driverUsersResult, helperUsersResult, leaveResult] = await Promise.all([
@@ -1825,6 +1862,10 @@ function DispatchBoardSection() {
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
           delivery_by: deliveryByBooking.get(it.booking_id) ?? null,
           trip_rate: it.trip_rate === null ? null : Number(it.trip_rate),
+          return_container: it.return_container === true,
+          return_location: it.return_container
+            ? (placeNameById.get(returnPlaceByBooking.get(it.booking_id) ?? -1) ?? '—')
+            : null,
         }
       }),
     )
@@ -1837,17 +1878,17 @@ function DispatchBoardSection() {
     previousStatus: string,
     newStatus: string,
   ) {
-    // Delivered goes through MarkDeliveredModal so any damage gets
-    // recorded (Damage Charges).
-    if (newStatus === 'Delivered') {
+    // Delivered goes through MarkDeliveredModal (delivery date, and a return
+    // trip goes on to Unloading).
+    if (needsDeliveryForm({ status: previousStatus }, newStatus)) {
       const row = rows.find((r) => r.itinerary_id === itineraryId)
       if (row) setDeliveryRow(row)
       return
     }
 
-    // Admin moving a trip back out of Delivered (Completed tab): one
-    // mis-click would un-deliver it, so ask first.
-    if (previousStatus === 'Delivered') {
+    // Admin moving a trip back to before Delivered: one mis-click would
+    // un-deliver it, so ask first.
+    if (isDelivered(previousStatus) && !isDelivered(newStatus)) {
       const ok = await confirmDialog({
         title: `Un-deliver trip #${itineraryId}?`,
         message:
@@ -1925,6 +1966,12 @@ function DispatchBoardSection() {
         r.itinerary_id === itineraryId ? { ...r, status: newStatus } : r,
       ),
     )
+
+    // A container-return trip finishes here: re-time the trips after it and
+    // record its km (a normal trip does this in MarkDeliveredModal).
+    if (newStatus === 'ContainerReturned') {
+      void afterTripFinished(itineraryId, atMs ?? Date.now()).then(() => loadDispatchBoard())
+    }
 
     if (logError) {
       setError(
@@ -2658,7 +2705,7 @@ function DispatchBoardSection() {
     .filter((r) => {
     if (statusFilter === 'needs' && (r.status !== 'Awaiting' || isFullyAssigned(r))) return false
     if (statusFilter === 'atrisk' && !atRiskById.has(r.itinerary_id)) return false
-    if (!['all', 'needs', 'atrisk'].includes(statusFilter) && r.status !== statusFilter) return false
+    if (!['all', 'needs', 'atrisk'].includes(statusFilter) && !inTile(statusFilter, r.status)) return false
     if (driverFilter === 'none' && r.assigned_employee_id !== null) return false
     if (!['all', 'none'].includes(driverFilter) && r.assigned_employee_id !== Number(driverFilter)) return false
     // Booking ID box also finds a trip number.
@@ -2678,8 +2725,13 @@ function DispatchBoardSection() {
   // the very next step only.
   function statusChoices(row: DispatchRow): string[] {
     if (!canEditStatus) return []
-    if (canFreelyEditStatus) return STATUS_FLOW.filter((s) => s !== row.status)
-    const next = STATUS_FLOW[STATUS_FLOW.indexOf(row.status) + 1]
+    if (canFreelyEditStatus) {
+      // A return trip can't rest at Delivered once it's past it.
+      return statusSteps(row.return_container).filter(
+        (s) => s !== row.status && !(row.return_container && s === 'Delivered' && isDelivered(row.status)),
+      )
+    }
+    const next = nextStatus(row.status, row.return_container)
     return next ? [next] : []
   }
 
@@ -2817,7 +2869,7 @@ function DispatchBoardSection() {
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-ink-secondary">{tile.label}</span>
                   <span className="block text-[28px] leading-9 font-bold text-ink tabular-nums">
-                    {loading ? '–' : dayRows.filter((r) => r.status === tile.status).length}
+                    {loading ? '–' : dayRows.filter((r) => inTile(tile.status, r.status)).length}
                   </span>
                 </span>
               </button>
@@ -3037,6 +3089,11 @@ function DispatchBoardSection() {
                                 {row.delivery_location}
                               </span>
                             </span>
+                            {row.return_location && (
+                              <span className="block truncate text-[13px] text-ink-muted" title={`Empty container back to ${row.return_location}`}>
+                                Empty back to {row.return_location}
+                              </span>
+                            )}
                           </td>
                           <td className={TD}>
                             {row.assigned_driver_name ? (
@@ -3182,7 +3239,7 @@ function DispatchBoardSection() {
         <UpdateStatusModal
           itineraryId={statusRow.itinerary_id}
           subtitle={[`Booking #${statusRow.booking_id}`, statusRow.assigned_driver_name ?? 'No driver', statusRow.plate_number ?? 'No truck'].join(' · ')}
-          flow={STATUS_FLOW}
+          flow={statusSteps(statusRow.return_container)}
           labels={STATUS_LABELS}
           currentStatus={statusRow.status}
           choices={statusChoices(statusRow)}
@@ -3202,7 +3259,7 @@ function DispatchBoardSection() {
           onConfirm={(newStatus, atMs) => {
             const row = statusRow
             setStatusRowId(null)
-            if (newStatus === 'Delivered') setDeliveryRow(row)
+            if (needsDeliveryForm(row, newStatus)) setDeliveryRow(row)
             else if (atMs !== undefined) applyStatusChange(row.itinerary_id, row.status, newStatus, atMs)
             else handleStatusChange(row.itinerary_id, row.status, newStatus)
           }}
@@ -3215,7 +3272,10 @@ function DispatchBoardSection() {
           currentStatus={relogRequestRow.status}
           // Corrections only ever go backward -- moving forward is the
           // dropdown's job.
-          statusOptions={STATUS_FLOW.slice(0, STATUS_FLOW.indexOf(relogRequestRow.status))}
+          statusOptions={statusSteps(relogRequestRow.return_container)
+            .slice(0, statusSteps(relogRequestRow.return_container).indexOf(relogRequestRow.status))
+            // A return trip can't rest at Delivered.
+            .filter((s) => !(relogRequestRow.return_container && s === 'Delivered'))}
           statusLabels={STATUS_LABELS}
           employeeId={employeeId}
           onClose={() => setRelogRequestRow(null)}
@@ -3288,6 +3348,7 @@ function DispatchBoardSection() {
         <MarkDeliveredModal
           itineraryId={deliveryRow.itinerary_id}
           currentStatus={deliveryRow.status}
+          returnContainer={deliveryRow.return_container}
           subtitle={`Booking #${deliveryRow.booking_id} · ${deliveryRow.pickup_location} → ${deliveryRow.delivery_location}`}
           onClose={() => setDeliveryRow(null)}
           onDelivered={() => {
@@ -3296,7 +3357,7 @@ function DispatchBoardSection() {
             // Moves into the Completed table (grouped at render time).
             setRows((prev) =>
               prev.map((r) =>
-                r.itinerary_id === itineraryId ? { ...r, status: 'Delivered' } : r,
+                r.itinerary_id === itineraryId ? { ...r, status: deliveryRow.return_container ? 'Unloading' : 'Delivered' } : r,
               ),
             )
             // The booking's later trips were re-timed too -- reload to show their new slots.

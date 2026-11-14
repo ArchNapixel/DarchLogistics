@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { loadLastStatusTime, nowRounded, statusTimeError } from '../../../lib/statusTime'
 import StatusWhenField from './StatusWhenField'
+import { isDelivered } from '../../../lib/tripStatusFlow'
 
 const CHECK = 'M5 12l5 5 9-10'
 const CURRENT = 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 8v8 M8 12h8'
@@ -63,8 +64,9 @@ function UpdateStatusModal({
   }, [itineraryId])
 
   const forward = picked !== null && flow.indexOf(picked) > currentIndex
-  // Delivered asks its own questions (and its own time) in the next form.
-  const asksTime = forward && picked !== 'Delivered'
+  // Delivered asks its own questions (and its own time) in the next form --
+  // so does jumping past it to a container-return step.
+  const asksTime = forward && !(isDelivered(picked) && !isDelivered(currentStatus))
 
   function confirm() {
     if (!picked) return

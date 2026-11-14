@@ -5,26 +5,32 @@
 // Staff can also attach the signed DO here (TripDocuments, uploads
 // independently). Damage isn't asked here any more (2026-11-13): it's
 // reported on the Damage Charges page, where who pays is decided too.
+// A trip that brings the empty container back (itineraries.return_container)
+// never rests at Delivered: the Delivered row is logged (billing / payroll
+// date) and the trip goes straight on to Unloading. It finishes -- re-time,
+// odometer -- at Container Returned on the board instead (lib/tripFinish.ts).
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import TripDocuments from './TripDocuments'
 import { showToast } from '../../../components/Toast'
-import { retimeAfterDelivery } from '../../../lib/tripRetime'
-import { pmsNotice, recordTripKm } from '../../../lib/odometer'
+import { afterTripFinished } from '../../../lib/tripFinish'
 import { loadLastStatusTime, nowRounded, statusTimeError } from '../../../lib/statusTime'
 import StatusWhenField from './StatusWhenField'
 
 function MarkDeliveredModal({
   itineraryId,
   currentStatus,
+  returnContainer = false,
   subtitle,
   onClose,
   onDelivered,
 }: {
   itineraryId: number
   currentStatus: string
+  // Brings the empty container back: goes on to Unloading after this.
+  returnContainer?: boolean
   // "Booking #48 · pickup → delivery", under the title.
   subtitle?: string
   onClose: () => void
@@ -55,7 +61,7 @@ function MarkDeliveredModal({
     // board showed, and check a row really changed (RLS no-op).
     const { data: updated, error: statusError } = await supabase
       .from('itineraries')
-      .update({ itinerary_status: 'Delivered' })
+      .update({ itinerary_status: returnContainer ? 'Unloading' : 'Delivered' })
       .eq('itinerary_id', itineraryId)
       .eq('itinerary_status', currentStatus)
       .select('itinerary_id')
@@ -79,16 +85,15 @@ function MarkDeliveredModal({
     // automatically (sync_booking_status / free_vehicles_on_delivery
     // triggers on itineraries).
 
-    // 2. Log it -- this row's timestamp is the delivery date.
-    const { error: logError } = await supabase
-      .from('dispatch_status_logs')
-      .insert({
-        itinerary_id: itineraryId,
-        previous_status: currentStatus,
-        new_status: 'Delivered',
-        changed_by: employeeId,
-        status_changed_at: new Date(deliveredAt).toISOString(),
-      })
+    // 2. Log it -- the Delivered row's timestamp is the delivery date. A
+    // return trip also logs moving on to Unloading at the same moment.
+    const at = new Date(deliveredAt).toISOString()
+    const { error: logError } = await supabase.from('dispatch_status_logs').insert([
+      { itinerary_id: itineraryId, previous_status: currentStatus, new_status: 'Delivered', changed_by: employeeId, status_changed_at: at },
+      ...(returnContainer
+        ? [{ itinerary_id: itineraryId, previous_status: 'Delivered', new_status: 'Unloading', changed_by: employeeId, status_changed_at: at }]
+        : []),
+    ])
 
     if (logError) {
       showToast(
@@ -99,24 +104,10 @@ function MarkDeliveredModal({
       )
     }
 
-    // The slot ends at the real delivery time; later trips follow it.
-    const retime = await retimeAfterDelivery(itineraryId, deliveredAt)
-    if (retime.warning) showToast(retime.warning, 'error')
-    // At the current pace a booking misses its delivery-by date: remind the admin.
-    for (const message of retime.late) showToast(message, 'error')
-
-    // Add the trip's km to the truck's odometer (PMS counts on it). Runs on
-    // its own (routing can take a few seconds); a failure leaves the trip on
-    // Truck Monitoring's "Trips not counted yet" list.
-    void recordTripKm(itineraryId).then(async (result) => {
-      if ('error' in result) {
-        showToast(`Trip #${itineraryId}'s km weren't added to the odometer (${result.error}). Count it on Truck Monitoring.`, 'error')
-        return
-      }
-      // Close to (or past) PMS now? Say so.
-      const notice = await pmsNotice(result.plate)
-      if (notice) showToast(notice.message, notice.due ? 'error' : 'success')
-    })
+    // Finished now (normal trip): the slot ends at the real delivery time,
+    // later trips follow it, and the km go on the odometer. A return trip
+    // does this at Container Returned.
+    if (!returnContainer) await afterTripFinished(itineraryId, deliveredAt)
 
     setSubmitting(false)
     onDelivered()
@@ -151,7 +142,9 @@ function MarkDeliveredModal({
           <div className="flex flex-col gap-1.5">
             <StatusWhenField label="When was it delivered?" value={deliveredAt} onChange={setDeliveredAt} />
             <span className="text-[13px] leading-[18px] text-ink-muted">
-              Starts at the current time. The booking's later trips are re-timed from this.
+              {returnContainer
+                ? 'Starts at the current time. The trip then goes on to Unloading; it ends when the empty container is returned.'
+                : "Starts at the current time. The booking's later trips are re-timed from this."}
             </span>
           </div>
 
