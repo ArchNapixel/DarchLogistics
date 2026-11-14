@@ -18,6 +18,7 @@ import { formatDateTime, formatTime, splitManila } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import { fetchNotifications, message, type TripNotification } from '../../../lib/tripNotifications'
 import { DRIVER_TRIP_STATUS_LABELS as TRIP_STATUS_LABELS } from '../../../lib/driverTripStatus'
+import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
 type ScheduleTrip = {
   itinerary_id: number
@@ -48,7 +49,7 @@ async function fetchMySchedule(employeeId: number): Promise<ScheduleTrip[]> {
       'itinerary_id, booking_id, itinerary_status, trip_date_from, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
     )
     .in('itinerary_id', ids)
-    .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+    .not('itinerary_status', 'in', FINISHED_IN)
   if (tripsError) throw new Error(tripsError.message)
 
   const placeIds = Array.from(new Set(trips.flatMap((t) => [t.place_of_pickup_id, t.place_of_delivery_id])))

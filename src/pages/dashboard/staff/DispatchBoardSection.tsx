@@ -100,13 +100,14 @@ import {
   tripOnRoad,
   type ScheduledTrip,
 } from '../../../lib/tripSchedule'
+import { ACTIVE_TRIP_OR, COMPLETED_STATUSES, ON_ROAD_STATUSES, isCompleted, isFinished } from '../../../lib/tripStatusFlow'
 
 // The Completed tab shows trips delivered (by trip date) in the last this-many days.
 const COMPLETED_DAYS = 30
 
 // Not Delivered and not Cancelled (null status counts as Awaiting). Used to
 // load the board and to refuse changes to a trip that finished meanwhile.
-const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
+const ACTIVE_TRIP_FILTER = ACTIVE_TRIP_OR
 
 const ITINERARY_COLUMNS =
   'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, place_of_pickup_id, place_of_delivery_id, itinerary_status, plate_number, trailer_id, cargo_type, container_type, exact_trailer_size, trailer_type, weight, cargo_description, trip_rate'
@@ -594,7 +595,7 @@ const CHIP = 'inline-flex w-fit items-center gap-1.5 rounded-[2px] px-2 py-0.5 t
 const SUB = 'block text-[13px] leading-[18px] text-ink-muted'
 
 // Trips on the road right now.
-const ON_ROAD = ['Dispatched', 'PickedUp', 'InTransit']
+const ON_ROAD = ON_ROAD_STATUSES
 
 // The day a trip belongs to on the day view: its slot's start (Manila),
 // else its trip date.
@@ -940,11 +941,11 @@ function TripPanel({
   onUpdateStatus: (row: DispatchRow) => void
   onAssignSuggested: (trips: DispatchRow[]) => void
 }) {
-  const done = row.status === 'Delivered'
+  const done = isCompleted(row.status)
   const onRoad = ON_ROAD.includes(row.status)
   const trailerPlate =
     row.trailer_id === null ? null : (ctx.trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)
-  const openTrips = bookingTrips.filter((r) => r.status !== 'Delivered')
+  const openTrips = bookingTrips.filter((r) => !isCompleted(r.status))
   // Trips of this booking with a slot but someone / something still missing.
   const missingCrew = openTrips.filter(
     (r) =>
@@ -1486,7 +1487,7 @@ function DispatchBoardSection() {
         supabase
           .from('itineraries')
           .select(ITINERARY_COLUMNS)
-          .eq('itinerary_status', 'Delivered')
+          .in('itinerary_status', COMPLETED_STATUSES)
           .gte('trip_date_from', completedSince)
           .order('itinerary_id', { ascending: false })
           .range(from, to),
@@ -1949,9 +1950,9 @@ function DispatchBoardSection() {
       return false
     }
     const status = data?.itinerary_status
-    if (!data || status === 'Delivered' || status === 'Cancelled') {
+    if (!data || isFinished(status)) {
       setError(
-        `Trip #${itineraryId} is ${data ? (status === 'Delivered' ? 'already delivered' : 'cancelled') : 'gone'} -- ` +
+        `Trip #${itineraryId} is ${data ? (status === 'Cancelled' ? 'cancelled' : 'already finished') : 'gone'} -- ` +
           'nothing was changed. The board has been reloaded.',
       )
       loadDispatchBoard()
@@ -2508,7 +2509,7 @@ function DispatchBoardSection() {
   const weekHasToday = today >= weekStart && today <= weekEnd
   const onDay = (r: DispatchRow) =>
     isAllDays
-      ? r.status !== 'Delivered'
+      ? !isCompleted(r.status)
       : isWeek
         ? (tripDay(r) >= weekStart && tripDay(r) <= weekEnd) || (weekHasToday && isOutNow(r))
         : tripDay(r) === day || (day === today && isOutNow(r))
@@ -2653,7 +2654,7 @@ function DispatchBoardSection() {
   const needsAssignment = (r: DispatchRow) => r.status === 'Awaiting' && !isFullyAssigned(r)
   const filteredRows = dayRows
     // Trips not delivered yet first, delivered ones at the bottom (sort is stable: each group keeps its start-time order).
-    .toSorted((a, b) => Number(a.status === 'Delivered') - Number(b.status === 'Delivered'))
+    .toSorted((a, b) => Number(isCompleted(a.status)) - Number(isCompleted(b.status)))
     .filter((r) => {
     if (statusFilter === 'needs' && (r.status !== 'Awaiting' || isFullyAssigned(r))) return false
     if (statusFilter === 'atrisk' && !atRiskById.has(r.itinerary_id)) return false
@@ -2666,7 +2667,7 @@ function DispatchBoardSection() {
   })
   const pagedTrips = usePaged(filteredRows, `${day}|${view}|${statusFilter}|${driverFilter}|${bookingFilter}`)
   const anyFilter = statusFilter !== 'all' || driverFilter !== 'all' || bookingFilter !== ''
-  const deliveredCount = dayRows.filter((r) => r.status === 'Delivered').length
+  const deliveredCount = dayRows.filter((r) => isCompleted(r.status)).length
   // Unassigned trips on other days -- the day view would hide them.
   const needsElsewhere = isAllDays ? 0 : rows.filter((r) => r.status === 'Awaiting' && !isFullyAssigned(r) && !onDay(r)).length
   const dayWord = isAllDays ? 'not delivered yet' : isWeek ? 'this week' : day === today ? 'today' : 'this day'
@@ -2980,7 +2981,7 @@ function DispatchBoardSection() {
                           ? 'Every trip has been delivered.'
                           : `No trips ${isWeek ? 'this week' : day === today ? 'today' : 'on this day'}.`}
                     </p>
-                    {!isAllDays && !anyFilter && rows.some((r) => r.status !== 'Delivered') && (
+                    {!isAllDays && !anyFilter && rows.some((r) => !isCompleted(r.status)) && (
                       <button type="button" onClick={() => setDay('all')} className="btn-primary px-5 text-sm">
                         Show All Trips Not Delivered Yet
                       </button>
@@ -3011,7 +3012,7 @@ function DispatchBoardSection() {
                     {pagedTrips.rows.map((row) => {
                       const trailerPlate =
                         row.trailer_id === null ? null : (trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)
-                      const canUpdate = canEditStatus && (row.status !== 'Delivered' || canFreelyEditStatus)
+                      const canUpdate = canEditStatus && (!isCompleted(row.status) || canFreelyEditStatus)
                       return (
                         <tr key={row.itinerary_id} className="h-[60px] border-b border-slate-200 hover:bg-slate-50">
                           <td className={TD}>

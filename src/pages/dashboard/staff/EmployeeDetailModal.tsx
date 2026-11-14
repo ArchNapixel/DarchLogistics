@@ -15,12 +15,13 @@ import type { EditableEmployee } from './AddEmployeeModal'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { ON_ROAD_STATUSES } from '../../../lib/tripStatusFlow'
 
 // A trip counts as "currently underway" if it's past Awaiting but not
 // yet finished -- matches the Dispatch Board's own definition of
 // "active" (not Delivered/Cancelled), with Awaiting also excluded here
 // since that means assigned-but-not-yet-moving, not "currently on a trip."
-const ACTIVE_TRIP_STATUSES = new Set(['Dispatched', 'PickedUp', 'InTransit'])
+const ACTIVE_TRIP_STATUSES = new Set(ON_ROAD_STATUSES)
 
 type TripRow = {
   itinerary_id: number

@@ -41,6 +41,7 @@ import { FilterButtons, ListBox, PageViewSwitch, SearchBox } from './BookingsTri
 import BookingSummaryPane from './BookingSummaryPane'
 import { useAuth } from '../../../context/AuthContext'
 import { isAdmin } from '../../../lib/roles'
+import { isDelivered } from '../../../lib/tripStatusFlow'
 
 export type Booking = {
   booking_id: number
@@ -324,7 +325,7 @@ function BookingsSection() {
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
       )
-      if (itinerary.itinerary_status === 'Delivered') {
+      if (isDelivered(itinerary.itinerary_status)) {
         completedTripsByBooking.set(
           itinerary.booking_id,
           (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,

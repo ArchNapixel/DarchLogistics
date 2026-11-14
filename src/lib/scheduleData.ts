@@ -6,6 +6,7 @@ import { supabase } from './supabaseClient'
 import { manilaTimestamp } from './format'
 import { loadApprovedLeave } from './leaveRequests'
 import { toManilaDate } from './payslip'
+import { ON_ROAD_STATUSES } from './tripStatusFlow'
 
 export const HOUR_MS = 3_600_000
 export const DAY_MS = 24 * HOUR_MS
@@ -85,7 +86,7 @@ async function fetchTrips(from: number, to: number) {
     supabase
       .from('itineraries')
       .select(TRIP_COLUMNS)
-      .in('itinerary_status', ['Dispatched', 'PickedUp', 'InTransit'])
+      .in('itinerary_status', ON_ROAD_STATUSES)
       .not('trip_start_at', 'is', null)
       .lt('trip_start_at', new Date(to).toISOString()),
   ])
@@ -316,7 +317,7 @@ async function fetchAttention(): Promise<AttentionItem[]> {
 // and Bookings have a row per trip, so keep only trips that actually show in
 // the window (or are still on the road, drawn up to now).
 async function fetchTripsInWindow(from: number, to: number) {
-  const onRoad = ['Dispatched', 'PickedUp', 'InTransit']
+  const onRoad = ON_ROAD_STATUSES
   return (await fetchTrips(from, to)).filter(
     (t) =>
       new Date(t.trip_start_at as string).getTime() < to &&

@@ -15,6 +15,7 @@ import { loadTripList, TRIP_STATUS_LABELS, type TripListRow } from '../../../lib
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import TripDetailPanel from './TripDetailPanel'
 import { DetailPane, FilterButtons, ListBox, SearchBox } from './BookingsTripsControls'
+import { isCompleted } from '../../../lib/tripStatusFlow'
 
 const FILTERS = [
   { value: 'Active', label: 'Active' },
@@ -24,7 +25,7 @@ const FILTERS = [
 type Filter = (typeof FILTERS)[number]['value']
 
 const filterOf = (status: string): Filter =>
-  status === 'Delivered' ? 'Delivered' : status === 'Cancelled' ? 'Cancelled' : 'Active'
+  isCompleted(status) ? 'Delivered' : status === 'Cancelled' ? 'Cancelled' : 'Active'
 
 type Group = { booking_id: number; client_name: string; pickup: string; delivery: string; trips: TripListRow[] }
 

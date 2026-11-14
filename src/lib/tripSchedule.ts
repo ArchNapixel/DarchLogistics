@@ -11,6 +11,8 @@
 // even after its end time -- they're still out there. Delivered/Cancelled
 // trips and trips with no start time never block anyone.
 
+import { FINISHED_STATUSES, ON_ROAD_STATUSES } from './tripStatusFlow.ts'
+
 export type ScheduledTrip = {
   itinerary_id: number
   booking_id: number
@@ -19,7 +21,7 @@ export type ScheduledTrip = {
   trip_end_at: string | null
 }
 
-const DONE = ['Delivered', 'Cancelled']
+const DONE = FINISHED_STATUSES
 const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 
@@ -53,7 +55,7 @@ export function findClash(
 }
 
 // Statuses of a trip that is out on the road.
-const ON_ROAD = ['Dispatched', 'PickedUp', 'InTransit']
+const ON_ROAD = ON_ROAD_STATUSES
 
 // Is the trip physically out RIGHT NOW (Dispatch Board's Resources panel)?
 // Dispatched / Picked Up / In Transit always are -- even a trip dispatched

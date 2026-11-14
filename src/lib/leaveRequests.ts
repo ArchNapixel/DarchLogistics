@@ -11,6 +11,7 @@
 // approval is just a record -- no attendance rows.
 import { supabase } from './supabaseClient'
 import { loadAttendanceRecords, saveAttendanceRecord } from './employeeAttendance'
+import { FINISHED_IN } from './tripStatusFlow'
 
 export type LeaveType = 'Vacation' | 'Sick' | 'Emergency' | 'Other'
 export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected'
@@ -217,7 +218,7 @@ export async function loadTripConflicts(
     .from('itineraries')
     .select('booking_id, trip_date_from, trip_date_to')
     .in('itinerary_id', crew.map((c) => c.itinerary_id))
-    .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+    .not('itinerary_status', 'in', FINISHED_IN)
   if (tripsError) return { trips: [], error: tripsError.message }
 
   return {

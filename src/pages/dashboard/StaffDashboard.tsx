@@ -16,6 +16,7 @@ import TopCreditorsCard from './staff/TopCreditorsCard'
 import StatusBadge from '../../components/StatusBadge'
 import { formatMoney, formatSlot } from '../../lib/format'
 import EmptyState from '../../components/EmptyState'
+import { ON_ROAD_STATUSES, isDelivered } from '../../lib/tripStatusFlow'
 
 // A truck/trailer at one of these statuses (Fleet's current_status) isn't
 // operational.
@@ -458,7 +459,7 @@ function StaffDashboard() {
         supabase
           .from('itineraries')
           .select('itinerary_id')
-          .in('itinerary_status', ['Dispatched', 'PickedUp', 'InTransit']),
+          .in('itinerary_status', ON_ROAD_STATUSES),
         loadApprovedLeave(today),
       ])
       // Check the error FIRST (a failed query has no data either).
@@ -666,7 +667,7 @@ function StaffDashboard() {
   const barMax = Math.max(revenue, expenses?.ops ?? 0, expenses?.payroll ?? 0, expenses?.maint ?? 0)
   const rangeLabel = REVENUE_RANGES.find((r) => r.value === revenueRange)!.label
 
-  const deliveredCount = todayDeliveryRows.filter((r) => r.status === 'Delivered').length
+  const deliveredCount = todayDeliveryRows.filter((r) => isDelivered(r.status)).length
 
   // Today's Deliveries: 5 per page instead of a scrolling box.
   const deliveryPageCount = Math.max(Math.ceil(todayDeliveryRows.length / DELIVERIES_PER_PAGE), 1)

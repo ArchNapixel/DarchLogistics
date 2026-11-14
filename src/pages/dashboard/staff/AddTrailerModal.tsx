@@ -8,6 +8,7 @@
 // trailers have none until it's set here.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
+import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
@@ -62,7 +63,7 @@ function AddTrailerModal({
         .select('itinerary_id')
         .eq('trailer_id', trailer.trailer_id)
         .eq('container_type', '40ft')
-        .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+        .not('itinerary_status', 'in', FINISHED_IN)
         .limit(1)
       if (openError) {
         setSubmitting(false)

@@ -18,6 +18,7 @@ import { fetchAll, fetchIn } from './dashboardExpenses'
 import { nextMonthStart } from './remittanceTotals'
 import { tripProfit, type TripProfit } from './tripProfitTotals'
 import { companyDamageShare, type DamageCostRow } from './insuranceRules'
+import { isDelivered } from './tripStatusFlow'
 
 export function currentTripProfitMonth(): string {
   return toManilaDate(new Date()).slice(0, 7)
@@ -104,7 +105,7 @@ export async function loadTripProfitReport(month: string): Promise<{
       .range(a, b),
   )
   if (trips.error) return { rows: [], settingsMissing, error: trips.error }
-  const delivered = trips.rows.filter((t) => t.itinerary_status === 'Delivered')
+  const delivered = trips.rows.filter((t) => isDelivered(t.itinerary_status))
   const tripIds = delivered.map((t) => t.itinerary_id)
   const bookingIds = Array.from(new Set(delivered.map((t) => t.booking_id)))
 

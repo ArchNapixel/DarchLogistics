@@ -42,6 +42,7 @@ import { downpaymentStatus } from '../../../lib/downpayment'
 import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { promptDialog } from '../../../components/ConfirmDialog'
+import { ON_ROAD_STATUSES, isDelivered, isFinished } from '../../../lib/tripStatusFlow'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
 // here rather than imported, like EmployeeDetailModal does).
@@ -53,7 +54,7 @@ const TRIP_STATUS_LABELS: Record<string, string> = {
   Delivered: 'Delivered',
   Cancelled: 'Cancelled',
 }
-const ON_THE_ROAD = new Set(['Dispatched', 'PickedUp', 'InTransit'])
+const ON_THE_ROAD = new Set(ON_ROAD_STATUSES)
 
 type Trip = {
   itinerary_id: number
@@ -483,7 +484,7 @@ function BookingDetailModal({
 
   const trips = details?.trips ?? []
   const awaitingTrips = trips.filter((t) => t.status === 'Awaiting')
-  const anyDelivered = trips.some((t) => t.status === 'Delivered')
+  const anyDelivered = trips.some((t) => isDelivered(t.status))
   const isClosed = booking.status === 'Cancelled' || booking.status === 'Delivered'
   // Partial cancel (some trips delivered) only makes sense with trips left to cancel.
   const canCancel = !!onChanged && !!details && !isClosed && (!anyDelivered || awaitingTrips.length > 0)
@@ -512,7 +513,7 @@ function BookingDetailModal({
       return
     }
     const onRoadNow = freshTrips.filter((t) => ON_THE_ROAD.has(t.itinerary_status ?? ''))
-    const deliveredNow = freshTrips.some((t) => t.itinerary_status === 'Delivered')
+    const deliveredNow = freshTrips.some((t) => isDelivered(t.itinerary_status))
     const awaitingNow = freshTrips.filter((t) => (t.itinerary_status ?? 'Awaiting') === 'Awaiting')
 
     if (onRoadNow.length > 0) {
@@ -1028,7 +1029,7 @@ function BookingDetailModal({
                 <tbody>
                   {trips.map((trip) => {
                     const cancelled = trip.status === 'Cancelled'
-                    const toRun = !cancelled && trip.status !== 'Delivered'
+                    const toRun = !isFinished(trip.status)
                     // "Not assigned" only needs attention on a trip still to run.
                     const notAssigned = toRun ? 'font-medium text-orange-700' : 'text-slate-500'
                     const storage = storageState({
@@ -1142,7 +1143,7 @@ function BookingDetailModal({
                                 <span className="mt-1 block text-xs text-slate-500">
                                   {trip.document_count} {trip.document_count === 1 ? 'file' : 'files'}
                                 </span>
-                              ) : trip.status === 'Delivered' ? (
+                              ) : isDelivered(trip.status) ? (
                                 <span className="mt-1 inline-block bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 rounded-[2px]">
                                   No DO yet
                                 </span>

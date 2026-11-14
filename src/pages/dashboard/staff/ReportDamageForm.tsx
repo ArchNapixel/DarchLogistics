@@ -26,6 +26,7 @@ import WhoPaysFields from './WhoPaysFields'
 import TripDocuments from './TripDocuments'
 import { formatDate, splitManila } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
+import { DELIVERED_STATUSES } from '../../../lib/tripStatusFlow'
 
 type DeliveredTrip = {
   itinerary_id: number
@@ -72,7 +73,7 @@ function ReportDamageForm({
       const { data: tripRows, error: tripsError } = await supabase
         .from('itineraries')
         .select('itinerary_id, booking_id, trip_date_from, place_of_pickup_id, place_of_delivery_id')
-        .eq('itinerary_status', 'Delivered')
+        .in('itinerary_status', DELIVERED_STATUSES)
         .order('trip_date_from', { ascending: false })
         .limit(200)
 

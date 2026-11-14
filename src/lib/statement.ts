@@ -12,6 +12,7 @@ import { toManilaDate } from './payslip'
 import { loadPaymentDueReport } from './paymentDue'
 import { fetchIn } from './dashboardExpenses'
 import { buildStatement, type StatementPayment, type StatementTrip } from './statementTotals'
+import { DELIVERED_STATUSES } from './tripStatusFlow'
 
 export type Statement = ReturnType<typeof buildStatement>
 type LedgerInput = Parameters<typeof buildStatement>[0]
@@ -45,7 +46,7 @@ export async function loadLedgerInputs(clientId?: number): Promise<{
         .from('itineraries')
         .select('itinerary_id, booking_id, trip_rate')
         .in('booking_id', chunk)
-        .eq('itinerary_status', 'Delivered')
+        .in('itinerary_status', DELIVERED_STATUSES)
         .range(a, b),
     ),
     fetchIn<StatementPayment>(bookingIds, (chunk, a, b) =>

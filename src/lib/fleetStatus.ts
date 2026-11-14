@@ -6,6 +6,7 @@
 // "Available". (Freeing a vehicle when a trip is Delivered is done by the
 // free_vehicles_on_delivery DB trigger, with the same rules.)
 import { supabase } from './supabaseClient'
+import { FINISHED_IN } from './tripStatusFlow'
 
 // Flips a truck (plateNumber) or trailer (trailerId) from `from` to `to`,
 // but ONLY if it's still at `from`. Returns an error message or null.
@@ -60,7 +61,7 @@ export async function freeVehicleIfIdle(plateNumber: string | null, trailerId: n
   let query = supabase
     .from('itineraries')
     .select('itinerary_id')
-    .not('itinerary_status', 'in', '("Delivered","Cancelled")')
+    .not('itinerary_status', 'in', FINISHED_IN)
     .limit(1)
   query = plateNumber ? query.eq('plate_number', plateNumber) : query.eq('trailer_id', trailerId)
 

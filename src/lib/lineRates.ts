@@ -9,6 +9,7 @@
 import { cents } from './amountInput.ts'
 import { formatMoney } from './format.ts'
 import { estimateTripCosts, type CostSettings, type TripCosts } from './tripCost.ts'
+import { isDelivered } from './tripStatusFlow.ts'
 
 // The part of a cargo line the rate math needs (CargoLineRow fits).
 export type RatedLine = { quantity: number }
@@ -91,7 +92,7 @@ export function groupTripRates(
     const entry = byBooking.get(row.booking_id) ?? { live: [], delivered: [] }
     const rate = Number(row.trip_rate ?? bookingRateById.get(row.booking_id) ?? 0)
     entry.live.push(rate)
-    if (row.itinerary_status === 'Delivered') entry.delivered.push(rate)
+    if (isDelivered(row.itinerary_status)) entry.delivered.push(rate)
     byBooking.set(row.booking_id, entry)
   }
   return byBooking

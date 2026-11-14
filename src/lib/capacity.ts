@@ -18,6 +18,7 @@
 
 import { trailerAllowed, trailerLabel, trailerRank } from './trailerRules.ts'
 import { hoursLate, manilaWeek } from './tripSchedule.ts'
+import { isCompleted } from './tripStatusFlow.ts'
 
 export type ResourceKind = 'Driver' | 'Truck' | 'Trailer'
 
@@ -192,7 +193,7 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
   }
   for (const r of world.resources) for (const b of r.busy) take(r.id, { start: b.start, end: b.end })
   const booked = world.booked.map((t) => ({ ...t }))
-  const live = booked.filter((t) => t.status !== 'Delivered')
+  const live = booked.filter((t) => !isCompleted(t.status))
   for (const t of live) for (const id of [t.driverId, t.truckId, t.trailerId]) take(id, { start: t.start, end: t.end, tripId: t.id })
 
   // Free for [s, e), optionally not counting one booked trip.

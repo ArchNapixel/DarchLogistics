@@ -21,6 +21,7 @@ import { type Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { isDelivered } from '../../../lib/tripStatusFlow'
 
 type ClientBooking = Booking & { cargo: string }
 
@@ -177,7 +178,7 @@ function ClientBookingHistoryModal({
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
       )
-      if (itinerary.itinerary_status === 'Delivered') {
+      if (isDelivered(itinerary.itinerary_status)) {
         completedTripsByBooking.set(
           itinerary.booking_id,
           (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,

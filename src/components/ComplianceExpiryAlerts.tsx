@@ -28,6 +28,7 @@ import { formatDate } from '../lib/format'
 import { stockLevel } from '../lib/inventoryItemTypes'
 import { loadPmsSettings } from '../lib/odometer'
 import { pmsStatus } from '../lib/pms'
+import { ACTIVE_TRIP_OR } from '../lib/tripStatusFlow'
 
 type StockAlert = { out: number; low: number }
 // Changes when the counts change, so a new shortage shows as unread again.
@@ -177,7 +178,7 @@ function ComplianceExpiryAlerts() {
     const { data: trips } = await supabase
       .from('itineraries')
       .select('itinerary_id, booking_id, trip_end_at')
-      .or('itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)')
+      .or(ACTIVE_TRIP_OR)
       .not('trip_end_at', 'is', null)
       .lt('trip_end_at', cutoff)
       .order('trip_end_at')

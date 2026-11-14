@@ -6,8 +6,10 @@
 // booking's deadline date like any other booking.
 // Self-check: node scripts/check-storage-deadline.ts
 
+import { DELIVERED_STATUSES } from './tripStatusFlow.ts'
+
 // Statuses where the container has already left the port.
-const PICKED_UP = ['PickedUp', 'InTransit', 'Delivered']
+const PICKED_UP = ['PickedUp', 'InTransit', ...DELIVERED_STATUSES]
 
 // End of the storage day: 11:59:59.999 PM Manila (UTC+8, no DST), in ms.
 export function storageDeadlineEnd(date: string): number {

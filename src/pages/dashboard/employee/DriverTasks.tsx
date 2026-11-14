@@ -28,6 +28,7 @@ import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { tripOnRoad } from '../../../lib/tripSchedule'
+import { COMPLETED_STATUSES, FINISHED_IN, isFinished } from '../../../lib/tripStatusFlow'
 
 type Trip = {
   itinerary_id: number
@@ -115,13 +116,13 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description',
         )
         .in('itinerary_id', itineraryIds)
-        .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+        .not('itinerary_status', 'in', FINISHED_IN)
         .order('trip_date_from', { ascending: true }),
       supabase
         .from('itineraries')
         .select('itinerary_id, booking_id, trip_date_from, trip_start_at, trip_end_at, plate_number')
         .in('itinerary_id', itineraryIds)
-        .eq('itinerary_status', 'Delivered')
+        .in('itinerary_status', COMPLETED_STATUSES)
         .order('trip_date_from', { ascending: false })
         .order('itinerary_id', { ascending: false })
         .limit(2),
@@ -229,7 +230,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
   // Delivered/Cancelled exclusion in loadTrips); other changes just
   // update the badge in place.
   function handleStatusChanged(itineraryId: number, newStatus: string) {
-    if (newStatus === 'Delivered') {
+    if (isFinished(newStatus)) {
       setTrips((prev) => prev.filter((t) => t.itinerary_id !== itineraryId))
       return
     }

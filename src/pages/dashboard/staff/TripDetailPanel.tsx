@@ -18,6 +18,7 @@ import { formatDate, formatDateTime, formatMoney, formatSlot } from '../../../li
 import { loadDispatchStatusLogForItinerary, type DispatchStatusLogEntry } from '../../../lib/dispatchStatusLog'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { TRIP_STATUS_LABELS, type TripListRow } from '../../../lib/tripList'
+import { isFinished } from '../../../lib/tripStatusFlow'
 
 type Extra = {
   log: DispatchStatusLogEntry[]
@@ -130,7 +131,7 @@ function TripDetailPanel({
   })
   const expenseTotal = (extra?.expenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0)
   // Missing crew / vehicles only matter on a trip that still has to run.
-  const stillToRun = trip.status !== 'Delivered' && trip.status !== 'Cancelled'
+  const stillToRun = !isFinished(trip.status)
   const missing = stillToRun ? 'font-medium text-orange-700' : 'text-slate-400'
 
   return (

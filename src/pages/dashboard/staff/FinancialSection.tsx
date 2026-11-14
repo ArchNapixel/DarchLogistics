@@ -49,6 +49,7 @@ import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpaym
 import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
 import { deliveryAmountFor, loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
+import { isDelivered } from '../../../lib/tripStatusFlow'
 
 // One row of the bookings query in loadBookings().
 type ReceivableBookingRow = {
@@ -1055,7 +1056,7 @@ function FinancialSection() {
         itinerary.booking_id,
         (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
       )
-      if (itinerary.itinerary_status === 'Delivered') {
+      if (isDelivered(itinerary.itinerary_status)) {
         completedTripsByBooking.set(
           itinerary.booking_id,
           (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,

@@ -32,6 +32,7 @@ import {
   type PartLine,
   type PayslipCostRow,
 } from './expenseTotals'
+import { isDelivered } from './tripStatusFlow'
 
 type Page<T> = { data: T[] | null; error: { message: string } | null }
 
@@ -166,7 +167,7 @@ export async function loadOperationalExpenses(
       .range(from, to),
   )
   if (trips.error) return { data: null, error: trips.error }
-  const deliveredTrips = trips.rows.filter((t) => t.itinerary_status === 'Delivered')
+  const deliveredTrips = trips.rows.filter((t) => isDelivered(t.itinerary_status))
   const deliveredIds = deliveredTrips.map((t) => t.itinerary_id)
   const bookingIds = Array.from(new Set(deliveredTrips.map((t) => t.booking_id)))
 

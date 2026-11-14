@@ -19,6 +19,7 @@ import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
 // Only these positions have trips/work orders to show a detail view
 // for -- Admin/Dispatcher don't.
@@ -354,7 +355,7 @@ function EmployeesSection() {
           .from('itineraries')
           .select('itinerary_id')
           .in('itinerary_id', tripIds)
-          .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+          .not('itinerary_status', 'in', FINISHED_IN)
         if (openTrips && openTrips.length > 0) {
           tripWarning =
             ` They are still assigned to trip ${openTrips.map((t) => `#${t.itinerary_id}`).join(', ')} -- ` +

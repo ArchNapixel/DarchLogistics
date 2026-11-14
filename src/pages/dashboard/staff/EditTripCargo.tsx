@@ -15,9 +15,10 @@ import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { MAX_WEIGHT_TONS, type TripCargo } from '../../../lib/quoteRequest'
 import { trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
+import { ACTIVE_TRIP_OR } from '../../../lib/tripStatusFlow'
 
 // Not Delivered and not Cancelled (null status counts as Awaiting).
-const ACTIVE_TRIP_FILTER = 'itinerary_status.is.null,itinerary_status.not.in.(Delivered,Cancelled)'
+const ACTIVE_TRIP_FILTER = ACTIVE_TRIP_OR
 
 const inputClasses =
   'rounded-[2px] border border-line-control bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-primary disabled:bg-slate-100 disabled:text-slate-500'

@@ -71,6 +71,7 @@ import {
   type Contributions,
   type EarlierPayslip,
 } from './governmentContributions'
+import { DELIVERED_STATUSES } from './tripStatusFlow'
 
 export type PayrollSettings = {
   driverCommissionRate: number
@@ -266,7 +267,7 @@ async function loadPeriodPayData(
         .from('itineraries')
         .select('itinerary_id, booking_id, place_of_pickup_id, place_of_delivery_id, trip_rate')
         .in('itinerary_id', chunk)
-        .eq('itinerary_status', 'Delivered')
+        .in('itinerary_status', DELIVERED_STATUSES)
         .order('itinerary_id')
         .range(from, to),
     ),

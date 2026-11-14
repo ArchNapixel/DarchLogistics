@@ -53,6 +53,7 @@ import { loadExtraChargesByBooking, type ExtraChargeItem } from './bookingCharge
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { toManilaDate } from './payslip'
 import { groupTripRates, sumRates } from './lineRates'
+import { isDelivered } from './tripStatusFlow'
 
 // One row of the bookings / quote queries in loadPaymentDueReport().
 type DueBookingRow = {
@@ -222,7 +223,7 @@ export async function loadPaymentDueReport(
   }
 
   const deliveredItineraryIds = itinerariesResult.rows
-    .filter((i) => i.itinerary_status === 'Delivered')
+    .filter((i) => isDelivered(i.itinerary_status))
     .map((i) => i.itinerary_id)
 
   // When each trip was marked Delivered on the Dispatch Board. Oldest
@@ -275,7 +276,7 @@ export async function loadPaymentDueReport(
     .map((booking) => {
       const itineraries = itinerariesByBooking.get(booking.booking_id) ?? []
       const deliveredItineraries = itineraries.filter(
-        (itinerary) => itinerary.itinerary_status === 'Delivered',
+        (itinerary) => isDelivered(itinerary.itinerary_status),
       )
       const totalTrips = itineraries.length
       const completedTrips = deliveredItineraries.length

@@ -25,6 +25,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import Pager from '../../../components/Pager'
 import EmptyState from '../../../components/EmptyState'
 import { formatDate } from '../../../lib/format'
+import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
 type Truck = {
   plate_number: string
@@ -295,7 +296,7 @@ function FleetSection() {
     setActionError(null)
 
     if (!active) {
-      const openTrips = supabase.from('itineraries').select('itinerary_id').not('itinerary_status', 'in', '(Delivered,Cancelled)')
+      const openTrips = supabase.from('itineraries').select('itinerary_id').not('itinerary_status', 'in', FINISHED_IN)
       const { data: trips, error: tripsError } = await (isTruck ? openTrips.eq('plate_number', v.plateNumber) : openTrips.eq('trailer_id', v.trailerId))
       if (tripsError) {
         setActionError(tripsError.message)

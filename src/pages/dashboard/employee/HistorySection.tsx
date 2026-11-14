@@ -24,6 +24,7 @@ import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import EmptyState from '../../../components/EmptyState'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
+import { FINISHED_STATUSES } from '../../../lib/tripStatusFlow'
 
 type HistoryStatus = 'Completed' | 'Cancelled'
 
@@ -294,7 +295,7 @@ function HistorySection() {
         'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id',
       )
       .in('itinerary_id', itineraryIds)
-      .in('itinerary_status', ['Delivered', 'Cancelled'])
+      .in('itinerary_status', FINISHED_STATUSES)
       .order('trip_date_from', { ascending: false })
       .order('itinerary_id', { ascending: false })
 
@@ -337,7 +338,7 @@ function HistorySection() {
         delivery: placeNameById.get(trip.place_of_delivery_id) ?? '—',
         truck: trip.plate_number,
         trailer: trip.trailer_id !== null ? (trailerPlateById.get(trip.trailer_id) ?? `Trailer #${trip.trailer_id}`) : null,
-        status: trip.itinerary_status === 'Delivered' ? 'Delivered' : 'Cancelled',
+        status: trip.itinerary_status === 'Cancelled' ? 'Cancelled' : 'Delivered',
       })),
     )
     setError(null)

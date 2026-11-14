@@ -15,6 +15,7 @@ import { fetchAll } from './dashboardExpenses'
 import { fetchDrivingDistanceKm, geocodePlace } from './geocoding'
 import { goesHome, tripLegs, uncountedTrips, type DeliveredTrip } from './odometerRules'
 import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, pmsStatus, type PmsSettings } from './pms'
+import { COMPLETED_STATUSES, FINISHED_IN } from './tripStatusFlow'
 
 // The two PMS settings (Settings page); defaults if a row is missing --
 // the same fallbacks the pms_auto_schedule trigger uses.
@@ -114,7 +115,7 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
       .select('trip_start_at')
       .eq('plate_number', plate)
       .neq('itinerary_id', itineraryId)
-      .not('itinerary_status', 'in', '(Delivered,Cancelled)')
+      .not('itinerary_status', 'in', FINISHED_IN)
       .not('trip_start_at', 'is', null),
     supabase.from('places').select('place_id').ilike('city', BASE.city).ilike('barangay', BASE.barangay).maybeSingle(),
   ])
@@ -251,7 +252,7 @@ export async function loadUncountedTrips(): Promise<{ trips: DeliveredTrip[]; er
       supabase
         .from('itineraries')
         .select('itinerary_id, plate_number')
-        .eq('itinerary_status', 'Delivered')
+        .in('itinerary_status', COMPLETED_STATUSES)
         .not('plate_number', 'is', null)
         .order('itinerary_id', { ascending: true })
         .range(from, to),

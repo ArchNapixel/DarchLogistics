@@ -13,6 +13,7 @@ import { formatClock, formatSlot, formatTime } from '../../../lib/format'
 import { DAY_MS, DAY_START_HOUR, HOUR_MS, type TimelineRow } from '../../../lib/scheduleData'
 import { busyUntil, isOverdue } from '../../../lib/tripSchedule'
 import { storageState } from '../../../lib/storageDeadline'
+import { isCompleted } from '../../../lib/tripStatusFlow'
 
 export type TimelineSection = {
   // '' = no section header row (Trips / Bookings views).
@@ -186,7 +187,7 @@ function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props)
                       storage === 'pending' ? ' · Pick up by 11:59 PM' : storage === 'missed' ? ' · Storage missed' : ''
                     const overdue = !storageNote && isOverdue(bar, now)
                     const late = overdue || storage === 'missed'
-                    const delivered = bar.status === 'Delivered'
+                    const delivered = isCompleted(bar.status)
                     const notStarted = bar.status === 'Awaiting'
                     return (
                       <button
