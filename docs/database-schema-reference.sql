@@ -3,7 +3,7 @@
 -- Source of truth is the live Supabase project. The full schema (functions,
 -- triggers, RLS policies, grants, storage) is in
 -- supabase/migrations/20261113000000_baseline_live_schema.sql.
--- 53 tables, 65 enum types, 77 functions, 173 RLS policies.
+-- 53 tables, 65 enum types, 79 functions, 173 RLS policies.
 
 -- ===== Tables (alphabetical) =====
 
@@ -174,6 +174,7 @@ CREATE TABLE public.cash_advances (
   approved_at timestamp with time zone,
   rejection_reason text
 );
+ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_amount_range CHECK (((amount > (0)::numeric) AND (amount <= (1000000)::numeric))) NOT VALID;
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_status_check CHECK ((status = ANY (ARRAY['Pending'::text, 'Approved'::text, 'Rejected'::text])));
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_pkey PRIMARY KEY (cash_advance_id);
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES employees(employee_id);
@@ -350,7 +351,7 @@ CREATE TABLE public.employees (
   driver_license_number character varying,
   driver_license_expiry_date date,
   commission_basis text,
-  weekly_salary numeric,
+  weekly_salary numeric(12,2),
   is_minimum_wage_earner boolean DEFAULT false NOT NULL,
   sss_number character varying,
   philhealth_number character varying,
@@ -358,6 +359,7 @@ CREATE TABLE public.employees (
   assigned_plate_number character varying
 );
 ALTER TABLE public.employees ADD CONSTRAINT employees_commission_basis_check CHECK ((commission_basis = ANY (ARRAY['Flat Fee'::text, 'Percentage'::text])));
+ALTER TABLE public.employees ADD CONSTRAINT employees_weekly_salary_range CHECK (((weekly_salary IS NULL) OR ((weekly_salary > (0)::numeric) AND (weekly_salary <= (1000000)::numeric)))) NOT VALID;
 ALTER TABLE public.employees ADD CONSTRAINT employees_phone_ph CHECK (((phone_number)::text ~ '^09[0-9]{9}$'::text)) NOT VALID;
 ALTER TABLE public.employees ADD CONSTRAINT employees_pkey PRIMARY KEY (employee_id);
 ALTER TABLE public.employees ADD CONSTRAINT employees_assigned_plate_number_key UNIQUE (assigned_plate_number);
@@ -700,22 +702,22 @@ CREATE TABLE public.payroll_payslips (
   employee_id integer NOT NULL,
   payroll_period_start date NOT NULL,
   payroll_period_end date NOT NULL,
-  gross_pay numeric NOT NULL,
+  gross_pay numeric(12,2) NOT NULL,
   payslip_status text DEFAULT 'Pending'::text NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
-  base_pay numeric DEFAULT 0 NOT NULL,
-  allowance_amount numeric DEFAULT 0 NOT NULL,
-  cash_advance_deducted numeric DEFAULT 0 NOT NULL,
-  net_pay numeric DEFAULT 0 NOT NULL,
-  sss_msc numeric DEFAULT 0 NOT NULL,
-  sss_ee numeric DEFAULT 0 NOT NULL,
-  sss_er numeric DEFAULT 0 NOT NULL,
-  sss_ec numeric DEFAULT 0 NOT NULL,
-  philhealth_ee numeric DEFAULT 0 NOT NULL,
-  philhealth_er numeric DEFAULT 0 NOT NULL,
-  pagibig_ee numeric DEFAULT 0 NOT NULL,
-  pagibig_er numeric DEFAULT 0 NOT NULL,
-  withholding_tax numeric DEFAULT 0 NOT NULL,
+  base_pay numeric(12,2) DEFAULT 0 NOT NULL,
+  allowance_amount numeric(12,2) DEFAULT 0 NOT NULL,
+  cash_advance_deducted numeric(12,2) DEFAULT 0 NOT NULL,
+  net_pay numeric(12,2) DEFAULT 0 NOT NULL,
+  sss_msc numeric(12,2) DEFAULT 0 NOT NULL,
+  sss_ee numeric(12,2) DEFAULT 0 NOT NULL,
+  sss_er numeric(12,2) DEFAULT 0 NOT NULL,
+  sss_ec numeric(12,2) DEFAULT 0 NOT NULL,
+  philhealth_ee numeric(12,2) DEFAULT 0 NOT NULL,
+  philhealth_er numeric(12,2) DEFAULT 0 NOT NULL,
+  pagibig_ee numeric(12,2) DEFAULT 0 NOT NULL,
+  pagibig_er numeric(12,2) DEFAULT 0 NOT NULL,
+  withholding_tax numeric(12,2) DEFAULT 0 NOT NULL,
   deductions_note text,
   finalized_at timestamp with time zone,
   on_hold boolean DEFAULT false NOT NULL
@@ -747,7 +749,7 @@ CREATE TABLE public.payslip_line_items (
   payroll_id integer NOT NULL,
   itinerary_id integer,
   description text NOT NULL,
-  amount numeric NOT NULL
+  amount numeric(12,2) NOT NULL
 );
 ALTER TABLE public.payslip_line_items ADD CONSTRAINT payslip_line_items_pkey PRIMARY KEY (payslip_line_item_id);
 ALTER TABLE public.payslip_line_items ADD CONSTRAINT payslip_line_items_itinerary_id_fkey FOREIGN KEY (itinerary_id) REFERENCES itineraries(itinerary_id);
@@ -1172,6 +1174,7 @@ CREATE TYPE public.work_order_status_enum AS ENUM ('Created', 'Scheduled', 'In P
 -- public.change_my_username(p_username text)
 -- public.check_vehicle_slot()
 -- public.close_part_request(p_request_id integer, p_note text DEFAULT NULL::text)
+-- public.cash_advances_check_limits()  [trigger cash_advances_limits, 2026-11-14]
 -- public.complete_work_order(p_work_order_id integer, p_description text, p_odometer numeric DEFAULT NULL::numeric, p_next_service_date date DEFAULT NULL::date, p_notes text DEFAULT NULL::text, p_parts jsonb DEFAULT '[]'::jsonb, p_new_items jsonb DEFAULT '[]'::jsonb)
 -- public.count_bookings_for_clients(client_ids integer[])
 -- public.create_bill(p_category text, p_description text, p_amount numeric, p_creditor_id integer DEFAULT NULL::integer, p_bill_date date DEFAULT NULL::date, p_due_date date DEFAULT NULL::date, p_reference_no text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_paid_now boolean DEFAULT false, p_method text DEFAULT 'Cash'::text)
@@ -1180,6 +1183,7 @@ CREATE TYPE public.work_order_status_enum AS ENUM ('Created', 'Scheduled', 'In P
 -- public.crew_slot_conflict(p_employee_id integer, p_itinerary_id integer)
 -- public.current_admin_employee_id()
 -- public.discard_draft_payslip(p_payroll_id bigint)
+-- public.employees_check_hire_date()  [trigger employees_hire_date_range, 2026-11-14]
 -- public.free_vehicles_on_delivery()
 -- public.get_capacity_inputs(p_from timestamp with time zone, p_to timestamp with time zone, p_exclude_quote bigint DEFAULT NULL::bigint)
 -- public.get_login_email(p_username text)

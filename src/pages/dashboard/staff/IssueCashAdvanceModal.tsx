@@ -6,9 +6,15 @@
 // With `inline` it is the Cash Advances page's side panel (the canvas's
 // "Issue Cash Advance" card) instead of a pop-up: no close button, and the
 // form clears itself after each advance.
+// Limits (max per advance, total owed <= N weeks of pay) are enforced by the
+// DB trigger cash_advances_limits -- its message is shown as the error.
+// This form only adds the "are you sure?" checks (large amount, same amount
+// again within a few minutes); both read app_settings.
 import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
+import { confirmDialog } from '../../../components/ConfirmDialog'
+import { formatMoney } from '../../../lib/format'
 
 type EmployeeOption = {
   employee_id: number
@@ -60,11 +66,9 @@ function IssueCashAdvanceModal({
     const data = (employeesResult.data ?? []).filter(
       (e) => !inactiveIds.has(e.employment_status_id) || e.employee_id === presetEmployeeId,
     )
+    // Starts on "Select employee..." unless one was picked in advance --
+    // never on whoever sorts first.
     setEmployees(data)
-    // Keep an employee picked in advance; otherwise start on the first one.
-    if (data.length > 0) {
-      setEmployeeId((current) => current || String(data[0].employee_id))
-    }
     setLoadingOptions(false)
   }
 
@@ -92,9 +96,54 @@ function IssueCashAdvanceModal({
       return
     }
     const amountValue = parsed.value
+    const employeeName = employees.find((e) => String(e.employee_id) === employeeId)?.full_name ?? 'this employee'
 
     setSubmitting(true)
     setError(null)
+
+    // "Are you sure?" checks. Settings missing = that check is skipped.
+    const { data: settings } = await supabase
+      .from('app_settings')
+      .select('setting_key, setting_value')
+      .in('setting_key', ['cash_advance_confirm_above', 'duplicate_advance_minutes'])
+    const setting = (key: string) => settings?.find((row) => row.setting_key === key)?.setting_value as number | undefined
+    const confirmAbove = setting('cash_advance_confirm_above')
+    const duplicateMinutes = setting('duplicate_advance_minutes')
+
+    if (duplicateMinutes) {
+      const since = new Date(Date.now() - duplicateMinutes * 60_000).toISOString()
+      const { data: recent } = await supabase
+        .from('cash_advances')
+        .select('cash_advance_id')
+        .eq('employee_id', Number(employeeId))
+        .eq('amount', amountValue)
+        .in('status', ['Pending', 'Approved'])
+        .gte('created_at', since)
+        .limit(1)
+      if (
+        recent?.length &&
+        !(await confirmDialog({
+          title: 'Possible duplicate',
+          message: `${employeeName} already got ${formatMoney(amountValue)} in the last ${duplicateMinutes} minutes. Issue it again?`,
+          confirmLabel: 'Issue Again',
+        }))
+      ) {
+        setSubmitting(false)
+        return
+      }
+    }
+    if (
+      confirmAbove != null &&
+      amountValue > confirmAbove &&
+      !(await confirmDialog({
+        title: 'Large cash advance',
+        message: `Give ${employeeName} a cash advance of ${formatMoney(amountValue)}? That's more than ${formatMoney(confirmAbove)}.`,
+        confirmLabel: 'Issue Advance',
+      }))
+    ) {
+      setSubmitting(false)
+      return
+    }
 
     const { error: insertError } = await supabase.from('cash_advances').insert({
       employee_id: Number(employeeId),
@@ -110,6 +159,7 @@ function IssueCashAdvanceModal({
     }
 
     if (inline) {
+      setEmployeeId('')
       setAmount('')
       setNote('')
     }
@@ -128,6 +178,7 @@ function IssueCashAdvanceModal({
           <label className={label}>
             Employee
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={field}>
+              <option value="">Select employee…</option>
               {employees.map((employee) => (
                 <option key={employee.employee_id} value={employee.employee_id}>
                   {employee.full_name}
