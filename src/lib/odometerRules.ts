@@ -5,10 +5,13 @@
 // Every truck is based at Brgy. J.P. Laurel, Panabo City. A trip adds
 // drive out + the trip itself + drive back:
 //  - Drive out starts at base, unless the truck's previous counted trip
-//    didn't go home (its drive back was 0) -- then it starts from that
-//    trip's delivery spot.
-//  - Drive back to base is counted unless the truck has another trip
-//    starting within HOME_GAP_HOURS of this delivery (it goes straight on).
+//    didn't go home (its drive back was 0) -- then it starts where that
+//    trip ended (its delivery spot, or its return place).
+//  - A trip that brings the empty container back adds the return leg
+//    (delivery -> return place) to the trip km, and ends at the return place.
+//  - Drive back to base (from where the trip ended) is counted unless the
+//    truck has another trip starting within HOME_GAP_HOURS of the trip's end
+//    (it goes straight on).
 
 export const HOME_GAP_HOURS = 12
 
@@ -25,27 +28,33 @@ const round2 = (km: number) => Math.round(km * 100) / 100
 // The three legs to save, from the routed distances (null = couldn't be
 // routed). Drive out not routed -> 0, left out rather than guessed. Drive
 // back not routed -> same as the trip (same road back).
+// returnKm: the empty-container return leg -- left out (undefined) for a
+// trip with no return, null when it couldn't be worked out (not counted).
 export function tripLegs({
   outKm,
   tripKm,
+  returnKm,
   backKm,
   home,
 }: {
   outKm: number | null
   tripKm: number
+  returnKm?: number | null
   backKm: number | null
   home: boolean
 }): { out: number; trip: number; back: number; total: number; notes: string[] } {
   const notes: string[] = []
   const out = outKm ?? 0
   if (outKm === null) notes.push("Drive out couldn't be routed, not counted")
+  if (returnKm === null) notes.push("Empty container return couldn't be routed, not counted")
+  else if (returnKm !== undefined) notes.push(`Incl. ${round2(returnKm)} km empty container return`)
   let back = 0
   if (!home) notes.push(`Next trip within ${HOME_GAP_HOURS} h, no drive back`)
   else if (backKm === null) {
     back = tripKm
     notes.push("Drive back couldn't be routed, same as trip")
   } else back = backKm
-  const legs = { out: round2(out), trip: round2(tripKm), back: round2(back) }
+  const legs = { out: round2(out), trip: round2(tripKm + (returnKm ?? 0)), back: round2(back) }
   return { ...legs, total: round2(legs.out + legs.trip + legs.back), notes }
 }
 

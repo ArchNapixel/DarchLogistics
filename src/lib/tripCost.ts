@@ -12,6 +12,16 @@
 // from payslips and must NOT add them again from here. Only diesel has
 // no payroll equivalent -- see dieselForTrip().
 
+// The km a trip drives for the diesel estimate: the booking's trip distance,
+// plus the empty-container return leg (delivery -> return place) on a trip
+// that brings the container back (itineraries.return_container).
+export function tripDistanceKm(
+  booking: { estimated_distance_km: number | string | null; return_distance_km?: number | string | null },
+  returnContainer: boolean,
+): number {
+  return Number(booking.estimated_distance_km ?? 0) + (returnContainer ? Number(booking.return_distance_km ?? 0) : 0)
+}
+
 export type CostSettings = {
   dieselPricePerLiter: number
   driverCommissionRate: number // percent, e.g. 5 means 5%

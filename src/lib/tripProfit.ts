@@ -17,6 +17,7 @@ import { csvField } from './inventoryReport'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { nextMonthStart } from './remittanceTotals'
 import { tripProfit, type TripProfit } from './tripProfitTotals'
+import { tripDistanceKm } from './tripCost'
 import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 import { isDelivered } from './tripStatusFlow'
 
@@ -41,12 +42,14 @@ type TripRow = {
   plate_number: string | null
   itinerary_status: string | null
   trip_rate: number | string | null
+  return_container: boolean
 }
 type BookingRow = {
   booking_id: number
   client_id: number
   rate_of_delivery_service: number | string | null
   estimated_distance_km: number | string | null
+  return_distance_km: number | string | null
 }
 type ExpenseRow = { itinerary_id: number; amount: number | string; category: string }
 type DamageRow = DamageCostRow & { itinerary_id: number }
@@ -100,7 +103,7 @@ export async function loadTripProfitReport(month: string): Promise<{
   const trips = await fetchIn<TripRow>(inMonthIds, (chunk, a, b) =>
     supabase
       .from('itineraries')
-      .select('itinerary_id, booking_id, plate_number, itinerary_status, trip_rate')
+      .select('itinerary_id, booking_id, plate_number, itinerary_status, trip_rate, return_container')
       .in('itinerary_id', chunk)
       .range(a, b),
   )
@@ -113,7 +116,7 @@ export async function loadTripProfitReport(month: string): Promise<{
     fetchIn<BookingRow>(bookingIds, (chunk, a, b) =>
       supabase
         .from('bookings')
-        .select('booking_id, client_id, rate_of_delivery_service, estimated_distance_km')
+        .select('booking_id, client_id, rate_of_delivery_service, estimated_distance_km, return_distance_km')
         .in('booking_id', chunk)
         .range(a, b),
     ),
@@ -160,7 +163,8 @@ export async function loadTripProfitReport(month: string): Promise<{
   const rows: TripProfitRow[] = delivered.flatMap((trip) => {
     const booking = bookingById.get(trip.booking_id)
     if (!booking) return []
-    const km = Number(booking.estimated_distance_km ?? 0)
+    // Plus the empty-container return leg on a trip that brings it back.
+    const km = tripDistanceKm(booking, trip.return_container)
     const fuelLogged = fuelByTrip.get(trip.itinerary_id) ?? 0
     return [
       {

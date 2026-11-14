@@ -21,7 +21,7 @@
 // Every row is counted once; every query is paged past Supabase's
 // 1000-row default so a long range can't silently cap.
 import { supabase } from './supabaseClient'
-import { dieselForTrip } from './tripCost'
+import { dieselForTrip, tripDistanceKm } from './tripCost'
 import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 import {
   payslipCost,
@@ -84,8 +84,8 @@ export type OperationalExpenses = {
 
 type PayslipRow = PayslipCostRow & { finalized_at: string | null }
 type LogRow = { itinerary_id: number }
-type TripRow = { itinerary_id: number; booking_id: number; itinerary_status: string | null }
-type BookingRow = { booking_id: number; estimated_distance_km: number | string | null }
+type TripRow = { itinerary_id: number; booking_id: number; itinerary_status: string | null; return_container: boolean }
+type BookingRow = { booking_id: number; estimated_distance_km: number | string | null; return_distance_km: number | string | null }
 type ExpenseRow = { expense_id: number; itinerary_id: number; amount: number | string; category: string }
 type DamageRow = DamageCostRow
 
@@ -162,7 +162,7 @@ export async function loadOperationalExpenses(
   const trips = await fetchIn<TripRow>(loggedIds, (chunk, from, to) =>
     supabase
       .from('itineraries')
-      .select('itinerary_id, booking_id, itinerary_status')
+      .select('itinerary_id, booking_id, itinerary_status, return_container')
       .in('itinerary_id', chunk)
       .range(from, to),
   )
@@ -175,7 +175,7 @@ export async function loadOperationalExpenses(
     fetchIn<BookingRow>(bookingIds, (chunk, from, to) =>
       supabase
         .from('bookings')
-        .select('booking_id, estimated_distance_km')
+        .select('booking_id, estimated_distance_km, return_distance_km')
         .in('booking_id', chunk)
         .range(from, to),
     ),
@@ -219,16 +219,16 @@ export async function loadOperationalExpenses(
   for (const e of deliveredExpenses.rows) {
     fuelByTrip.set(e.itinerary_id, (fuelByTrip.get(e.itinerary_id) ?? 0) + Number(e.amount))
   }
-  const distanceByBooking = new Map(
-    bookings.rows.map((b) => [b.booking_id, Number(b.estimated_distance_km ?? 0)]),
-  )
+  const bookingById = new Map(bookings.rows.map((b) => [b.booking_id, b]))
   const dieselPrice = settings.data ? Number(settings.data.setting_value) : null
 
   let dieselEstimated = 0
   let estimatedTrips = 0
   let tripsMissingDistance = 0
   for (const trip of deliveredTrips) {
-    const km = distanceByBooking.get(trip.booking_id) ?? 0
+    // Plus the empty-container return leg on a trip that brings it back.
+    const booking = bookingById.get(trip.booking_id)
+    const km = booking ? tripDistanceKm(booking, trip.return_container) : 0
     const diesel = dieselForTrip(
       fuelByTrip.get(trip.itinerary_id) ?? 0,
       (dieselPrice ?? 0) * km,

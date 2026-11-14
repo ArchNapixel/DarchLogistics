@@ -27,6 +27,18 @@ assert.equal(noRoute.out, 0)
 assert.equal(noRoute.back, 80) // same road back
 assert.equal(noRoute.total, 160)
 assert.equal(noRoute.notes.length, 2)
+// Empty container return: added to the trip leg; the drive back is from the return place.
+const withReturn = tripLegs({ outKm: 10, tripKm: 80, returnKm: 30.004, backKm: 50, home: true })
+assert.equal(withReturn.trip, 110)
+assert.equal(withReturn.back, 50)
+assert.equal(withReturn.total, 170)
+assert.deepEqual(withReturn.notes, ['Incl. 30 km empty container return'])
+const returnUnrouted = tripLegs({ outKm: 10, tripKm: 80, returnKm: null, backKm: 50, home: true })
+assert.equal(returnUnrouted.trip, 80)
+assert.equal(returnUnrouted.notes.length, 1)
+// No return: same as before.
+assert.equal(tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: true }).notes.length, 0)
+
 const straightOn = tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: false })
 assert.equal(straightOn.back, 0) // routed back ignored: truck didn't go home
 assert.equal(straightOn.total, 90)

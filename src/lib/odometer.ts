@@ -76,6 +76,11 @@ type BookingStops = {
   place_of_delivery_id: number | null
   delivery_lat: number | null
   delivery_lng: number | null
+  // Empty container return (null = the booking doesn't return containers).
+  place_of_return_id: number | null
+  return_lat: number | null
+  return_lng: number | null
+  return_distance_km: number | null
 }
 
 export type TripKmEstimate = { plate: string; out: number; trip: number; back: number; total: number; notes: string[] }
@@ -84,10 +89,12 @@ export type TripKmEstimate = { plate: string; out: number; trip: number; back: n
 export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimate | { error: string }> {
   const { data: trip, error: tripError } = await supabase
     .from('itineraries')
-    .select('itinerary_id, booking_id, plate_number')
+    .select('itinerary_id, booking_id, plate_number, return_container')
     .eq('itinerary_id', itineraryId)
     .maybeSingle()
   if (tripError) return { error: tripError.message }
+  // A return trip ends at the return place, when the container is back.
+  const returns = trip?.return_container === true
   if (!trip?.plate_number) return { error: `Trip #${itineraryId} has no truck.` }
   const plate: string = trip.plate_number
 
@@ -96,7 +103,7 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
       .from('dispatch_status_logs')
       .select('status_changed_at')
       .eq('itinerary_id', itineraryId)
-      .eq('new_status', 'Delivered')
+      .eq('new_status', returns ? 'ContainerReturned' : 'Delivered')
       .order('status_changed_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -127,13 +134,19 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
 
   // This trip's booking, plus the previous trip's when the drive out starts there.
   let prevBookingId: number | null = null
+  let prevReturned = false
   if (prev?.itinerary_id) {
-    const { data } = await supabase.from('itineraries').select('booking_id').eq('itinerary_id', prev.itinerary_id).maybeSingle()
+    const { data } = await supabase
+      .from('itineraries')
+      .select('booking_id, return_container')
+      .eq('itinerary_id', prev.itinerary_id)
+      .maybeSingle()
     prevBookingId = data?.booking_id ?? null
+    prevReturned = data?.return_container === true
   }
   const { data: bookings, error: bookingError } = await supabase
     .from('bookings')
-    .select('booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng')
+    .select('booking_id, estimated_distance_km, place_of_pickup_id, pickup_lat, pickup_lng, place_of_delivery_id, delivery_lat, delivery_lng, place_of_return_id, return_lat, return_lng, return_distance_km')
     .in('booking_id', prevBookingId !== null ? [trip.booking_id, prevBookingId] : [trip.booking_id])
   if (bookingError) return { error: bookingError.message }
   const byId = new Map((bookings as BookingStops[]).map((b) => [b.booking_id, b]))
@@ -144,9 +157,13 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
   }
   const prevBooking = prevBookingId !== null ? byId.get(prevBookingId) : undefined
 
-  const placeIds = [booking.place_of_pickup_id, booking.place_of_delivery_id, prevBooking?.place_of_delivery_id ?? null].filter(
-    (id): id is number => id !== null,
-  )
+  const placeIds = [
+    booking.place_of_pickup_id,
+    booking.place_of_delivery_id,
+    booking.place_of_return_id,
+    prevBooking?.place_of_delivery_id ?? null,
+    prevBooking?.place_of_return_id ?? null,
+  ].filter((id): id is number => id !== null)
   const { data: places } = await supabase.from('places').select('place_id, city, barangay').in('place_id', placeIds)
   const placeById = new Map((places ?? []).map((p) => [p.place_id, p]))
   const stop = (placeId: number | null, lat: number | null, lng: number | null): Stop => ({
@@ -159,16 +176,32 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
   const base: Stop = { placeId: baseResult.data?.place_id ?? null, city: BASE.city, barangay: BASE.barangay, lat: null, lng: null }
   const pickup = stop(booking.place_of_pickup_id, booking.pickup_lat, booking.pickup_lng)
   const delivery = stop(booking.place_of_delivery_id, booking.delivery_lat, booking.delivery_lng)
-  const from = prevBooking ? stop(prevBooking.place_of_delivery_id, prevBooking.delivery_lat, prevBooking.delivery_lng) : base
+  // Where a trip ends: its return place when it brought the container back.
+  const endOf = (b: BookingStops, returned: boolean) =>
+    returned && b.place_of_return_id !== null
+      ? stop(b.place_of_return_id, b.return_lat, b.return_lng)
+      : stop(b.place_of_delivery_id, b.delivery_lat, b.delivery_lng)
+  const end = endOf(booking, returns)
+  const from = prevBooking ? endOf(prevBooking, prevReturned) : base
+  // The return leg: staff's figure from Review Quote, else routed.
+  const returnKm = !returns
+    ? undefined
+    : booking.return_distance_km != null
+      ? Number(booking.return_distance_km)
+      : booking.place_of_return_id !== null
+        ? await legKm(delivery, end)
+        : null
 
   const home = goesHome(
     deliveredMs,
     (othersResult.data ?? []).map((t) => Date.parse(t.trip_start_at as string)),
   )
   const outKm = await legKm(from, pickup)
-  const backKm = home ? await legKm(delivery, base) : null
-  const legs = tripLegs({ outKm, tripKm, backKm, home })
-  if (prevBooking) legs.notes.unshift(`From trip #${prev!.itinerary_id}'s delivery spot`)
+  const backKm = home ? await legKm(end, base) : null
+  const legs = tripLegs({ outKm, tripKm, returnKm, backKm, home })
+  if (prevBooking) {
+    legs.notes.unshift(`From trip #${prev!.itinerary_id}'s ${prevReturned ? 'container return place' : 'delivery spot'}`)
+  }
   return { plate, ...legs }
 }
 
