@@ -12,7 +12,8 @@ import { estimateTripCosts, type CostSettings, type TripCosts } from './tripCost
 import { isDelivered } from './tripStatusFlow.ts'
 
 // The part of a cargo line the rate math needs (CargoLineRow fits).
-export type RatedLine = { quantity: number }
+// cargo_type: only Container lines drive the empty-container return leg.
+export type RatedLine = { quantity: number; cargo_type?: string }
 
 // A saved line_rates value -> one rate per line. Old quotes (no line_rates)
 // use their single proposed rate on every line. 0 = not priced.
@@ -100,15 +101,19 @@ export function groupTripRates(
 
 // Estimated cost of the whole contract: each line's trips cost diesel and
 // the per-trip fee as before, but commission follows that line's own rate.
+// returnKm (quote's "Return the empty container"): Container trips also burn
+// diesel driving the empty container from delivery to the return place.
 export function estimateLineCosts(
   settings: CostSettings,
   lines: RatedLine[],
   rates: number[],
   distanceKm: number,
+  returnKm = 0,
 ): TripCosts {
   const total: TripCosts = { diesel: 0, commission: 0, perTripFee: 0, total: 0 }
   lines.forEach((line, i) => {
-    const cost = estimateTripCosts(settings, rates[i] ?? 0, distanceKm, line.quantity)
+    const km = distanceKm + (line.cargo_type === 'Container' ? returnKm : 0)
+    const cost = estimateTripCosts(settings, rates[i] ?? 0, km, line.quantity)
     total.diesel += cost.diesel
     total.commission += cost.commission
     total.perTripFee += cost.perTripFee

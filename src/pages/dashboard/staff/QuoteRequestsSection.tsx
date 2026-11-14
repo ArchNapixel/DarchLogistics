@@ -61,6 +61,16 @@ export type QuoteRequest = {
   pickup_lng: number | null
   delivery_lat: number | null
   delivery_lng: number | null
+  // "Return the empty container" (Container trips only): where it goes back
+  // to, and staff's delivery -> return distance (Review Quote).
+  return_container: boolean
+  return_location_text: string | null
+  return_landmark: string | null
+  return_city: string | null
+  return_barangay: string | null
+  return_lat: number | null
+  return_lng: number | null
+  return_distance_km: number | null
   // Cargo per trip, as lines (jsonb, lib/quoteRequest.ts CargoLineRow --
   // read with parseCargoLines). The single-cargo columns below are from
   // before 2026-10-23 and no longer written.
@@ -244,9 +254,14 @@ type RouteFields = {
   delivery_city: string | null
   delivery_barangay: string | null
   delivery_location_text: string
+  // "Return the empty container" (optional: not every list selects it).
+  return_container?: boolean
+  return_city?: string | null
+  return_barangay?: string | null
 }
 
-// Pickup on the first line, "→ delivery" under it.
+// Pickup on the first line, "→ delivery" under it, then the empty
+// container's return place when the quote asks for one.
 function RouteCell({ q }: { q: RouteFields }) {
   return (
     <td className={TD}>
@@ -261,6 +276,11 @@ function RouteCell({ q }: { q: RouteFields }) {
           detail: q.delivery_location_text,
         })}
       </p>
+      {q.return_container && (
+        <p className="text-[13px] text-ink-muted">
+          Empty container back to {formatLocationDisplay({ city: q.return_city ?? null, barangay: q.return_barangay ?? null, detail: null })}
+        </p>
+      )}
     </td>
   )
 }
@@ -567,7 +587,7 @@ async function fetchQuoteHistory(status: 'Approved' | 'Closed'): Promise<History
   const { data, error: quotesError } = await supabase
     .from('quote_requests')
     .select(
-      'quote_request_id, reference_code, client_name, pickup_city, pickup_barangay, pickup_location_text, delivery_city, delivery_barangay, delivery_location_text, proposed_rate, delivery_order_count, rejection_tag, rejection_reason, request_status, decline_reason, resubmit_count, created_at',
+      'quote_request_id, reference_code, client_name, pickup_city, pickup_barangay, pickup_location_text, delivery_city, delivery_barangay, delivery_location_text, return_container, return_city, return_barangay, proposed_rate, delivery_order_count, rejection_tag, rejection_reason, request_status, decline_reason, resubmit_count, created_at',
     )
     // Closed = rejected by us or declined by the client.
     .in('request_status', status === 'Approved' ? ['Approved'] : ['Rejected', 'Declined'])

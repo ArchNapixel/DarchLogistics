@@ -146,6 +146,38 @@ async function geocodeToLatLng(
   return geocodePlace(`Barangay ${barangay}, ${city}, Philippines`)
 }
 
+type LegStop = { city: string | null; barangay: string | null; lat: number | null; lng: number | null }
+
+// Driving km between two stops, most precise first: both pins (OSRM), a
+// cached route, then the two barangay centres. Null = couldn't tell (staff
+// type it). Used for the empty-container return leg (delivery -> return place).
+// ponytail: the main distance (loadDistance below) does the same steps inline
+// because it also shows where its figure came from.
+async function estimateLegKm(a: LegStop, b: LegStop): Promise<number | null> {
+  const round = (km: number) => Math.round(km * 100) / 100
+  try {
+    if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
+      const km = await fetchDrivingDistanceKm({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng })
+      if (km !== null) return round(km)
+    }
+    const [idA, idB] = await Promise.all([
+      findPlaceIdByCityBarangay(a.city, a.barangay),
+      findPlaceIdByCityBarangay(b.city, b.barangay),
+    ])
+    if (idA !== null && idB !== null) {
+      const cached = await findCachedDistance(idA, idB)
+      if (cached !== null) return cached
+    }
+    if (!a.city || !a.barangay || !b.city || !b.barangay) return null
+    const [pointA, pointB] = await Promise.all([geocodeToLatLng(a.city, a.barangay), geocodeToLatLng(b.city, b.barangay)])
+    if (!pointA || !pointB) return null
+    const km = await fetchDrivingDistanceKm(pointA, pointB)
+    return km === null ? null : round(km)
+  } catch {
+    return null
+  }
+}
+
 // Link to the exact pinned spot on OpenStreetMap, so staff can check
 // where the customer actually meant before approving. Null when the
 // quote has no pin for that end.
@@ -293,6 +325,36 @@ function QuoteReviewModal({
   const [estimatedDistanceKm, setEstimatedDistanceKm] = useState(
     quote.estimated_distance_km != null ? String(quote.estimated_distance_km) : '',
   )
+  // "Return the empty container": its Container trips also drive delivery ->
+  // return place. That leg's distance adds diesel to the cost (inside the rate).
+  const returns = quote.return_container === true
+  const [returnDistanceKm, setReturnDistanceKm] = useState(
+    quote.return_distance_km != null ? String(quote.return_distance_km) : '',
+  )
+  const returnTypedRef = useRef(quote.return_distance_km != null)
+  useEffect(() => {
+    if (!returns || returnTypedRef.current) return
+    let cancelled = false
+    estimateLegKm(
+      { city: quote.delivery_city, barangay: quote.delivery_barangay, lat: quote.delivery_lat, lng: quote.delivery_lng },
+      { city: quote.return_city, barangay: quote.return_barangay, lat: quote.return_lat, lng: quote.return_lng },
+    ).then((km) => {
+      if (!cancelled && km !== null && !returnTypedRef.current) setReturnDistanceKm(String(km))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    returns,
+    quote.delivery_city,
+    quote.delivery_barangay,
+    quote.delivery_lat,
+    quote.delivery_lng,
+    quote.return_city,
+    quote.return_barangay,
+    quote.return_lat,
+    quote.return_lng,
+  ])
   // Length of each trip's time slot (bookings.hours_per_trip).
   const [hoursPerTrip, setHoursPerTrip] = useState(quote.hours_per_trip != null ? String(quote.hours_per_trip) : '')
   // Inline error under the hours box (checked on blur and on Approve).
@@ -498,6 +560,10 @@ function QuoteReviewModal({
       setError('Enter the estimated trip distance.')
       return null
     }
+    if (returns && !(Number(returnDistanceKm) > 0)) {
+      setError('Enter the empty container return distance.')
+      return null
+    }
     // Shown under the box, not as a top error.
     const hoursMessage = hoursProblem(hoursPerTrip)
     if (hoursMessage) {
@@ -546,6 +612,23 @@ function QuoteReviewModal({
     return { rates: rateInputs.map(Number), distance, hours: Number(hoursPerTrip) }
   }
 
+  // Saves staff's return distance on the quote (create_booking_from_quote
+  // copies it to the booking) before the offer / acceptance goes out.
+  async function saveReturnDistance(): Promise<boolean> {
+    if (!returns) return true
+    const { data, error: saveError } = await supabase
+      .from('quote_requests')
+      .update({ return_distance_km: Number(returnDistanceKm) })
+      .eq('quote_request_id', quote.quote_request_id)
+      .select('quote_request_id')
+      .maybeSingle()
+    if (saveError || !data) {
+      setError(saveError?.message ?? "The return distance couldn't be saved. Refresh and try again.")
+      return false
+    }
+    return true
+  }
+
   // Pending / Countered -> Offered. The client then answers it.
   async function handleSendOffer() {
     const offer = await checkOffer()
@@ -582,6 +665,10 @@ function QuoteReviewModal({
     }
     setSubmitting(true)
     setError(null)
+    if (!(await saveReturnDistance())) {
+      setSubmitting(false)
+      return
+    }
     const { error: rpcError } = await supabase.rpc('send_quote_offer', {
       p_quote_id: quote.quote_request_id,
       p_line_rates: offer.rates,
@@ -614,6 +701,10 @@ function QuoteReviewModal({
       setError('Enter the estimated trip distance.')
       return
     }
+    if (returns && !(Number(returnDistanceKm) > 0)) {
+      setError('Enter the empty container return distance.')
+      return
+    }
     if (hoursMessage) {
       setHoursError(hoursMessage)
       hoursInputRef.current?.focus()
@@ -643,6 +734,10 @@ function QuoteReviewModal({
     if (!ok) return
     setSubmitting(true)
     setError(null)
+    if (!(await saveReturnDistance())) {
+      setSubmitting(false)
+      return
+    }
     const { data: bookingId, error: rpcError } = await supabase.rpc('accept_quote_counter', {
       p_quote_id: quote.quote_request_id,
       p_distance_km: distance,
@@ -819,6 +914,10 @@ function QuoteReviewModal({
   // What's saved on the quote now (our offer, or the client's counter).
   const savedRates = parseLineRates(quote.line_rates, cargoLines.length, quote.proposed_rate)
   const distanceForCalc = Number(estimatedDistanceKm)
+  // Return leg (Container lines only, see estimateLineCosts). Blank = 0 until typed.
+  const returnKmForCalc = returns ? Number(returnDistanceKm) || 0 : 0
+  // Pricing guide is per trip: a container trip drives the return leg too.
+  const guideKm = distanceForCalc + (cargoLines.some((l) => l.cargo_type === 'Container') ? returnKmForCalc : 0)
   const settingsLoaded =
     dieselPricePerLiter !== null &&
     driverCommissionRate !== null &&
@@ -838,6 +937,7 @@ function QuoteReviewModal({
         cargoLines,
         typedRates,
         distanceForCalc,
+        returnKmForCalc,
       )
     : { diesel: 0, commission: 0, perTripFee: 0, total: 0 }
   const dieselCost = estimated.diesel
@@ -864,11 +964,11 @@ function QuoteReviewModal({
         driverPerTripFee: driverPerTripFee!,
       }
     : null
-  const breakEvenRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 1) : null
-  const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, distanceForCalc, 0.5) : null
+  const breakEvenRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, guideKm, 1) : null
+  const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, guideKm, 0.5) : null
   function profitAt(rates: number[]) {
     if (!costSettings || !(distanceForCalc > 0) || rates.length === 0 || !rates.every((r) => r > 0)) return null
-    const costs = estimateLineCosts(costSettings, cargoLines, rates, distanceForCalc)
+    const costs = estimateLineCosts(costSettings, cargoLines, rates, distanceForCalc, returnKmForCalc)
     const contract = contractTotal(cargoLines, rates)
     return {
       contract,
@@ -894,6 +994,7 @@ function QuoteReviewModal({
   const quoteLabel = quote.reference_code ?? `#${quote.quote_request_id}`
   const pickupPin = pinLink(quote.pickup_lat, quote.pickup_lng)
   const deliveryPin = pinLink(quote.delivery_lat, quote.delivery_lng)
+  const returnPin = pinLink(quote.return_lat, quote.return_lng)
 
   // Dialog behaviour: Esc closes, Tab stays inside the panel, and focus
   // goes back to whatever opened it (the row's Review button) on close.
@@ -1111,6 +1212,27 @@ function QuoteReviewModal({
                         )}
                       </dd>
                     </div>
+                    {returns && (
+                      <div className="relative">
+                        <span className="absolute top-1 -left-7 h-3 w-3 border-2 border-primary bg-white" aria-hidden="true" />
+                        <dt className="text-[13px] text-slate-500">Return empty container to</dt>
+                        <dd className="text-[15px] text-slate-900">
+                          {formatLocationDisplay({
+                            city: quote.return_city,
+                            barangay: quote.return_barangay,
+                            detail: quote.return_location_text,
+                          })}
+                          {quote.return_landmark && (
+                            <span className="block text-[13px] text-slate-500">Landmark: {quote.return_landmark}</span>
+                          )}
+                          {returnPin && (
+                            <a href={returnPin} target="_blank" rel="noreferrer" className="ml-3 text-[13px] text-primary underline">
+                              View pinned spot on map
+                            </a>
+                          )}
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                 </section>
 
@@ -1416,6 +1538,29 @@ function QuoteReviewModal({
                           </p>
                         )}
                       </div>
+                      {returns && (
+                        <div className="col-span-2">
+                          <label htmlFor="review-return-distance" className="block text-sm font-semibold text-slate-900">
+                            Empty container return distance (km)
+                          </label>
+                          <input
+                            id="review-return-distance"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={returnDistanceKm}
+                            aria-describedby="review-return-hint"
+                            onChange={(e) => {
+                              returnTypedRef.current = true
+                              setReturnDistanceKm(e.target.value)
+                            }}
+                            className={`${fieldClasses} mt-1.5 tabular-nums`}
+                          />
+                          <p id="review-return-hint" className="mt-1.5 text-[13px] text-slate-500">
+                            Delivery to the return place, for each container trip. Its diesel is in the costs below, so price it into the rate.
+                          </p>
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="block text-sm font-semibold text-slate-900">

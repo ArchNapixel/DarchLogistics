@@ -49,6 +49,10 @@ type QuoteRow = {
   pickup_barangay: string
   delivery_city: string
   delivery_barangay: string
+  // "Return the empty container": where the empty container goes back to.
+  return_container: boolean
+  return_city: string | null
+  return_barangay: string | null
   // jsonb list of cargo lines (lib/quoteRequest.ts CargoLineRow).
   cargo_lines: unknown
   preferred_pickup_date: string
@@ -100,7 +104,7 @@ function MyQuoteRequestsSection() {
     const { data, error: loadError } = await supabase
       .from('quote_requests')
       .select(
-        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, line_rates, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, payment_terms, decline_reason, created_at',
+        'quote_request_id, reference_code, request_status, rejection_reason, rejection_tag, resubmit_count, pickup_city, pickup_barangay, delivery_city, delivery_barangay, return_container, return_city, return_barangay, cargo_lines, preferred_pickup_date, preferred_delivery_date, proposed_rate, line_rates, delivery_order_count, cost_per_trip, hours_per_trip, is_last_day_of_port_storage, payment_terms, decline_reason, created_at',
       )
       .eq('client_id', id)
       .neq('request_status', 'Approved')
@@ -166,7 +170,9 @@ function MyQuoteRequestsSection() {
   const selected = offers.find((q) => q.quote_request_id === selectedId) ?? offers[0] ?? null
 
   const reference = (q: QuoteRow) => q.reference_code ?? `Quote #${q.quote_request_id}`
-  const route = (q: QuoteRow) => `${q.pickup_barangay}, ${q.pickup_city} → ${q.delivery_barangay}, ${q.delivery_city}`
+  const route = (q: QuoteRow) =>
+    `${q.pickup_barangay}, ${q.pickup_city} → ${q.delivery_barangay}, ${q.delivery_city}` +
+    (q.return_container ? ` · empty container back to ${q.return_barangay}, ${q.return_city}` : '')
   const trips = (q: QuoteRow) => {
     const n = q.delivery_order_count ?? 0
     return `${n} ${n === 1 ? 'trip' : 'trips'}`

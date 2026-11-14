@@ -48,4 +48,15 @@ assert.equal(mixed.diesel, 70 * 100 * 5)
 assert.equal(mixed.commission, 0.1 * 28000)
 assert.equal(mixed.total, mixed.diesel + mixed.commission + mixed.perTripFee)
 
+// Empty-container return: only Container lines drive the extra km.
+const withReturn = estimateLineCosts(
+  settings,
+  [{ quantity: 2, cargo_type: 'Container' }, { quantity: 3, cargo_type: 'Loose' }],
+  [5000, 5000],
+  100,
+  40,
+)
+assert.equal(withReturn.diesel, 70 * (140 * 2 + 100 * 3))
+assert.equal(withReturn.commission, 0.1 * 25000)
+
 console.log('ok')

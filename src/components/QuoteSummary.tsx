@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
+  returnsContainer,
   totalTrips,
   type LocationValue,
   type ShipmentForm,
@@ -48,7 +49,7 @@ function Section({
   )
 }
 
-function Stop({ letter, location }: { letter: 'A' | 'B'; location: LocationValue }) {
+function Stop({ letter, location }: { letter: 'A' | 'B' | 'C'; location: LocationValue }) {
   const chosen = location.city && location.barangay
   return (
     <div className="flex items-start gap-2">
@@ -94,6 +95,12 @@ export function QuoteSummary({
       <Section title="Route" onEdit={onEditStep && (() => onEditStep('route'))}>
         <Stop letter="A" location={form.pickup} />
         <Stop letter="B" location={form.delivery} />
+        {returnsContainer(form) && (
+          <>
+            <span className="text-[13px] text-ink-muted">Empty container goes back to:</span>
+            <Stop letter="C" location={form.returnPlace} />
+          </>
+        )}
       </Section>
 
       <Section title="Cargo" onEdit={onEditStep && (() => onEditStep('cargo'))}>

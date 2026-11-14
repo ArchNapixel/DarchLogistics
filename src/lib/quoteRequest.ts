@@ -88,6 +88,11 @@ export type CargoLineRow = {
 export type ShipmentForm = {
   pickup: LocationValue
   delivery: LocationValue
+  // "Return the empty container": after delivery the truck takes the empty
+  // container back to `returnPlace` (often the port). Only Container trips do
+  // it (lib/tripStatusFlow.ts); ignored when every line is Loose.
+  returnContainer: boolean
+  returnPlace: LocationValue
   cargoLines: CargoLine[]
   preferredPickupDate: string
   paymentTerms: 'Cash' | '7Days' | '14Days' | '30Days'
@@ -103,6 +108,8 @@ export type FieldErrors = Partial<Record<ShipmentField, string>>
 export const emptyShipment: ShipmentForm = {
   pickup: emptyLocationValue,
   delivery: emptyLocationValue,
+  returnContainer: false,
+  returnPlace: emptyLocationValue,
   cargoLines: [emptyCargoLine],
   preferredPickupDate: '',
   paymentTerms: 'Cash',
@@ -222,6 +229,12 @@ export function cargoLineErrors(line: CargoLine): CargoLineErrors {
   return errors
 }
 
+// Is "Return the empty container" on, with something to return? (Ticked
+// but every line Loose = nothing to bring back, saved as not ticked.)
+export function returnsContainer(form: Pick<ShipmentForm, 'returnContainer' | 'cargoLines'>): boolean {
+  return form.returnContainer && form.cargoLines.some((line) => line.cargoType === 'Container')
+}
+
 // Checks every shipment field and returns a message for each one with
 // a problem (empty object = all good). Number(...) on an empty/invalid
 // string gives NaN, which would otherwise be sent to Supabase and
@@ -238,6 +251,15 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
   } else if (!errors.pickup && sameSpot(pickup, delivery)) {
     errors.delivery =
       'Same as pickup. Add a landmark or pin.'
+  }
+
+  if (returnsContainer(form)) {
+    const back = form.returnPlace
+    if (!back.city || !back.barangay) {
+      errors.returnPlace = 'Select city and barangay.'
+    } else if (!errors.delivery && sameSpot(back, delivery)) {
+      errors.returnPlace = 'Same as delivery. Pick where the empty container goes.'
+    }
   }
 
   // One message for the whole cargo section (it drives which wizard step
@@ -292,6 +314,7 @@ export function buildQuoteRow(form: ShipmentForm) {
   }
 
   const { pickup, delivery } = form
+  const back = returnsContainer(form) ? form.returnPlace : null
   return {
     row: {
       reference_code: generateReferenceCode(),
@@ -307,6 +330,15 @@ export function buildQuoteRow(form: ShipmentForm) {
       delivery_barangay: delivery.barangay,
       delivery_lat: delivery.lat,
       delivery_lng: delivery.lng,
+      // Empty container return (all null when not ticked). return_distance_km
+      // is worked out by staff in Review Quote.
+      return_container: back !== null,
+      return_location_text: back ? back.detail.trim() : null,
+      return_landmark: back ? back.landmark.trim() || null : null,
+      return_city: back ? back.city : null,
+      return_barangay: back ? back.barangay : null,
+      return_lat: back ? back.lat : null,
+      return_lng: back ? back.lng : null,
       cargo_lines: form.cargoLines.map(
         (line): CargoLineRow => ({
           cargo_type: line.cargoType,
@@ -337,7 +369,7 @@ export function buildQuoteRow(form: ShipmentForm) {
 // The quote_requests columns buildQuoteRow writes -- what quoteToForm
 // needs to read a saved quote back into the form.
 export const SHIPMENT_COLUMNS =
-  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, cargo_lines, preferred_pickup_date, payment_terms, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
+  'pickup_location_text, pickup_landmark, pickup_city, pickup_barangay, pickup_lat, pickup_lng, delivery_location_text, delivery_landmark, delivery_city, delivery_barangay, delivery_lat, delivery_lng, return_container, return_location_text, return_landmark, return_city, return_barangay, return_lat, return_lng, cargo_lines, preferred_pickup_date, payment_terms, is_last_day_of_port_storage, preferred_delivery_date, delivery_order_count'
 
 // The reverse of buildQuoteRow: a saved quote (SHIPMENT_COLUMNS) back
 // into form state, so a rejected quote can be edited and resubmitted.
@@ -361,6 +393,15 @@ export function quoteToForm(q: Record<string, any>): ShipmentForm {
       landmark: text(q.delivery_landmark),
       lat: q.delivery_lat ?? null,
       lng: q.delivery_lng ?? null,
+    },
+    returnContainer: q.return_container === true,
+    returnPlace: {
+      city: text(q.return_city),
+      barangay: text(q.return_barangay),
+      detail: text(q.return_location_text),
+      landmark: text(q.return_landmark),
+      lat: q.return_lat ?? null,
+      lng: q.return_lng ?? null,
     },
     cargoLines: rowsToCargoLines(q.cargo_lines),
     preferredPickupDate: text(q.preferred_pickup_date),

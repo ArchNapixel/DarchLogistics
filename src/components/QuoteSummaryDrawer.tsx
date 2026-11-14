@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { formatLocationDisplay } from '../lib/locationReference'
 import {
   PAYMENT_TERMS_LABELS,
+  returnsContainer,
   totalTrips,
   type LocationValue,
   type ShipmentForm,
@@ -33,7 +34,7 @@ function Chip({ children }: { children: ReactNode }) {
   )
 }
 
-function Stop({ letter, location }: { letter: 'A' | 'B'; location: LocationValue }) {
+function Stop({ letter, location }: { letter: 'A' | 'B' | 'C'; location: LocationValue }) {
   return (
     <div className="flex items-start gap-3">
       <span
@@ -45,7 +46,7 @@ function Stop({ letter, location }: { letter: 'A' | 'B'; location: LocationValue
         {letter}
       </span>
       <div>
-        <p className="text-xs font-medium text-slate-500">{letter === 'A' ? 'Pickup' : 'Delivery'}</p>
+        <p className="text-xs font-medium text-slate-500">{letter === 'A' ? 'Pickup' : letter === 'B' ? 'Delivery' : 'Return empty container to'}</p>
         <p className="font-semibold text-slate-900">{formatLocationDisplay(location)}</p>
         {location.lat !== null && <p className="text-xs text-green-700">Pinned on map</p>}
       </div>
@@ -129,6 +130,12 @@ export default function QuoteSummaryDrawer({
             <Stop letter="A" location={form.pickup} />
             <div aria-hidden="true" className="ml-3 h-3 border-l-2 border-dashed border-slate-300" />
             <Stop letter="B" location={form.delivery} />
+            {returnsContainer(form) && (
+              <>
+                <div aria-hidden="true" className="ml-3 h-3 border-l-2 border-dashed border-slate-300" />
+                <Stop letter="C" location={form.returnPlace} />
+              </>
+            )}
           </Block>
 
           <Block title="Cargo">

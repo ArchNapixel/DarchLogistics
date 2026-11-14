@@ -28,7 +28,7 @@ import {
 } from '../lib/quoteRequest'
 
 const STEPS = [
-  { id: 'route', title: 'Route', fields: ['pickup', 'delivery'] },
+  { id: 'route', title: 'Route', fields: ['pickup', 'delivery', 'returnPlace'] },
   {
     id: 'cargo',
     title: 'Cargo',

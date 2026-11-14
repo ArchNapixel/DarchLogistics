@@ -15,6 +15,7 @@ import {
   cargoLineErrors,
   emptyCargoLine,
   resizeDescriptions,
+  returnsContainer,
   todayDateString,
   totalTrips,
   type CargoLine,
@@ -138,6 +139,30 @@ export function RouteFields({
         error={errors.delivery}
         recentLocations={recentLocations}
       />
+      {/* Only container cargo has an empty container to bring back. */}
+      {form.cargoLines.some((line) => line.cargoType === 'Container') && (
+        <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.returnContainer}
+            onChange={(e) => {
+              setField('returnContainer', e.target.checked)
+              // Usually it goes back where it came from (the port): start from the pickup.
+              if (e.target.checked && !form.returnPlace.city) setField('returnPlace', form.pickup)
+            }}
+            className="h-4 w-4 accent-primary"
+          />
+          Return the empty container after delivery
+        </label>
+      )}
+      {returnsContainer(form) && (
+        <LocationPicker
+          stop="return"
+          value={form.returnPlace}
+          onChange={(value) => setField('returnPlace', value)}
+          error={errors.returnPlace}
+        />
+      )}
     </>
   )
 }

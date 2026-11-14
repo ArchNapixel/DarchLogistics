@@ -35,7 +35,9 @@ import { geocodePlace, reverseGeocode } from '../lib/geocoding'
 import { pickupIcon, deliveryIcon, DEFAULT_CENTER } from '../lib/leafletIcons'
 import type { LocationValue, RecentLocation } from '../lib/quoteRequest'
 
-const STOP_LABELS = { pickup: 'Pickup', delivery: 'Delivery' }
+// 'return' = where the empty container goes back to (quote's "Return the empty container").
+const STOP_LABELS = { pickup: 'Pickup', delivery: 'Delivery', return: 'Return empty container to' }
+const STOP_LETTERS = { pickup: 'A', delivery: 'B', return: 'C' }
 
 const selectClasses =
   'border-2 border-line-control bg-white px-3 py-2 text-slate-900 transition-colors hover:border-slate-500 hover:bg-slate-50 focus:border-primary disabled:bg-slate-100 disabled:text-slate-400'
@@ -80,7 +82,7 @@ function LocationPicker({
   error,
   recentLocations = [],
 }: {
-  stop: 'pickup' | 'delivery'
+  stop: 'pickup' | 'delivery' | 'return'
   value: LocationValue
   onChange: (value: LocationValue) => void
   error?: string
@@ -298,7 +300,7 @@ function LocationPicker({
             stop === 'pickup' ? 'bg-brand-steel' : 'bg-brand-navy'
           }`}
         >
-          {stop === 'pickup' ? 'A' : 'B'}
+          {STOP_LETTERS[stop]}
         </span>
         {STOP_LABELS[stop]}
       </div>
