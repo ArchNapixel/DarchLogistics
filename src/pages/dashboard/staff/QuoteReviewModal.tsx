@@ -146,6 +146,9 @@ async function geocodeToLatLng(
   return geocodePlace(`Barangay ${barangay}, ${city}, Philippines`)
 }
 
+// "67.73" -- km with at most 2 decimals, thousands separated.
+const formatKm = (km: number) => km.toLocaleString('en-PH', { maximumFractionDigits: 2 })
+
 type LegStop = { city: string | null; barangay: string | null; lat: number | null; lng: number | null }
 
 // Driving km between two stops, most precise first: both pins (OSRM), a
@@ -360,9 +363,6 @@ function QuoteReviewModal({
   // Inline error under the hours box (checked on blur and on Approve).
   const [hoursError, setHoursError] = useState<string | null>(null)
   const hoursInputRef = useRef<HTMLInputElement>(null)
-  const [distanceIsCached, setDistanceIsCached] = useState(false)
-  const [distanceIsAutoEstimated, setDistanceIsAutoEstimated] = useState(false)
-  const [distanceIsFromPins, setDistanceIsFromPins] = useState(false)
   const [autoEstimatingDistance, setAutoEstimatingDistance] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -457,12 +457,9 @@ function QuoteReviewModal({
     async function loadDistance() {
       // Fills the box only if staff haven't typed in it yet -- the lookups
       // below can take a few seconds (geocoding is throttled to 1/sec).
-      function applyEstimate(km: string, source: 'pins' | 'cache' | 'auto') {
+      function applyEstimate(km: string) {
         if (distanceTypedRef.current) return
         setEstimatedDistanceKm(km)
-        setDistanceIsFromPins(source === 'pins')
-        setDistanceIsCached(source === 'cache')
-        setDistanceIsAutoEstimated(source === 'auto')
       }
 
       if (
@@ -478,7 +475,7 @@ function QuoteReviewModal({
             { lat: quote.delivery_lat, lon: quote.delivery_lng },
           )
           if (km !== null) {
-            applyEstimate(km.toFixed(2), 'pins')
+            applyEstimate(km.toFixed(2))
             return
           }
         } catch {
@@ -497,7 +494,7 @@ function QuoteReviewModal({
       if (pickupId !== null && deliveryId !== null) {
         const cachedKm = await findCachedDistance(pickupId, deliveryId)
         if (cachedKm !== null) {
-          applyEstimate(String(cachedKm), 'cache')
+          applyEstimate(String(cachedKm))
           return
         }
       }
@@ -522,7 +519,7 @@ function QuoteReviewModal({
 
         const km = await fetchDrivingDistanceKm(pickupPoint, deliveryPoint)
         if (km !== null) {
-          applyEstimate(km.toFixed(2), 'auto')
+          applyEstimate(km.toFixed(2))
         }
       } catch {
         // Geocoding/routing failed (network, rate limit, no match) --
@@ -1488,20 +1485,12 @@ function QuoteReviewModal({
                           onChange={(e) => {
                             distanceTypedRef.current = true
                             setEstimatedDistanceKm(e.target.value)
-                            setDistanceIsCached(false)
-                            setDistanceIsAutoEstimated(false)
-                            setDistanceIsFromPins(false)
                           }}
                           className={`${fieldClasses} mt-1.5 tabular-nums`}
                         />
-                        {/* Only notes that need a look: loading, or a figure to check. */}
-                        {(autoEstimatingDistance || (!distanceIsCached && (distanceIsFromPins || distanceIsAutoEstimated))) && (
+                        {autoEstimatingDistance && (
                           <p id="review-distance-hint" className="mt-1.5 text-[13px] text-slate-500">
-                            {autoEstimatingDistance
-                              ? 'Estimating distance…'
-                              : distanceIsFromPins
-                                ? 'Driving distance between the two pinned spots. Check it before approving.'
-                                : 'Rough estimate between the two barangay centres (no exact pins). Check it before approving.'}
+                            Estimating distance…
                           </p>
                         )}
                       </div>
@@ -1549,16 +1538,22 @@ function QuoteReviewModal({
                             min="0"
                             step="0.01"
                             value={returnDistanceKm}
-                            aria-describedby="review-return-hint"
                             onChange={(e) => {
                               returnTypedRef.current = true
                               setReturnDistanceKm(e.target.value)
                             }}
                             className={`${fieldClasses} mt-1.5 tabular-nums`}
                           />
-                          <p id="review-return-hint" className="mt-1.5 text-[13px] text-slate-500">
-                            Delivery to the return place, for each container trip. Its diesel is in the costs below, so price it into the rate.
-                          </p>
+
+                          {/* Both legs together -- what each container trip drives (and is costed on). */}
+                          {distanceForCalc > 0 && returnKmForCalc > 0 && (
+                            <p className="mt-2 text-sm font-semibold text-ink">
+                              Total per container trip: {formatKm(distanceForCalc + returnKmForCalc)} km{' '}
+                              <span className="font-normal text-ink-muted">
+                                ({formatKm(distanceForCalc)} out + {formatKm(returnKmForCalc)} return)
+                              </span>
+                            </p>
+                          )}
                         </div>
                       )}
                       <div className="col-span-2">

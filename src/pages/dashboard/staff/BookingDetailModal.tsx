@@ -763,15 +763,21 @@ function BookingDetailModal({
       {details?.pickup_landmark && <InfoRow label="Pickup landmark" value={details.pickup_landmark} />}
       {details?.delivery_landmark && <InfoRow label="Delivery landmark" value={details.delivery_landmark} />}
       {details?.estimated_distance_km != null && (
-        <InfoRow label="Estimated distance" value={`${details.estimated_distance_km.toLocaleString()} km`} />
+        <InfoRow
+          label="Distance per trip"
+          value={
+            details.return_place && details.return_distance_km != null
+              ? // Container trips drive both legs; one number, split shown.
+                `${(Number(details.estimated_distance_km) + Number(details.return_distance_km)).toLocaleString()} km ` +
+                `(${details.estimated_distance_km.toLocaleString()} + ${details.return_distance_km.toLocaleString()} return, container trips)`
+              : `${details.estimated_distance_km.toLocaleString()} km`
+          }
+        />
       )}
       {details?.return_place && (
         <>
           <InfoRow label="Return empty container to" value={details.return_place} pin={details.return_pin} />
           {details.return_landmark && <InfoRow label="Return landmark" value={details.return_landmark} />}
-          {details.return_distance_km != null && (
-            <InfoRow label="Return distance" value={`${details.return_distance_km.toLocaleString()} km (container trips)`} />
-          )}
         </>
       )}
 
