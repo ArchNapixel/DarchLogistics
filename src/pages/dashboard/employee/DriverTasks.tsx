@@ -19,7 +19,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import UpdateStatusControl from './UpdateStatusControl'
-import { DRIVER_TRIP_STATUS_LABELS as TRIP_STATUS_LABELS } from '../../../lib/driverTripStatus'
+import { DRIVER_TRIP_STATUS_LABELS as TRIP_STATUS_LABELS, driverStatusLabel } from '../../../lib/driverTripStatus'
 import AddExpenseModal from './AddExpenseModal'
 import TripPaymentBanner from './TripPaymentBanner'
 import TripStorageBanner from './TripStorageBanner'
@@ -46,6 +46,10 @@ type Trip = {
   expenses: { amount: number; description: string }[]
   // What this trip carries (itineraries.cargo_*).
   cargo: TripCargo
+  // Brings the empty container back after delivery; where to (crew can't
+  // read bookings, so it comes from get_trip_return_place). null = no return.
+  return_container: boolean
+  return_place: string | null
 }
 
 // A delivered trip for the "Recent trips" panel.
@@ -113,7 +117,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
       supabase
         .from('itineraries')
         .select(
-          'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description',
+          'itinerary_id, booking_id, trip_date_from, trip_date_to, trip_start_at, trip_end_at, itinerary_status, place_of_pickup_id, place_of_delivery_id, plate_number, trailer_id, cargo_type, container_type, trailer_type, weight, cargo_description, return_container',
         )
         .in('itinerary_id', itineraryIds)
         .not('itinerary_status', 'in', FINISHED_IN)
@@ -150,6 +154,19 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
     )
     const trailerIds = itineraries.map((trip) => trip.trailer_id).filter((id): id is number => id !== null)
     const openIds = itineraries.map((trip) => trip.itinerary_id)
+
+    // Where each return trip takes its empty container (one small call per trip).
+    const returnPlaces = await Promise.all(
+      itineraries
+        .filter((trip) => trip.return_container)
+        .map(async (trip) => {
+          const { data } = await supabase.rpc('get_trip_return_place', { p_itinerary_id: trip.itinerary_id })
+          const place = Array.isArray(data) ? data[0] : null
+          const text = place ? [place.place_name, place.address_detail, place.landmark && `Landmark: ${place.landmark}`].filter(Boolean).join(' · ') : null
+          return [trip.itinerary_id, text] as const
+        }),
+    )
+    const returnPlaceById = new Map(returnPlaces)
 
     const [placesResult, trailersResult, expensesResult] = await Promise.all([
       placeIds.length > 0
@@ -196,6 +213,8 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
         trailer_label:
           trip.trailer_id !== null ? (trailerPlateById.get(trip.trailer_id) ?? `Trailer #${trip.trailer_id}`) : null,
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === trip.itinerary_id),
+        return_container: trip.return_container === true,
+        return_place: trip.return_container ? (returnPlaceById.get(trip.itinerary_id) ?? '—') : null,
         cargo: {
           cargo_type: trip.cargo_type,
           container_type: trip.container_type,
@@ -275,13 +294,18 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           <span className={`font-bold text-ink ${wide ? 'text-[17px] leading-6' : 'text-base'}`}>
             Trip #{trip.itinerary_id} · Booking #{trip.booking_id}
           </span>
-          <StatusBadge status={trip.itinerary_status} label={TRIP_STATUS_LABELS[trip.itinerary_status]} icon />
+          <StatusBadge status={trip.itinerary_status} label={driverStatusLabel(trip.itinerary_status, trip.return_container)} icon />
         </div>
 
         <dl className={`grid gap-x-5 gap-y-2.5 ${wide ? 'grid-cols-2 xl:grid-cols-4' : 'grid-cols-2'}`}>
           <Field label="Route" span={wide ? 2 : 4}>
             {trip.pickup_place_name} → {trip.delivery_place_name}
           </Field>
+          {trip.return_place && (
+            <Field label="Return empty container to" span={4}>
+              {trip.return_place}
+            </Field>
+          )}
           <Field label="Time slot">{slot}</Field>
           <Field label="Truck · Trailer">{vehicles}</Field>
           {wide && (
@@ -304,7 +328,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
           <TripStorageBanner itineraryId={trip.itinerary_id} />
         )}
         {/* Once the cargo is on board: may it be unloaded? (#13) */}
-        {(trip.itinerary_status === 'PickedUp' || trip.itinerary_status === 'InTransit') && (
+        {(trip.itinerary_status === 'PickedUp' || trip.itinerary_status === 'InTransit' || trip.itinerary_status === 'Unloading') && (
           <TripPaymentBanner key={trip.itinerary_status} itineraryId={trip.itinerary_id} />
         )}
         {trip.itinerary_status === 'Awaiting' && noVehicles && (
@@ -321,6 +345,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             itineraryId={trip.itinerary_id}
             currentStatus={trip.itinerary_status}
             hasTruck={!noVehicles}
+            returnContainer={trip.return_container}
             busyOnTripId={
               tripOnRoad(
                 trips.map((t) => ({ itinerary_id: t.itinerary_id, status: t.itinerary_status })),
@@ -400,6 +425,12 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
               ? "Move a trip one step at a time. You can't skip a step or go back. Dispatch confirms Delivered on the Dispatch Board."
               : 'The driver moves the trip forward. You see the same steps.'}
           </p>
+          {trips.some((t) => t.return_container) && (
+            <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
+              A trip that returns the empty container goes on after Delivered: Unloading, then Returning Container. Dispatch
+              confirms Container Returned.
+            </p>
+          )}
         </section>
 
         <section aria-labelledby="recent-h" className="card px-5 py-4">

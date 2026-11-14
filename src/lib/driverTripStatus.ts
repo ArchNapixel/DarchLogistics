@@ -11,5 +11,20 @@ export const DRIVER_TRIP_STATUS_LABELS: Record<string, string> = {
   PickedUp: 'Picked Up',
   InTransit: 'Arrived / Delivered',
   Delivered: 'Delivered',
+  Unloading: 'Unloading',
+  ReturningContainer: 'Returning Container',
+  ContainerReturned: 'Container Returned',
   Cancelled: 'Cancelled',
+}
+
+// The steps only dispatch confirms. The driver moves a trip up to the step
+// before each: In Transit (arrived) and Returning Container (on the way back).
+// Finishing a trip re-times later trips and records its km -- staff only.
+export const DISPATCH_CONFIRMS = ['Delivered', 'ContainerReturned']
+
+// A trip that brings the empty container back (lib/tripStatusFlow.ts) isn't
+// done at the client: In Transit there just means "arrived".
+export function driverStatusLabel(status: string, returnContainer: boolean): string {
+  if (status === 'InTransit' && returnContainer) return 'Arrived'
+  return DRIVER_TRIP_STATUS_LABELS[status] ?? status
 }

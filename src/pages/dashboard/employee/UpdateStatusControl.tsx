@@ -1,10 +1,13 @@
 // UpdateStatusControl: lets a driver advance an itinerary's status one
-// step at a time: Awaiting -> Dispatched -> PickedUp -> InTransit. It's a
+// step at a time: Awaiting -> Dispatched -> PickedUp -> InTransit, and on a
+// trip that brings the empty container back, Unloading -> ReturningContainer
+// too (lib/tripStatusFlow.ts). It's a
 // single "Mark as <next>" button that opens a confirm pop-up listing the
 // steps (done / now / next / later -- the canvas's "Mark trip as" board),
 // since only Admin can move a status back, so skipping steps or going
-// backward isn't possible. The driver stops at In Transit -- only Dispatcher/Admin mark
-// a trip Delivered, from the Dispatch Board.
+// backward isn't possible. The driver stops before Delivered and before
+// Container Returned -- only Dispatcher/Admin confirm those, from the
+// Dispatch Board (DISPATCH_CONFIRMS).
 //
 // The update only applies if the trip is still at the status this
 // screen shows (.eq on itinerary_status) and checks a row actually
@@ -14,15 +17,8 @@
 import { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
-import { DRIVER_TRIP_STATUS_LABELS } from '../../../lib/driverTripStatus'
-
-// The driver's part of the flow -- Delivered is set by dispatch.
-const STATUS_FLOW = [
-  'Awaiting',
-  'Dispatched',
-  'PickedUp',
-  'InTransit',
-]
+import { DISPATCH_CONFIRMS, driverStatusLabel } from '../../../lib/driverTripStatus'
+import { nextStatus as nextStep, statusSteps } from '../../../lib/tripStatusFlow'
 
 const STEP_ICON = {
   done: 'M5 12l5 5 9-10',
@@ -37,6 +33,7 @@ function StatusStepsModal({
   summary,
   currentStatus,
   nextStatus,
+  returnContainer,
   onConfirm,
   onClose,
 }: {
@@ -44,11 +41,13 @@ function StatusStepsModal({
   summary: string
   currentStatus: string
   nextStatus: string
+  returnContainer: boolean
   onConfirm: () => void
   onClose: () => void
 }) {
-  const nextLabel = DRIVER_TRIP_STATUS_LABELS[nextStatus] ?? nextStatus
-  const currentIndex = STATUS_FLOW.indexOf(currentStatus)
+  const flow = statusSteps(returnContainer)
+  const nextLabel = driverStatusLabel(nextStatus, returnContainer)
+  const currentIndex = flow.indexOf(currentStatus)
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
       <div role="dialog" aria-modal="true" aria-labelledby="status-title" className="card w-full max-w-[560px]">
@@ -72,7 +71,7 @@ function StatusStepsModal({
         </header>
         <div className="flex flex-col gap-2 px-6 py-5">
           <ol className="flex flex-col gap-2">
-            {STATUS_FLOW.map((status, i) => {
+            {flow.map((status, i) => {
               const step = i < currentIndex ? 'done' : i === currentIndex ? 'now' : status === nextStatus ? 'next' : 'later'
               return (
                 <li
@@ -101,7 +100,10 @@ function StatusStepsModal({
                   >
                     <path d={STEP_ICON[step]} />
                   </svg>
-                  <span>{DRIVER_TRIP_STATUS_LABELS[status] ?? status}</span>
+                  <span>
+                    {driverStatusLabel(status, returnContainer)}
+                    {DISPATCH_CONFIRMS.includes(status) && <span className="font-normal text-ink-muted"> · dispatch confirms</span>}
+                  </span>
                   <span className={`text-xs font-semibold ${step === 'now' ? 'text-primary' : ''}`}>
                     {step === 'done' ? 'Done' : step === 'now' ? 'Now' : step === 'next' ? 'Next' : 'Later'}
                   </span>
@@ -111,8 +113,12 @@ function StatusStepsModal({
           </ol>
           <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
             {nextStatus === 'InTransit'
-              ? "Confirm you've arrived and delivered. Dispatch then confirms it as Delivered. "
-              : ''}
+              ? returnContainer
+                ? "Confirm you've arrived. Dispatch then confirms the delivery, and you go on to unloading. "
+                : "Confirm you've arrived and delivered. Dispatch then confirms it as Delivered. "
+              : nextStatus === 'ReturningContainer'
+                ? "Confirm the container is empty and you're taking it back. Dispatch confirms when it's returned. "
+                : ''}
             You can't skip a step or go back. If dispatch changed this trip in the meantime, you'll see a message
             instead and nothing is overwritten.
           </p>
@@ -135,6 +141,7 @@ function UpdateStatusControl({
   currentStatus,
   hasTruck,
   busyOnTripId = null,
+  returnContainer = false,
   summary,
   onStatusChanged,
   children,
@@ -144,6 +151,8 @@ function UpdateStatusControl({
   hasTruck: boolean
   // Another of this driver's trips that is still on the road (blocks starting this one).
   busyOnTripId?: number | null
+  // Brings the empty container back (itineraries.return_container).
+  returnContainer?: boolean
   // "Pickup → Delivery · truck · trailer", shown in the confirm pop-up.
   summary: string
   onStatusChanged: (itineraryId: number, newStatus: string) => void
@@ -155,24 +164,26 @@ function UpdateStatusControl({
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
-  const currentIndex = STATUS_FLOW.indexOf(currentStatus)
-  const nextStatus =
-    currentIndex >= 0 ? STATUS_FLOW[currentIndex + 1] : undefined
+  const nextStatus = nextStep(currentStatus, returnContainer)
 
-  // Last driver step: the rest is up to dispatch.
-  if (currentStatus === 'InTransit') {
+  // The next step is dispatch's to confirm (Delivered / Container Returned).
+  if (nextStatus && DISPATCH_CONFIRMS.includes(nextStatus)) {
     return (
       <div className="flex flex-col gap-1.5">
         {children && <div className="flex flex-wrap gap-2">{children}</div>}
-        <p className="text-[13px] text-ink-muted">Waiting for dispatch to confirm the delivery.</p>
+        <p className="text-[13px] text-ink-muted">
+          {nextStatus === 'Delivered'
+            ? 'Waiting for dispatch to confirm the delivery.'
+            : 'Waiting for dispatch to confirm the container is back.'}
+        </p>
       </div>
     )
   }
 
-  // Delivered/Cancelled/unrecognized -- nothing further to advance to.
+  // Finished/Cancelled/unrecognized -- nothing further to advance to.
   if (!nextStatus) return children ? <div className="flex flex-wrap gap-2">{children}</div> : null
 
-  const nextLabel = DRIVER_TRIP_STATUS_LABELS[nextStatus] ?? nextStatus
+  const nextLabel = driverStatusLabel(nextStatus, returnContainer)
 
   async function advanceTo(newStatus: string) {
     setUpdating(true)
@@ -267,6 +278,7 @@ function UpdateStatusControl({
           summary={summary}
           currentStatus={currentStatus}
           nextStatus={nextStatus}
+          returnContainer={returnContainer}
           onClose={() => setConfirming(false)}
           onConfirm={() => {
             setConfirming(false)
