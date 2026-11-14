@@ -307,7 +307,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </>
         )}
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-5 print:overflow-visible print:p-0">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>
