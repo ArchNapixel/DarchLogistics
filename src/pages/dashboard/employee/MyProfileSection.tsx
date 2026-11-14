@@ -15,6 +15,7 @@ import {
   PROFILE_MAX_LENGTH,
   cleanProfileForm,
   filterInput,
+  inputModeFor,
   loadMyProfile,
   profileToForm,
   saveMyProfile,
@@ -91,7 +92,7 @@ function MyProfileSection() {
           // Date picker limits; the rest are checked in validateProfileForm.
           min={key === 'date_of_birth' ? MIN_BIRTH_DATE : undefined}
           max={key === 'date_of_birth' ? today : undefined}
-          inputMode={type === 'tel' ? 'tel' : undefined}
+          inputMode={inputModeFor(key)}
           placeholder={placeholder}
           onChange={(e) => {
             // Typed or pasted characters the field can't hold are dropped here.

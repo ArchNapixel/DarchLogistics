@@ -104,27 +104,73 @@ export function cleanProfileForm(form: ProfileForm): ProfileForm {
   ) as ProfileForm
 }
 
-const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const GOV_ID_PATTERN = /^[A-Za-z0-9 -]+$/
+// name@example.com: a dot-separated domain ending in a 2+ letter TLD.
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/
 // Names / places: letters (any language, accents ok), spaces, . ' -
 const NAME_PATTERN = /^[\p{L}\p{M} .'’-]+$/u
 const NAME_KEYS: EditableKey[] = ['emergency_contact_name', 'city', 'province']
 
-// Person names (employee first / middle / last, emergency contact): letters
-// of any language (ñ, accents ok) and spaces only -- no digits or symbols,
-// except the three marks real names use: Ma. / O'Brien / Dela Cruz-Reyes.
-// Used as a typing filter, so the box never holds anything else; double
-// spaces collapse and a leading space is dropped.
+// Person names (employee first / middle / last, emergency contact) and
+// city / province: letters of any language (ñ, accents ok) and spaces only --
+// no digits or symbols, except the three marks real names use (Ma. /
+// O'Brien / Dela Cruz-Reyes), and a mark only RIGHT AFTER a letter, so
+// "-----", ". ." or a leading "-" can't be typed. Used as a typing filter;
+// double spaces collapse and a leading space is dropped.
 export function filterPersonName(value: string): string {
   return value
     .replace(/\s/g, ' ')
     .replace(/[^\p{L}\p{M} .'’-]/gu, '')
+    .replace(/(?<![\p{L}\p{M}])[.'’-]/gu, '')
     .replace(/ {2,}/g, ' ')
     .replace(/^ /, '')
 }
 
 // A name made only of marks ("..", "-") isn't a name.
 export const hasLetter = (value: string) => /\p{L}/u.test(value)
+
+// Government IDs: digits only, the dashes are added while typing. Each ID's
+// digit groups and the digit counts it may have (TIN = 9, or 12 with the
+// branch code). Philippine zip codes are 4 digits.
+const GOV_IDS = {
+  tin_number: { groups: [3, 3, 3, 3], counts: [9, 12], example: '123-456-789 or 123-456-789-000' },
+  sss_number: { groups: [2, 7, 1], counts: [10], example: '12-3456789-0' },
+  philhealth_number: { groups: [2, 9, 1], counts: [12], example: '12-345678901-2' },
+  pagibig_number: { groups: [4, 4, 4], counts: [12], example: '1234-5678-9012' },
+} as const
+type GovIdKey = keyof typeof GOV_IDS
+
+// Which keyboard a phone shows for a field: number pad for IDs / zip,
+// phone pad for phone numbers.
+export function inputModeFor(key: EditableKey): 'tel' | 'numeric' | undefined {
+  if (key === 'phone_number' || key === 'emergency_contact_number') return 'tel'
+  if (key === 'zip_code' || key in GOV_IDS) return 'numeric'
+  return undefined
+}
+const GOV_ID_KEYS = Object.keys(GOV_IDS) as GovIdKey[]
+
+function formatGovId(key: GovIdKey, value: string): string {
+  const { groups } = GOV_IDS[key]
+  let digits = value.replace(/\D/g, '').slice(0, groups.reduce((a, b) => a + b, 0))
+  const parts: string[] = []
+  for (const size of groups) {
+    if (!digits) break
+    parts.push(digits.slice(0, size))
+    digits = digits.slice(size)
+  }
+  return parts.join('-')
+}
+
+// Address: letters, digits, spaces and . , # - / ' ( ) -- a symbol can't
+// repeat ("--", "..", "##" collapse to one; "St., Brgy." is fine) and no
+// symbol at the very start except # (house no.) or ( .
+function filterAddress(value: string): string {
+  return value
+    .replace(/\s/g, ' ')
+    .replace(/[^\p{L}\p{M}0-9 .,#/'’()-]/gu, '')
+    .replace(/([.,#/'’()-])\1+/g, '$1')
+    .replace(/^[ .,/'’)-]+/, '')
+    .replace(/ {2,}/g, ' ')
+}
 
 // Applied on every keystroke/paste so a box never even HOLDS characters it
 // can't accept (validation on Save alone lets people type anything).
@@ -135,19 +181,22 @@ export function filterInput(key: EditableKey, value: string): string {
     case 'emergency_contact_number':
       return phoneInput(value) // digits only, max 11, spaced 0966 047 5467
     case 'email':
-      return value.replace(/\s/g, '')
+      return value.replace(/[^A-Za-z0-9._%+@-]/g, '')
     case 'tin_number':
     case 'sss_number':
     case 'philhealth_number':
     case 'pagibig_number':
+      return formatGovId(key, value) // digits only, dashes added: 12-3456789-0
     case 'zip_code':
-      return value.replace(/[^A-Za-z0-9 -]/g, '')
+      return value.replace(/\D/g, '').slice(0, 4)
     case 'emergency_contact_name':
     case 'city':
     case 'province':
       return filterPersonName(value)
+    case 'address':
+      return filterAddress(value)
     default:
-      return value // address (free text) and the date picker
+      return value // the date picker
   }
 }
 
@@ -172,8 +221,11 @@ export function validateProfileForm(form: ProfileForm, today: string): string | 
       return `${LABELS[key]} can only have letters, spaces and . ' -`
     }
   }
-  if (form.zip_code && !GOV_ID_PATTERN.test(form.zip_code)) {
-    return 'Zip code can only have letters, digits, spaces and dashes.'
+  if (form.zip_code && !/^\d{4}$/.test(form.zip_code)) {
+    return 'Zip code must be 4 digits, like 8105.'
+  }
+  if (form.address && !hasLetter(form.address)) {
+    return 'Address must include a street, barangay or place name.'
   }
   if (form.email && !EMAIL_PATTERN.test(form.email)) {
     return 'Enter a valid email address, like name@example.com.'
@@ -181,9 +233,12 @@ export function validateProfileForm(form: ProfileForm, today: string): string | 
   if (form.date_of_birth && (form.date_of_birth < MIN_BIRTH_DATE || form.date_of_birth > today)) {
     return 'Enter a real date of birth (not in the future).'
   }
-  for (const key of ['tin_number', 'sss_number', 'philhealth_number', 'pagibig_number'] as const) {
-    if (form[key] && !GOV_ID_PATTERN.test(form[key])) {
-      return `${LABELS[key]} can only have letters, digits, spaces and dashes.`
+  for (const key of GOV_ID_KEYS) {
+    if (!form[key]) continue
+    const { counts, example } = GOV_IDS[key]
+    const digits = form[key].replace(/\D/g, '').length
+    if (!/^[0-9-]+$/.test(form[key]) || !(counts as readonly number[]).includes(digits)) {
+      return `${LABELS[key]} must be ${counts.join(' or ')} digits, like ${example}.`
     }
   }
   return null

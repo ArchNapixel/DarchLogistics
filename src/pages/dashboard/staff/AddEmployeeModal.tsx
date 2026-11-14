@@ -25,6 +25,7 @@ import {
   filterInput,
   filterPersonName,
   hasLetter,
+  inputModeFor,
   validateProfileForm,
   type EditableKey,
 } from '../../../lib/myProfile'
@@ -135,7 +136,7 @@ function AddEmployeeModal({
   const bind = (key: EditableKey, value: string, set: (v: string) => void) => ({
     value,
     maxLength: PROFILE_MAX_LENGTH[key],
-    inputMode: key === 'phone_number' || key === 'emergency_contact_number' ? ('tel' as const) : undefined,
+    inputMode: inputModeFor(key),
     onChange: (e: { target: { value: string } }) => set(filterInput(key, e.target.value)),
   })
 
