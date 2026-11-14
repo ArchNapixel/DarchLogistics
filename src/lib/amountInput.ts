@@ -1,6 +1,6 @@
 // amountInput: the peso amount boxes on the payment forms -- typing filter,
 // parsing and centavo rounding. Pure functions (self-check:
-// node scripts/check-amount-input.ts).
+// node scripts/check-amount-input.ts).dsadas
 
 // Rounds to centavos, so float leftovers (21952.4999999) never decide a check.
 export const cents = (n: number) => Math.round(n * 100) / 100
