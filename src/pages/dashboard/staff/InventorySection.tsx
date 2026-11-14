@@ -30,7 +30,6 @@ import AddInventoryItemModal, { type EditableInventoryItem } from './AddInventor
 import StockActionModal, { type StockAction } from './StockActionModal'
 import { ITEM_TYPES, needsReorder, stockLevel } from '../../../lib/inventoryItemTypes'
 import InventoryReportModal from './InventoryReportModal'
-import StocktakeModal from './StocktakeModal'
 import { closePartRequest, loadOpenPartRequests, type PartRequest } from '../../../lib/partsRequests'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
@@ -163,7 +162,6 @@ function InventorySection() {
   const [paneId, setPaneId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showReport, setShowReport] = useState(false)
-  const [showStocktake, setShowStocktake] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [stockAction, setStockAction] = useState<{ item: InventoryItem; action: StockAction } | null>(null)
   const [archivingId, setArchivingId] = useState<number | null>(null)
@@ -313,9 +311,6 @@ function InventorySection() {
           <>
             <button type="button" onClick={() => setShowReport(true)} className="btn-secondary px-4 text-sm font-medium">
               Inventory Report
-            </button>
-            <button type="button" onClick={() => setShowStocktake(true)} className="btn-secondary px-4 text-sm font-medium">
-              Stocktake
             </button>
             <button type="button" onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2 px-5 text-sm">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -648,18 +643,6 @@ function InventorySection() {
       )}
 
       {showReport && <InventoryReportModal onClose={() => setShowReport(false)} />}
-
-      {showStocktake && (
-        <StocktakeModal
-          onClose={() => setShowStocktake(false)}
-          onPosted={(message) => {
-            setShowStocktake(false)
-            showToast(message)
-            setHistoryKey((k) => k + 1)
-            void loadItems()
-          }}
-        />
-      )}
 
       {stockAction && (
         <StockActionModal
