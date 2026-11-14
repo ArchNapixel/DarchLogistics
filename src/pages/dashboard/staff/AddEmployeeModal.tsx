@@ -40,8 +40,56 @@ const maxHireDate = () => toManilaDate(new Date(Date.now() + 30 * 24 * 60 * 60 *
 import { RATE_TYPES } from '../../../lib/employeeRateTypes'
 
 const fieldClasses =
-  'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
-const labelClasses = 'flex flex-col gap-1 text-sm font-medium text-slate-700'
+  'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm text-ink placeholder:text-ink-muted focus:border-primary'
+const readOnlyClasses =
+  'flex min-h-11 items-center rounded-[2px] border border-line bg-slate-50 px-3 text-sm text-ink-secondary'
+
+// One labelled box: "Label *" (required) or "Label (optional)", the input,
+// then an optional hint line.
+function Field({
+  label,
+  required,
+  optional,
+  hint,
+  className = '',
+  children,
+}: {
+  label: string
+  required?: boolean
+  optional?: boolean
+  hint?: React.ReactNode
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className={`flex flex-col gap-1.5 ${className}`}>
+      <span className="text-sm font-semibold text-ink">
+        {label}
+        {required && <span className="text-red-600"> *</span>}
+        {optional && <span className="font-normal text-ink-muted"> (optional)</span>}
+      </span>
+      {children}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
+    </label>
+  )
+}
+
+// "① Personal information" style section heading.
+function SectionTitle({ n, title }: { n: number; title: string }) {
+  return (
+    <h4 className="flex items-center gap-2.5 text-base font-semibold text-ink">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+        {n}
+      </span>
+      {title}
+    </h4>
+  )
+}
+
+// Small caps heading inside "More details".
+function SubHead({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-semibold tracking-wide text-ink-muted uppercase sm:col-span-full">{children}</p>
+}
 
 export type EditableEmployee = {
   employee_id: number
@@ -129,6 +177,25 @@ function AddEmployeeModal({
   const [licenseExpiryDate, setLicenseExpiryDate] = useState(employee?.driver_license_expiry_date ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "More details" starts closed when adding; when editing it starts open if
+  // anything in it is already filled in.
+  const [showMore, setShowMore] = useState(
+    !!employee &&
+      [
+        employee.date_of_birth, employee.email, employee.address, employee.city, employee.province,
+        employee.zip_code, employee.emergency_contact_name, employee.emergency_contact_number,
+        employee.tin_number, employee.sss_number, employee.philhealth_number, employee.pagibig_number,
+      ].some(Boolean),
+  )
+
+  // Esc = Cancel (the footer says so).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   // Props for one of the personal-info boxes: its length cap, and typed or
   // pasted characters it can't hold are dropped (same rules as My Profile,
@@ -217,6 +284,8 @@ function AddEmployeeModal({
     const personalProblem = validateProfileForm(personal, toManilaDate(new Date()))
     if (personalProblem) {
       setError(personalProblem)
+      // Most of these boxes live in "More details" -- open it so the bad one shows.
+      setShowMore(true)
       return
     }
     if (!hireDate) {
@@ -224,7 +293,8 @@ function AddEmployeeModal({
       return
     }
     // Same range as the database trigger employees_hire_date_range (the
-    // picker's min/max don't stop a typed date, since this isn't a <form>).
+    // picker's min/max don't stop a typed date -- the form is noValidate so
+    // our own messages show instead of the browser's).
     if (hireDate < MIN_HIRE_DATE || hireDate > maxHireDate()) {
       setError('Hire date must be between 1990 and 30 days from today.')
       return
@@ -356,293 +426,348 @@ function AddEmployeeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center">
-      {/* Wide, 4-column layout so the whole form fits on one screen without
-          scrolling (it drops to 2 / 1 columns on tablets / phones). */}
-      <div className="w-full max-w-5xl bg-white p-5 border-2 border-line-card">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">
-            {isEditing ? 'Edit Employee' : 'Add Employee'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-700"
-          >
-            ✕
-          </button>
-        </div>
-
-        {error && (
-          <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-          {/* First, middle (optional), last -- full_name is built from these.
-              `contents` makes the three fields cells of the grid itself. */}
-          <div className="contents">
-            <label className={labelClasses}>
-              First name
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(filterPersonName(e.target.value))}
-                maxLength={50}
-                autoComplete="off"
-                className={fieldClasses}
-              />
-            </label>
-
-            <label className={labelClasses}>
-              Middle name (optional)
-              <input
-                type="text"
-                value={middleName}
-                onChange={(e) => setMiddleName(filterPersonName(e.target.value))}
-                maxLength={50}
-                autoComplete="off"
-                className={fieldClasses}
-              />
-            </label>
-
-            <label className={labelClasses}>
-              Last name
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(filterPersonName(e.target.value))}
-                maxLength={50}
-                autoComplete="off"
-                className={fieldClasses}
-              />
-            </label>
-          </div>
-
-          <label className={labelClasses}>
-            Phone number
-            <input
-              type="tel"
-              {...bind('phone_number', phoneNumber, setPhoneNumber)}
-              className={fieldClasses}
-            />
-          </label>
-
-          {/* Position is picked once, when adding -- it can't be switched
-              afterwards (it also decides the rate type). */}
-          {isEditing ? (
-            <div className={labelClasses}>
-              Position
-              <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
-                {position}
-              </p>
-            </div>
-          ) : (
-            <label className={labelClasses}>
-              Position
-              <select
-                value={position}
-                onChange={(e) => setPosition(e.target.value)}
-                className={fieldClasses}
-              >
-                <option value="Driver">Driver</option>
-                <option value="Mechanic">Mechanic</option>
-                <option value="Helper">Helper</option>
-                <option value="Dispatcher">Dispatcher</option>
-                <option value="Admin">Admin</option>
-              </select>
-            </label>
-          )}
-
-          {position === 'Driver' && (
-            <label className={labelClasses}>
-              Assigned truck
-              <select value={truckPlate} onChange={(e) => setTruckPlate(e.target.value)} className={fieldClasses}>
-                <option value="">Pick a truck</option>
-                {truckOptions.map((t) => (
-                  <option key={t.plate_number} value={t.plate_number}>
-                    {t.plate_number}
-                    {t.current_status === 'Under Maintenance' || t.current_status === 'Out of Service' ? ` (${t.current_status})` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <label className={labelClasses}>
-            Hire date
-            <input
-              type="date"
-              value={hireDate}
-              min={MIN_HIRE_DATE}
-              max={maxHireDate()}
-              onChange={(e) => setHireDate(e.target.value)}
-              className={fieldClasses}
-            />
-          </label>
-
-          <div className={labelClasses}>
-            Rate type
-            <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
-              {rateType}
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="employee-form-title"
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          void handleSubmit()
+        }}
+        className="flex max-h-[94vh] w-full max-w-3xl flex-col border-2 border-line-card bg-white"
+      >
+        {/* Header (stays put while the body scrolls) */}
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 pt-5 pb-4">
+          <div>
+            <h3 id="employee-form-title" className="text-xl font-bold text-ink">
+              {isEditing ? 'Edit employee' : 'Add employee'}
+            </h3>
+            <p className="mt-1 text-sm text-ink-muted">
+              Fields marked <span className="text-red-600">*</span> are required. Everything else can be added later.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center text-ink-muted hover:bg-slate-100 hover:text-ink"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
 
-          {/* Commission Per Trip (Drivers) has no amount to enter -- pay comes from Settings. */}
-          {rateType !== 'Commission Per Trip' && (
-            <label className={labelClasses}>
-              {selectedRateType.label}
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={rateAmount}
-                onChange={(e) => setRateAmount(e.target.value)}
-                className={fieldClasses}
-              />
-              {legacyRate && (
-                <span className="text-xs font-normal text-amber-700">
-                  Was {legacyRate} -- enter the weekly amount.
-                </span>
-              )}
-            </label>
-          )}
-
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-4">
-            <input
-              type="checkbox"
-              checked={isMinimumWageEarner}
-              onChange={(e) => setIsMinimumWageEarner(e.target.checked)}
-              className="h-4 w-4 border-slate-300"
-            />
-            Minimum wage earner (exempt from withholding tax)
-          </label>
-
-          {/* Everything below is optional. Government IDs are safe to show
-              here: only Admin can reach the Employees page. */}
-          <div className="border border-slate-200 p-3 sm:col-span-2 lg:col-span-4">
-            <p className="text-sm font-semibold text-slate-900">More details (optional)</p>
-            <div className="mt-2 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className={labelClasses}>
-                Date of birth
-                <input type="date" min={MIN_BIRTH_DATE} max={toManilaDate(new Date())} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Personal email
-                <input type="email" {...bind('email', personalEmail, setPersonalEmail)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Address
-                <input type="text" {...bind('address', address, setAddress)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                City
-                <input type="text" {...bind('city', city, setCity)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Province
-                <input type="text" {...bind('province', province, setProvince)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Zip code
-                <input type="text" {...bind('zip_code', zipCode, setZipCode)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Emergency contact name
-                <input type="text" {...bind('emergency_contact_name', emergencyName, setEmergencyName)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Emergency contact number
-                <input type="tel" {...bind('emergency_contact_number', emergencyNumber, setEmergencyNumber)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                TIN
-                <input type="text" {...bind('tin_number', tinNumber, setTinNumber)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                SSS number
-                <input type="text" {...bind('sss_number', sssNumber, setSssNumber)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                PhilHealth number
-                <input type="text" {...bind('philhealth_number', philhealthNumber, setPhilhealthNumber)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Pag-IBIG number
-                <input type="text" {...bind('pagibig_number', pagibigNumber, setPagibigNumber)} className={fieldClasses} />
-              </label>
-            </div>
-          </div>
-
-          {isEditing && position === 'Driver' && (
-            <>
-              <label className={labelClasses}>
-                Driver license number
-                <input type="text" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Driver license expiry
-                <input type="date" value={licenseExpiryDate} onChange={(e) => setLicenseExpiryDate(e.target.value)} className={fieldClasses} />
-              </label>
-            </>
-          )}
-
-          {isEditing && accountLoaded && (
-            <div className="grid gap-x-4 gap-y-3 border-t border-slate-200 pt-3 sm:col-span-2 sm:grid-cols-3 lg:col-span-4">
-              <p className="text-sm font-semibold text-slate-900 sm:col-span-3">
-                {account ? 'Login account' : 'Login account (none yet -- fill in to create one)'}
-              </p>
-              <label className={labelClasses}>
-                Email
-                <input type="email" value={accountEmail} onChange={(e) => setAccountEmail(e.target.value)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                Username
-                <input type="text" value={accountUsername} onChange={(e) => setAccountUsername(e.target.value)} className={fieldClasses} />
-              </label>
-              <label className={labelClasses}>
-                {account ? 'New password' : 'Password'}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {/* 1. Personal information */}
+          <section>
+            <SectionTitle n={1} title="Personal information" />
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <Field label="First name" required>
                 <input
                   type="text"
-                  value={accountPassword}
-                  onChange={(e) => setAccountPassword(e.target.value)}
-                  placeholder={account ? 'Leave blank to keep the current one' : 'At least 6 characters'}
+                  value={firstName}
+                  onChange={(e) => setFirstName(filterPersonName(e.target.value))}
+                  maxLength={50}
+                  autoComplete="off"
+                  placeholder="Juan"
                   className={fieldClasses}
                 />
-              </label>
+              </Field>
+              <Field label="Middle name" optional>
+                <input
+                  type="text"
+                  value={middleName}
+                  onChange={(e) => setMiddleName(filterPersonName(e.target.value))}
+                  maxLength={50}
+                  autoComplete="off"
+                  className={fieldClasses}
+                />
+              </Field>
+              <Field label="Last name" required>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(filterPersonName(e.target.value))}
+                  maxLength={50}
+                  autoComplete="off"
+                  placeholder="Dela Cruz"
+                  className={fieldClasses}
+                />
+              </Field>
+              <Field label="Mobile number" required>
+                <input
+                  type="tel"
+                  {...bind('phone_number', phoneNumber, setPhoneNumber)}
+                  placeholder="0917 123 4567"
+                  className={`${fieldClasses} tabular-nums`}
+                />
+              </Field>
             </div>
+          </section>
+
+          {/* 2. Employment */}
+          <section className="mt-6 border-t border-line pt-6">
+            <SectionTitle n={2} title="Employment" />
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {/* Position is picked once, when adding -- it can't be switched
+                  afterwards (it also decides how they're paid). */}
+              <Field
+                label="Position"
+                required={!isEditing}
+                hint={
+                  <>
+                    Pay:{' '}
+                    <strong className="font-semibold text-ink-secondary">
+                      {rateType === 'Commission Per Trip' ? 'Commission per trip' : 'Weekly salary'}
+                    </strong>{' '}
+                    · set by position
+                  </>
+                }
+              >
+                {isEditing ? (
+                  <span className={readOnlyClasses}>{position}</span>
+                ) : (
+                  <select value={position} onChange={(e) => setPosition(e.target.value)} className={fieldClasses}>
+                    <option value="Driver">Driver</option>
+                    <option value="Mechanic">Mechanic</option>
+                    <option value="Helper">Helper</option>
+                    <option value="Dispatcher">Dispatcher</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                )}
+              </Field>
+
+              <Field label="Hire date" required>
+                <input
+                  type="date"
+                  value={hireDate}
+                  min={MIN_HIRE_DATE}
+                  max={maxHireDate()}
+                  onChange={(e) => setHireDate(e.target.value)}
+                  className={fieldClasses}
+                />
+              </Field>
+
+              {/* Every Driver needs his own truck (see the top of this file). */}
+              {position === 'Driver' && (
+                <Field label="Assigned truck" required>
+                  <select value={truckPlate} onChange={(e) => setTruckPlate(e.target.value)} className={fieldClasses}>
+                    <option value="">Pick a truck</option>
+                    {truckOptions.map((t) => (
+                      <option key={t.plate_number} value={t.plate_number}>
+                        {t.plate_number}
+                        {t.current_status === 'Under Maintenance' || t.current_status === 'Out of Service' ? ` (${t.current_status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              {/* Commission Per Trip (Drivers) has no amount to enter -- pay comes from Settings. */}
+              {rateType !== 'Commission Per Trip' && (
+                <Field
+                  label={selectedRateType.label}
+                  required
+                  hint={legacyRate && <span className="text-amber-700">Was {legacyRate} -- enter the weekly amount.</span>}
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={rateAmount}
+                    onChange={(e) => setRateAmount(e.target.value)}
+                    placeholder="0.00"
+                    className={`${fieldClasses} tabular-nums`}
+                  />
+                </Field>
+              )}
+            </div>
+
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[2px] border border-line bg-slate-50 px-4 py-3.5">
+              <input
+                type="checkbox"
+                checked={isMinimumWageEarner}
+                onChange={(e) => setIsMinimumWageEarner(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-ink">Minimum wage earner</span>
+                <span className="block text-xs text-ink-muted">Exempts this employee from withholding tax on payroll.</span>
+              </span>
+            </label>
+          </section>
+
+          {/* Driver license -- only asked once the driver exists (Edit). */}
+          {isEditing && position === 'Driver' && (
+            <section className="mt-6 border-t border-line pt-6">
+              <SectionTitle n={3} title="Driver license" />
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <Field label="License number" required>
+                  <input type="text" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} className={fieldClasses} />
+                </Field>
+                <Field label="Expiry date" required>
+                  <input type="date" value={licenseExpiryDate} onChange={(e) => setLicenseExpiryDate(e.target.value)} className={fieldClasses} />
+                </Field>
+              </div>
+            </section>
+          )}
+
+          {/* More details: everything optional, folded away. Government IDs
+              are safe to show here: only Admin can reach the Employees page. */}
+          <div className="mt-6 rounded-[2px] border border-line">
+            <button
+              type="button"
+              onClick={() => setShowMore(!showMore)}
+              aria-expanded={showMore}
+              aria-controls="employee-more-details"
+              className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left hover:bg-slate-50"
+            >
+              <span>
+                <span className="flex items-center gap-2 text-base font-semibold text-ink">
+                  More details
+                  <span className="rounded-[2px] bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+                    Optional
+                  </span>
+                </span>
+                <span className="mt-0.5 block text-xs text-ink-muted">Birthday, address, emergency contact, government IDs</span>
+              </span>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className={`shrink-0 text-ink-muted transition-transform ${showMore ? 'rotate-180' : ''}`}
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {showMore && (
+              <div id="employee-more-details" className="grid gap-4 border-t border-line bg-slate-50/60 px-4 pt-4 pb-5 sm:grid-cols-6">
+                <SubHead>Personal</SubHead>
+                <Field label="Date of birth" className="sm:col-span-3">
+                  <input
+                    type="date"
+                    min={MIN_BIRTH_DATE}
+                    max={toManilaDate(new Date())}
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    className={fieldClasses}
+                  />
+                </Field>
+                <Field label="Personal email" className="sm:col-span-3">
+                  <input type="email" {...bind('email', personalEmail, setPersonalEmail)} placeholder="name@email.com" className={fieldClasses} />
+                </Field>
+
+                <SubHead>Address</SubHead>
+                <Field label="Street address" className="sm:col-span-2">
+                  <input type="text" {...bind('address', address, setAddress)} placeholder="House no., street, barangay" className={fieldClasses} />
+                </Field>
+                <Field label="City / Municipality" className="sm:col-span-2">
+                  <input type="text" {...bind('city', city, setCity)} className={fieldClasses} />
+                </Field>
+                <Field label="Province" className="sm:col-span-2">
+                  <input type="text" {...bind('province', province, setProvince)} className={fieldClasses} />
+                </Field>
+                <Field label="ZIP code" className="sm:col-span-2">
+                  <input type="text" {...bind('zip_code', zipCode, setZipCode)} placeholder="0000" className={`${fieldClasses} tabular-nums`} />
+                </Field>
+
+                <SubHead>Emergency contact</SubHead>
+                <Field label="Contact name" className="sm:col-span-3">
+                  <input type="text" {...bind('emergency_contact_name', emergencyName, setEmergencyName)} placeholder="Full name" className={fieldClasses} />
+                </Field>
+                <Field label="Contact number" className="sm:col-span-3">
+                  <input
+                    type="tel"
+                    {...bind('emergency_contact_number', emergencyNumber, setEmergencyNumber)}
+                    placeholder="0917 123 4567"
+                    className={`${fieldClasses} tabular-nums`}
+                  />
+                </Field>
+
+                <SubHead>Government IDs</SubHead>
+                <Field label="TIN" className="sm:col-span-2">
+                  <input type="text" {...bind('tin_number', tinNumber, setTinNumber)} placeholder="000-000-000-000" className={`${fieldClasses} tabular-nums`} />
+                </Field>
+                <Field label="SSS number" className="sm:col-span-2">
+                  <input type="text" {...bind('sss_number', sssNumber, setSssNumber)} placeholder="00-0000000-0" className={`${fieldClasses} tabular-nums`} />
+                </Field>
+                <Field label="PhilHealth number" className="sm:col-span-2">
+                  <input
+                    type="text"
+                    {...bind('philhealth_number', philhealthNumber, setPhilhealthNumber)}
+                    placeholder="00-000000000-0"
+                    className={`${fieldClasses} tabular-nums`}
+                  />
+                </Field>
+                <Field label="Pag-IBIG number" className="sm:col-span-2">
+                  <input type="text" {...bind('pagibig_number', pagibigNumber, setPagibigNumber)} placeholder="0000-0000-0000" className={`${fieldClasses} tabular-nums`} />
+                </Field>
+              </div>
+            )}
+          </div>
+
+          {/* Login account (Edit only). */}
+          {isEditing && accountLoaded && (
+            <section className="mt-6 border-t border-line pt-6">
+              <h4 className="text-base font-semibold text-ink">Login account</h4>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {account ? 'Leave the password blank to keep the current one.' : 'None yet -- fill in all three to create one.'}
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <Field label="Email">
+                  <input type="email" value={accountEmail} onChange={(e) => setAccountEmail(e.target.value)} autoComplete="off" className={fieldClasses} />
+                </Field>
+                <Field label="Username">
+                  <input type="text" value={accountUsername} onChange={(e) => setAccountUsername(e.target.value)} autoComplete="off" className={fieldClasses} />
+                </Field>
+                <Field label={account ? 'New password' : 'Password'}>
+                  <input
+                    type="text"
+                    value={accountPassword}
+                    onChange={(e) => setAccountPassword(e.target.value)}
+                    autoComplete="off"
+                    placeholder="At least 6 characters"
+                    className={fieldClasses}
+                  />
+                </Field>
+              </div>
+            </section>
           )}
         </div>
 
-        {/* Repeated here: the form is tall, so the one at the top is often
-            scrolled out of view when Save is pressed. */}
-        {error && (
-          <p role="alert" className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="btn-primary px-4 py-2 text-sm font-medium"
-          >
-            {submitting
-              ? isEditing
-                ? 'Saving...'
-                : 'Adding...'
-              : isEditing
-                ? 'Save Changes'
-                : 'Add Employee'}
-          </button>
-        </div>
-      </div>
+        {/* Footer (stays put). The error sits here so it's always in view. */}
+        <footer className="shrink-0 border-t border-line bg-slate-50 px-6 py-4">
+          {error && (
+            <p role="alert" className="mb-3 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <p className="hidden text-xs text-ink-muted sm:block">
+              Press{' '}
+              <kbd className="rounded-[2px] border border-line bg-white px-1.5 py-0.5 font-sans text-[11px] text-ink-secondary">Esc</kbd>{' '}
+              to cancel
+            </p>
+            <div className="ml-auto flex gap-3">
+              <button type="button" onClick={onClose} className="btn-secondary px-5 text-sm font-semibold">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="btn-primary px-5 text-sm font-semibold">
+                {submitting ? (isEditing ? 'Saving...' : 'Adding...') : isEditing ? 'Save changes' : 'Add employee'}
+              </button>
+            </div>
+          </div>
+        </footer>
+      </form>
     </div>
   )
 }
