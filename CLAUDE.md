@@ -2354,3 +2354,36 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
   "service due", NEVER blocked; it replaces "work order pending" (that order
   is the PMS). Not done: "PMS due during this trip" (the board doesn't load
   trip distance).
+
+## 2026-11-14: Validation plan + test data wiped
+- **Database reset (2026-11-14):** every record table truncated with restart
+  identity (incl. `places` and `route_cache` -- route_cache is keyed by place
+  ids), all trucks / clients / employees / logins deleted except the admin
+  (employee #9, username `admin`, login email now `aanpcoles@addu.edu.ph`).
+  Kept: app_settings, employment_status, location_reference, named_locations.
+  Storage buckets emptied by hand first (file paths use booking / trip ids).
+  Older notes above that name specific trips / bookings / employees refer to
+  the wiped test data.
+- **Phase 2 (live):** app_settings rows `weekly_salary_warn` / `_max`,
+  `cash_advance_max`, `cash_advance_confirm_above`, `cash_advance_max_weeks`,
+  `duplicate_advance_minutes`, `min_net_pay`; CHECKs
+  `employees_weekly_salary_range` / `cash_advances_amount_range` (0 < x <=
+  1,000,000, validated); trigger `employees_hire_date_range` (1990-01-01 ..
+  today + 30, Manila); payslip money columns, `weekly_salary` and
+  `cash_advances.amount` are numeric(12,2). Migrations 20261114000000 /
+  20261114020000.
+- **Phase 3 (live):** trigger `cash_advances_limits`
+  (`cash_advances_check_limits()`, migration 20261114010000) on every advance
+  that becomes Approved: <= cash_advance_max, and still owed + new <=
+  cash_advance_max_weeks x weekly pay (Drivers: average gross of last 4
+  finalized payslips; none yet = only the max). Drop / re-create it around
+  any type change of `amount` or `status`. IssueCashAdvanceModal: employee
+  picker starts empty, confirm above `cash_advance_confirm_above`, duplicate
+  warning within `duplicate_advance_minutes`.
+- **Not built yet:** Phase 4 net pay >= min_net_pay (cash advance deduction
+  capped, statutory deductions never cut), Phase 5 employee form (name rule,
+  suffix column, hire-date / birthdate 18+ / emergency contact for Driver &
+  Helper / licence on add / duplicate-phone warning / salary warn + max),
+  Phase 6 compact KPI money (₱2.65M + tooltip), Phase 7 CSV formula-injection
+  escaping. Decided: phones stay 09XXXXXXXXX (no E.164), no Zod / Express
+  (Supabase app), large advances = confirm dialog, not a second approver.

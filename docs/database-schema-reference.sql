@@ -165,7 +165,7 @@ ALTER TABLE public.bookings ADD CONSTRAINT bookings_quote_request_id_fkey FOREIG
 CREATE TABLE public.cash_advances (
   cash_advance_id integer DEFAULT nextval('cash_advances_cash_advance_id_seq'::regclass) NOT NULL,
   employee_id integer NOT NULL,
-  amount numeric NOT NULL,
+  amount numeric(12,2) NOT NULL,
   issued_at date DEFAULT CURRENT_DATE NOT NULL,
   note text,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -174,7 +174,7 @@ CREATE TABLE public.cash_advances (
   approved_at timestamp with time zone,
   rejection_reason text
 );
-ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_amount_range CHECK (((amount > (0)::numeric) AND (amount <= (1000000)::numeric))) NOT VALID;
+ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_amount_range CHECK (((amount > (0)::numeric) AND (amount <= (1000000)::numeric)));
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_status_check CHECK ((status = ANY (ARRAY['Pending'::text, 'Approved'::text, 'Rejected'::text])));
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_pkey PRIMARY KEY (cash_advance_id);
 ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES employees(employee_id);
@@ -359,7 +359,7 @@ CREATE TABLE public.employees (
   assigned_plate_number character varying
 );
 ALTER TABLE public.employees ADD CONSTRAINT employees_commission_basis_check CHECK ((commission_basis = ANY (ARRAY['Flat Fee'::text, 'Percentage'::text])));
-ALTER TABLE public.employees ADD CONSTRAINT employees_weekly_salary_range CHECK (((weekly_salary IS NULL) OR ((weekly_salary > (0)::numeric) AND (weekly_salary <= (1000000)::numeric)))) NOT VALID;
+ALTER TABLE public.employees ADD CONSTRAINT employees_weekly_salary_range CHECK (((weekly_salary IS NULL) OR ((weekly_salary > (0)::numeric) AND (weekly_salary <= (1000000)::numeric))));
 ALTER TABLE public.employees ADD CONSTRAINT employees_phone_ph CHECK (((phone_number)::text ~ '^09[0-9]{9}$'::text)) NOT VALID;
 ALTER TABLE public.employees ADD CONSTRAINT employees_pkey PRIMARY KEY (employee_id);
 ALTER TABLE public.employees ADD CONSTRAINT employees_assigned_plate_number_key UNIQUE (assigned_plate_number);
