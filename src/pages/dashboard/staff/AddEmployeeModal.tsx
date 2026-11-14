@@ -23,6 +23,8 @@ import {
   PROFILE_MAX_LENGTH,
   cleanProfileForm,
   filterInput,
+  filterPersonName,
+  hasLetter,
   validateProfileForm,
   type EditableKey,
 } from '../../../lib/myProfile'
@@ -180,6 +182,13 @@ function AddEmployeeModal({
   async function handleSubmit() {
     if (!firstName.trim() || !lastName.trim()) {
       setError('Enter both a first and last name.')
+      return
+    }
+    // The boxes already drop digits and symbols as you type; this catches a
+    // name made only of marks (". -") or an old record saved before the filter.
+    const nameParts = [firstName, middleName, lastName].map((n) => n.trim()).filter(Boolean)
+    if (nameParts.some((n) => !hasLetter(n) || n !== filterPersonName(n))) {
+      setError("Names can only have letters, spaces and . ' - (no numbers or other symbols).")
       return
     }
     // Phone required + format/length of every personal-info box (same
@@ -365,7 +374,9 @@ function AddEmployeeModal({
               <input
                 type="text"
                 value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
+                onChange={(e) => setFirstName(filterPersonName(e.target.value))}
+                maxLength={50}
+                autoComplete="off"
                 className={fieldClasses}
               />
             </label>
@@ -375,7 +386,9 @@ function AddEmployeeModal({
               <input
                 type="text"
                 value={middleName}
-                onChange={(e) => setMiddleName(e.target.value)}
+                onChange={(e) => setMiddleName(filterPersonName(e.target.value))}
+                maxLength={50}
+                autoComplete="off"
                 className={fieldClasses}
               />
             </label>
@@ -385,7 +398,9 @@ function AddEmployeeModal({
               <input
                 type="text"
                 value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
+                onChange={(e) => setLastName(filterPersonName(e.target.value))}
+                maxLength={50}
+                autoComplete="off"
                 className={fieldClasses}
               />
             </label>

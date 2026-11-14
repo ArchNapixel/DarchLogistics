@@ -110,6 +110,22 @@ const GOV_ID_PATTERN = /^[A-Za-z0-9 -]+$/
 const NAME_PATTERN = /^[\p{L}\p{M} .'’-]+$/u
 const NAME_KEYS: EditableKey[] = ['emergency_contact_name', 'city', 'province']
 
+// Person names (employee first / middle / last, emergency contact): letters
+// of any language (ñ, accents ok) and spaces only -- no digits or symbols,
+// except the three marks real names use: Ma. / O'Brien / Dela Cruz-Reyes.
+// Used as a typing filter, so the box never holds anything else; double
+// spaces collapse and a leading space is dropped.
+export function filterPersonName(value: string): string {
+  return value
+    .replace(/\s/g, ' ')
+    .replace(/[^\p{L}\p{M} .'’-]/gu, '')
+    .replace(/ {2,}/g, ' ')
+    .replace(/^ /, '')
+}
+
+// A name made only of marks ("..", "-") isn't a name.
+export const hasLetter = (value: string) => /\p{L}/u.test(value)
+
 // Applied on every keystroke/paste so a box never even HOLDS characters it
 // can't accept (validation on Save alone lets people type anything).
 // Returns the value with the disallowed characters removed.
@@ -129,7 +145,7 @@ export function filterInput(key: EditableKey, value: string): string {
     case 'emergency_contact_name':
     case 'city':
     case 'province':
-      return value.replace(/[^\p{L}\p{M} .'’-]/gu, '')
+      return filterPersonName(value)
     default:
       return value // address (free text) and the date picker
   }
@@ -152,7 +168,7 @@ export function validateProfileForm(form: ProfileForm, today: string): string | 
     return 'Emergency contact number must be 11 digits and start with 09.'
   }
   for (const key of NAME_KEYS) {
-    if (form[key] && !NAME_PATTERN.test(form[key])) {
+    if (form[key] && (!NAME_PATTERN.test(form[key]) || !hasLetter(form[key]))) {
       return `${LABELS[key]} can only have letters, spaces and . ' -`
     }
   }
