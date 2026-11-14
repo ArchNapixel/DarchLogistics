@@ -635,7 +635,7 @@ function QuoteReviewModal({
     const swapNote = plan && plan.swaps.length > 0 ? ` These booked trips change driver: ${capacity!.swapLines.join('; ')}.` : ''
     const ok = await confirmDialog({
       title: `Accept ${rateLabel(savedRates)} per trip?`,
-      message: `This creates the booking now: ${deliveryCount} trips, contract ${formatMoney(contractTotal(cargoLines, savedRates))}, pickup ${
+      message: `This creates the booking now: ${deliveryCount} ${deliveryCount === 1 ? 'trip' : 'trips'}, contract ${formatMoney(contractTotal(cargoLines, savedRates))}, pickup ${
         quote.preferred_pickup_date ? formatDate(quote.preferred_pickup_date) : '—'
       }.${swapNote}`,
       confirmLabel: 'Accept and create booking',

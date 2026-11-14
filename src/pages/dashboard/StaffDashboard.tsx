@@ -83,11 +83,11 @@ async function loadAlerts(): Promise<DashboardAlert[]> {
   ])
 
   return [
-    { label: 'trips past their start time and still Awaiting', count: overdue, to: '/dashboard/dispatch', page: 'Dispatch Board' },
-    { label: 'trips starting within 24 hours with no truck', count: noTruck, to: '/dashboard/dispatch', page: 'Dispatch Board' },
-    { label: 'maintenance requests to review', count: maintenance, to: '/dashboard/reports', page: 'Reports' },
-    { label: 'leave requests to review', count: leave, to: '/dashboard/attendance', page: 'Attendance' },
-    { label: 'cash advance requests to review', count: cash, to: '/dashboard/cash-advance', page: 'Cash Advances' },
+    { label: overdue === 1 ? 'trip past its start time and still Awaiting' : 'trips past their start time and still Awaiting', count: overdue, to: '/dashboard/dispatch', page: 'Dispatch Board' },
+    { label: noTruck === 1 ? 'trip starting within 24 hours with no truck' : 'trips starting within 24 hours with no truck', count: noTruck, to: '/dashboard/dispatch', page: 'Dispatch Board' },
+    { label: maintenance === 1 ? 'maintenance request to review' : 'maintenance requests to review', count: maintenance, to: '/dashboard/reports', page: 'Reports' },
+    { label: leave === 1 ? 'leave request to review' : 'leave requests to review', count: leave, to: '/dashboard/attendance', page: 'Attendance' },
+    { label: cash === 1 ? 'cash advance request to review' : 'cash advance requests to review', count: cash, to: '/dashboard/cash-advance', page: 'Cash Advances' },
   ].filter((a) => a.count > 0)
 }
 

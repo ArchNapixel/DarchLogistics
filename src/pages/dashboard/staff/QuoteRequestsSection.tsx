@@ -693,7 +693,7 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
                   {q.proposed_rate !== null ? formatMoney(q.proposed_rate) : '—'}
                 </span>
                 {(q.delivery_order_count ?? 1) > 1 && (
-                  <span className={SUB}>× {q.delivery_order_count} trips</span>
+                  <span className={SUB}>× {q.delivery_order_count} {q.delivery_order_count === 1 ? 'trip' : 'trips'}</span>
                 )}
               </td>
               {approved ? (

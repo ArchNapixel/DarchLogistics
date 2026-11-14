@@ -603,7 +603,7 @@ function HistorySection() {
             )}
           </div>
           <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
-            <span>{role === 'Driver' ? 'Delivered trips are paid on your next payslip.' : `${trips.length} past trips`}</span>
+            <span>{role === 'Driver' ? 'Delivered trips are paid on your next payslip.' : `${trips.length} past ${trips.length === 1 ? 'trip' : 'trips'}`}</span>
             {paged.pager.pageCount > 1 && (
               <span className="flex gap-2">
                 <button
