@@ -203,7 +203,7 @@ function AccessWorkOrderModal({
 
   const heading = 'mb-2.5 flex justify-between gap-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink'
   const partButton =
-    'grid min-h-[52px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border border-line bg-white px-3.5 text-left text-sm hover:border-primary hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:hover:border-line'
+    'grid min-h-[52px] w-full shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border border-line bg-white px-3.5 py-2 text-left text-sm hover:border-primary hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:hover:border-line'
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50" onClick={onClose}>
