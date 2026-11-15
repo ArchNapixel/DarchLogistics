@@ -265,7 +265,6 @@ function AccessWorkOrderModal({
                   </option>
                 ))}
               </select>
-              <span className="text-[13px] text-ink-muted">Each change is logged. Cancelled frees the vehicle.</span>
             </label>
           </div>
 
@@ -275,7 +274,6 @@ function AccessWorkOrderModal({
             <section aria-labelledby="wo-inv" className="flex min-h-0 flex-col">
               <h3 id="wo-inv" className={heading}>
                 <span>Inventory</span>
-                <span className="text-[13px] font-medium text-ink-muted">Select to log 1 used</span>
               </h3>
               <input
                 type="search"
@@ -334,15 +332,11 @@ function AccessWorkOrderModal({
                   })
                 )}
               </div>
-              <p className="mt-2.5 text-[13px] text-ink-muted">
-                Comes out of stock right away. Stock is checked first, so it never goes below zero. Tools and equipment aren't listed: they're counted, not used up.
-              </p>
             </section>
 
             <section aria-labelledby="wo-used" className="flex min-h-0 flex-col">
               <h3 id="wo-used" className={heading}>
                 <span>Used</span>
-                <span className="text-[13px] font-medium text-ink-muted">Select to return 1</span>
               </h3>
               <div className="flex max-h-[24rem] flex-col gap-2 overflow-y-auto">
                 {partsLoading ? (
@@ -361,13 +355,11 @@ function AccessWorkOrderModal({
                   ))
                 )}
               </div>
-              <p className="mt-2.5 text-[13px] text-ink-muted">Returning a part puts it back in stock.</p>
             </section>
 
             <section aria-labelledby="wo-notes" className="flex min-h-0 flex-col">
               <h3 id="wo-notes" className={heading}>
                 <span>Notes</span>
-                <span className="text-[13px] font-medium text-ink-muted">Admin can read these</span>
               </h3>
               {notesError && <p className="mb-2 bg-red-50 px-3 py-2 text-sm text-red-700">{notesError}</p>}
               <textarea
