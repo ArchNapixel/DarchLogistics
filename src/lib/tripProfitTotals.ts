@@ -7,7 +7,7 @@
 //   revenue   = the booking's rate per trip
 //   driver pay = commission % x rate + per-trip fee (what payslip.ts pays
 //                the driver; today's rates -- see ponytail note in tripProfit.ts)
-//   diesel    = Fuel the crew logged, else distance x diesel price
+//   diesel    = distance x diesel price PLUS any Fuel the crew logged
 //               (same rule as the dashboard, tripCost.ts dieselForTrip)
 //   other     = logged Toll / Parking / Other expenses
 //   damage    = approved damage charged to the Company
@@ -27,8 +27,8 @@ export type TripProfitInput = {
 export type TripProfit = {
   revenue: number
   driverPay: number
-  diesel: number
-  dieselEstimated: boolean
+  diesel: number // estimate + logged
+  dieselEstimate: number // the calculator's part of diesel
   otherExpenses: number
   companyDamage: number
   totalCost: number
@@ -51,7 +51,7 @@ export function tripProfit(settings: CostSettings, trip: TripProfitInput): TripP
     revenue: cents(trip.ratePerTrip),
     driverPay: cents(driverPay),
     diesel: cents(diesel.amount),
-    dieselEstimated: diesel.estimated,
+    dieselEstimate: cents(diesel.estimate),
     otherExpenses: cents(trip.otherExpenses),
     companyDamage: cents(trip.companyDamage),
     totalCost: cents(totalCost),

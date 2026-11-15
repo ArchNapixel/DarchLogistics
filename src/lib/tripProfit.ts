@@ -182,7 +182,7 @@ export async function loadTripProfitReport(month: string): Promise<{
         client_name: clientNameById.get(booking.client_id) ?? '—',
         plate_number: trip.plate_number,
         delivered_on: latestByTrip.get(trip.itinerary_id) ?? from,
-        distance_missing: fuelLogged <= 0 && km <= 0,
+        distance_missing: km <= 0,
       },
     ]
   })
@@ -197,12 +197,12 @@ export function buildTripProfitCsv(month: string, rows: TripProfitRow[]): string
   const lines = [
     [
       'Trip #', 'Booking #', 'Client', 'Truck', 'Delivered', 'Revenue', 'Driver Pay',
-      'Diesel', 'Diesel Estimated', 'Other Expenses', 'Company Damage', 'Total Cost',
+      'Diesel', 'Diesel Estimate Part', 'Other Expenses', 'Company Damage', 'Total Cost',
       'Profit', 'Margin %',
     ],
     ...rows.map((r) => [
       r.itinerary_id, r.booking_id, r.client_name, r.plate_number ?? '', r.delivered_on,
-      r.revenue, r.driverPay, r.diesel, r.dieselEstimated ? 'Yes' : 'No', r.otherExpenses,
+      r.revenue, r.driverPay, r.diesel, r.dieselEstimate, r.otherExpenses,
       r.companyDamage, r.totalCost, r.profit, r.marginPct ?? '',
     ]),
   ]

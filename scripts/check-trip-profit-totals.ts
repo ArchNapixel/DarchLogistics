@@ -18,12 +18,12 @@ const estimated = tripProfit(settings, {
 })
 assert.equal(estimated.driverPay, 1_200)
 assert.equal(estimated.diesel, 6_000)
-assert.equal(estimated.dieselEstimated, true)
+assert.equal(estimated.dieselEstimate, 6_000)
 assert.equal(estimated.totalCost, 8_000)
 assert.equal(estimated.profit, 12_000)
 assert.equal(estimated.marginPct, 60)
 
-// Fuel logged wins over the estimate, and is never added on top of it.
+// Logged fuel is added on top of the estimate (a top-up on the road).
 const actual = tripProfit(settings, {
   ratePerTrip: 20_000,
   distanceKm: 100,
@@ -31,9 +31,9 @@ const actual = tripProfit(settings, {
   otherExpenses: 0,
   companyDamage: 0,
 })
-assert.equal(actual.diesel, 4_500)
-assert.equal(actual.dieselEstimated, false)
-assert.equal(actual.profit, 20_000 - 1_200 - 4_500)
+assert.equal(actual.diesel, 6_000 + 4_500)
+assert.equal(actual.dieselEstimate, 6_000)
+assert.equal(actual.profit, 20_000 - 1_200 - 6_000 - 4_500)
 
 // A losing trip gives a negative profit and margin.
 const loss = tripProfit(settings, {
@@ -57,8 +57,8 @@ assert.equal(
 const total = summarizeTrips([estimated, actual])
 assert.equal(total.trips, 2)
 assert.equal(total.revenue, 40_000)
-assert.equal(total.profit, 12_000 + 14_300)
-assert.equal(total.marginPct, 65.8)
+assert.equal(total.profit, 12_000 + 8_300)
+assert.equal(total.marginPct, 50.7)
 assert.equal(summarizeTrips([]).marginPct, null)
 
 console.log('ok')

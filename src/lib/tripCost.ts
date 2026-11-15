@@ -49,16 +49,16 @@ export function estimateTripCosts(
   return { diesel, commission, perTripFee, total: diesel + commission + perTripFee }
 }
 
-// The diesel figure for ONE delivered trip on the dashboard: what the crew
-// actually logged as Fuel if anything, otherwise the calculator's estimate.
-// Exactly one of the two is ever used, so diesel is never counted twice.
-// ponytail: one logged fill-up on a two-fill trip counts as the whole
-// trip's fuel; add a km/L check if that matters.
+// The diesel figure for ONE delivered trip: the calculator's estimate PLUS
+// any Fuel the crew logged. Logged fuel is an extra top-up on the road
+// (e.g. "nakulang diesel"), not a replacement for the trip's normal fuel.
 export function dieselForTrip(
   actualFuelLogged: number,
   estimatedDiesel: number,
-): { amount: number; estimated: boolean } {
-  return actualFuelLogged > 0
-    ? { amount: actualFuelLogged, estimated: false }
-    : { amount: estimatedDiesel, estimated: true }
+): { amount: number; logged: number; estimate: number } {
+  return {
+    amount: actualFuelLogged + estimatedDiesel,
+    logged: actualFuelLogged,
+    estimate: estimatedDiesel,
+  }
 }

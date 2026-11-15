@@ -925,8 +925,8 @@ before creating it.
     month (latest Delivered log, Manila; still Delivered now), filter by
     client/truck. Per trip: revenue = booking `rate_of_delivery_service`;
     costs = driver pay (commission % × rate + per-trip fee at TODAY's
-    `app_settings` rates, not actual payslip lines), diesel (logged Fuel,
-    else distance × price — `dieselForTrip`), other logged expenses,
+    `app_settings` rates, not actual payslip lines), diesel (distance × price PLUS logged Fuel top-ups
+    — `dieselForTrip`, since 2026-11-15), other logged expenses,
     approved Company damage. Client damage charges are NOT in revenue;
     helpers' salary and maintenance aren't split per trip. Warns on
     missing settings / missing distance. Exports `fetchAll`/`fetchIn`

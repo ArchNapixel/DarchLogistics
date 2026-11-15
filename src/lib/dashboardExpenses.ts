@@ -73,8 +73,8 @@ export type OperationalExpenses = {
   employerShares: number // SSS ER+EC, PhilHealth ER, Pag-IBIG ER
   draftPayroll: number // part of the two lines above that is still a draft
   tripExpenses: number // logged Toll / Parking / Other
-  dieselActual: number // logged Fuel
-  dieselEstimated: number // calculator estimate for delivered trips with no Fuel logged
+  dieselActual: number // logged Fuel (top-ups, on top of the estimate)
+  dieselEstimated: number // calculator estimate for every delivered trip
   estimatedTrips: number // how many trips the estimate covers
   tripsMissingDistance: number // of those, trips with no distance (estimated as 0)
   damageCompany: number // company's share of damage decided in the period (Company / Insurance)
@@ -233,13 +233,11 @@ export async function loadOperationalExpenses(
       fuelByTrip.get(trip.itinerary_id) ?? 0,
       (dieselPrice ?? 0) * km,
     )
-    if (diesel.estimated) {
-      dieselEstimated += diesel.amount
-      estimatedTrips += 1
-      if (km <= 0) tripsMissingDistance += 1
-    } else {
-      dieselActual += diesel.amount
-    }
+    // Every delivered trip gets the estimate; logged Fuel is on top of it.
+    dieselEstimated += diesel.estimate
+    dieselActual += diesel.logged
+    estimatedTrips += 1
+    if (km <= 0) tripsMissingDistance += 1
   }
 
   const damageCompany = damage.total
