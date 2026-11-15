@@ -10,14 +10,9 @@
 //   COSTS    payroll gross + employer contributions (payslips whose period
 //            ends in the month; driver commission is inside gross), diesel
 //            the crew LOGGED on the month's delivered trips, other trip
-//            expenses, damage charged to the company, maintenance parts
-//            USED, and Accounts Payable by category (bill date in the month).
+//            expenses, damage charged to the company, and maintenance parts
+//            USED. (Supplier bills / Accounts Payable were dropped 2026-11-15.)
 // Not counted, to avoid counting the same money twice:
-//   - "Parts" bills: buying parts fills the inventory; they become a cost
-//     when used on a work order (the maintenance line). Shown as a memo.
-//   - "Fuel" bills (bulk depot diesel): diesel is already counted per trip
-//     above and bulk buying isn't tied to trips yet. Still recorded under
-//     Accounts Payable; shown as a memo.
 //   - Driver commission from the trip calculator: it's already in payroll.
 
 export type ProfitLossInput = {
@@ -31,7 +26,6 @@ export type ProfitLossInput = {
   otherTripExpenses: number
   companyDamage: number
   maintenanceParts: number
-  billsByCategory: Map<string, number>
   collected: number // memo: cash actually received this month
 }
 
@@ -46,11 +40,6 @@ export function buildProfitLoss(input: ProfitLossInput) {
     { label: 'Adjustments (damage charges, discounts, advance billing)', amount: input.adjustments },
   ]
 
-  const bills = Array.from(input.billsByCategory)
-    .filter(([category, amount]) => category !== 'Parts' && category !== 'Fuel' && amount !== 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([category, amount]) => ({ label: `Bills: ${category}`, amount }))
-
   const costs: PlLine[] = [
     { label: 'Payroll (gross pay)', amount: input.payrollGross },
     { label: 'Employer contributions (SSS, PhilHealth, Pag-IBIG)', amount: input.employerShares },
@@ -58,7 +47,6 @@ export function buildProfitLoss(input: ProfitLossInput) {
     { label: 'Other trip expenses (tolls, parking...)', amount: input.otherTripExpenses },
     { label: 'Damage charged to the company', amount: input.companyDamage },
     { label: 'Maintenance parts used', amount: input.maintenanceParts },
-    ...bills,
   ].filter((line) => line.amount !== 0)
 
   const sum = (lines: PlLine[]) => cents(lines.reduce((s, l) => s + l.amount, 0))
@@ -74,8 +62,6 @@ export function buildProfitLoss(input: ProfitLossInput) {
     net,
     marginPct: totalRevenue > 0 ? Math.round((net / totalRevenue) * 1000) / 10 : null,
     memo: {
-      partsBought: cents(input.billsByCategory.get('Parts') ?? 0),
-      fuelBought: cents(input.billsByCategory.get('Fuel') ?? 0),
       draftPayroll: cents(input.draftPayroll),
       collected: cents(input.collected),
     },
