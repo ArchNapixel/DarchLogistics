@@ -1,13 +1,12 @@
-// FinanceSummaryPanels: the extra Financial Summary panels.
-//   StandingStrip       "Where we stand" today (clients / employees owe us,
-//                       we owe employees, stock on the shelf)
-//   ChangeNote          "▲ 12% vs October" under a tile
-//   CashOnHandCard      counted cash carried forward month to month
-//   RemittancesCard     what's due to SSS / PhilHealth / Pag-IBIG / BIR for the
-//                       month vs what was recorded as remitted
-//   PerTripCard         revenue / cost / profit per trip, collection rate
-//   TrendCard           revenue, expenses, net profit for six months
-//   BilledVsCollectedCard  revenue by client next to what each client paid
+// FinanceSummaryPanels: the Financial Summary panels below the tiles.
+//   ChangeNote             "▲ 12% vs Oct" (only when last month had data)
+//   RemittanceAlert        red banner when an agency still has money due
+//   CashOnHandCard         counted cash carried forward month to month
+//   RemittancesTable       due vs remitted per agency, Record payment / Void
+//   StandingStrip          "Where we stand today" (always today)
+//   PerTripCard            revenue / cost / profit per trip, collection rate
+//   TrendCard              six-month revenue / expenses / net profit columns
+//   BilledVsCollectedCard  revenue by client: billed vs collected
 // Loading: lib/financeSnapshot.ts and lib/cashFlow.ts. Math: lib/moneySummary.ts.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -31,7 +30,6 @@ import {
 } from '../../../lib/moneySummary'
 import {
   loadCashCheck,
-  loadRemittances,
   loadStanding,
   recordRemittance,
   saveCashCheck,
@@ -40,87 +38,63 @@ import {
   type Standing,
 } from '../../../lib/financeSnapshot'
 
-const CARD_TITLE = 'border-b border-slate-200 pb-2 text-sm font-semibold text-ink'
+const CARD_TITLE = 'text-base font-semibold text-ink'
 const shortMonth = (month: string) => monthLabel(month).split(' ')[0].slice(0, 3)
-
-// ---------- Where we stand ----------
-
-export function StandingStrip() {
-  const [state, setState] = useState<{ data: Standing | null; error: string | null } | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    void loadStanding().then((result) => !cancelled && setState(result))
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const tile = 'card flex min-w-0 flex-col px-5 py-3.5 hover:border-primary'
-  const value = 'text-xl leading-7 font-bold tabular-nums text-ink'
-  const sub = 'text-[13px] text-ink-muted'
-  const s = state?.data
-
-  return (
-    <section aria-label="Where we stand today" className="mt-4">
-      <h2 className="mb-2 text-sm font-semibold text-ink-secondary">Where we stand today</h2>
-      {state?.error ? (
-        <p className="card px-5 py-3 text-sm text-red-700">{state.error}</p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Link to="/dashboard/financial-records" className={tile}>
-            <span className="text-sm font-medium text-ink-secondary">Clients owe us</span>
-            <span className={value}>{s ? formatMoney(s.clientsOwe) : '…'}</span>
-            <span className={s && s.clientsOverdue > 0 ? 'text-[13px] font-medium text-red-700' : sub}>
-              {s ? (s.clientsOverdue > 0 ? `${formatMoney(s.clientsOverdue)} overdue` : 'Nothing overdue') : ' '}
-            </span>
-          </Link>
-          <Link to="/dashboard/cash-advance-ledger" className={tile}>
-            <span className="text-sm font-medium text-ink-secondary">Employees owe us</span>
-            <span className={value}>{s ? formatMoney(s.employeesOwe) : '…'}</span>
-            <span className={sub}>Cash advances not yet paid back</span>
-          </Link>
-          <Link to="/dashboard/payroll" className={tile}>
-            <span className="text-sm font-medium text-ink-secondary">We owe employees</span>
-            <span className={value}>{s ? formatMoney(s.weOweEmployees) : '…'}</span>
-            <span className={sub}>
-              {s ? `${s.unpaidPayslips} finalized payslip${s.unpaidPayslips === 1 ? '' : 's'} not paid yet` : ' '}
-            </span>
-          </Link>
-          <Link to="/dashboard/inventory" className={tile}>
-            <span className="text-sm font-medium text-ink-secondary">Stock on the shelf</span>
-            <span className={value}>{s ? formatMoney(s.stockOnShelf) : '…'}</span>
-            <span className={sub}>Parts bought, not used yet</span>
-          </Link>
-        </div>
-      )}
-    </section>
-  )
-}
+const agencyName = (a: Agency) => (a === 'BIR' ? 'BIR (withholding tax)' : a)
 
 // ---------- Compare to last month ----------
 
-// `upIsGood` false for costs (expenses going up shows red).
+// `upIsGood` false for costs (expenses going up shows red). Renders nothing
+// when there's no last month to compare with.
 export function ChangeNote({
   now,
   before,
   month,
   upIsGood = true,
+  className = '',
 }: {
   now: number
-  before: number | null | undefined
+  before: number | null
   month: string
   upIsGood?: boolean
+  className?: string
 }) {
-  if (before === null || before === undefined) return <p className="mt-1 text-[13px] text-ink-muted">&nbsp;</p>
+  if (before === null) return null
   const change = pctChange(now, before)
-  const prev = shortMonth(shiftMonth(month, -1))
-  if (change === null) return <p className="mt-1 text-[13px] text-ink-muted">Nothing in {prev} to compare</p>
+  if (change === null) return null
   const good = change === 0 ? null : change > 0 === upIsGood
   return (
-    <p className={`mt-1 text-[13px] font-medium ${good === null ? 'text-ink-muted' : good ? 'text-green-800' : 'text-red-700'}`}>
-      {change > 0 ? '▲' : change < 0 ? '▼' : '='} {Math.abs(change)}% vs {prev}
-    </p>
+    <span className={`font-medium ${good === null ? 'text-ink-muted' : good ? 'text-green-700' : 'text-red-700'} ${className}`}>
+      {change > 0 ? '▲' : change < 0 ? '▼' : '='} {Math.abs(change)}% vs {shortMonth(shiftMonth(month, -1))}
+    </span>
+  )
+}
+
+// ---------- Remittance alert ----------
+
+export function RemittanceAlert({ data, month }: { data: Remittances | null; month: string }) {
+  if (!data) return null
+  const owing = remittanceStatus(data.due, data.paid).filter((r) => r.left > 0)
+  if (owing.length === 0) return null
+  const total = owing.reduce((s, r) => s + r.left, 0)
+  return (
+    <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-red-200 bg-red-50 px-5 py-3 text-sm">
+      <span className="flex items-center gap-2.5">
+        <span className="h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />
+        <span>
+          <span className="font-semibold text-red-800">
+            {owing.length} government remittance{owing.length === 1 ? '' : 's'} not yet paid
+          </span>
+          <span className="text-ink-secondary">
+            {' '}
+            · {formatMoney(total)} due for {monthLabel(month).split(' ')[0]}
+          </span>
+        </span>
+      </span>
+      <a href="#remittances" className="font-semibold text-red-700 hover:underline">
+        Review ↓
+      </a>
+    </div>
   )
 }
 
@@ -165,7 +139,7 @@ export function CashOnHandCard({ month }: { month: string }) {
     })
     if (text === null) return
     const cleaned = filterAmountInput(text)
-    const amount = cleaned === '0' || cleaned === '0.00' ? 0 : parseAmount(cleaned).value
+    const amount = /^0*(\.0*)?$/.test(cleaned) && cleaned !== '' ? 0 : parseAmount(cleaned).value
     if (amount === null) {
       showToast('Enter the amount counted, e.g. 250000.', 'error')
       return
@@ -181,16 +155,18 @@ export function CashOnHandCard({ month }: { month: string }) {
 
   const loading = result?.key !== key
   const p = result?.position
+  const movement = p ? p.closing - p.opening : 0
+  const row = 'flex justify-between gap-3 border-b border-slate-200 py-3 text-sm'
   return (
-    <section className="card px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-        <h3 className="text-sm font-semibold text-ink">Cash on hand</h3>
+    <section className="card px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+        <h3 className={CARD_TITLE}>Cash on hand</h3>
         <button type="button" onClick={() => void enterCount()} className="btn-secondary px-3 text-sm font-medium">
           {p?.countedMonth === month ? 'Change count' : 'Enter cash count'}
         </button>
       </div>
       {loading ? (
-        <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        <p className="mt-3 text-sm text-ink-muted">Loading…</p>
       ) : result?.error ? (
         <p className="mt-3 text-sm text-red-700">{result.error}</p>
       ) : !p ? (
@@ -199,8 +175,8 @@ export function CashOnHandCard({ month }: { month: string }) {
           worked out from Money in / Money out.
         </p>
       ) : (
-        <ul className="mt-2 flex flex-col text-sm">
-          <li className="flex justify-between gap-3 border-b border-slate-200 py-2">
+        <ul className="flex flex-col">
+          <li className={row}>
             <span className="text-ink-secondary">
               Start of {monthLabel(month)}
               <span className="text-ink-muted">
@@ -209,16 +185,18 @@ export function CashOnHandCard({ month }: { month: string }) {
             </span>
             <span className="font-medium tabular-nums">{formatMoney(p.opening)}</span>
           </li>
-          <li className="flex justify-between gap-3 border-b border-slate-200 py-2">
+          <li className={row}>
             <span className="text-ink-secondary">Net money movement</span>
-            <span className="font-medium tabular-nums">
-              {p.closing - p.opening < 0 ? '− ' : '+ '}
-              {formatMoney(Math.abs(p.closing - p.opening))}
+            <span className={`font-medium tabular-nums ${movement < 0 ? 'text-red-700' : 'text-green-700'}`}>
+              {movement < 0 ? '− ' : '+ '}
+              {formatMoney(Math.abs(movement))}
             </span>
           </li>
-          <li className="flex justify-between gap-3 py-2 font-semibold text-ink">
-            <span>{month === toManilaDate(new Date()).slice(0, 7) ? 'Cash on hand now' : `End of ${monthLabel(month)}`}</span>
-            <span className={`tabular-nums ${p.closing < 0 ? 'text-red-700' : ''}`}>{formatMoney(p.closing)}</span>
+          <li className="mt-px flex items-baseline justify-between gap-3 border-t-2 border-ink pt-3">
+            <span className="text-sm font-semibold text-ink">
+              {month === toManilaDate(new Date()).slice(0, 7) ? 'Cash on hand now' : `End of ${monthLabel(month)}`}
+            </span>
+            <span className={`text-xl font-bold tabular-nums ${p.closing < 0 ? 'text-red-700' : 'text-ink'}`}>{formatMoney(p.closing)}</span>
           </li>
         </ul>
       )}
@@ -229,27 +207,26 @@ export function CashOnHandCard({ month }: { month: string }) {
 // ---------- Government remittances ----------
 
 const STATE_LABEL = { remitted: 'Remitted', partly: 'Partly remitted', 'not yet': 'Not remitted yet', none: 'Nothing due' } as const
-const STATE_TONE = {
-  remitted: 'text-green-800',
-  partly: 'text-amber-700',
-  'not yet': 'text-red-700',
-  none: 'text-ink-muted',
+const STATE_PILL = {
+  remitted: 'bg-green-50 text-green-800',
+  partly: 'bg-amber-50 text-amber-800',
+  'not yet': 'bg-red-50 text-red-700',
+  none: 'bg-slate-100 text-ink-secondary',
 } as const
 
-export function RemittancesCard({ month }: { month: string }) {
+export function RemittancesTable({
+  month,
+  data,
+  error,
+  onChanged,
+}: {
+  month: string
+  data: Remittances | null
+  error: string | null
+  onChanged: () => void
+}) {
   const { employeeId } = useAuth()
-  const [reload, setReload] = useState(0)
-  const [result, setResult] = useState<{ key: string; data: Remittances | null; error: string | null } | null>(null)
   const [recording, setRecording] = useState<{ agency: Agency; left: number } | null>(null)
-  const key = `${month}|${reload}`
-
-  useEffect(() => {
-    let cancelled = false
-    void loadRemittances(month).then((r) => !cancelled && setResult({ key, ...r }))
-    return () => {
-      cancelled = true
-    }
-  }, [month, key])
 
   async function voidEntry(id: number, label: string) {
     const reason = await promptDialog({
@@ -269,46 +246,49 @@ export function RemittancesCard({ month }: { month: string }) {
       return
     }
     showToast('Remittance voided.')
-    setReload((n) => n + 1)
+    onChanged()
   }
 
-  const data = result?.key === key ? result.data : null
   const rows = data ? remittanceStatus(data.due, data.paid) : []
+  const TH = 'px-6 py-3 text-xs font-semibold tracking-wide uppercase'
   return (
-    <section className="card px-5 py-4">
-      <h3 className={CARD_TITLE}>Government remittances for {monthLabel(month)}</h3>
-      {result?.key !== key ? (
-        <p className="mt-3 text-sm text-slate-500">Loading…</p>
-      ) : result.error || !data ? (
-        <p className="mt-3 text-sm text-red-700">{result.error}</p>
+    <section className="card overflow-hidden">
+      {error ? (
+        <p className="px-6 py-4 text-sm text-red-700">{error}</p>
+      ) : !data ? (
+        <p className="px-6 py-4 text-sm text-ink-muted">Loading…</p>
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="mt-2 w-full min-w-[480px] text-left text-sm text-ink-metric">
+            <table className="w-full min-w-[620px] text-left text-sm text-ink-metric">
               <thead>
                 <tr>
-                  <th className="py-2 pr-2">Agency</th>
-                  <th className="py-2 pr-2 text-right">Due</th>
-                  <th className="py-2 pr-2 text-right">Remitted</th>
-                  <th className="py-2 pr-2">Status</th>
-                  <th className="py-2">
+                  <th className={TH}>Agency</th>
+                  <th className={`${TH} text-right`}>Due</th>
+                  <th className={`${TH} text-right`}>Remitted</th>
+                  <th className={TH}>Status</th>
+                  <th className={TH}>
                     <span className="sr-only">Action</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.agency} className="border-b border-slate-200">
-                    <td className="py-2 pr-2 font-medium text-ink">{r.agency === 'BIR' ? 'BIR (withholding tax)' : r.agency}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">{formatMoney(r.due)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">{formatMoney(r.paid)}</td>
-                    <td className={`py-2 pr-2 font-medium ${STATE_TONE[r.state]}`}>{STATE_LABEL[r.state]}</td>
-                    <td className="py-2 text-right">
+                  <tr key={r.agency} className="border-b border-slate-200 last:border-b-0">
+                    <td className="px-6 py-3 font-semibold text-ink">{agencyName(r.agency)}</td>
+                    <td className="px-6 py-3 text-right tabular-nums">{formatMoney(r.due)}</td>
+                    <td className="px-6 py-3 text-right text-ink-secondary tabular-nums">{formatMoney(r.paid)}</td>
+                    <td className="px-6 py-3">
+                      <span className={`inline-block rounded-[2px] px-2 py-0.5 text-xs font-semibold ${STATE_PILL[r.state]}`}>
+                        {STATE_LABEL[r.state]}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 text-right">
                       {r.left > 0 && (
                         <button
                           type="button"
                           onClick={() => setRecording({ agency: r.agency, left: r.left })}
-                          className="text-[13px] font-semibold text-primary underline"
+                          className="btn-secondary px-4 text-sm font-semibold"
                         >
                           Record payment
                         </button>
@@ -319,14 +299,8 @@ export function RemittancesCard({ month }: { month: string }) {
               </tbody>
             </table>
           </div>
-          {data.draftPayslips > 0 && (
-            <p className="mt-2 text-[13px] text-amber-700">
-              {data.draftPayslips} payslip{data.draftPayslips === 1 ? '' : 's'} of this month {data.draftPayslips === 1 ? 'is' : 'are'} still a draft and not
-              counted in Due yet.
-            </p>
-          )}
           {data.entries.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 text-[13px]">
+            <ul className="flex flex-col gap-1 border-t border-slate-200 px-6 py-3 text-[13px]">
               {data.entries.map((e) => {
                 const label = `${e.agency} ${formatMoney(e.amount)} paid ${formatDate(e.paid_on)}`
                 return (
@@ -347,6 +321,15 @@ export function RemittancesCard({ month }: { month: string }) {
               })}
             </ul>
           )}
+          {data.draftPayslips > 0 && (
+            <p className="border-t border-amber-200 bg-amber-50 px-6 py-3 text-[13px] text-amber-800">
+              {data.draftPayslips} payslip{data.draftPayslips === 1 ? '' : 's'} of this month {data.draftPayslips === 1 ? 'is' : 'are'} still
+              a draft and not counted in Due yet.{' '}
+              <Link to="/dashboard/payroll" className="font-semibold underline">
+                Open payroll
+              </Link>
+            </p>
+          )}
         </>
       )}
       {recording && (
@@ -359,7 +342,7 @@ export function RemittancesCard({ month }: { month: string }) {
           onSaved={() => {
             setRecording(null)
             showToast('Remittance recorded.')
-            setReload((n) => n + 1)
+            onChanged()
           }}
         />
       )}
@@ -410,7 +393,7 @@ function RecordRemittanceModal({
           <div>
             <p className="text-sm font-medium text-neutral-500">Record remittance · {monthLabel(month)}</p>
             <h3 id="remit-title" className="text-lg font-bold text-slate-900">
-              {agency === 'BIR' ? 'BIR (withholding tax)' : agency}
+              {agencyName(agency)}
             </h3>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">
@@ -422,7 +405,9 @@ function RecordRemittanceModal({
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-amount">Amount paid (₱)</label>
+            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-amount">
+              Amount paid (₱)
+            </label>
             <input
               id="remit-amount"
               type="text"
@@ -435,13 +420,24 @@ function RecordRemittanceModal({
             {parsed.error && <p className="mt-1 text-xs text-red-700">{parsed.error}</p>}
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-date">Date paid</label>
+            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-date">
+              Date paid
+            </label>
             <input id="remit-date" type="date" value={paidOn} max={today} onChange={(e) => setPaidOn(e.target.value)} className={input} />
             {dateError && <p className="mt-1 text-xs text-red-700">{dateError}</p>}
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-ref">Reference / PRN no. (optional)</label>
-            <input id="remit-ref" type="text" maxLength={50} value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className={input} />
+            <label className="block text-xs font-medium text-slate-600" htmlFor="remit-ref">
+              Reference / PRN no. (optional)
+            </label>
+            <input
+              id="remit-ref"
+              type="text"
+              maxLength={50}
+              value={referenceNo}
+              onChange={(e) => setReferenceNo(e.target.value)}
+              className={input}
+            />
           </div>
         </div>
         {saveError && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>}
@@ -458,27 +454,97 @@ function RecordRemittanceModal({
   )
 }
 
+// ---------- Where we stand today ----------
+
+export function StandingStrip() {
+  const [state, setState] = useState<{ data: Standing | null; error: string | null } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadStanding().then((result) => !cancelled && setState(result))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (state?.error) return <p className="card px-6 py-4 text-sm text-red-700">{state.error}</p>
+  const s = state?.data
+  const tiles = [
+    {
+      tag: 'Owed to us',
+      tagTone: 'text-primary',
+      label: 'Clients owe us',
+      to: '/dashboard/financial-records',
+      value: s?.clientsOwe,
+      sub: s ? (s.clientsOverdue > 0 ? `${formatMoney(s.clientsOverdue)} overdue` : 'Nothing overdue') : '',
+      subTone: s && s.clientsOverdue > 0 ? 'font-medium text-red-700' : 'text-ink-muted',
+    },
+    {
+      tag: 'Owed to us',
+      tagTone: 'text-primary',
+      label: 'Employees owe us',
+      to: '/dashboard/cash-advance-ledger',
+      value: s?.employeesOwe,
+      sub: 'Cash advances not yet paid back',
+      subTone: 'text-ink-muted',
+    },
+    {
+      tag: 'We owe',
+      tagTone: 'text-amber-700',
+      label: 'We owe employees',
+      to: '/dashboard/payroll',
+      value: s?.weOweEmployees,
+      sub: s ? `${s.unpaidPayslips} finalized payslip${s.unpaidPayslips === 1 ? '' : 's'} not paid yet` : '',
+      subTone: 'text-ink-muted',
+    },
+    {
+      tag: 'Inventory',
+      tagTone: 'text-ink-muted',
+      label: 'Stock on the shelf',
+      to: '/dashboard/inventory',
+      value: s?.stockOnShelf,
+      sub: 'Parts bought, not used yet',
+      subTone: 'text-ink-muted',
+    },
+  ]
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {tiles.map((t) => (
+        <Link key={t.label} to={t.to} className="card flex min-w-0 flex-col px-6 py-5 hover:border-primary">
+          <span className={`text-xs font-semibold tracking-wide uppercase ${t.tagTone}`}>{t.tag}</span>
+          <span className="mt-1 text-sm font-semibold text-ink-secondary">{t.label}</span>
+          <span className="mt-2 text-[26px] leading-8 font-bold tabular-nums text-ink">{t.value === undefined ? '…' : formatMoney(t.value)}</span>
+          <span className={`mt-1 text-sm ${t.subTone}`}>{t.sub}</span>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
 // ---------- Per trip ----------
 
 export function PerTripCard({ summary }: { summary: MoneySummary }) {
   const n = perTripNumbers(summary)
-  const line = (label: string, value: string) => (
-    <li className="flex justify-between gap-3 border-b border-slate-200 py-2 last:border-b-0">
-      <span className="text-ink-secondary">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
-    </li>
-  )
   const money = (v: number | null) => (v === null ? '—' : formatMoney(v))
+  const lines: { label: string; value: string; tone?: string }[] = [
+    { label: 'Revenue per trip', value: money(n.revenue) },
+    { label: 'Cost per trip', value: money(n.cost) },
+    { label: 'Profit per trip', value: money(n.profit), tone: n.profit !== null && n.profit < 0 ? 'text-red-700' : 'text-green-700' },
+    { label: 'Collection rate (collected ÷ revenue)', value: n.collectionRate === null ? '—' : `${n.collectionRate}%` },
+  ]
   return (
-    <section className="card px-5 py-4">
-      <h3 className={CARD_TITLE}>
-        Per trip <span className="font-normal text-ink-muted">· {summary.tripCount} delivered</span>
+    <section className="card px-6 py-5">
+      <h3 className="border-b border-slate-200 pb-3 text-base">
+        <span className="font-semibold text-ink">Per trip</span>
+        <span className="text-ink-muted"> · {summary.tripCount} delivered</span>
       </h3>
-      <ul className="mt-2 flex flex-col text-sm">
-        {line('Revenue per trip', money(n.revenue))}
-        {line('Cost per trip', money(n.cost))}
-        {line('Profit per trip', money(n.profit))}
-        {line('Collection rate (collected ÷ revenue)', n.collectionRate === null ? '—' : `${n.collectionRate}%`)}
+      <ul className="flex flex-col">
+        {lines.map((l) => (
+          <li key={l.label} className="flex justify-between gap-3 border-b border-slate-200 py-3.5 text-sm last:border-b-0">
+            <span className="text-ink-secondary">{l.label}</span>
+            <span className={`font-bold tabular-nums ${l.tone ?? 'text-ink'}`}>{l.value}</span>
+          </li>
+        ))}
       </ul>
     </section>
   )
@@ -486,38 +552,68 @@ export function PerTripCard({ summary }: { summary: MoneySummary }) {
 
 // ---------- Six-month trend ----------
 
-export function TrendCard({ history }: { history: { month: string; summary: MoneySummary }[] | null }) {
-  const biggest = history ? Math.max(...history.flatMap((h) => [h.summary.earned, h.summary.spent, Math.abs(h.summary.left)]), 0) : 0
-  const bar = (n: number) => `${biggest > 0 ? (Math.abs(n) / biggest) * 100 : 0}%`
+const LEGEND = (
+  <span className="flex flex-wrap gap-4 text-[13px] text-ink-secondary">
+    <span className="flex items-center gap-1.5">
+      <span className="h-2.5 w-2.5 bg-primary" aria-hidden="true" />
+      Revenue
+    </span>
+    <span className="flex items-center gap-1.5">
+      <span className="h-2.5 w-2.5 bg-slate-400" aria-hidden="true" />
+      Expenses
+    </span>
+    <span className="flex items-center gap-1.5">
+      <span className="h-2.5 w-2.5 bg-green-700" aria-hidden="true" />
+      Net profit
+    </span>
+  </span>
+)
+
+export function TrendCard({ history }: { history: { month: string; summary: MoneySummary | null }[] | null }) {
+  const values = (history ?? []).flatMap((h) => (h.summary ? [h.summary.earned, h.summary.spent, Math.abs(h.summary.left)] : []))
+  const biggest = Math.max(...values, 0)
+  const height = (n: number) => `${biggest > 0 ? (Math.abs(n) / biggest) * 100 : 0}%`
   return (
-    <section className="card px-5 py-4">
-      <h3 className={CARD_TITLE}>Last six months</h3>
+    <section className="card px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={CARD_TITLE}>Last six months</h3>
+        {LEGEND}
+      </div>
       {!history ? (
-        <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        <p className="mt-4 text-sm text-ink-muted">Loading…</p>
       ) : (
-        <>
-          <div className="mt-3 flex gap-4 text-[13px] text-ink-secondary">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 bg-primary" aria-hidden="true" />Revenue</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 bg-ink-secondary" aria-hidden="true" />Expenses</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 bg-green-700" aria-hidden="true" />Net profit</span>
-          </div>
-          <ul className="mt-2 flex flex-col">
-            {history.map(({ month, summary }) => (
-              <li key={month} className="grid grid-cols-[64px_minmax(0,1fr)_minmax(0,120px)] items-center gap-3 border-b border-slate-200 py-2 text-sm last:border-b-0">
-                <span className="font-medium text-ink-secondary">{shortMonth(month)}</span>
-                <div className="flex flex-col gap-0.5" aria-hidden="true">
-                  <div className="h-2 bg-primary" style={{ width: bar(summary.earned) }} />
-                  <div className="h-2 bg-ink-secondary" style={{ width: bar(summary.spent) }} />
-                  <div className={`h-2 ${summary.left < 0 ? 'bg-red-700' : 'bg-green-700'}`} style={{ width: bar(summary.left) }} />
+        <div className="mt-4 grid grid-cols-6 gap-2">
+          {history.map(({ month, summary }) => {
+            const empty = !summary || (summary.earned === 0 && summary.spent === 0)
+            return (
+              <div key={month} className="flex min-w-0 flex-col">
+                <div className="flex h-52 items-end justify-center gap-1 border-b border-line">
+                  {empty || !summary ? (
+                    <span className="pb-2 text-xs text-ink-muted">No data</span>
+                  ) : (
+                    <>
+                      <div className="w-1/4 bg-primary" style={{ height: height(summary.earned) }} title={`Revenue ${formatMoney(summary.earned)}`} />
+                      <div className="w-1/4 bg-slate-400" style={{ height: height(summary.spent) }} title={`Expenses ${formatMoney(summary.spent)}`} />
+                      <div
+                        className={`w-1/4 ${summary.left < 0 ? 'bg-red-700' : 'bg-green-700'}`}
+                        style={{ height: height(summary.left) }}
+                        title={`${summary.left < 0 ? 'Net loss' : 'Net profit'} ${formatMoney(summary.left)}`}
+                      />
+                    </>
+                  )}
                 </div>
-                <span className={`text-right font-semibold tabular-nums ${summary.left < 0 ? 'text-red-700' : 'text-green-800'}`}>
-                  {summary.left < 0 ? '− ' : ''}
-                  {formatMoney(Math.abs(summary.left))}
+                <span className="mt-2 text-center text-sm font-semibold text-ink">{shortMonth(month)}</span>
+                <span
+                  className={`text-center text-xs tabular-nums ${
+                    empty || !summary ? 'text-ink-muted' : summary.left < 0 ? 'text-red-700' : 'text-green-700'
+                  }`}
+                >
+                  {empty || !summary ? '—' : `${summary.left < 0 ? '−' : ''}${formatMoney(Math.abs(summary.left))}`}
                 </span>
-              </li>
-            ))}
-          </ul>
-        </>
+              </div>
+            )
+          })}
+        </div>
       )}
     </section>
   )
@@ -525,43 +621,52 @@ export function TrendCard({ history }: { history: { month: string; summary: Mone
 
 // ---------- Revenue by client: billed vs collected ----------
 
-export function BilledVsCollectedCard({ rows, error }: { rows: { label: string; billed: number; collected: number }[] | null; error: string | null }) {
+export function BilledVsCollectedCard({
+  rows,
+  totalRevenue,
+  error,
+}: {
+  rows: { label: string; billed: number; collected: number }[] | null
+  totalRevenue: number
+  error: string | null
+}) {
   const biggest = rows ? Math.max(...rows.flatMap((r) => [r.billed, r.collected]), 0) : 0
   const width = (n: number) => `${biggest > 0 ? (n / biggest) * 100 : 0}%`
+  const bar = (label: string, value: number, fill: string, tone: string) => (
+    <div className="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,120px)] items-center gap-3 text-sm">
+      <span className="text-ink-secondary">{label}</span>
+      <div className="h-2.5 bg-slate-100" aria-hidden="true">
+        <div className={`h-2.5 ${fill}`} style={{ width: width(value) }} />
+      </div>
+      <span className={`text-right font-semibold tabular-nums ${tone}`}>{formatMoney(value)}</span>
+    </div>
+  )
   return (
-    <section className="card px-5 py-4">
+    <section className="card px-6 py-5">
       <h3 className={CARD_TITLE}>Revenue by client</h3>
       {error ? (
         <p className="mt-3 text-sm text-red-700">{error}</p>
       ) : !rows ? (
-        <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        <p className="mt-3 text-sm text-ink-muted">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="mt-3 text-sm text-ink-muted">No revenue or payments this month.</p>
       ) : (
         <>
-          <div className="mt-3 flex gap-4 text-[13px] text-ink-secondary">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 bg-primary" aria-hidden="true" />Billed (trips delivered)</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 bg-green-700" aria-hidden="true" />Collected</span>
-          </div>
-          <ul className="mt-3 flex flex-col gap-3">
+          <ul className="mt-4 flex flex-col gap-5">
             {rows.map((r) => (
-              <li key={r.label} className="text-sm">
-                <div className="flex flex-wrap justify-between gap-x-3">
-                  <span className="truncate text-ink-secondary">{r.label}</span>
-                  <span className="tabular-nums">
-                    <span className="font-semibold text-ink">{formatMoney(r.billed)}</span>
-                    <span className="text-ink-muted"> billed · </span>
-                    <span className="font-semibold text-green-800">{formatMoney(r.collected)}</span>
-                    <span className="text-ink-muted"> collected</span>
+              <li key={r.label} className="flex flex-col gap-2">
+                <div className="flex justify-between gap-3">
+                  <span className="truncate text-sm font-semibold text-ink">{r.label}</span>
+                  <span className="text-xs text-ink-muted">
+                    {totalRevenue > 0 ? `${Math.round((r.billed / totalRevenue) * 1000) / 10}% of revenue` : ''}
                   </span>
                 </div>
-                <div className="mt-1 flex flex-col gap-0.5" aria-hidden="true">
-                  <div className="h-2 bg-slate-200"><div className="h-2 bg-primary" style={{ width: width(r.billed) }} /></div>
-                  <div className="h-2 bg-slate-200"><div className="h-2 bg-green-700" style={{ width: width(r.collected) }} /></div>
-                </div>
+                {bar('Billed', r.billed, 'bg-primary', 'text-ink')}
+                {bar('Collected', r.collected, 'bg-green-700', 'text-green-700')}
               </li>
             ))}
           </ul>
+          <p className="mt-4 text-xs text-ink-muted">Billed = trips delivered</p>
         </>
       )}
     </section>

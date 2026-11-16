@@ -2446,3 +2446,12 @@ pure math in `lib/moneySummary.ts` (self-check `node scripts/check-money-summary
   six-month trend (5 earlier months via loadProfitLoss each -- slow-ish), and
   Revenue by client now shows billed vs collected (`billedVsCollected`).
 - Not built: actual diesel purchase receipts (finance item 8, needs a decision).
+- **Layout (2026-11-16, from the user's mockup):** header subtitle "November
+  1–30, 2026 · Compared with October / No October data to compare", underline
+  tabs, red remittance alert (Review ↓ -> #remittances), tiles Net profit (navy,
+  margin) / Revenue (trips) / Expenses (% of revenue) / Collected (% of revenue,
+  why? -> #why), then sections Profit (waterfall with % of revenue + Per trip),
+  Cash (Money in | Money out with totals in headers + net footer; Cash on hand +
+  Why Collected), Government remittances (table, pills, draft note), Where we
+  stand today, Trends (six-month columns + billed vs collected by client).
+  Fuel receipts (item 8) were started and removed at the user's request.
