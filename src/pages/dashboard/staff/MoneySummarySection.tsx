@@ -14,13 +14,19 @@
 // full Revenue Reconciliation page was removed 2026-10-23). It loads on its own, so if it fails the rest of the page
 // still shows.
 //
+// Summary tab order (2026-11-16): tiles with "vs last month", Money in / Money
+// out, Cash on hand + Government remittances, Where we stand today, net
+// result + Revenue by client (billed vs collected), Per trip + six-month
+// trend, the Collected-vs-Revenue gap. The extra panels live in
+// FinanceSummaryPanels.tsx.
+//
 // Second tab, "Expense Breakdown" (?tab=expenses): the Admin dashboard's
 // Operational / Payroll / Maintenance expense cards, fully opened, for the
 // same month. The dashboard cards link here (#op / #pay / #mt scrolls to
 // the one clicked). Those cards use their own loaders (dashboardExpenses.ts),
 // so their totals can differ a little from the Summary tab's Expenses.
 import { previewCsv } from '../../../components/CsvPreview'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney } from '../../../lib/format'
@@ -28,7 +34,19 @@ import { toManilaDate } from '../../../lib/payslip'
 import { loadProfitLoss } from '../../../lib/profitLoss'
 import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
 import { gapByReason } from '../../../lib/revenueReconTotals'
-import { buildMoneySummary, buildMoneySummaryCsv, monthLabel, shiftMonth, type MoneySummary } from '../../../lib/moneySummary'
+import { buildMoneySummary, buildMoneySummaryCsv, monthLabel, shiftMonth, type CashFlow, type MoneySummary } from '../../../lib/moneySummary'
+import { loadCashFlow } from '../../../lib/cashFlow'
+import { loadCollectedByClient } from '../../../lib/financeSnapshot'
+import { billedVsCollected } from '../../../lib/moneySummary'
+import {
+  BilledVsCollectedCard,
+  CashOnHandCard,
+  ChangeNote,
+  PerTripCard,
+  RemittancesCard,
+  StandingStrip,
+  TrendCard,
+} from './FinanceSummaryPanels'
 import OperationalExpensesCard from './OperationalExpensesCard'
 import PayrollExpensesCard from './PayrollExpensesCard'
 import MaintenanceExpensesCard from './MaintenanceExpensesCard'
@@ -54,11 +72,12 @@ async function fetchMoneySummary(month: string): Promise<MoneySummary> {
   })
 }
 
-function BigNumber({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function BigNumber({ label, value, tone, children }: { label: string; value: string; tone?: string; children?: ReactNode }) {
   return (
     <div className="card px-5 py-4">
       <p className="text-sm font-medium text-ink-secondary">{label}</p>
       <p className={`text-[26px] leading-[34px] font-bold tracking-[-0.01em] tabular-nums ${tone ?? 'text-ink'}`}>{value}</p>
+      {children}
     </div>
   )
 }
@@ -104,48 +123,6 @@ function NetWaterfall({ summary }: { summary: MoneySummary }) {
         <span className="font-bold tabular-nums">{formatMoney(summary.collected)}</span>
       </div>
     </section>
-  )
-}
-
-// A titled list of amounts with bars sized against the biggest one.
-function Breakdown({
-  title,
-  lines,
-  empty,
-  barClass,
-}: {
-  title: string
-  lines: { label: string; amount: number }[]
-  empty: string
-  barClass: string
-}) {
-  const biggest = Math.max(...lines.map((l) => Math.abs(l.amount)), 0)
-  return (
-    <div className="card px-5 py-4">
-      <h3 className="border-b border-slate-200 pb-2 text-sm font-semibold text-ink">{title}</h3>
-      {lines.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-muted">{empty}</p>
-      ) : (
-        <ul className="mt-3 flex flex-col gap-3">
-          {lines.map((line) => (
-            <li key={line.label} className="text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="truncate text-ink-secondary">{line.label}</span>
-                <span className={`font-semibold tabular-nums ${line.amount < 0 ? 'text-red-700' : 'text-ink'}`}>
-                  {formatMoney(line.amount)}
-                </span>
-              </div>
-              <div className="mt-1 h-3 bg-slate-200">
-                <div
-                  className={`h-full ${barClass}`}
-                  style={{ width: `${biggest > 0 ? (Math.abs(line.amount) / biggest) * 100 : 0}%` }}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }
 
@@ -219,12 +196,88 @@ function GapCard({ gap, error }: { gap: Gap | null; error: string | null }) {
   )
 }
 
+// "Money in / Money out": cash that actually moved this month, separate from
+// profit (lib/cashFlow.ts says what each line counts). Loads on its own like
+// GapCard, so a failure here doesn't hide the rest of the page.
+function CashFlowCard({
+  flow,
+  error,
+  before,
+  month,
+}: {
+  flow: CashFlow | null
+  error: string | null
+  before: number | null | undefined // last month's net, for "▲ x% vs Oct"
+  month: string
+}) {
+  const column = (title: string, lines: CashFlow['moneyIn'], total: number, sign: string) => (
+    <div>
+      <h4 className="text-[13px] font-semibold tracking-wide text-ink-secondary uppercase">{title}</h4>
+      <ul className="mt-2 flex flex-col">
+        {lines.map((line) => (
+          <li key={line.label} className="flex justify-between gap-3 border-b border-slate-200 py-2 text-sm">
+            <span className={line.amount === 0 ? 'text-ink-muted' : 'text-ink-secondary'}>{line.label}</span>
+            <span className="font-medium tabular-nums whitespace-nowrap">
+              {line.amount === 0 ? '—' : `${sign} ${formatMoney(line.amount)}`}
+            </span>
+          </li>
+        ))}
+        <li className="flex justify-between gap-3 py-2 text-sm font-semibold text-ink">
+          <span>Total</span>
+          <span className="tabular-nums whitespace-nowrap">
+            {sign} {formatMoney(total)}
+          </span>
+        </li>
+      </ul>
+    </div>
+  )
+  return (
+    <section className="card mt-4 px-5 py-4">
+      <h3 className="border-b border-slate-200 pb-2 text-sm font-semibold text-ink">Money in / Money out</h3>
+      {error ? (
+        <p className="mt-3 text-sm text-red-700">{error}</p>
+      ) : !flow ? (
+        <p className="mt-3 text-sm text-slate-500">Loading…</p>
+      ) : (
+        <>
+          <div className="mt-3 grid gap-6 md:grid-cols-2">
+            {column('Money in', flow.moneyIn, flow.totalIn, '+')}
+            {column('Money out', flow.moneyOut, flow.totalOut, '−')}
+          </div>
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3 border border-line bg-slate-50 px-4 py-3 text-sm">
+            <span className="font-semibold text-ink">Net money movement</span>
+            <span className="text-right">
+              <span className={`font-bold tabular-nums ${flow.net < 0 ? 'text-red-700' : 'text-green-800'}`}>
+                {flow.net < 0 ? '− ' : '+ '}
+                {formatMoney(Math.abs(flow.net))}
+              </span>
+              <ChangeNote now={flow.net} before={before} month={month} />
+            </span>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function MoneySummarySection() {
   const [month, setMonth] = useState(() => toManilaDate(new Date()).slice(0, 7))
   const [summary, setSummary] = useState<MoneySummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [gap, setGap] = useState<Gap | null>(null)
   const [gapError, setGapError] = useState<string | null>(null)
+  const [cashFlow, setCashFlow] = useState<CashFlow | null>(null)
+  const [cashFlowError, setCashFlowError] = useState<string | null>(null)
+  // The five months before this one (for "vs last month" and the trend),
+  // last month's cash flow, and this month's payments per client. Each is
+  // stored with the month it was loaded for, so a stale one never shows.
+  const [history, setHistory] = useState<{ month: string; rows: { month: string; summary: MoneySummary }[] } | null>(null)
+  const [prevFlow, setPrevFlow] = useState<{ month: string; flow: CashFlow | null } | null>(null)
+  const [collected, setCollected] = useState<{
+    month: string
+    rows: { client_name: string; amount: number }[]
+    error: string | null
+  } | null>(null)
   const thisMonth = toManilaDate(new Date()).slice(0, 7)
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'expenses' ? 'expenses' : 'summary'
@@ -253,6 +306,18 @@ function MoneySummarySection() {
         setGapError(null)
       })
       .catch((e: Error) => !cancelled && setGapError(e.message))
+    void loadCashFlow(month).then(({ data, error: flowError }) => {
+      if (cancelled) return
+      setCashFlow(data)
+      setCashFlowError(flowError)
+    })
+    const earlier = [5, 4, 3, 2, 1].map((n) => shiftMonth(month, -n))
+    // A month that fails to load is just left out of the trend.
+    void Promise.all(earlier.map((m) => fetchMoneySummary(m).then((s) => ({ month: m, summary: s }), () => null))).then(
+      (rows) => !cancelled && setHistory({ month, rows: rows.filter((r) => r !== null) }),
+    )
+    void loadCashFlow(shiftMonth(month, -1)).then(({ data }) => !cancelled && setPrevFlow({ month, flow: data }))
+    void loadCollectedByClient(month).then((r) => !cancelled && setCollected({ month, ...r }))
     return () => {
       cancelled = true
     }
@@ -261,12 +326,20 @@ function MoneySummarySection() {
   // Downloads the summary shown as money_summary_YYYY-MM.csv.
   function handleExport() {
     if (!summary) return
-    previewCsv(buildMoneySummaryCsv(month, summary), `money_summary_${month}.csv`)
+    previewCsv(buildMoneySummaryCsv(month, summary, cashFlow), `money_summary_${month}.csv`)
   }
+
+  const earlierRows = history?.month === month ? history.rows : null
+  const prev = earlierRows?.find((r) => r.month === shiftMonth(month, -1))?.summary ?? null
+  const trend = earlierRows && summary ? [...earlierRows, { month, summary }] : null
+  const prevNet = prevFlow?.month === month ? (prevFlow.flow?.net ?? null) : undefined
+  const clientRows =
+    summary && collected?.month === month ? billedVsCollected(summary.revenueByClient, collected.rows) : null
 
   function go(delta: number) {
     setSummary(null)
     setGap(null)
+    setCashFlow(null)
     setMonth((m) => shiftMonth(m, delta))
   }
 
@@ -354,24 +427,41 @@ function MoneySummarySection() {
       ) : (
         <>
           <section aria-label={`Totals for ${monthLabel(month)}`} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <BigNumber label="Revenue" value={formatMoney(summary.earned)} />
-            <BigNumber label="Collected" value={formatMoney(summary.collected)} />
-            <BigNumber label="Expenses" value={formatMoney(summary.spent)} />
+            <BigNumber label="Revenue" value={formatMoney(summary.earned)}>
+              <ChangeNote now={summary.earned} before={prev?.earned} month={month} />
+            </BigNumber>
+            <BigNumber label="Collected" value={formatMoney(summary.collected)}>
+              <ChangeNote now={summary.collected} before={prev?.collected} month={month} />
+            </BigNumber>
+            <BigNumber label="Expenses" value={formatMoney(summary.spent)}>
+              <ChangeNote now={summary.spent} before={prev?.spent} month={month} upIsGood={false} />
+            </BigNumber>
             <BigNumber
               label={summary.left < 0 ? 'Net loss' : 'Net profit'}
               value={`${summary.left < 0 ? '−' : ''}${formatMoney(Math.abs(summary.left))}`}
               tone={summary.left < 0 ? 'text-red-700' : 'text-green-800'}
-            />
+            >
+              <ChangeNote now={summary.left} before={prev?.left} month={month} />
+            </BigNumber>
           </section>
+
+          <CashFlowCard flow={cashFlow} error={cashFlowError} before={prevNet} month={month} />
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-2 xl:items-start">
+            <CashOnHandCard month={month} />
+            <RemittancesCard month={month} />
+          </div>
+
+          <StandingStrip />
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] xl:items-start">
             <NetWaterfall summary={summary} />
-            <Breakdown
-              title="Revenue by client"
-              lines={summary.revenueByClient}
-              empty="No revenue this month."
-              barClass="bg-primary"
-            />
+            <BilledVsCollectedCard rows={clientRows} error={collected?.month === month ? collected.error : null} />
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:items-start">
+            <PerTripCard summary={summary} />
+            <TrendCard history={trend} />
           </div>
 
           <GapCard gap={gap} error={gapError} />

@@ -2408,3 +2408,41 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
   `cash_advances_limits` trigger -- change all together. Payslip deductions are
   NOT copied into the repayments table (one copy only). HR -> Cash Advances'
   per-advance table also counts repayments ("Paid back" tile).
+
+## 2026-11-16: Financial Summary "Money in / Money out" (migration 20261116010000, run by user)
+- Card under the net-result chart on Financial Summary (`CashFlowCard` in
+  MoneySummarySection.tsx, loader `lib/cashFlow.ts`, math `buildCashFlow` in
+  `lib/moneySummary.ts`, self-check `node scripts/check-money-summary.ts`) +
+  lines in the Export CSV. CASH that moved in the Manila month, not profit.
+  In: client payments (`booking_payments` > 0, by paid_on), cash advance
+  repayments. Out: net pay + SSS/PhilHealth/Pag-IBIG (EE+ER+EC) + tax of
+  payslips marked Paid (by `paid_at`, else `payroll_period_end`), cash advances
+  given (`issued_at`), estimated diesel of trips delivered that month (same
+  estimate as P&L), trip expenses (incl. logged Fuel top-ups), stock received
+  (qty x unit_cost), Company/Insurance damage share (by decision month), refunds.
+  Not counted: opening stock.
+- `payroll_payslips.paid_at`: stamped by trigger `payroll_payslips_paid_at`
+  when payslip_status becomes 'Paid' (cleared if it leaves Paid); older Paid
+  payslips are null.
+
+## 2026-11-16: Financial Summary finance-officer pass (migration 20261116020000)
+Panels in `staff/FinanceSummaryPanels.tsx`, loaders `lib/financeSnapshot.ts`,
+pure math in `lib/moneySummary.ts` (self-check `node scripts/check-money-summary.ts`).
+- Tiles + Net money movement show "▲/▼ x% vs <last month>" (`pctChange`;
+  expenses going up = red).
+- **Cash on hand**: table `cash_on_hand_checks` (one counted amount per month,
+  `as_of_month` = the 1st; Admin RLS, plain upsert). Opening of a month = latest
+  count on or before it + each month's net money movement since
+  (`cashPosition`, loads `loadCashFlow` per month in between).
+- **Government remittances**: table `government_remittances` (period_month,
+  agency SSS / PhilHealth / Pag-IBIG / BIR, amount, paid_on, reference_no,
+  voidable; Admin RLS, plain insert/update). Due = that month's FINALIZED
+  payslips by payroll_period_end (`agencyAmounts`), drafts noted. Money in /
+  Money out still counts contributions with the paid payslip (unchanged).
+- **Where we stand today** (always today, not the picked month): clients owe
+  (Payments Due, overdue part), employees owe (Cash Advance Ledger), we owe
+  employees (finalized payslips not Paid), stock on shelf (open lots x price).
+- Per trip (revenue / cost / profit per delivered trip, collection rate),
+  six-month trend (5 earlier months via loadProfitLoss each -- slow-ish), and
+  Revenue by client now shows billed vs collected (`billedVsCollected`).
+- Not built: actual diesel purchase receipts (finance item 8, needs a decision).
