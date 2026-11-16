@@ -59,7 +59,7 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
     }
 
     const employeeIds = Array.from(new Set(advanceRows.map((row) => row.employee_id)))
-    const [employeesResult, payslipsResult] = await Promise.all([
+    const [employeesResult, payslipsResult, repaymentsResult] = await Promise.all([
       employeeIds.length > 0
         ? supabase.from('employees').select('employee_id, full_name').in('employee_id', employeeIds)
         : Promise.resolve({ data: [], error: null }),
@@ -72,9 +72,17 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
           .not('finalized_at', 'is', null)
           .range(from, to),
       ),
+      // Paid back outside payroll (Finance -> Cash Advance Ledger).
+      fetchAll<{ employee_id: number; amount: number }>((from, to) =>
+        supabase
+          .from('cash_advance_repayments')
+          .select('employee_id, amount')
+          .is('voided_at', null)
+          .range(from, to),
+      ),
     ])
 
-    const lookupError = employeesResult.error?.message ?? payslipsResult.error
+    const lookupError = employeesResult.error?.message ?? payslipsResult.error ?? repaymentsResult.error
     if (lookupError) {
       setError(lookupError)
       setLoading(false)
@@ -90,6 +98,9 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
         p.employee_id,
         (leftToAllocate.get(p.employee_id) ?? 0) + Number(p.cash_advance_deducted ?? 0),
       )
+    }
+    for (const r of repaymentsResult.rows) {
+      leftToAllocate.set(r.employee_id, (leftToAllocate.get(r.employee_id) ?? 0) + Number(r.amount))
     }
     const repaidById = new Map<number, number>()
     ;[...advanceRows]
@@ -113,10 +124,10 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
     const issued = ledgerRows
       .filter((row) => row.status === 'Approved')
       .reduce((sum, row) => sum + Number(row.amount), 0)
-    const deducted = payslipsResult.rows.reduce(
-      (sum, row) => sum + Number(row.cash_advance_deducted ?? 0),
-      0,
-    )
+    // Payslip deductions + repayments outside payroll.
+    const deducted =
+      payslipsResult.rows.reduce((sum, row) => sum + Number(row.cash_advance_deducted ?? 0), 0) +
+      repaymentsResult.rows.reduce((sum, row) => sum + Number(row.amount), 0)
 
     setRows(ledgerRows)
     // Current = disbursed minus what payroll has already taken back
@@ -147,7 +158,7 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
           <p className={tileValue}>{formatMoney(totals.issued)}</p>
         </div>
         <div className={tile}>
-          <p className={tileLabel}>Deducted</p>
+          <p className={tileLabel}>Paid back</p>
           <p className={tileValue}>{formatMoney(totals.deducted)}</p>
           <div className="mt-1.5 h-2 bg-slate-200" aria-hidden="true">
             <div className="h-2 bg-ink-secondary" style={{ width: `${deductedShare}%` }} />

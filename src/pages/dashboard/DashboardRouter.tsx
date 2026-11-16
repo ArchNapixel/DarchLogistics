@@ -43,6 +43,7 @@ import EmployeesSection from './staff/EmployeesSection'
 import AttendanceSection from './staff/AttendanceSection'
 import PayrollSection from './staff/PayrollSection'
 import CashAdvanceSection from './staff/CashAdvanceSection'
+import CashAdvanceLedgerPage from './staff/CashAdvanceLedgerPage'
 import ReportsSection from './staff/ReportsSection'
 import FinancialSection from './staff/FinancialSection'
 import BillingPage from './staff/BillingPage'
@@ -91,6 +92,7 @@ const staffLinks = [
       { label: 'Collections', to: '/dashboard/collections' },
       { label: 'Client Billing', to: '/dashboard/billing' },
       { label: 'Statement of Account', to: '/dashboard/statements' },
+      { label: 'Cash Advance Ledger', to: '/dashboard/cash-advance-ledger' },
     ],
   },
   {
@@ -237,6 +239,7 @@ function DashboardRouter() {
           <Route path="attendance" element={<AttendanceSection />} />
           <Route path="payroll" element={<PayrollSection />} />
           <Route path="cash-advance" element={<CashAdvanceSection />} />
+          <Route path="cash-advance-ledger" element={<CashAdvanceLedgerPage />} />
           <Route path="reports" element={<ReportsSection />} />
           <Route path="financial-records" element={<FinancialSection />} />
           <Route path="billing" element={<BillingPage />} />

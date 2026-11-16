@@ -2387,3 +2387,24 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
   Phase 6 compact KPI money (₱2.65M + tooltip), Phase 7 CSV formula-injection
   escaping. Decided: phones stay 09XXXXXXXXX (no E.164), no Zod / Express
   (Supabase app), large advances = confirm dialog, not a second approver.
+
+## 2026-11-16: Cash Advance Ledger (Finance; migration 20261116000000, run by user)
+- Finance -> **Cash Advance Ledger** (`/dashboard/cash-advance-ledger`, Admin,
+  `staff/CashAdvanceLedgerPage.tsx`): one row per employee (Owing / Settled /
+  All, search) + a panel with their log and running balance: Issued (Approved
+  `cash_advances`, by `issued_at`), Payslip deduction (FINALIZED payslips only,
+  dated by `payroll_period_end`), Paid back (`cash_advance_repayments`). Drafts
+  are not in the log -- only a note. Record repayment / Void (reason), CSV.
+  Loader `lib/cashAdvanceLedger.ts`, math `lib/cashAdvanceLedgerTotals.ts`
+  (self-check `node scripts/check-cash-advance-ledger.ts`).
+- Table `cash_advance_repayments` (money paid back OUTSIDE payroll; voidable;
+  reference no. required for GCash / Bank Transfer / Check). Admin + own
+  employee SELECT, no write policies -- writes only via
+  `record_cash_advance_repayment` (refuses more than still owed, draft
+  deductions counted as taken) and `void_cash_advance_repayment`.
+- **Balance still owed = Approved advances - every payslip's deduction (drafts
+  included) - non-voided repayments**, in `getOutstandingCashAdvance` /
+  `loadOutstandingCashAdvances` (payslip.ts), the SQL above and the
+  `cash_advances_limits` trigger -- change all together. Payslip deductions are
+  NOT copied into the repayments table (one copy only). HR -> Cash Advances'
+  per-advance table also counts repayments ("Paid back" tile).

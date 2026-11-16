@@ -497,13 +497,16 @@ function buildEmployeePayLineItems(
 }
 
 // Total cash advances issued minus what's already been deducted across
-// this employee's past payslips -- what's still owed back. Only counts
-// 'Approved' rows -- a 'Pending' employee-requested advance hasn't
-// actually been given to them yet, so it must not inflate this balance.
+// this employee's past payslips (drafts included) and minus what they paid
+// back outside payroll (non-voided cash_advance_repayments) -- what's still
+// owed back. Only counts 'Approved' rows -- a 'Pending' employee-requested
+// advance hasn't actually been given to them yet, so it must not inflate
+// this balance. Same rule as the SQL record_cash_advance_repayment and
+// cash_advances_check_limits -- change them together.
 export async function getOutstandingCashAdvance(
   employeeId: number,
 ): Promise<{ outstanding: number; error: string | null }> {
-  const [advancesResult, payslipsResult] = await Promise.all([
+  const [advancesResult, payslipsResult, repaymentsResult] = await Promise.all([
     supabase
       .from('cash_advances')
       .select('amount')
@@ -513,6 +516,11 @@ export async function getOutstandingCashAdvance(
       .from('payroll_payslips')
       .select('cash_advance_deducted')
       .eq('employee_id', employeeId),
+    supabase
+      .from('cash_advance_repayments')
+      .select('amount')
+      .eq('employee_id', employeeId)
+      .is('voided_at', null),
   ])
 
   if (advancesResult.error) {
@@ -521,14 +529,18 @@ export async function getOutstandingCashAdvance(
   if (payslipsResult.error) {
     return { outstanding: 0, error: payslipsResult.error.message }
   }
+  if (repaymentsResult.error) {
+    return { outstanding: 0, error: repaymentsResult.error.message }
+  }
 
-  const totalIssued = advancesResult.data.reduce((sum, row) => sum + row.amount, 0)
+  const totalIssued = advancesResult.data.reduce((sum, row) => sum + Number(row.amount), 0)
   const totalDeducted = payslipsResult.data.reduce(
-    (sum, row) => sum + (row.cash_advance_deducted ?? 0),
+    (sum, row) => sum + Number(row.cash_advance_deducted ?? 0),
     0,
   )
+  const totalRepaid = repaymentsResult.data.reduce((sum, row) => sum + Number(row.amount), 0)
 
-  return { outstanding: totalIssued - totalDeducted, error: null }
+  return { outstanding: totalIssued - totalDeducted - totalRepaid, error: null }
 }
 
 // The same balance for every employee at once, read in one go. Employees
@@ -537,7 +549,7 @@ export async function loadOutstandingCashAdvances(): Promise<{
   owedByEmployee: Map<number, number>
   error: string | null
 }> {
-  const [advances, payslips] = await Promise.all([
+  const [advances, payslips, repayments] = await Promise.all([
     fetchAll<{ employee_id: number; amount: number }>((from, to) =>
       supabase
         .from('cash_advances')
@@ -554,10 +566,23 @@ export async function loadOutstandingCashAdvances(): Promise<{
         .order('payroll_id')
         .range(from, to),
     ),
+    fetchAll<{ employee_id: number; amount: number }>((from, to) =>
+      supabase
+        .from('cash_advance_repayments')
+        .select('employee_id, amount')
+        .is('voided_at', null)
+        .order('repayment_id')
+        .range(from, to),
+    ),
   ])
   const owedByEmployee = new Map<number, number>()
-  const error = advances.error ?? payslips.error
+  const error = advances.error ?? payslips.error ?? repayments.error
   if (error) return { owedByEmployee, error }
+
+  // Paid back outside payroll (cash, GCash...) also lowers the balance.
+  for (const row of repayments.rows) {
+    owedByEmployee.set(row.employee_id, (owedByEmployee.get(row.employee_id) ?? 0) - Number(row.amount))
+  }
 
   for (const row of advances.rows) {
     owedByEmployee.set(row.employee_id, (owedByEmployee.get(row.employee_id) ?? 0) + row.amount)
