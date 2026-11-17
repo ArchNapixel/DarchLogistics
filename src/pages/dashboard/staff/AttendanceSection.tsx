@@ -14,11 +14,8 @@
 //   draft payslip. A draft doesn't change by itself, so after fixing a day
 //   to Absent/Leave, use Edit or Regenerate on that payslip.
 // - "All present" in a day's header marks that day's unmarked people Present.
-// - A Present day has an "Edit times" link -> AttendanceTimesModal
-//   (Time In / Time Out). Hours = out - in - 1 h lunch, overtime above 8
-//   (lib/attendanceHours.ts), paid by payroll. Hours are NOT shown on this page
-//   on purpose -- only on the payslip. A Present day with no times = 8 hours.
-//   Re-picking Present keeps a day's times.
+// - No time in / out or overtime (the business doesn't pay overtime): a
+//   Present day is one paid day, stored as 8 hours for legacy Hourly payslips.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePaged } from '../../../lib/usePaged'
@@ -30,8 +27,6 @@ import LeaveRequestsSection from './LeaveRequestsSection'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
 import { confirmDialog } from '../../../components/ConfirmDialog'
-import AttendanceTimesModal, { type AttendanceTimes } from './AttendanceTimesModal'
-import { minutesToTime, timeToMinutes, workedHours } from '../../../lib/attendanceHours'
 
 type Employee = { employee_id: number; full_name: string; position: string }
 
@@ -56,9 +51,7 @@ function formatShort(date: string): string {
 
 // "How days are counted" -- the "?" button's rules (same as payroll's).
 const COUNT_RULES: [string, string][] = [
-  ['Present', 'Paid day (8 hours if no times)'],
-  ['Hours', 'Time out − time in − 1 h lunch'],
-  ['Overtime', 'Hours above 8, paid × 1.25'],
+  ['Present', 'Paid day'],
   ['Leave (paid)', 'Paid -- uses the yearly leave balance'],
   ['Unpaid Leave', 'Approved, not paid'],
   ['Absent', 'Not paid'],
@@ -105,7 +98,7 @@ function CountRulesHelp() {
           </div>
         ))}
         <p className="mt-2 text-[13px] leading-[18px] text-ink-muted">
-          Saves as soon as you pick. Use Edit times under a Present day to record time in / out; the hours show on the payslip. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
+          Saves as soon as you pick. A day already on a payslip doesn't change that payslip -- use Regenerate on Payroll.
         </p>
       </div>
     </>
@@ -188,7 +181,6 @@ function AttendanceSection() {
   // Any date -> the week holding it (never past this week).
   const setWeekStart = (date: string) => setWeekStartState(weekStartOf(date >= thisWeekStart ? today : date))
   // The Present day whose times pop-up is open.
-  const [timesFor, setTimesFor] = useState<{ employee: Employee; date: string } | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<Map<string, AttendanceRecord>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -231,27 +223,13 @@ function AttendanceSection() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  // Present with no times saves 8 hours; with times, the worked hours
-  // (minus lunch). Picking Present in the week view keeps a day's saved times.
-  function save(employeeId: number, date: string, status: AttendanceStatus, times?: { timeIn: number | null; timeOut: number | null }) {
-    const rec = records.get(`${employeeId}|${date}`)
-    const timeIn = times ? (times.timeIn === null ? null : minutesToTime(times.timeIn)) : (rec?.time_in ?? null)
-    const timeOut = times ? (times.timeOut === null ? null : minutesToTime(times.timeOut)) : (rec?.time_out ?? null)
-    const hasTimes = timeIn !== null && timeOut !== null
+  // Present quietly stores 8 hours (only legacy Hourly payslips read hours).
+  function save(employeeId: number, date: string, status: AttendanceStatus) {
     return saveAttendanceRecord({
       employeeId,
       attendanceDate: date,
       status,
-      hoursWorked:
-        status !== 'Present'
-          ? null
-          : !hasTimes
-            ? DEFAULT_HOURS
-            : times
-              ? workedHours(times.timeIn!, times.timeOut!)
-              : (rec?.hours_worked ?? DEFAULT_HOURS),
-      timeIn: hasTimes ? timeIn : null,
-      timeOut: hasTimes ? timeOut : null,
+      hoursWorked: status === 'Present' ? DEFAULT_HOURS : null,
       notes: null,
       recordedBy: recorderId!,
     })
@@ -291,13 +269,6 @@ function AttendanceSection() {
     return runSaves(recorderId ? [save(employeeId, date, status)] : [])
   }
 
-  // The times pop-up's Save / Clear times (null times = plain 8-hour day).
-  async function handleSaveTimes(employeeId: number, date: string, times: AttendanceTimes) {
-    if (!(await okToChange(employeeId, date))) return
-    await runSaves(recorderId ? [save(employeeId, date, 'Present', times)] : [])
-    setTimesFor(null)
-  }
-
   function handleAllPresent(date: string) {
     const unmarked = employees.filter((e) => !records.has(`${e.employee_id}|${date}`))
     return runSaves(recorderId ? unmarked.map((e) => save(e.employee_id, date, 'Present')) : [])
@@ -309,7 +280,7 @@ function AttendanceSection() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Record time in / out or mark Present or Absent. Leave fills in by itself when a leave request is approved. Drivers are paid per trip and aren't on this sheet."
+        subtitle="Mark each day Present or Absent. Leave fills in by itself when a leave request is approved. Drivers are paid per trip and aren't on this sheet."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <CountRulesHelp />
@@ -444,17 +415,6 @@ function AttendanceSection() {
                               <option>Absent</option>
                             </select>
                           )}
-                          {/* Time in / out pop-up. No hours shown here -- they show on the payslip. */}
-                          {shown === 'Present' && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => setTimesFor({ employee: e, date })}
-                              className="mt-1 block w-full text-xs font-medium text-primary underline disabled:opacity-50"
-                            >
-                              Edit times
-                            </button>
-                          )}
                         </td>
                       )
                     })}
@@ -504,20 +464,6 @@ function AttendanceSection() {
         </aside>
       </div>
 
-      {timesFor && (() => {
-        const rec = records.get(`${timesFor.employee.employee_id}|${timesFor.date}`)
-        return (
-          <AttendanceTimesModal
-            employeeName={timesFor.employee.full_name}
-            dateLabel={new Date(`${timesFor.date}T12:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
-            timeIn={timeToMinutes(rec?.time_in ?? null)}
-            timeOut={timeToMinutes(rec?.time_out ?? null)}
-            busy={busy}
-            onSave={(times) => void handleSaveTimes(timesFor.employee.employee_id, timesFor.date, times)}
-            onClose={() => setTimesFor(null)}
-          />
-        )
-      })()}
     </div>
   )
 }

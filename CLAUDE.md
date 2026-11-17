@@ -1341,23 +1341,12 @@ mention `SetUpClientAccountModal`, `AddClientModal` or staff-made client logins.
   inactive drivers and flags missing licences.
 
 ## 2026-10-25: board features + Maintenance boards (SQL given in chat)
-- **Attendance time in / out + overtime.** `employee_attendance.time_in` /
-  `time_out` (time). Rules in `lib/attendanceHours.ts` (pure, self-check
-  `node scripts/check-attendance-hours.ts`): hours = out − in − 1 h lunch
-  (no lunch off a day of 5 h or less; out before in = past midnight),
-  overtime = hours above 8, paid (day rate ÷ 8) × 1.25 (weekly ÷ 6,
-  monthly ÷ 30 = day rate). **2026-11-03: Day view removed** — the
-  Attendance page is the week table only; dropdown = Present / Absent
-  (Leave / Unpaid Leave show as a badge, they only come from approved
-  leave requests). A Present day has an "Edit times" link →
-  `staff/AttendanceTimesModal.tsx` (Time In / Out, Clear times). Hours
-  and overtime are deliberately NOT shown on the Attendance page — only
-  on the payslip (user's choice). A Present day with no times = 8 h, no
-  overtime; re-picking Present keeps a day's times.
-  Payroll: `sumPaidOvertimeHours()` (`lib/employeeAttendance.ts`) adds an
-  "Overtime" line to Daily / Weekly / Monthly payslips and an "Overtime
-  premium" (the extra 0.25) to Hourly ones; draft top-up picks it up for
-  new days. Drivers still aren't on the sheet.
+- **Attendance time in / out + overtime: REMOVED 2026-11-17** (the business
+  pays no overtime). Attendance is Present / Absent only (Leave / Unpaid
+  Leave badges still come from leave requests); Present stores 8 hours for
+  legacy Hourly payslips. `lib/attendanceHours.ts`, `AttendanceTimesModal`
+  and their self-check scripts were deleted; payslips have no Overtime line.
+  The `employee_attendance.time_in` / `time_out` columns are unused.
 - **Add / Edit Client** (`staff/AddClientModal.tsx`, Clients page header +
   panel): name, contact person, email, phone (same 09 rule), address,
   notes; warns on a duplicate name / phone / email. Needs a staff UPDATE
@@ -1465,8 +1454,7 @@ Same rules as the driver redesign: existing data only, no schema.
   paged table Work Order / Vehicle / Maintenance Type / Work Done /
   Completed On / Status.
 - My Attendance (Mechanic, Helper, Dispatcher): month tiles (Present /
-  Leave / Absent so far), the week as a list (time in / out, hours, OT when
-  recorded), month calendar with each day's status + legend.
+  Leave / Absent so far), the week as a list, month calendar with each day's status + legend.
 - My Leave (non-drivers): three balance tiles instead of the banner.
   My Payslips: "Paid weekly by attendance" / "Paid per delivered trip".
 

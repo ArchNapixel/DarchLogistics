@@ -33,10 +33,7 @@
 //   days) x paid days (how Helpers are paid), Monthly Salary is
 //   (monthly_salary / 30) x paid days, Hourly is hourly_rate x
 //   hours_worked summed over the period's paid days.
-//   Plus an Overtime line (since 2026-10-25) when Present days were logged
-//   with time in / time out: hours above 8 a day at (day rate / 8) x 1.25
-//   (Hourly: just the extra 0.25 -- every hour is already paid). Rules in
-//   lib/attendanceHours.ts.
+//   No overtime (removed 2026-11-17 -- the business doesn't pay it).
 // - The admin can override any calculated line amount, or add manual
 //   lines, in IssuePayslipModal before issuing -- issuePayslip() just
 //   saves whatever lines it's handed.
@@ -62,7 +59,6 @@
 //   record, not a live calculation.
 import { supabase } from './supabaseClient'
 import { markAttendanceAsPaid } from './employeeAttendance'
-import { OVERTIME_RATE, REGULAR_HOURS, overtimePay, summarizeUnpaidDays } from './attendanceHours'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { deliveryDatesInPeriod, tripKey, tripsToPay } from './payslipPeriod'
 import {
@@ -393,13 +389,14 @@ function buildAttendanceBasedLineItems(
   periodEnd: string,
   data: PeriodPayData,
 ): { lineItems: PayslipLineItem[]; error: string | null } {
-  const { days, hours, overtime } = summarizeUnpaidDays(data.daysByEmployee.get(employee.employee_id) ?? [])
+  const unpaidDays = data.daysByEmployee.get(employee.employee_id) ?? []
+  const days = unpaidDays.length
+  const hours = unpaidDays.reduce((sum, day) => sum + (day.hours_worked ?? 0), 0)
 
   if (employee.rate_type === 'Hourly') {
     if (employee.hourly_rate == null) {
       return { lineItems: [], error: `This employee's hourly rate hasn't been set -- edit their employee record first.` }
     }
-    // Every hour is already paid above; overtime hours get the extra 0.25.
     return {
       lineItems: [
         {
@@ -407,15 +404,6 @@ function buildAttendanceBasedLineItems(
           description: `${employee.position} hourly pay (${hours} hrs @ ₱${employee.hourly_rate}/hr)`,
           amount: employee.hourly_rate * hours,
         },
-        ...(overtime > 0
-          ? [
-              {
-                itinerary_id: null,
-                description: `Overtime premium (${overtime} hrs @ ₱${employee.hourly_rate}/hr × ${OVERTIME_RATE - 1})`,
-                amount: Math.round(overtime * employee.hourly_rate * (OVERTIME_RATE - 1) * 100) / 100,
-              },
-            ]
-          : []),
       ],
       error: null,
     }
@@ -457,10 +445,6 @@ function buildAttendanceBasedLineItems(
     ) + 1
   const denominator = employee.rate_type === 'Daily Fixed' ? daysInPeriod : salaryDivisor
 
-  // Overtime from time in / time out (lib/attendanceHours.ts): hours above
-  // 8 a day, at (day rate ÷ 8) × 1.25.
-  const otHourly = Math.round((dayRate / REGULAR_HOURS) * OVERTIME_RATE * 100) / 100
-
   return {
     lineItems: [
       {
@@ -468,15 +452,6 @@ function buildAttendanceBasedLineItems(
         description: `${employee.position} ${label} (${days}/${denominator} paid attendance days)`,
         amount: dayRate * days,
       },
-      ...(overtime > 0
-        ? [
-            {
-              itinerary_id: null,
-              description: `Overtime (${overtime} hrs @ ₱${otHourly}/hr)`,
-              amount: overtimePay(overtime, dayRate),
-            },
-          ]
-        : []),
     ],
     error: null,
   }

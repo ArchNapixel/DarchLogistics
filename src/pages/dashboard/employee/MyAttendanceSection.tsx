@@ -6,13 +6,10 @@
 // the admin sheet.
 //
 // Three month tiles (Present / Leave / Absent so far this month), one
-// Sun-Sat week as a list (same weeks payroll uses; time in / out, hours and
-// overtime when Admin recorded them), and a month calendar beside it.
+// Sun-Sat week as a list (same weeks payroll uses), and a month calendar beside it.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { loadAttendanceRecords, unrecordedStatus, type AttendanceRecord } from '../../../lib/employeeAttendance'
-import { overtimeHours, timeToMinutes } from '../../../lib/attendanceHours'
-import { formatClock } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import MyAttendanceCalendar from './MyAttendanceCalendar'
 import PageHeader from '../../../components/PageHeader'
@@ -32,12 +29,6 @@ function weekStartOf(date: string): string {
 
 const fmt = (date: string, options: Intl.DateTimeFormatOptions) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { ...options, timeZone: 'UTC' })
-
-// "8:00 AM" from a stored "08:00:00".
-function clock(time: string | null): string | null {
-  const minutes = timeToMinutes(time)
-  return minutes === null ? null : formatClock(Math.floor(minutes / 60), minutes % 60)
-}
 
 function MyAttendanceSection() {
   const { employeeId } = useAuth()
@@ -120,7 +111,7 @@ function MyAttendanceSection() {
             <span className="ml-1 rounded-[2px] bg-slate-200 px-2 py-0.5 align-middle text-xs font-semibold text-ink-secondary">View only</span>
           </>
         }
-        subtitle="You're paid weekly by attendance. A finished day with nothing recorded counts as Absent (Sundays are rest days). More than 8 hours in a day adds an Overtime line to your payslip."
+        subtitle="You're paid weekly by attendance. A finished day with nothing recorded counts as Absent (Sundays are rest days)."
       />
 
       <section aria-label={`${monthName} totals`} className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -173,18 +164,12 @@ function MyAttendanceSection() {
             <ul>
               {days.map((date) => {
                 const status = statusOf(date)
-                const rec = records.get(date)
-                const timeIn = clock(rec?.time_in ?? null)
-                const timeOut = clock(rec?.time_out ?? null)
-                const ot = timeIn && timeOut ? overtimeHours(rec?.hours_worked ?? null) : 0
                 const note =
                   date === today && !status
                     ? 'Today · not marked yet'
                     : date > today
                       ? 'Not yet'
-                      : timeIn && timeOut
-                        ? `${timeIn} – ${timeOut} · ${rec?.hours_worked ?? 0} h${ot > 0 ? ` · OT ${ot} h` : ''}`
-                        : date === today
+                      : date === today
                           ? 'Today'
                           : ''
                 return (
@@ -195,7 +180,7 @@ function MyAttendanceSection() {
                     }`}
                   >
                     <span className="font-semibold text-ink">{fmt(date, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                    <span className={`text-ink-muted ${ot > 0 ? 'font-medium text-primary' : ''}`}>{note}</span>
+                    <span className="text-ink-muted">{note}</span>
                     {status ? (
                       <StatusBadge status={status} icon />
                     ) : (

@@ -96,18 +96,20 @@ function InsuranceCompaniesPanel({
               paged.rows.map((c) => {
                 const expired = c.valid_until < today
                 const perClaim = c.limit_type === 'PerClaim'
+                // Archived rows are dimmed, but not the action buttons (Restore stays dark).
+                const td = `${TD} ${c.archived_at ? 'opacity-60' : ''}`
                 return (
-                  <tr key={c.insurance_company_id} className={`border-b border-slate-200 ${c.archived_at ? 'opacity-60' : ''}`}>
-                    <td className={TD}>
+                  <tr key={c.insurance_company_id} className="border-b border-slate-200">
+                    <td className={td}>
                       <span className="block font-semibold text-ink-metric">{c.company_name}</span>
                       {c.note && <span className="block text-[13px] line-clamp-1" title={c.note}>{c.note}</span>}
                     </td>
-                    <td className={TD}>{c.policy_number}</td>
-                    <td className={`${TD} text-right tabular-nums`}>
+                    <td className={td}>{c.policy_number}</td>
+                    <td className={`${td} text-right tabular-nums`}>
                       {formatMoney(c.amount_insured)}
                       <span className="block text-xs">{perClaim ? 'per claim' : 'total'}</span>
                     </td>
-                    <td className={TD}>
+                    <td className={td}>
                       {formatDate(c.valid_from)} – {formatDate(c.valid_until)}
                       {c.archived_at ? (
                         <span className="block text-xs font-medium text-ink-muted">Archived</span>
@@ -115,8 +117,8 @@ function InsuranceCompaniesPanel({
                         expired && <span className="block text-xs font-medium text-amber-800">Expired</span>
                       )}
                     </td>
-                    <td className={`${TD} text-right tabular-nums`}>{formatMoney(coverageUsed(c.insurance_company_id, claims))}</td>
-                    <td className={`${TD} text-right tabular-nums`}>{perClaim ? '—' : formatMoney(coverageLeft(c, claims))}</td>
+                    <td className={`${td} text-right tabular-nums`}>{formatMoney(coverageUsed(c.insurance_company_id, claims))}</td>
+                    <td className={`${td} text-right tabular-nums`}>{perClaim ? '—' : formatMoney(coverageLeft(c, claims))}</td>
                     {isAdmin && (
                       <td className={TD}>
                         <span className="flex gap-2">
