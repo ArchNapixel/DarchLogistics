@@ -47,6 +47,8 @@ import {
   pmsStatus,
   type PmsSettings,
 } from '../../../lib/pms'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 type Truck = {
   plate_number: string
@@ -200,7 +202,8 @@ function OdometerPanel({
           </label>
           <label className="flex min-w-40 flex-1 flex-col gap-1 text-sm font-medium text-ink-secondary">
             Note <span className="sr-only">(optional)</span>
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" className={`${field} placeholder:text-ink-muted`} />
+            <input value={note} onChange={(e) => setNote(limitWords(e.target.value))} placeholder="Optional" className={`${field} placeholder:text-ink-muted`} />
+            <WordCount text={note} />
           </label>
           <button type="button" onClick={() => void saveReading()} disabled={saving} className="btn-primary px-4 text-sm">
             {saving ? 'Saving...' : 'Save Reading'}

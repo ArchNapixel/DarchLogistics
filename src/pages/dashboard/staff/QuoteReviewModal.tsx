@@ -82,6 +82,8 @@ import CapacityCard from './CapacityCard'
 import { tripPlanForDb } from '../../../lib/capacityLoad'
 import QuoteWarnings from './QuoteWarnings'
 import type { CapacityCheck } from '../../../lib/capacity'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 // Same cap as the bookings.hours_per_trip CHECK constraint.
 const MAX_HOURS_PER_TRIP = 72
@@ -1367,10 +1369,11 @@ function QuoteReviewModal({
                   <textarea
                     id="reject-reason"
                     value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
+                    onChange={(e) => setRejectReason(limitWords(e.target.value))}
                     rows={4}
                     className={`${fieldClasses} mt-1.5`}
                   />
+                  <WordCount text={rejectReason} />
                 </section>
               ) : waitingOnClient ? (
                 <div className="flex flex-col gap-4 self-start">
@@ -1640,11 +1643,11 @@ function QuoteReviewModal({
                           id="offer-note"
                           type="text"
                           value={offerNote}
-                          maxLength={300}
-                          onChange={(e) => setOfferNote(e.target.value)}
+                          onChange={(e) => setOfferNote(limitWords(e.target.value))}
                           placeholder="e.g. Includes the return trip of the empty container"
                           className={`${fieldClasses} mt-1.5`}
                         />
+                        <WordCount text={offerNote} />
                       </div>
                     </div>
                   </section>

@@ -42,6 +42,8 @@ import {
 } from '../../../lib/workOrderPartsLog'
 import { ITEM_UNITS, WHOLE_UNITS, filterQuantity } from '../../../lib/inventoryItemTypes'
 import { searchText, textMatches } from '../../../lib/search'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary disabled:bg-slate-50 disabled:text-ink-muted'
@@ -403,11 +405,12 @@ function CompleteWorkOrderModal({
                 </span>
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(limitWords(e.target.value))}
                   rows={4}
                   placeholder="What you did"
                   className={`${fieldClasses} resize-none py-2.5`}
                 />
+                <WordCount text={description} />
               </label>
 
               <div className="border border-line bg-slate-50 px-4 py-3.5">
@@ -452,7 +455,8 @@ function CompleteWorkOrderModal({
                 <span>
                   Additional notes <span className="font-normal text-ink-muted">(optional)</span>
                 </span>
-                <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} className={fieldClasses} />
+                <input value={notes} onChange={(e) => setNotes(limitWords(e.target.value))} className={fieldClasses} />
+                <WordCount text={notes} />
               </label>
             </div>
 

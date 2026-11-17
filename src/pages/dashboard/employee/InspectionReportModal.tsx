@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -220,11 +222,11 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
             </span>
             <textarea
               value={findings}
-              onChange={(e) => setFindings(e.target.value)}
+              onChange={(e) => setFindings(limitWords(e.target.value))}
               rows={3}
-              maxLength={1000}
               className={`${fieldClasses} resize-none py-2.5`}
             />
+            <WordCount text={findings} />
           </label>
 
           <fieldset className="flex flex-col gap-1.5">
@@ -251,7 +253,8 @@ function InspectionReportModal({ onClose }: { onClose: () => void }) {
                 Notes <span className="font-normal text-ink-muted">(optional)</span>
               </span>
             </span>
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} className={fieldClasses} />
+            <input value={notes} onChange={(e) => setNotes(limitWords(e.target.value))} className={fieldClasses} />
+            <WordCount text={notes} />
           </label>
 
           <p className="border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">

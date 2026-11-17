@@ -22,6 +22,8 @@ import {
   filterQuantity,
   type AdjustDirection,
 } from '../../../lib/inventoryItemTypes'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 export type StockAction = 'receive' | 'adjust' | 'price'
 
@@ -246,11 +248,11 @@ function StockActionModal({
               </span>
               <input
                 value={note}
-                maxLength={200}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(e) => setNote(limitWords(e.target.value))}
                 placeholder={action === 'receive' ? 'e.g. supplier, receipt no.' : 'e.g. found during shelf check'}
                 className={fieldClasses}
               />
+              <WordCount text={note} />
             </label>
           )}
 

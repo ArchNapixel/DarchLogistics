@@ -30,6 +30,8 @@ import { ALL_STATUSES, type WorkOrder } from '../../../lib/mechanicWorkOrders'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDateTime, formatDate } from '../../../lib/format'
 import { textMatches } from '../../../lib/search'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -361,13 +363,13 @@ function AccessWorkOrderModal({
               {notesError && <p className="mb-2 bg-red-50 px-3 py-2 text-sm text-red-700">{notesError}</p>}
               <textarea
                 value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
+                onChange={(e) => setNewNote(limitWords(e.target.value))}
                 rows={3}
-                maxLength={1000}
                 placeholder="Type a progress note"
                 aria-label="Progress note"
                 className={`${fieldClasses} resize-none py-2.5`}
               />
+              <WordCount text={newNote} />
               <button type="button" onClick={handleAddNote} disabled={submittingNote} className="btn-secondary mt-2 mb-3 self-end px-4 text-sm font-medium">
                 {submittingNote ? 'Adding...' : 'Add Note'}
               </button>

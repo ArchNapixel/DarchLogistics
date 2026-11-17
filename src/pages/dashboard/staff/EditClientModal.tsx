@@ -8,6 +8,8 @@ import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { emailError, phoneDigits, phoneError, phoneInput } from '../../../lib/quoteRequest'
 import { emailTakenError } from '../../../lib/clientAccount'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 export type EditableClient = {
   client_id: number
@@ -124,7 +126,8 @@ function EditClientModal({
           </label>
           <label className={`${label} sm:col-span-2`}>
             Notes <span className="text-[13px] font-normal text-ink-muted">optional, staff only</span>
-            <textarea value={notes} maxLength={500} rows={2} onChange={(e) => setNotes(e.target.value)} className={field} />
+            <textarea value={notes} rows={2} onChange={(e) => setNotes(limitWords(e.target.value))} className={field} />
+            <WordCount text={notes} />
           </label>
           {error && <p className="bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">{error}</p>}
           {/* Hidden submit so Enter saves. */}

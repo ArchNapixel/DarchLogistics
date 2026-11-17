@@ -4,6 +4,8 @@
 // "Client Requests" tab; the answer shows in the client's My Requests.
 import { useState } from 'react'
 import { requestClientStatus } from '../../../lib/clientStatusRequests'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 function ClientStatusRequestModal({
   clientId,
@@ -98,12 +100,12 @@ function ClientStatusRequestModal({
             </span>
             <textarea
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => setMessage(limitWords(e.target.value))}
               rows={5}
-              maxLength={1000}
               placeholder="e.g. What time will the truck arrive at the pickup point?"
               className="min-h-11 w-full resize-none rounded-[2px] border border-line-control bg-white px-3 py-2.5 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary"
             />
+            <WordCount text={message} />
           </label>
         </div>
 

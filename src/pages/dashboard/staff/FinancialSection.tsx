@@ -52,6 +52,8 @@ import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { isDelivered } from '../../../lib/tripStatusFlow'
 import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 // One row of the bookings query in loadBookings().
 type ReceivableBookingRow = {
@@ -155,7 +157,8 @@ function PaymentDetailsFields({
       ) : (
         <div className="sm:col-span-2">
           <label className={label} htmlFor="pay-note">Note (optional)</label>
-          <input id="pay-note" type="text" maxLength={200} value={details.note} onChange={(e) => set({ note: e.target.value })} className={input} />
+          <input id="pay-note" type="text" value={details.note} onChange={(e) => set({ note: limitWords(e.target.value) })} className={input} />
+          <WordCount text={details.note} />
         </div>
       )}
       <div className="sm:col-span-2">

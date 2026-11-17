@@ -7,6 +7,8 @@ import { useAuth } from '../../../context/AuthContext'
 import { loadMyReview, saveMyReview } from '../../../lib/clientReviews'
 import { showToast } from '../../../components/Toast'
 import { formatDate } from '../../../lib/format'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 // Five star buttons, as a radio group (arrow keys aren't wired -- each
 // star is its own button with a clear label).
@@ -132,12 +134,12 @@ function ClientReviewSection() {
               </span>
               <textarea
                 value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                onChange={(e) => setComment(limitWords(e.target.value))}
                 rows={4}
-                maxLength={1000}
                 placeholder="What went well? What can we do better?"
                 className="min-h-11 w-full resize-none rounded-[2px] border border-line-control bg-white px-3 py-2.5 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary"
               />
+              <WordCount text={comment} />
             </label>
             <p className="text-[13px] leading-[18px] text-ink-muted">
               {lastSavedAt

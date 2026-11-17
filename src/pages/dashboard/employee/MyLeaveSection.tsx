@@ -23,6 +23,8 @@ import StatusBadge from '../../../components/StatusBadge'
 import { showToast } from '../../../components/Toast'
 import { formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric focus:border-primary'
@@ -282,11 +284,11 @@ function MyLeaveSection() {
               </span>
               <textarea
                 value={reason}
-                maxLength={300}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => setReason(limitWords(e.target.value))}
                 rows={3}
                 className={`${fieldClasses} resize-none py-2.5`}
               />
+              <WordCount text={reason} />
             </label>
           </form>
           <div className="flex justify-end gap-3 border-t border-line px-5 py-4">

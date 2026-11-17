@@ -12,6 +12,8 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { MAINTENANCE_TYPES } from '../../../lib/maintenanceTypes'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
@@ -283,10 +285,11 @@ function CreateWorkOrderModal({
               What's this work order about? (optional)
               <textarea
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => setDescription(limitWords(e.target.value))}
                 rows={3}
                 className={fieldClasses}
               />
+              <WordCount text={description} />
             </label>
           </div>
         )}

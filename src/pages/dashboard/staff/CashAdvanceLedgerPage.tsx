@@ -31,6 +31,8 @@ import {
   type EmployeeCashAdvance,
   type RepaymentMethod,
 } from '../../../lib/cashAdvanceLedger'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const TABS = ['Owing', 'Settled', 'All'] as const
 type Tab = (typeof TABS)[number]
@@ -494,7 +496,8 @@ function RecordRepaymentModal({
           </div>
           <div>
             <label className={LABEL} htmlFor="repay-note">Note (optional)</label>
-            <input id="repay-note" type="text" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} />
+            <input id="repay-note" type="text" value={note} onChange={(e) => setNote(limitWords(e.target.value))} className={INPUT} />
+            <WordCount text={note} />
           </div>
         </div>
 

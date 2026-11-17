@@ -43,6 +43,8 @@ import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import { ON_ROAD_STATUSES, isDelivered, isFinished } from '../../../lib/tripStatusFlow'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 // Same labels/colors as the Dispatch Board's trip statuses (duplicated
 // here rather than imported, like EmployeeDetailModal does).
@@ -908,13 +910,14 @@ function BookingDetailModal({
               <textarea
                 value={cancelReason}
                 onChange={(e) => {
-                  setCancelReason(e.target.value)
+                  setCancelReason(limitWords(e.target.value))
                   setCancelError(null)
                 }}
                 rows={2}
                 placeholder="e.g. Client called off the shipment"
                 className="border border-line-control bg-white px-3 py-2 font-normal text-slate-900 focus:border-primary rounded-[2px] min-h-11"
               />
+              <WordCount text={cancelReason} />
             </label>
             {cancelError && (
               <p className="mt-2 text-sm text-red-700" role="alert">

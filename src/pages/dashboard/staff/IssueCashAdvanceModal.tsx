@@ -15,6 +15,8 @@ import { supabase } from '../../../lib/supabaseClient'
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { formatMoney } from '../../../lib/format'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 type EmployeeOption = {
   employee_id: number
@@ -199,7 +201,8 @@ function IssueCashAdvanceModal({
           </label>
           <label className={label}>
             Reason / note (optional)
-            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={field} />
+            <input type="text" value={note} onChange={(e) => setNote(limitWords(e.target.value))} className={field} />
+            <WordCount text={note} />
           </label>
           <p className="text-[13px] leading-[18px] text-ink-muted">
             Paid back automatically: each payslip deducts a share of gross pay until the advance is settled.

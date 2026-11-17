@@ -5,6 +5,8 @@
 // so staff know which one it's about. Still one report per payslip.
 import { useState } from 'react'
 import { reportPayslipIssue } from '../../../lib/payslipIssueReports'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 function ReportPayslipIssueModal({
   employeeId,
@@ -75,12 +77,12 @@ function ReportPayslipIssueModal({
             <span className="text-sm font-semibold text-ink">What's wrong?</span>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => setDescription(limitWords(e.target.value))}
               rows={4}
-              maxLength={1000}
               placeholder="e.g. This is missing a trip I delivered on..."
               className="min-h-11 w-full resize-none rounded-[2px] border border-line-control bg-white px-3 py-2.5 text-sm text-ink-metric placeholder:text-ink-muted focus:border-primary"
             />
+            <WordCount text={description} />
           </label>
           <p className="text-[13px] text-ink-muted">Admin reviews it and replies under My Requests.</p>
         </div>

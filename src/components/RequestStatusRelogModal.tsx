@@ -4,6 +4,8 @@
 // Admin reviews it from Reports -> Status Relog Requests.
 import { useState } from 'react'
 import { createStatusRelogRequest, type RelogTargetType } from '../lib/statusRelogRequests'
+import WordCount from '../components/WordCount'
+import { limitWords } from '../lib/wordLimit'
 
 function RequestStatusRelogModal({
   targetType,
@@ -105,11 +107,12 @@ function RequestStatusRelogModal({
             Reason
             <textarea
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => setReason(limitWords(e.target.value))}
               rows={3}
               placeholder="What happened, and why this needs to be corrected"
               className="border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11"
             />
+            <WordCount text={reason} />
           </label>
         </div>
 

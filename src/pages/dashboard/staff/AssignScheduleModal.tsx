@@ -12,6 +12,8 @@ import {
   SCHEDULE_TYPES,
   type MaintenanceInterval,
 } from '../../../lib/maintenanceSchedules'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'border border-line-control px-3 py-2 text-slate-900 focus:border-primary rounded-[2px] min-h-11'
@@ -116,7 +118,8 @@ function AssignScheduleModal({
           </label>
           <label className={labelClasses}>
             Notes (optional)
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClasses} />
+            <textarea value={notes} onChange={(event) => setNotes(limitWords(event.target.value))} rows={3} className={fieldClasses} />
+            <WordCount text={notes} />
           </label>
         </div>
 

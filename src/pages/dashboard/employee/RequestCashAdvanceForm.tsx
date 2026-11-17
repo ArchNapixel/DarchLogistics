@@ -12,6 +12,8 @@ import { getOutstandingCashAdvance, loadCashAdvanceDeductionRate, DEFAULT_CASH_A
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { showToast } from '../../../components/Toast'
 import { formatMoney } from '../../../lib/format'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -100,7 +102,8 @@ function RequestCashAdvanceForm({ onRequested }: { onRequested: () => void }) {
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-ink">Reason</span>
-          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Emergency" className={fieldClasses} />
+          <input value={reason} onChange={(e) => setReason(limitWords(e.target.value))} placeholder="e.g. Emergency" className={fieldClasses} />
+          <WordCount text={reason} />
         </label>
         <p className="text-[13px] leading-[18px] text-ink-muted">
           Once Admin approves, {rate}% of each payslip's gross pay is deducted until it's paid off.

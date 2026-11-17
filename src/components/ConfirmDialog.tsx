@@ -10,6 +10,8 @@
 // typed text (never empty -- the confirm button stays disabled until
 // something is typed), or null if cancelled.
 import { useEffect, useState } from 'react'
+import WordCount from '../components/WordCount'
+import { limitWords } from '../lib/wordLimit'
 
 type ConfirmOptions = {
   message: string
@@ -116,14 +118,17 @@ export function ConfirmHost() {
         </h3>
         <p className="mt-2 text-sm text-slate-600">{pending.message}</p>
         {pending.isPrompt && (
-          <textarea
-            autoFocus
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={pending.placeholder}
-            rows={3}
-            className="mt-3 w-full border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11"
-          />
+          <>
+            <textarea
+              autoFocus
+              value={text}
+              onChange={(e) => setText(limitWords(e.target.value))}
+              placeholder={pending.placeholder}
+              rows={3}
+              className="mt-3 w-full border border-line-control bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary rounded-[2px] min-h-11"
+            />
+            <WordCount text={text} />
+          </>
         )}
         <div className="mt-6 flex justify-end gap-3">
           <button

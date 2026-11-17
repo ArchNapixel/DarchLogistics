@@ -8,6 +8,8 @@ import { supabase } from '../../../lib/supabaseClient'
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { formatMoney } from '../../../lib/format'
 import { showToast } from '../../../components/Toast'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const CATEGORIES = ['Fuel', 'Toll', 'Parking', 'Other'] as const
 
@@ -151,11 +153,11 @@ function AddExpenseModal({
             <span className={labelClasses}>Description</span>
             <input
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={200}
+              onChange={(e) => setDescription(limitWords(e.target.value))}
               placeholder="e.g. Diesel refill at Panabo, toll at the bypass"
               className={fieldClasses}
             />
+            <WordCount text={description} />
           </label>
 
           <p className="border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">

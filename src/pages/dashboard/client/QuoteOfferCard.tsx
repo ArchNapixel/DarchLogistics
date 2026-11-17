@@ -18,6 +18,8 @@ import OfferComparison from '../../../components/OfferComparison'
 import { parseCargoLines, todayDateString, tripCargoLabel } from '../../../lib/quoteRequest'
 import { offerTiming } from '../../../lib/offerTiming'
 import { confirmDialog } from '../../../components/ConfirmDialog'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const inputClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -392,7 +394,8 @@ function QuoteOfferCard({
             <span className="text-sm font-semibold text-ink">
               Message <span className="font-normal text-ink-muted">(optional)</span>
             </span>
-            <textarea value={counterNote} maxLength={300} rows={3} onChange={(e) => setCounterNote(e.target.value)} className={`${inputClasses} resize-none py-2.5`} />
+            <textarea value={counterNote} rows={3} onChange={(e) => setCounterNote(limitWords(e.target.value))} className={`${inputClasses} resize-none py-2.5`} />
+            <WordCount text={counterNote} />
           </label>
           <p className="border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">
             The quote will show "Your counter-offer sent". We'll accept it or send you a new offer.
@@ -423,12 +426,12 @@ function QuoteOfferCard({
             </span>
             <textarea
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => setReason(limitWords(e.target.value))}
               rows={4}
-              maxLength={500}
               placeholder="Tell us why, so we can do better next time"
               className={`${inputClasses} resize-none py-2.5`}
             />
+            <WordCount text={reason} />
           </label>
           <p className="border border-line bg-slate-50 px-3.5 py-3 text-[13px] leading-[18px] text-ink-secondary">
             The quote moves to Declined and is kept as a record.

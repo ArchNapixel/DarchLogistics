@@ -4,6 +4,8 @@
 // in lib/damageCharges.ts; who pays is WhoPaysFields.
 import type { DamageCondition, DamageInput } from '../../../lib/damageCharges'
 import { filterAmountInput } from '../../../lib/amountInput'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -59,12 +61,12 @@ function DamageFields({
           <span className={labelClasses}>{LOSS_LABELS[value.condition]}</span>
           <textarea
             value={value.description}
-            onChange={(e) => onChange({ ...value, description: e.target.value })}
+            onChange={(e) => onChange({ ...value, description: limitWords(e.target.value) })}
             rows={2}
-            maxLength={500}
             placeholder="Describe the problem"
             className={`${fieldClasses} resize-none py-2.5`}
           />
+          <WordCount text={value.description} />
         </label>
         <label className="flex max-w-[280px] flex-col gap-1.5">
           <span className={labelClasses}>Estimated cost (₱)</span>

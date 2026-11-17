@@ -7,6 +7,8 @@ import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { splitManila } from '../../../lib/format'
 import { saveInsuranceCompany, type InsuranceCompany } from '../../../lib/insuranceCompanies'
 import { LIMIT_TYPE_LABELS, oneYearAfter, type LimitType } from '../../../lib/insuranceRules'
+import WordCount from '../../../components/WordCount'
+import { limitWords } from '../../../lib/wordLimit'
 
 function InsuranceCompanyModal({
   company,
@@ -146,7 +148,8 @@ function InsuranceCompanyModal({
           </label>
           <label className={`${label} sm:col-span-2`}>
             Note <span className="text-[13px] font-normal text-ink-muted">optional</span>
-            <textarea value={note} maxLength={500} rows={2} onChange={(e) => setNote(e.target.value)} className={field} />
+            <textarea value={note} rows={2} onChange={(e) => setNote(limitWords(e.target.value))} className={field} />
+            <WordCount text={note} />
           </label>
           {error && <p className="bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">{error}</p>}
           {/* Hidden submit so Enter saves. */}
