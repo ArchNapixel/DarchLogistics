@@ -2953,10 +2953,10 @@ function DispatchBoardSection() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_440px]">
         <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <label className={FILTER_LABEL}>
               Status
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${FILTER_CONTROL} w-48`}>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${FILTER_CONTROL} w-40`}>
                 <option value="all">All statuses</option>
                 <option value="needs">Needs assignment</option>
                 <option value="atrisk">At risk</option>
@@ -2969,7 +2969,7 @@ function DispatchBoardSection() {
             </label>
             <label className={FILTER_LABEL}>
               Driver
-              <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)} className={`${FILTER_CONTROL} w-52`}>
+              <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)} className={`${FILTER_CONTROL} w-44`}>
                 <option value="all">All drivers</option>
                 <option value="none">Unassigned</option>
                 {drivers.map((d) => (
@@ -2986,38 +2986,34 @@ function DispatchBoardSection() {
                 value={bookingFilter}
                 onChange={(e) => setBookingFilter(e.target.value)}
                 placeholder="e.g. 48"
-                className={`${FILTER_CONTROL} w-40 font-normal placeholder:text-ink-muted`}
+                className={`${FILTER_CONTROL} w-28 font-normal placeholder:text-ink-muted`}
               />
             </label>
             {canEditStatus && (
-              <div className="ml-auto flex flex-wrap gap-2">
-                {rows.some((r) => needsAssignment(r) && r.trip_start_at) && (
-                  <button type="button" onClick={assignAllUnassigned} disabled={bulkBookingId !== null} className="btn-secondary px-4 text-sm font-medium">
-                    Fill all unassigned
-                  </button>
-                )}
-                {autoFixes.size > 0 && (
-                  <button type="button" onClick={autoFixAtRisk} className="btn-secondary px-4 text-sm font-medium">
-                    Fix at-risk ({autoFixes.size})
-                  </button>
-                )}
-                <button type="button" onClick={rebalanceDrivers} className="btn-secondary px-4 text-sm font-medium">
+              <div className="ml-auto flex shrink-0 gap-2">
+                {/* Always shown so the toolbar never moves; greyed out when there's nothing to do. */}
+                <button
+                  type="button"
+                  onClick={assignAllUnassigned}
+                  disabled={bulkBookingId !== null || !rows.some((r) => needsAssignment(r) && r.trip_start_at)}
+                  title={rows.some((r) => needsAssignment(r) && r.trip_start_at) ? undefined : 'Every trip with a time slot already has its crew and vehicles'}
+                  className="btn-secondary px-3 text-sm font-medium"
+                >
+                  Fill all unassigned
+                </button>
+                <button
+                  type="button"
+                  onClick={autoFixAtRisk}
+                  disabled={autoFixes.size === 0}
+                  title={autoFixes.size === 0 ? 'No at-risk trip has a fix to run' : undefined}
+                  className="btn-secondary px-3 text-sm font-medium"
+                >
+                  Fix at-risk{autoFixes.size > 0 && ` (${autoFixes.size})`}
+                </button>
+                <button type="button" onClick={rebalanceDrivers} className="btn-secondary px-3 text-sm font-medium">
                   Balance driver pay
                 </button>
               </div>
-            )}
-            {anyFilter && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStatusFilter('all')
-                  setDriverFilter('all')
-                  setBookingFilter('')
-                }}
-                className="text-sm font-semibold text-primary underline hover:no-underline"
-              >
-                Clear filters
-              </button>
             )}
           </div>
 
@@ -3042,7 +3038,7 @@ function DispatchBoardSection() {
               ) : (
                 <table className="w-full min-w-[980px] table-fixed text-left text-sm text-ink-metric">
                   <colgroup>
-                    {['120px', '170px', '', '150px', '120px', '130px', '236px'].map((width, i) => (
+                    {['120px', '150px', '', '150px', '120px', '170px', '236px'].map((width, i) => (
                       <col key={i} style={width ? { width } : undefined} />
                     ))}
                   </colgroup>
@@ -3143,14 +3139,14 @@ function DispatchBoardSection() {
                                 onClick={() => setStatusRowId(row.itinerary_id)}
                                 disabled={!canUpdate || savingId === row.itinerary_id}
                                 aria-describedby={isCompleted(row.status) && !canFreelyEditStatus ? 'final-note' : undefined}
-                                className="btn-secondary w-[140px] px-0 text-sm font-medium"
+                                className="btn-secondary w-32 px-0 text-sm font-medium"
                               >
                                 Update Status
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setPanelRowId(row.itinerary_id)}
-                                className="btn-secondary w-20 px-0 text-sm font-medium"
+                                className="btn-secondary w-[72px] px-0 text-sm font-medium"
                               >
                                 View
                               </button>
@@ -3170,6 +3166,19 @@ function DispatchBoardSection() {
                 {!isAllDays && ` · ${deliveredCount} of ${dayRows.length} delivered`}
                 {anyFilter && ` · ${filteredRows.length} shown`}
               </span>
+              {anyFilter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter('all')
+                    setDriverFilter('all')
+                    setBookingFilter('')
+                  }}
+                  className="text-sm font-semibold text-primary underline hover:no-underline"
+                >
+                  Clear filters
+                </button>
+              )}
               {!canFreelyEditStatus && deliveredCount > 0 && (
                 <span id="final-note" className="ml-auto text-ink-muted">
                   Delivered is the last status, so it can't be updated.
