@@ -3,7 +3,10 @@
 // Resources view is one timeline for the day with a section each for
 // Drivers, Helpers, Trucks and Trailers (gaps are free time). The Trips and
 // Bookings views draw one lane per trip / booking instead, and Week shows
-// Sunday to Saturday. Read-only: changes are made on the Dispatch Board.
+// Sunday to Saturday. Read-only: changes are made on the Dispatch Board --
+// except Re-plan: next to the search box, one "Re-plan Booking #X (n)" button
+// per booking whose waiting trips are blocked (in the shop until solved,
+// leave, expired licence; loadAtRiskBookings) -> ReplanTripsModal (2026-11-17).
 // Every section is one loader in lib/scheduleData.ts feeding ScheduleTimeline.
 //
 // The Trips view also shows a one-line notice when open trips are missing a
@@ -28,6 +31,8 @@ import {
   type TimelineRow,
 } from '../../../lib/scheduleData'
 import ScheduleTimeline, { ScheduleLegend, type TimelineSection } from './ScheduleTimeline'
+import ReplanTripsModal from './ReplanTripsModal'
+import { loadAtRiskBookings, type AtRiskBooking } from '../../../lib/capacityLoad'
 
 type Span = 'day' | 'week'
 type View = 'resources' | 'trips' | 'bookings'
@@ -97,6 +102,9 @@ function ScheduleOverviewSection() {
   // again -- clicking Today (or the view already shown) changes nothing
   // else, and used to leave it on "Loading" forever.
   const [reloadKey, setReloadKey] = useState(0)
+  // Bookings with blocked waiting trips (the Re-plan notice), and the one being re-planned.
+  const [atRisk, setAtRisk] = useState<AtRiskBooking[]>([])
+  const [replanBookingId, setReplanBookingId] = useState<number | null>(null)
 
   const dayStart = new Date(manilaTimestamp(day, DAY_START_HOUR * 60)).getTime()
   const from = span === 'day' ? dayStart : manilaWeek(dayStart).from + DAY_START_HOUR * HOUR_MS
@@ -116,6 +124,16 @@ function ScheduleOverviewSection() {
       cancelled = true
     }
   }, [view, from, to, reloadKey])
+
+  // Not tied to the day shown: any waiting trip, any date. A failed check just
+  // shows no notice (the timeline still works).
+  useEffect(() => {
+    let cancelled = false
+    loadAtRiskBookings().then((r) => !cancelled && setAtRisk(r.data))
+    return () => {
+      cancelled = true
+    }
+  }, [reloadKey])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000)
@@ -300,8 +318,31 @@ function ScheduleOverviewSection() {
               className="min-h-11 w-64 max-w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-normal text-ink-metric placeholder:text-ink-muted focus:border-primary"
             />
           </label>
+          {/* One per booking with blocked waiting trips (shop, leave, expired licence). */}
+          {atRisk.map((b) => (
+            <button
+              key={b.bookingId}
+              type="button"
+              onClick={() => setReplanBookingId(b.bookingId)}
+              title={`${b.tripIds.length} waiting ${b.tripIds.length === 1 ? 'trip is' : 'trips are'} blocked by the shop, leave or an expired licence`}
+              className="btn-secondary px-4 text-sm font-medium"
+            >
+              Re-plan Booking #{b.bookingId} ({b.tripIds.length})
+            </button>
+          ))}
         </div>
       </div>
+
+      {replanBookingId !== null && (
+        <ReplanTripsModal
+          bookingId={replanBookingId}
+          onClose={() => setReplanBookingId(null)}
+          onSaved={() => {
+            setReplanBookingId(null)
+            reload()
+          }}
+        />
+      )}
 
       {attention.length > 0 && (
         <p className="mb-4 border border-amber-600 bg-amber-100 px-4 py-3 text-sm text-amber-900">

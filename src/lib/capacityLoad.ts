@@ -302,3 +302,38 @@ export async function saveReplan(bookingId: number, moves: Replan['moves']): Pro
   })
   return error?.message ?? null
 }
+
+// Schedule Overview: every booking with Awaiting trips that are at risk
+// (isAtRisk -- driver on leave / licence expired, truck or trailer in the shop
+// until solved), with those trip ids, so each can be re-planned.
+export type AtRiskBooking = { bookingId: number; tripIds: number[] }
+
+export async function loadAtRiskBookings(): Promise<{ data: AtRiskBooking[]; error: string | null }> {
+  const { data: rows, error } = await supabase
+    .from('itineraries')
+    .select('itinerary_id, booking_id, trip_start_at, trip_end_at')
+    .eq('itinerary_status', 'Awaiting')
+    .not('trip_start_at', 'is', null)
+    .not('trip_end_at', 'is', null)
+  if (error) return { data: [], error: error.message }
+  if (!rows || rows.length === 0) return { data: [], error: null }
+  const bookingOf = new Map(rows.map((r) => [r.itinerary_id, r.booking_id]))
+  // Read from the first trip's day to past the last one.
+  const reach: Demand = {
+    trips: [],
+    requestedStart: Math.min(...rows.map((r) => Date.parse(r.trip_start_at!))),
+    deadlineEnd: Math.max(...rows.map((r) => Date.parse(r.trip_end_at!))),
+  }
+  const { inputs, error: loadError } = await loadCapacityInputs(reach, null)
+  if (!inputs) return { data: [], error: loadError ?? 'No data' }
+  const byBooking = new Map<number, number[]>()
+  for (const t of inputs.world.booked) {
+    const bookingId = bookingOf.get(t.id)
+    if (bookingId === undefined || t.status !== 'Awaiting' || !isAtRisk(t, inputs.world.resources)) continue
+    byBooking.set(bookingId, [...(byBooking.get(bookingId) ?? []), t.id])
+  }
+  return {
+    data: [...byBooking].map(([bookingId, tripIds]) => ({ bookingId, tripIds })).sort((a, b) => a.bookingId - b.bookingId),
+    error: null,
+  }
+}
