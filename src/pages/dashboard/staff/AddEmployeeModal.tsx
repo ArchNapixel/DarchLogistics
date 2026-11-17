@@ -1,10 +1,9 @@
 // AddEmployeeModal: form for adding OR editing an employee in the real
 // `employees` table. Pass an `employee` prop to edit that row (fields
 // pre-filled, submit does an UPDATE); omit it to add a new one (submit
-// does an INSERT). rate_type determines which single rate column
-// actually gets filled in (daily_rate / weekly_salary /
-// monthly_salary / hourly_rate) -- the others stay null, and all four
-// stay null for Commission Per Trip (paid from Settings instead).
+// does an INSERT). rate_type follows the position: Weekly Salary fills
+// weekly_salary; Commission Per Trip (Drivers) leaves it null (paid from
+// Settings instead).
 //
 // Driver license fields are only shown (and only
 // required) when editing an existing Driver, via the "Edit Information"
@@ -31,7 +30,6 @@ import {
 } from '../../../lib/myProfile'
 import { phoneInput } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
-import { formatMoney } from '../../../lib/format'
 
 // Hire date range, mirrored from the DB trigger employees_hire_date_range
 // (1990-01-01 .. Manila today + 30 days) -- change both together.
@@ -151,23 +149,13 @@ function AddEmployeeModal({
   const [position, setPosition] = useState(employee?.position ?? 'Driver')
   // Rate type isn't a choice: Drivers are Commission Per Trip (paid from
   // the Settings commission % + per-trip fee), everyone else is Weekly
-  // Salary. Older employees on Daily/Monthly/Hourly get switched to
-  // Weekly Salary the next time they're saved here.
+  // Salary.
   const rateType = position === 'Driver' ? 'Commission Per Trip' : 'Weekly Salary'
-  // Only carry over an amount that's already a weekly salary -- a
-  // monthly/daily figure pre-filled as "weekly" would be badly wrong.
   const [rateAmount, setRateAmount] = useState(
     employee?.rate_type === 'Weekly Salary' && employee.rate_amount != null
       ? String(employee.rate_amount)
       : '',
   )
-  const legacyRate =
-    employee &&
-    employee.rate_type !== 'Weekly Salary' &&
-    employee.rate_type !== 'Commission Per Trip' &&
-    employee.rate_amount != null
-      ? `${employee.rate_type} ${formatMoney(employee.rate_amount)}`
-      : null
   const [hireDate, setHireDate] = useState(employee?.hire_date ?? '')
   const [isMinimumWageEarner, setIsMinimumWageEarner] = useState(employee?.is_minimum_wage_earner ?? false)
   const [truckPlate, setTruckPlate] = useState(employee?.assigned_plate_number ?? '')
@@ -250,7 +238,6 @@ function AddEmployeeModal({
       })
   }, [employee])
 
-  const selectedRateType = RATE_TYPES.find((r) => r.value === rateType)!
 
   async function handleSubmit() {
     if (!firstName.trim() || !lastName.trim()) {
@@ -379,13 +366,7 @@ function AddEmployeeModal({
       commission_per_trip: null,
       hire_date: hireDate,
       is_minimum_wage_earner: isMinimumWageEarner,
-      daily_rate: null,
-      weekly_salary: null,
-      monthly_salary: null,
-      hourly_rate: null,
-      ...(selectedRateType.column
-        ? { [selectedRateType.column]: rateAmount ? Number(rateAmount) : null }
-        : {}),
+      weekly_salary: rateType === 'Weekly Salary' && rateAmount ? Number(rateAmount) : null,
       assigned_plate_number: position === 'Driver' ? truckPlate : null,
       driver_license_number: position === 'Driver' ? licenseNumber.trim() || null : null,
       driver_license_expiry_date: position === 'Driver' ? licenseExpiryDate || null : null,
@@ -567,11 +548,7 @@ function AddEmployeeModal({
 
               {/* Commission Per Trip (Drivers) has no amount to enter -- pay comes from Settings. */}
               {rateType !== 'Commission Per Trip' && (
-                <Field
-                  label={selectedRateType.label}
-                  required
-                  hint={legacyRate && <span className="text-amber-700">Was {legacyRate} -- enter the weekly amount.</span>}
-                >
+                <Field label="Weekly salary" required>
                   <input
                     type="number"
                     min="0"

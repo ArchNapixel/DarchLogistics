@@ -313,7 +313,9 @@ before creating it.
   (amount required). Position is chosen only when adding an employee —
   read-only on Edit, no switching. Daily/Monthly/Hourly still work in `payslip.ts` for
   older rows but can't be chosen, and saving such an employee converts
-  them to Weekly Salary;
+  them to Weekly Salary (**removed from the app 2026-11-17** -- only
+  Commission Per Trip and Weekly Salary exist in code now; the DB enum
+  and `daily_rate`/`monthly_salary`/`hourly_rate` columns still exist);
   trip date = latest `dispatch_status_logs` row with
   `new_status = 'Delivered'`, in Manila time. Everyone
   else is paid against attendance: Daily Fixed, Weekly Salary (÷6 × paid

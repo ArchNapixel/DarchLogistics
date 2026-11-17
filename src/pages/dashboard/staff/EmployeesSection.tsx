@@ -404,7 +404,7 @@ function EmployeesSection() {
     const { data: employeeRows, error: employeeError } = await supabase
       .from('employees')
       .select(
-        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, daily_rate, weekly_salary, monthly_salary, hourly_rate, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, assigned_plate_number',
+        'employee_id, first_name, last_name, full_name, position, rate_type, hire_date, is_minimum_wage_earner, employment_status_id, weekly_salary, driver_license_number, driver_license_expiry_date, middle_name, phone_number, date_of_birth, email, address, city, province, zip_code, emergency_contact_name, emergency_contact_number, tin_number, sss_number, philhealth_number, pagibig_number, assigned_plate_number',
       )
       .order('full_name', { ascending: true })
 

@@ -94,8 +94,8 @@ export async function saveAttendanceRecord({
   return { error: error?.message ?? null }
 }
 
-// Called by issuePayslip() right after a Daily Fixed / Monthly Salary /
-// Hourly payslip is created, so those same days can never be counted
+// Called by issuePayslip() right after a Weekly Salary payslip is
+// created, so those same days can never be counted
 // again on a future payslip -- the attendance equivalent of how a
 // Commission Per Trip payslip's trips get excluded via
 // payslip_line_items.itinerary_id.

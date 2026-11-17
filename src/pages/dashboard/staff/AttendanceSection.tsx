@@ -223,7 +223,7 @@ function AttendanceSection() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  // Present quietly stores 8 hours (only legacy Hourly payslips read hours).
+  // Present quietly stores 8 hours (nothing reads hours any more).
   function save(employeeId: number, date: string, status: AttendanceStatus) {
     return saveAttendanceRecord({
       employeeId,

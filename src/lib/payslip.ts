@@ -25,14 +25,9 @@
 //   previously issued payslip_line_items row is skipped regardless of
 //   period dates -- a trip can never be paid twice, even if periods
 //   ever end up overlapping.
-// - rate_type 'Daily Fixed' / 'Weekly Salary' / 'Monthly Salary' /
-//   'Hourly': paid against attendance (employee_attendance,
-//   Present/Leave days count) using that employee's own daily_rate /
-//   weekly_salary / monthly_salary / hourly_rate -- Daily Fixed is
-//   daily_rate x paid days, Weekly Salary is (weekly_salary / 6 working
-//   days) x paid days (how Helpers are paid), Monthly Salary is
-//   (monthly_salary / 30) x paid days, Hourly is hourly_rate x
-//   hours_worked summed over the period's paid days.
+// - rate_type 'Weekly Salary' (everyone but Drivers): paid against
+//   attendance (employee_attendance, Present/Leave days count) --
+//   (weekly_salary / 6 working days) x paid days.
 //   No overtime (removed 2026-11-17 -- the business doesn't pay it).
 // - The admin can override any calculated line amount, or add manual
 //   lines, in IssuePayslipModal before issuing -- issuePayslip() just
@@ -152,19 +147,16 @@ export type PayslipLineItem = {
   amount: number
 }
 
-export type RateType = 'Daily Fixed' | 'Weekly Salary' | 'Commission Per Trip' | 'Monthly Salary' | 'Hourly'
+export type RateType = 'Weekly Salary' | 'Commission Per Trip'
 
 export type EmployeePayRate = {
   employee_id: number
   position: string
   rate_type: RateType
-  daily_rate: number | null
   weekly_salary: number | null
-  monthly_salary: number | null
-  hourly_rate: number | null
 }
 
-type UnpaidDay = { attendance_status: string; hours_worked: number | null }
+type UnpaidDay = { attendance_status: string }
 type PeriodTrip = {
   itinerary_id: number
   booking_id: number
@@ -207,7 +199,7 @@ async function loadPeriodPayData(
     fetchAll<UnpaidDay & { employee_id: number }>((from, to) =>
       supabase
         .from('employee_attendance')
-        .select('employee_id, attendance_status, hours_worked')
+        .select('employee_id, attendance_status')
         .gte('attendance_date', periodStart)
         .lte('attendance_date', periodEnd)
         .in('attendance_status', ['Present', 'Leave'])
@@ -380,77 +372,25 @@ function buildCommissionTripLineItems(
   return { lineItems, error: null }
 }
 
-// Daily Fixed / Weekly Salary / Monthly Salary / Hourly: paid against attendance,
-// using this employee's own rate column instead of a shared
-// per-position app_settings value.
+// Weekly Salary: paid against attendance -- (weekly_salary / 6 working
+// days) x paid days, using this employee's own weekly_salary.
 function buildAttendanceBasedLineItems(
   employee: EmployeePayRate,
-  periodStart: string,
-  periodEnd: string,
   data: PeriodPayData,
 ): { lineItems: PayslipLineItem[]; error: string | null } {
-  const unpaidDays = data.daysByEmployee.get(employee.employee_id) ?? []
-  const days = unpaidDays.length
-  const hours = unpaidDays.reduce((sum, day) => sum + (day.hours_worked ?? 0), 0)
-
-  if (employee.rate_type === 'Hourly') {
-    if (employee.hourly_rate == null) {
-      return { lineItems: [], error: `This employee's hourly rate hasn't been set -- edit their employee record first.` }
-    }
-    return {
-      lineItems: [
-        {
-          itinerary_id: null,
-          description: `${employee.position} hourly pay (${hours} hrs @ ₱${employee.hourly_rate}/hr)`,
-          amount: employee.hourly_rate * hours,
-        },
-      ],
-      error: null,
-    }
-  }
-
-  const label =
-    employee.rate_type === 'Daily Fixed'
-      ? 'daily rate'
-      : employee.rate_type === 'Weekly Salary'
-        ? 'weekly salary'
-        : 'monthly salary'
-  const rateAmount =
-    employee.rate_type === 'Daily Fixed'
-      ? employee.daily_rate
-      : employee.rate_type === 'Weekly Salary'
-        ? employee.weekly_salary
-        : employee.monthly_salary
-  if (rateAmount == null) {
+  const days = (data.daysByEmployee.get(employee.employee_id) ?? []).length
+  if (employee.weekly_salary == null) {
     return {
       lineItems: [],
-      error: `This employee's ${label} hasn't been set -- edit their employee record first.`,
+      error: `This employee's weekly salary hasn't been set -- edit their employee record first.`,
     }
   }
-
-  // Weekly (÷6 working days) and Monthly (÷30) salaries are converted
-  // to a daily-equivalent and paid per attendance day, same approach as
-  // Daily Fixed -- just derived from a bigger figure instead of an
-  // already-daily one. The label's denominator matches whichever
-  // divisor actually drives the math -- 6 / 30 regardless of period
-  // length, and the selected period's own day count for Daily Fixed
-  // (not a hardcoded 7 -- the period isn't always exactly a week, e.g.
-  // a first payslip covering however many days since the employee was
-  // hired, or an admin picking a custom range).
-  const salaryDivisor = employee.rate_type === 'Weekly Salary' ? 6 : 30
-  const dayRate = employee.rate_type === 'Daily Fixed' ? rateAmount : rateAmount / salaryDivisor
-  const daysInPeriod =
-    Math.round(
-      (new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86_400_000,
-    ) + 1
-  const denominator = employee.rate_type === 'Daily Fixed' ? daysInPeriod : salaryDivisor
-
   return {
     lineItems: [
       {
         itinerary_id: null,
-        description: `${employee.position} ${label} (${days}/${denominator} paid attendance days)`,
-        amount: dayRate * days,
+        description: `${employee.position} weekly salary (${days}/6 paid attendance days)`,
+        amount: (employee.weekly_salary / 6) * days,
       },
     ],
     error: null,
@@ -460,15 +400,13 @@ function buildAttendanceBasedLineItems(
 // Dispatches on the employee's own rate_type instead of their position.
 function buildEmployeePayLineItems(
   employee: EmployeePayRate,
-  periodStart: string,
-  periodEnd: string,
   settings: PayrollSettings,
   data: PeriodPayData,
 ): { lineItems: PayslipLineItem[]; error: string | null } {
   if (employee.rate_type === 'Commission Per Trip') {
     return buildCommissionTripLineItems(employee, settings, data)
   }
-  return buildAttendanceBasedLineItems(employee, periodStart, periodEnd, data)
+  return buildAttendanceBasedLineItems(employee, data)
 }
 
 // Total cash advances issued minus what's already been deducted across
@@ -832,7 +770,7 @@ async function generateDraftPayslipsNow(
     supabase
       .from('employees')
       .select(
-        'employee_id, full_name, position, rate_type, daily_rate, weekly_salary, monthly_salary, hourly_rate, is_minimum_wage_earner, employment_status_id',
+        'employee_id, full_name, position, rate_type, weekly_salary, is_minimum_wage_earner, employment_status_id',
       ),
     supabase.from('employment_status').select('status_id, status_name'),
     supabase
@@ -906,7 +844,7 @@ async function generateDraftPayslipsNow(
       else if (healed.gross !== null) existing.gross_pay = healed.gross
     }
 
-    const pay = buildEmployeePayLineItems(employee, periodStart, periodEnd, settingsResult.settings, payData.data)
+    const pay = buildEmployeePayLineItems(employee, settingsResult.settings, payData.data)
     if (pay.error) {
       warnings.push(`${employee.full_name}: ${pay.error}`)
       continue
