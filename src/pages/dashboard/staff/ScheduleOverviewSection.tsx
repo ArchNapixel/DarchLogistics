@@ -4,9 +4,9 @@
 // Drivers, Helpers, Trucks and Trailers (gaps are free time). The Trips and
 // Bookings views draw one lane per trip / booking instead, and Week shows
 // Sunday to Saturday. Read-only: changes are made on the Dispatch Board --
-// except Re-plan: next to the search box, one "Re-plan Booking #X (n)" button
-// per booking whose waiting trips are blocked (in the shop until solved,
-// leave, expired licence; loadAtRiskBookings) -> ReplanTripsModal (2026-11-17).
+// except Re-plan: the button next to the search box opens ReplanTripsModal
+// (pick a booking; Blocked trips or All waiting trips). Its red count = waiting
+// trips blocked by the shop, leave or an expired licence (loadWaitingBookings).
 // Every section is one loader in lib/scheduleData.ts feeding ScheduleTimeline.
 //
 // The Trips view also shows a one-line notice when open trips are missing a
@@ -32,7 +32,7 @@ import {
 } from '../../../lib/scheduleData'
 import ScheduleTimeline, { ScheduleLegend, type TimelineSection } from './ScheduleTimeline'
 import ReplanTripsModal from './ReplanTripsModal'
-import { loadAtRiskBookings, type AtRiskBooking } from '../../../lib/capacityLoad'
+import { loadWaitingBookings } from '../../../lib/capacityLoad'
 
 type Span = 'day' | 'week'
 type View = 'resources' | 'trips' | 'bookings'
@@ -103,8 +103,8 @@ function ScheduleOverviewSection() {
   // else, and used to leave it on "Loading" forever.
   const [reloadKey, setReloadKey] = useState(0)
   // Bookings with blocked waiting trips (the Re-plan notice), and the one being re-planned.
-  const [atRisk, setAtRisk] = useState<AtRiskBooking[]>([])
-  const [replanBookingId, setReplanBookingId] = useState<number | null>(null)
+  const [blockedCount, setBlockedCount] = useState(0)
+  const [showReplan, setShowReplan] = useState(false)
 
   const dayStart = new Date(manilaTimestamp(day, DAY_START_HOUR * 60)).getTime()
   const from = span === 'day' ? dayStart : manilaWeek(dayStart).from + DAY_START_HOUR * HOUR_MS
@@ -129,7 +129,7 @@ function ScheduleOverviewSection() {
   // shows no notice (the timeline still works).
   useEffect(() => {
     let cancelled = false
-    loadAtRiskBookings().then((r) => !cancelled && setAtRisk(r.data))
+    loadWaitingBookings().then((r) => !cancelled && setBlockedCount(r.data.reduce((sum, b) => sum + b.blocked, 0)))
     return () => {
       cancelled = true
     }
@@ -318,33 +318,28 @@ function ScheduleOverviewSection() {
               className="min-h-11 w-64 max-w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-normal text-ink-metric placeholder:text-ink-muted focus:border-primary"
             />
           </label>
-          {/* One per booking with blocked waiting trips (shop, leave, expired licence). */}
-          {atRisk.map((b) => (
-            <button
-              key={b.bookingId}
-              type="button"
-              onClick={() => setReplanBookingId(b.bookingId)}
-              title={`${b.tripIds.length} waiting ${b.tripIds.length === 1 ? 'trip is' : 'trips are'} blocked by the shop, leave or an expired licence`}
-              className="btn-secondary px-4 text-sm font-medium"
-            >
-              Re-plan Booking #{b.bookingId} ({b.tripIds.length})
-            </button>
-          ))}
-          {/* Always there: greyed out when no waiting trip is blocked. */}
-          {atRisk.length === 0 && (
-            <button type="button" disabled title="No waiting trip is blocked by the shop, leave or an expired licence" className="btn-secondary px-4 text-sm font-medium">
-              Re-plan
-            </button>
-          )}
+          {/* Always there; the booking is picked in the pop-up. Red count = blocked waiting trips. */}
+          <button
+            type="button"
+            onClick={() => setShowReplan(true)}
+            title={
+              blockedCount > 0
+                ? `${blockedCount} waiting ${blockedCount === 1 ? 'trip is' : 'trips are'} blocked by the shop, leave or an expired licence`
+                : 'Spread waiting trips over whoever is free'
+            }
+            className="btn-secondary flex items-center gap-2 px-4 text-sm font-medium"
+          >
+            Re-plan
+            {blockedCount > 0 && <span className="rounded-[2px] bg-red-600 px-1.5 text-xs font-semibold text-white">{blockedCount}</span>}
+          </button>
         </div>
       </div>
 
-      {replanBookingId !== null && (
+      {showReplan && (
         <ReplanTripsModal
-          bookingId={replanBookingId}
-          onClose={() => setReplanBookingId(null)}
+          onClose={() => setShowReplan(false)}
           onSaved={() => {
-            setReplanBookingId(null)
+            setShowReplan(false)
             reload()
           }}
         />

@@ -2495,3 +2495,12 @@ Overview and Fleet Match's "work order on a trip day" rule.
   their slot. Preview first; Save = RPC `replan_booking_trips(p_booking_id,
   p_trips)` (staff, one transaction: check + park trips with no time / truck /
   trailer, set new ones, add new drivers -- writes 2 schedule-log rows per trip).
+- **Re-plan has two choices** (same day): *Blocked trips* (above) or *All
+  waiting trips* -- every Awaiting trip of the booking spread again over whoever
+  is free (e.g. trucks back from the shop). `loadReplan()` returns both plans
+  (`replans.blocked` / `replans.all`); `replanTrips` leaves out trips whose slot,
+  driver, truck and trailer don't change (`unchanged`). Schedule Overview: one
+  **Re-plan** button next to the search box, always clickable, red count =
+  blocked waiting trips (`loadWaitingBookings`); the booking is picked in the
+  pop-up (first with blocked trips by default). Booking Detail opens it for its
+  own booking.

@@ -376,6 +376,9 @@ export function withPlannedHolds(world: PlanWorld, offers: { label: string; dema
 // swaps -- only this booking's trips change. A trip that still can't be placed
 // keeps its old slot (`stuck`); the planner is re-run with it back on the
 // calendar so the moved trips never land on what it still holds.
+// Also used for "All waiting trips" (every Awaiting trip of the booking, e.g.
+// to spread them again once a truck is back from the shop). `moves` leaves out
+// trips whose slot, driver, truck and trailer all stay the same (`unchanged`).
 // ---------------------------------------------------------------------------
 export function isAtRisk(trip: BookedTrip, resources: Resource[]): boolean {
   const ids = [trip.driverId, trip.truckId, trip.trailerId]
@@ -384,7 +387,10 @@ export function isAtRisk(trip: BookedTrip, resources: Resource[]): boolean {
   )
 }
 
-export type Replan = { moves: { trip: BookedTrip; to: PlannedTrip }[]; stuck: BookedTrip[]; plan: TripPlan }
+export type Replan = { moves: { trip: BookedTrip; to: PlannedTrip }[]; unchanged: number; stuck: BookedTrip[]; plan: TripPlan }
+
+const sameSlot = (trip: BookedTrip, to: PlannedTrip) =>
+  to.start === trip.start && to.end === trip.end && to.driverId === trip.driverId && to.truckId === trip.truckId && to.trailerId === trip.trailerId
 
 export function replanTrips(world: PlanWorld, trips: BookedTrip[], requestedStart: number, deadlineEnd: number | null): Replan {
   let movable = [...trips].sort((a, b) => a.start - b.start || a.id - b.id)
@@ -404,7 +410,11 @@ export function replanTrips(world: PlanWorld, trips: BookedTrip[], requestedStar
       deadlineEnd,
     }
     const plan = planTrips(demand, { ...world, booked: world.booked.filter((t) => !away.has(t.id)) }, { swaps: false })
-    if (plan.trips.length === movable.length) return { moves: movable.map((trip, i) => ({ trip, to: plan.trips[i] })), stuck, plan }
+    if (plan.trips.length === movable.length) {
+      const all = movable.map((trip, i) => ({ trip, to: plan.trips[i] }))
+      const moves = all.filter((m) => !sameSlot(m.trip, m.to))
+      return { moves, unchanged: all.length - moves.length, stuck, plan }
+    }
     // Planner stops at the first trip it can't place: keep that one and the rest where they are.
     stuck = [...movable.slice(plan.trips.length), ...stuck]
     movable = movable.slice(0, plan.trips.length)

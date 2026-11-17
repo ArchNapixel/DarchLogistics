@@ -209,6 +209,18 @@ const rpShort = replanTrips({ ...world(rpFleet, [rp1, rp2, rp3]), horizon: oct24
 assert.deepEqual(rpShort.stuck.map((t) => t.id), [3])
 assert.deepEqual(rpShort.moves.map((m) => [m.trip.id, m.to.trailerId]), [[1, 'F2']])
 
+// "All waiting trips" after T1 is back: 4 trips back to back on D2 / T2 are
+// spread over both drivers -- done by +12 h instead of +24 h.
+const backFleet = [own('D1', 'T1'), own('D2', 'T2'), truck('T1'), truck('T2'), trailer('F1', 'Flatbed'), trailer('F2', 'Flatbed')]
+const chain = [0, 1, 2, 3].map((i) => bookedTrip(10 + i, oct24 + i * 6 * HOUR_MS, 6, { driverId: 'D2', truckId: 'T2', trailerId: 'F2' }))
+const spread = replanTrips(world(backFleet, chain), chain, oct24, null)
+assert.equal(spread.plan.lastEnd, oct24 + 12 * HOUR_MS)
+assert.deepEqual(new Set(spread.plan.trips.map((t) => t.driverId)), new Set(['D1', 'D2']))
+// A trip already in its best slot isn't sent to the database again.
+const settled = bookedTrip(20, oct24, 6, { driverId: 'D1', truckId: 'T1', trailerId: 'F1' })
+const same = replanTrips(world(backFleet, [settled]), [settled], oct24, null)
+assert.deepEqual([same.moves.length, same.unchanged], [0, 1])
+
 // Labels for the card.
 assert.equal(shortageLabel({ kind: 'Trailer', trailerType: 'Flatbed', tripIndex: 0 }), 'No Flatbed trailer free')
 assert.equal(shortageLabel({ kind: 'Driver', trailerType: null, tripIndex: 0 }), 'No driver free')

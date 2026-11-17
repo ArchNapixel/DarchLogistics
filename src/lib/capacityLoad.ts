@@ -230,13 +230,27 @@ export async function loadCapacityInputs(
   return { inputs: { world, defaultStartMinutes }, error: null }
 }
 
-// Re-plan waiting trips (Booking Detail): the booking's Awaiting trips that
-// are at risk (isAtRisk) and where the planner puts them now (replanTrips).
-// Earliest start = the next half hour, never before the booking's pickup date
-// + default start; deadline = the quote's delivery-by date. Staff only.
-export type ReplanLoad = { replan: Replan; labels: Map<string, string>; deadlineEnd: number | null }
+// Re-plan waiting trips (Booking Detail, Schedule Overview): where the
+// planner puts the booking's Awaiting trips now (replanTrips). scope
+// 'blocked' = only trips whose driver / truck / trailer is blocked (isAtRisk);
+// 'all' = every waiting trip, spread again over whoever is free -- e.g. after
+// a truck comes back from the shop. Earliest start = the next half hour, never
+// before the booking's pickup date + default start; deadline = the quote's
+// delivery-by date. Staff only.
+export type ReplanScope = 'blocked' | 'all'
+export type ReplanLoad = {
+  // One plan per scope, so switching is instant.
+  replans: Record<ReplanScope, Replan>
+  labels: Map<string, string>
+  deadlineEnd: number | null
+  waiting: number
+  blocked: number
+}
 
-export async function loadReplan(bookingId: number, now = Date.now()): Promise<{ data: ReplanLoad | null; error: string | null }> {
+export async function loadReplan(
+  bookingId: number,
+  now = Date.now(),
+): Promise<{ data: ReplanLoad | null; error: string | null }> {
   const fail = (error: string) => ({ data: null, error })
   const [tripsResult, bookingResult] = await Promise.all([
     supabase
@@ -264,22 +278,31 @@ export async function loadReplan(bookingId: number, now = Date.now()): Promise<{
   }
   const deadlineEnd = deadline ? new Date(manilaTimestamp(deadline, 24 * 60)).getTime() - 1 : null
   const nextHalfHour = Math.ceil(now / STEP_MS) * STEP_MS
-  // Just for how far to read; the real start needs the default start time.
+  // How far to read: from the next half hour (or the first trip, if earlier)
+  // to past the deadline or the last trip.
+  const starts = tripRows.map((t) => Date.parse(t.trip_start_at!))
+  const ends = tripRows.map((t) => Date.parse(t.trip_end_at!))
   const reach: Demand = {
     trips: tripRows.map((t) => ({ hours: (Date.parse(t.trip_end_at!) - Date.parse(t.trip_start_at!)) / HOUR_MS, trailerType: null })),
-    requestedStart: nextHalfHour,
-    deadlineEnd,
+    requestedStart: Math.min(nextHalfHour, ...starts),
+    deadlineEnd: Math.max(deadlineEnd ?? 0, ...ends),
   }
   const { inputs, error } = await loadCapacityInputs(reach, null)
   if (!inputs) return fail(error ?? 'No data')
   const floor = pickup ? new Date(manilaTimestamp(pickup, inputs.defaultStartMinutes)).getTime() : 0
   const ids = new Set(tripRows.map((t) => t.itinerary_id))
-  const atRisk = inputs.world.booked.filter((t) => ids.has(t.id) && t.status === 'Awaiting' && isAtRisk(t, inputs.world.resources))
+  const waiting = inputs.world.booked.filter((t) => ids.has(t.id) && t.status === 'Awaiting')
+  const blocked = waiting.filter((t) => isAtRisk(t, inputs.world.resources))
   return {
     data: {
-      replan: replanTrips(inputs.world, atRisk, Math.max(nextHalfHour, floor), deadlineEnd),
+      replans: {
+        blocked: replanTrips(inputs.world, blocked, Math.max(nextHalfHour, floor), deadlineEnd),
+        all: replanTrips(inputs.world, waiting, Math.max(nextHalfHour, floor), deadlineEnd),
+      },
       labels: new Map(inputs.world.resources.map((r) => [r.id, r.label])),
       deadlineEnd,
+      waiting: waiting.length,
+      blocked: blocked.length,
     },
     error: null,
   }
@@ -303,12 +326,12 @@ export async function saveReplan(bookingId: number, moves: Replan['moves']): Pro
   return error?.message ?? null
 }
 
-// Schedule Overview: every booking with Awaiting trips that are at risk
-// (isAtRisk -- driver on leave / licence expired, truck or trailer in the shop
-// until solved), with those trip ids, so each can be re-planned.
-export type AtRiskBooking = { bookingId: number; tripIds: number[] }
+// Schedule Overview's Re-plan picker: every booking with waiting (Awaiting)
+// trips, and how many of them are blocked (isAtRisk -- driver on leave /
+// licence expired, truck or trailer in the shop until solved).
+export type WaitingBooking = { bookingId: number; waiting: number; blocked: number }
 
-export async function loadAtRiskBookings(): Promise<{ data: AtRiskBooking[]; error: string | null }> {
+export async function loadWaitingBookings(): Promise<{ data: WaitingBooking[]; error: string | null }> {
   const { data: rows, error } = await supabase
     .from('itineraries')
     .select('itinerary_id, booking_id, trip_start_at, trip_end_at')
@@ -326,14 +349,14 @@ export async function loadAtRiskBookings(): Promise<{ data: AtRiskBooking[]; err
   }
   const { inputs, error: loadError } = await loadCapacityInputs(reach, null)
   if (!inputs) return { data: [], error: loadError ?? 'No data' }
-  const byBooking = new Map<number, number[]>()
+  const byBooking = new Map<number, WaitingBooking>()
   for (const t of inputs.world.booked) {
     const bookingId = bookingOf.get(t.id)
-    if (bookingId === undefined || t.status !== 'Awaiting' || !isAtRisk(t, inputs.world.resources)) continue
-    byBooking.set(bookingId, [...(byBooking.get(bookingId) ?? []), t.id])
+    if (bookingId === undefined || t.status !== 'Awaiting') continue
+    const entry = byBooking.get(bookingId) ?? { bookingId, waiting: 0, blocked: 0 }
+    entry.waiting++
+    if (isAtRisk(t, inputs.world.resources)) entry.blocked++
+    byBooking.set(bookingId, entry)
   }
-  return {
-    data: [...byBooking].map(([bookingId, tripIds]) => ({ bookingId, tripIds })).sort((a, b) => a.bookingId - b.bookingId),
-    error: null,
-  }
+  return { data: [...byBooking.values()].sort((x, y) => x.bookingId - y.bookingId), error: null }
 }
