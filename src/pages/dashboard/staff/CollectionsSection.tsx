@@ -24,6 +24,8 @@ import { promptDialog } from '../../../components/ConfirmDialog'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, textMatches } from '../../../lib/search'
 
 function CollectionsSection() {
   const today = toManilaDate(new Date())
@@ -140,11 +142,8 @@ function CollectionsSection() {
       (!methodFilter || r.method === methodFilter) &&
       (!clientFilter || String(r.client_id) === clientFilter) &&
       (showVoided || r.voided_at === null) &&
-      (!search.trim() ||
-        [`#${r.booking_id}`, String(r.booking_id), r.reference_no ?? '', r.or_number ?? '']
-          .join(' ')
-          .toLowerCase()
-          .includes(search.trim().toLowerCase().replace(/^#/, ''))),
+      // A number is an EXACT booking #; reference / OR numbers match in part (lib/search.ts).
+      (idMatches(search, r.booking_id) || textMatches(search, r.reference_no, r.or_number)),
   )
   const totals = summarizePayments(visible)
 
@@ -234,8 +233,6 @@ function CollectionsSection() {
               <p className="p-5 text-red-700">{error}</p>
             ) : rows.length === 0 ? (
               <EmptyState message="No payments were received in this period." className="m-5" />
-            ) : visible.length === 0 ? (
-              <EmptyState message="No payments match these filters." className="m-5" />
             ) : (
               <div className="flex-1 overflow-x-auto">
                 <table className="w-full min-w-[980px] text-left text-sm text-ink-metric">
@@ -254,6 +251,18 @@ function CollectionsSection() {
                     </tr>
                   </thead>
                   <tbody>
+                    {paged.rows.length === 0 && (
+                      <NoMatchRow
+                        colSpan={8}
+                        message={noMatchText('payment', search, methodFilter !== '' || clientFilter !== '')}
+                        clearLabel={methodFilter || clientFilter ? 'Clear search & filters' : 'Clear search'}
+                        onClear={() => {
+                          setSearch('')
+                          setMethodFilter('')
+                          setClientFilter('')
+                        }}
+                      />
+                    )}
                     {paged.rows.map((r) => {
                       const voided = r.voided_at !== null
                       return (

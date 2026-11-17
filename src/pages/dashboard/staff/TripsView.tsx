@@ -10,6 +10,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { usePaged } from '../../../lib/usePaged'
 import StatusBadge from '../../../components/StatusBadge'
 import EmptyState from '../../../components/EmptyState'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 import { formatDate, formatSlotShort } from '../../../lib/format'
 import { loadTripList, TRIP_STATUS_LABELS, type TripListRow } from '../../../lib/tripList'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -66,16 +67,12 @@ function TripsView({
     }
   }, [focusTripId])
 
-  // Digits only = a trip or booking number, matched exactly; anything else
-  // matches client, places, crew or plates.
-  const query = search.trim().toLowerCase().replace(/^#/, '')
+  // A number = an EXACT trip or booking # (lib/search.ts); anything else
+  // matches part of the client, places, crew or plates.
   const matches = (r: TripListRow) =>
-    !query ||
-    (/^\d+$/.test(query)
-      ? r.itinerary_id === Number(query) || r.booking_id === Number(query)
-      : [r.client_name, r.pickup, r.delivery, r.driver, r.helper, r.plate_number, r.trailer_plate].some((t) =>
-          t?.toLowerCase().includes(query),
-        ))
+    numberQuery(search) !== null
+      ? idMatches(search, r.itinerary_id, r.booking_id)
+      : textMatches(search, r.client_name, r.pickup, r.delivery, r.driver, r.helper, r.plate_number, r.trailer_plate)
 
   const all = rows ?? []
   const visible = all.filter((r) => filterOf(r.status) === filter && matches(r))
@@ -119,14 +116,23 @@ function TripsView({
         <p className="text-red-700">{error}</p>
       ) : !rows ? (
         <p className="text-slate-500">Loading trips…</p>
-      ) : groups.length === 0 ? (
-        <EmptyState message={search ? 'No trips match.' : `No ${filter.toLowerCase()} trips.`} />
+      ) : groups.length === 0 && !search.trim() ? (
+        <EmptyState message={`No ${filter.toLowerCase()} trips.`} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-start">
           <ListBox
             pager={paged.pager}
             summary={`${visible.length} ${filter.toLowerCase()} ${visible.length === 1 ? 'trip' : 'trips'}`}
           >
+            {/* A search that finds nothing keeps the list box, with this message in it. */}
+            {paged.rows.length === 0 && (
+              <div className="px-5 py-8 text-center text-sm text-ink-secondary">
+                <p className="font-medium">{noMatchText('trip', search)} in {filter.toLowerCase()} trips</p>
+                <button type="button" onClick={() => setSearch('')} className="btn-secondary mt-3 px-4 text-sm font-medium">
+                  Clear search
+                </button>
+              </div>
+            )}
             {paged.rows.map((g) => (
               <div key={g.booking_id} className="border-b border-slate-200">
                 <div className="border-b border-slate-300 bg-slate-200 px-4 py-2 text-sm">

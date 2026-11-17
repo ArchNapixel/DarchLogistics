@@ -23,6 +23,8 @@ import { usePaged } from '../../../lib/usePaged'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { noMatchText, textMatches } from '../../../lib/search'
 import { formatMoney, formatDate, formatSlot } from '../../../lib/format'
 import { FINISHED_STATUSES } from '../../../lib/tripStatusFlow'
 
@@ -461,11 +463,8 @@ function HistorySection() {
   const shownTrips = trips.filter((t) => statusFilter === 'All' || t.status === statusFilter)
   // One page at a time (back to page 1 when the filter changes).
   const paged = usePaged(shownTrips, statusFilter)
-  const term = search.trim().toLowerCase()
   const shownWork = history.filter(
-    (h) =>
-      (workFilter === 'All' || h.status === workFilter) &&
-      (!term || h.work_order_number.toLowerCase().includes(term) || h.vehicle.toLowerCase().includes(term)),
+    (h) => (workFilter === 'All' || h.status === workFilter) && textMatches(search, h.work_order_number, h.vehicle),
   )
   const pagedWork = usePaged(shownWork, `${workFilter}|${search}`)
   const filterControl =
@@ -632,8 +631,8 @@ function HistorySection() {
       {!loading && !error && role === 'Mechanic' && (
         <section aria-label="Work order history" className="card flex min-h-[calc(100dvh-14rem)] flex-col">
           <div className="flex-1 overflow-x-auto">
-            {shownWork.length === 0 ? (
-              <EmptyState message={history.length === 0 ? 'No past work orders yet.' : 'No work orders match these filters.'} className="m-5" />
+            {history.length === 0 ? (
+              <EmptyState message="No past work orders yet." className="m-5" />
             ) : (
               <table className="w-full min-w-[960px] text-left text-sm text-ink-metric">
                 <thead>
@@ -647,6 +646,17 @@ function HistorySection() {
                   </tr>
                 </thead>
                 <tbody>
+                  {pagedWork.rows.length === 0 && (
+                    <NoMatchRow
+                      colSpan={6}
+                      message={noMatchText('work order', search, workFilter !== 'All')}
+                      clearLabel={workFilter !== 'All' ? 'Clear search & filters' : 'Clear search'}
+                      onClear={() => {
+                        setSearch('')
+                        setWorkFilter('All')
+                      }}
+                    />
+                  )}
                   {pagedWork.rows.map((entry) => (
                     <tr key={entry.history_id} className="h-[60px] border-b border-slate-200">
                       <td className={`${TD} font-semibold text-ink`}>{entry.work_order_number}</td>

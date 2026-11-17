@@ -50,6 +50,8 @@ import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRat
 import { deliveryAmountFor, loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { isDelivered } from '../../../lib/tripStatusFlow'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
 // One row of the bookings query in loadBookings().
 type ReceivableBookingRow = {
@@ -913,6 +915,7 @@ function FinancialSection() {
   const [dueRows, setDueRows] = useState<PaymentDueRow[]>([])
   const [clientFilter, setClientFilter] = useState('')
   const [termsFilter, setTermsFilter] = useState('')
+  const [search, setSearch] = useState('')
   const dueByBooking = new Map(dueRows.map((r) => [r.booking_id, r]))
   useEffect(() => {
     let cancelled = false
@@ -1140,8 +1143,11 @@ function FinancialSection() {
     (b) =>
       getTab(b) === tab &&
       (!clientFilter || b.client_name === clientFilter) &&
-      (!termsFilter || dueByBooking.get(b.booking_id)?.payment_terms === termsFilter),
+      (!termsFilter || dueByBooking.get(b.booking_id)?.payment_terms === termsFilter) &&
+      // An EXACT booking # ("48" / "#48"), else part of the client name (lib/search.ts).
+      (numberQuery(search) !== null ? idMatches(search, b.booking_id) : textMatches(search, b.client_name)),
   )
+  const filtering = search.trim() !== '' || clientFilter !== '' || termsFilter !== ''
   const clientNames = [...new Set(bookings.map((b) => b.client_name))].sort((a, b) => a.localeCompare(b))
   const termsInUse = [...new Set(dueRows.map((r) => r.payment_terms))].filter(Boolean)
 
@@ -1160,7 +1166,7 @@ function FinancialSection() {
   ]
 
   // One page at a time (back to page 1 when the filters change).
-  const paged = usePaged(visibleBookings, `${tab}|${clientFilter}|${termsFilter}`)
+  const paged = usePaged(visibleBookings, `${tab}|${clientFilter}|${termsFilter}|${search}`)
   const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
   const TD = 'px-2 py-2 first:pl-5 last:pr-5'
   const FILTER_LABEL = 'flex items-center gap-2.5 text-sm font-medium text-ink-secondary'
@@ -1249,6 +1255,16 @@ function FinancialSection() {
                     ))}
                   </select>
                 </label>
+                <label className={FILTER_LABEL}>
+                  Search
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Client or booking #"
+                    className={`${FILTER_CONTROL} w-56 font-normal placeholder:text-ink-muted`}
+                  />
+                </label>
               </div>
             </div>
             {tab === 'cancelled' && (
@@ -1259,7 +1275,7 @@ function FinancialSection() {
             )}
 
             <section aria-label="Receivables" className="card flex min-h-[calc(100dvh-34rem)] flex-col">
-              {visibleBookings.length === 0 ? (
+              {visibleBookings.length === 0 && !filtering ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
                   <p className="text-base font-semibold text-ink">Nothing in this tab</p>
                   <p className="max-w-[420px] text-sm text-ink-secondary">
@@ -1290,6 +1306,18 @@ function FinancialSection() {
                       </tr>
                     </thead>
                     <tbody>
+                      {paged.rows.length === 0 && (
+                        <NoMatchRow
+                          colSpan={11}
+                          message={noMatchText('booking', search, clientFilter !== '' || termsFilter !== '')}
+                          clearLabel={clientFilter || termsFilter ? 'Clear search & filters' : 'Clear search'}
+                          onClear={() => {
+                            setSearch('')
+                            setClientFilter('')
+                            setTermsFilter('')
+                          }}
+                        />
+                      )}
                       {paged.rows.map((booking) => {
                         const downpayment = downpaymentById.get(booking.booking_id) ?? null
                         // Still has trips to come: money above what's billed so far is paid ahead, not a refund.

@@ -41,6 +41,7 @@ import {
   type LoggedPart,
 } from '../../../lib/workOrderPartsLog'
 import { ITEM_UNITS, WHOLE_UNITS, filterQuantity } from '../../../lib/inventoryItemTypes'
+import { searchText, textMatches } from '../../../lib/search'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary disabled:bg-slate-50 disabled:text-ink-muted'
@@ -202,11 +203,8 @@ function CompleteWorkOrderModal({
   }
 
   function matchesFor(row: PartRow) {
-    const term = row.search.trim().toLowerCase()
-    if (!term) return []
-    return inventoryItems
-      .filter((item) => item.name.toLowerCase().includes(term))
-      .slice(0, 6)
+    if (!searchText(row.search)) return []
+    return inventoryItems.filter((item) => textMatches(row.search, item.name)).slice(0, 6)
   }
 
   // Form checks before saving. The DB checks all of this again; these just
@@ -537,6 +535,9 @@ function CompleteWorkOrderModal({
                                   </span>
                                 </button>
                               ))}
+                              {showAddNew && (
+                                <p className="px-3 pt-2 text-sm text-ink-muted">No part named "{row.search.trim()}" in inventory.</p>
+                              )}
                               {showAddNew && (
                                 <button
                                   type="button"

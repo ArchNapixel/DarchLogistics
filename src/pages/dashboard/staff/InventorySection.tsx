@@ -35,6 +35,8 @@ import { confirmDialog } from '../../../components/ConfirmDialog'
 import { showToast } from '../../../components/Toast'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 import { formatDate, formatDateTime, formatMoney } from '../../../lib/format'
 
 type InventoryItem = {
@@ -278,7 +280,6 @@ function InventorySection() {
   }
 
   const active = items.filter((item) => !item.archived_at)
-  const term = search.trim().toLowerCase()
   const shown = (stockFilter === 'Archived' ? items.filter((item) => item.archived_at) : active).filter(
     (item) =>
       (!typeFilter || item.item_type === typeFilter) &&
@@ -288,7 +289,8 @@ function InventorySection() {
         (stockFilter === 'Out of stock' && item.quantity <= 0) ||
         (stockFilter === 'Needs reordering' && needsReorder(item.quantity, item.reorder_level)) ||
         (stockFilter === 'Needs price' && item.needs_price)) &&
-      (!term || item.name.toLowerCase().includes(term) || String(item.item_id) === term.replace(/^#/, '')),
+      // An EXACT item # ("7" / "#7") or part of the name (lib/search.ts).
+      (numberQuery(search) !== null ? idMatches(search, item.item_id) || textMatches(search, item.name) : textMatches(search, item.name)),
   )
   const outOfStock = active.filter((item) => item.quantity <= 0).length
   const toReorder = active.filter((item) => needsReorder(item.quantity, item.reorder_level)).length
@@ -431,12 +433,9 @@ function InventorySection() {
       {!loading && !error && items.length === 0 && <EmptyState message="No inventory items yet." className="mt-4" />}
 
       {!loading && !error && items.length > 0 && (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+        <div className={`mt-4 grid gap-4 xl:items-start ${pane ? 'xl:grid-cols-[minmax(0,1fr)_420px]' : ''}`}>
           <section aria-label="Items" className="card flex min-h-[calc(100dvh-26rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
-              {shown.length === 0 ? (
-                <EmptyState message="No items match the current filters." className="m-5" />
-              ) : (
                 <table className="w-full min-w-[720px] text-left text-sm text-ink-metric">
                   <thead>
                     <tr>
@@ -452,6 +451,18 @@ function InventorySection() {
                     </tr>
                   </thead>
                   <tbody>
+                    {paged.rows.length === 0 && (
+                      <NoMatchRow
+                        colSpan={7}
+                        message={noMatchText('item', search, typeFilter !== '' || stockFilter !== 'All')}
+                        clearLabel={typeFilter || stockFilter !== 'All' ? 'Clear search & filters' : 'Clear search'}
+                        onClear={() => {
+                          setSearch('')
+                          setTypeFilter('')
+                          setStockFilter('All')
+                        }}
+                      />
+                    )}
                     {paged.rows.map((item) => {
                       const selected = pane?.item_id === item.item_id
                       return (
@@ -499,7 +510,6 @@ function InventorySection() {
                     })}
                   </tbody>
                 </table>
-              )}
             </div>
             <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-5 py-2 text-sm text-ink-secondary">
               <span>

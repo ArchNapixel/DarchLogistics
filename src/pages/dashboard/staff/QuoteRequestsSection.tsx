@@ -29,6 +29,8 @@ import { usePaged } from '../../../lib/usePaged'
 const QUOTES_PER_PAGE = 10
 import { REJECTION_TAGS, cargoSummary, parseCargoLines, type RejectionTag } from '../../../lib/quoteRequest'
 import { parseLineRates, rateLabel } from '../../../lib/lineRates'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -210,16 +212,6 @@ function TableCard({
 }
 
 // One table row for a message (loading / error / nothing found).
-function MessageRow({ colSpan, children, tone = 'text-slate-500' }: { colSpan: number; children: React.ReactNode; tone?: string }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className={`px-5 py-8 text-center ${tone}`}>
-        {children}
-      </td>
-    </tr>
-  )
-}
-
 // The canvas's small tag (2px corners, 12px semibold).
 const CHIP = 'inline-flex w-fit items-center gap-1.5 rounded-[2px] px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
 const CHIP_WARN = `${CHIP} bg-amber-100 text-amber-900`
@@ -285,15 +277,10 @@ function RouteCell({ q }: { q: RouteFields }) {
   )
 }
 
-// Search box matches the client name or the quote's reference code / id.
+// Search box: an EXACT quote # ("12" / "#12"), else part of the client name
+// or the Q- reference (lib/search.ts).
 function matchesSearch(q: { client_name: string; reference_code: string | null; quote_request_id: number }, search: string) {
-  const s = search.trim().toLowerCase()
-  if (!s) return true
-  return (
-    q.client_name.toLowerCase().includes(s) ||
-    (q.reference_code ?? '').toLowerCase().includes(s) ||
-    String(q.quote_request_id) === s.replace(/^#/, '')
-  )
+  return numberQuery(search) !== null ? idMatches(search, q.quote_request_id) : textMatches(search, q.client_name, q.reference_code)
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -430,6 +417,7 @@ function QuoteRequestsSection() {
           key={`${tab}-${refreshKey}`}
           status={tab === 'approved' ? 'Approved' : 'Closed'}
           search={search}
+          onClearSearch={() => setSearch('')}
         />
       ) : (
         <TableCard
@@ -451,19 +439,13 @@ function QuoteRequestsSection() {
           }
         >
           {loading ? (
-            <MessageRow colSpan={7}>Loading quote requests...</MessageRow>
+            <NoMatchRow colSpan={7} message="Loading quote requests..." tone="text-ink-muted" />
           ) : error ? (
-            <MessageRow colSpan={7} tone="text-red-700">
-              {error}
-            </MessageRow>
+            <NoMatchRow colSpan={7} message={error} tone="text-red-700" />
+          ) : visiblePending.length === 0 && search.trim() ? (
+            <NoMatchRow colSpan={7} message={noMatchText('quote', search)} onClear={() => setSearch('')} />
           ) : visiblePending.length === 0 ? (
-            <MessageRow colSpan={7}>
-              {search
-                ? 'No quotes match your search.'
-                : tab === 'waiting'
-                  ? 'No offers waiting on a client.'
-                  : 'Nothing to price right now.'}
-            </MessageRow>
+            <NoMatchRow colSpan={7} message={tab === 'waiting' ? 'No offers waiting on a client.' : 'Nothing to price right now.'} />
           ) : (
             pendingPaged.rows.map((quote) => (
               <tr key={quote.quote_request_id} className={ROW}>
@@ -628,7 +610,7 @@ async function fetchQuoteHistory(status: 'Approved' | 'Closed'): Promise<History
   }
 }
 
-function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; search: string }) {
+function QuoteHistory({ status, search, onClearSearch }: { status: 'Approved' | 'Closed'; search: string; onClearSearch: () => void }) {
   const [result, setResult] = useState<HistoryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const loading = !result && !error
@@ -681,17 +663,13 @@ function QuoteHistory({ status, search }: { status: 'Approved' | 'Closed'; searc
       }
     >
       {loading ? (
-        <MessageRow colSpan={cols}>Loading {status.toLowerCase()} quotes...</MessageRow>
+        <NoMatchRow colSpan={cols} message={`Loading ${status.toLowerCase()} quotes...`} tone="text-ink-muted" />
       ) : error ? (
-        <MessageRow colSpan={cols} tone="text-red-700">
-          {error}
-        </MessageRow>
+        <NoMatchRow colSpan={cols} message={error} tone="text-red-700" />
+      ) : rows.length === 0 && search.trim() ? (
+        <NoMatchRow colSpan={cols} message={noMatchText(`${status.toLowerCase()} quote`, search)} onClear={onClearSearch} />
       ) : rows.length === 0 ? (
-        <MessageRow colSpan={cols}>
-          {search
-            ? `No ${status.toLowerCase()} quotes match your search.`
-            : `No ${status.toLowerCase()} quote requests.`}
-        </MessageRow>
+        <NoMatchRow colSpan={cols} message={`No ${status.toLowerCase()} quote requests.`} />
       ) : (
         paged.rows.map((q) => {
           const booking = bookingByQuote.get(q.quote_request_id)

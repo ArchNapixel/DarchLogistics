@@ -2443,3 +2443,18 @@ pure math in `lib/moneySummary.ts` (self-check `node scripts/check-money-summary
   Why Collected), Government remittances (table, pills, draft note), Where we
   stand today, Trends (six-month columns + billed vs collected by client).
   Fuel receipts (item 8) were started and removed at the user's request.
+
+## 2026-11-17: Search boxes share one rule (no SQL)
+- `lib/search.ts` (self-check `node scripts/check-search.ts`): `searchText`
+  (case + extra spaces ignored), `numberQuery` / `idMatches` (a typed "48" /
+  "#48" is an EXACT booking / trip / quote / item #, never #148),
+  `textMatches` (part of a field), `noMatchText` ("No employee matches "x"").
+  Every search box uses it -- new ones must too.
+- A search / filter that matches nothing keeps the table (headers, pager,
+  side panel space) and shows `components/NoMatchRow.tsx` inside `<tbody>`
+  with Clear search (or Clear search & filters). The old full-page
+  EmptyState is only for "no data at all". Schedule Overview keeps the
+  timeline: `TimelineSection.empty` is shown in each empty section.
+  Quotations' local `MessageRow` was replaced by NoMatchRow.
+- Bills Receivable gained a search box (client or booking #). Schedule
+  Overview's search has a visible "Search" label now.

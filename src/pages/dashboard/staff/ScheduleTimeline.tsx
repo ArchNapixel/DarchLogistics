@@ -8,6 +8,7 @@
 //
 // A trip on the road past its end is drawn up to "now" and red (Overdue).
 // The red line with the "Now" tag is the current time.
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatClock, formatSlot, formatTime } from '../../../lib/format'
 import { DAY_MS, DAY_START_HOUR, HOUR_MS, type TimelineRow } from '../../../lib/scheduleData'
@@ -20,6 +21,8 @@ export type TimelineSection = {
   title: string
   note?: string
   rows: TimelineRow[]
+  // Shown when `rows` is empty (e.g. a search matched nothing); default "None on file."
+  empty?: ReactNode
 }
 
 const STATUS_WORD: Record<string, string> = {
@@ -149,8 +152,8 @@ function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props)
                 <span className="px-4 py-2 text-xs leading-4 font-medium text-ink-secondary">{section.note}</span>
               </div>
             )}
-            {section.rows.length === 0 && section.title && (
-              <p className="border-b border-slate-200 px-4 py-4 text-sm text-ink-muted">None on file.</p>
+            {section.rows.length === 0 && (section.title || section.empty) && (
+              <div className="border-b border-slate-200 px-4 py-4 text-sm text-ink-muted">{section.empty ?? 'None on file.'}</div>
             )}
             {section.rows.map((row) => (
               <div key={row.id} className="grid min-h-[72px] grid-cols-[240px_minmax(0,1fr)] border-b border-slate-200">

@@ -21,6 +21,8 @@ import PageHeader from '../../../components/PageHeader'
 import Pager from '../../../components/Pager'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { usePaged } from '../../../lib/usePaged'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, searchText, textMatches } from '../../../lib/search'
 import { loadInsuranceCompanies, type InsuranceCompany } from '../../../lib/insuranceCompanies'
 
 function DamageChargesSection() {
@@ -153,12 +155,12 @@ function DamageChargesSection() {
     setLoading(false)
   }
 
-  // Booking # (with or without "#") or client name.
-  const query = search.trim().toLowerCase().replace(/^#/, '')
+  // An EXACT booking # (with or without "#"), or part of the client name (lib/search.ts).
+  const query = searchText(search)
   // Not decided yet first (the bell and Reports link here), then newest first.
-  const visible = (
-    query ? damageCharges.filter((d) => String(d.booking_id) === query || d.client_name.toLowerCase().includes(query)) : damageCharges
-  ).toSorted((a, b) => Number(a.damage_status === 'Approved') - Number(b.damage_status === 'Approved'))
+  const visible = damageCharges
+    .filter((d) => (numberQuery(search) !== null ? idMatches(search, d.booking_id) : textMatches(search, d.client_name)))
+    .toSorted((a, b) => Number(a.damage_status === 'Approved') - Number(b.damage_status === 'Approved'))
   const paged = usePaged(visible, query)
 
   const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
@@ -218,13 +220,13 @@ function DamageChargesSection() {
                       Loading damage reports...
                     </td>
                   </tr>
+                ) : paged.rows.length === 0 && query ? (
+                  <NoMatchRow colSpan={6} message={noMatchText('damage record', search)} onClear={() => setSearch('')} />
                 ) : paged.rows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-5 py-8 text-center">
-                      <p className="font-semibold text-ink">{query ? 'No damage matches that search.' : 'No delivery damage has been reported.'}</p>
-                      {!query && (
-                        <p className="mt-1 text-[13px] text-ink-muted">Use the Report Damage form on the right.</p>
-                      )}
+                      <p className="font-semibold text-ink">No delivery damage has been reported.</p>
+                      <p className="mt-1 text-[13px] text-ink-muted">Use the Report Damage form on the right.</p>
                     </td>
                   </tr>
                 ) : (

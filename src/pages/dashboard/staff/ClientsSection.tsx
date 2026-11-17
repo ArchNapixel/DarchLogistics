@@ -31,6 +31,8 @@ import { formatDate, formatMoney } from '../../../lib/format'
 import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { noMatchText, searchText, textMatches } from '../../../lib/search'
 
 type Client = {
   client_id: number
@@ -291,15 +293,14 @@ function ClientsSection() {
 
   // Search: name, email or phone (digits only for the phone, so
   // "0966 047" finds 09660475467).
-  const query = search.trim().toLowerCase()
+  const query = searchText(search)
   const queryDigits = query.replace(/\D/g, '')
   const tabClients = clients.filter((c) => tabOf(c) === tab)
   const visibleClients = !query
     ? tabClients
     : tabClients.filter(
         (c) =>
-          c.client_name.toLowerCase().includes(query) ||
-          (c.email ?? '').toLowerCase().includes(query) ||
+          textMatches(query, c.client_name, c.email) ||
           (queryDigits.length > 0 && (c.phone_number ?? '').replace(/\D/g, '').includes(queryDigits)),
       )
 
@@ -371,15 +372,8 @@ function ClientsSection() {
           message={tab === 'Active' ? 'No active clients.' : 'No deactivated clients.'}
           className="mt-4"
         />
-      ) : visibleClients.length === 0 ? (
-        <p className="mt-4 text-ink-muted">
-          No clients match "{search}".{' '}
-          <button type="button" onClick={() => setSearch('')} className="font-semibold text-primary underline">
-            Clear search
-          </button>
-        </p>
       ) : (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_640px] xl:items-start">
+        <div className={`mt-4 grid gap-4 xl:items-start ${paneClient ? 'xl:grid-cols-[minmax(0,1fr)_640px]' : ''}`}>
           <section aria-label="Client list" className="card flex min-h-[calc(100dvh-15rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {/* Header row style comes from index.css (thead th). */}
@@ -401,6 +395,9 @@ function ClientsSection() {
                   </tr>
                 </thead>
                 <tbody>
+                  {paged.rows.length === 0 && (
+                    <NoMatchRow colSpan={5} message={noMatchText('client', search)} onClear={() => setSearch('')} />
+                  )}
                   {paged.rows.map((client) => {
                     const latest = bookingsByClient.get(client.client_id)?.[0]
                     const balance = balanceByClient.get(client.client_id)

@@ -22,6 +22,8 @@ import { COMPANY } from '../../../lib/company'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
 import { bookingRateLabel } from '../../../lib/lineRates'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
 function BillingPage() {
   // Set when opened from a booking's "Billing" link.
@@ -45,9 +47,9 @@ function BillingPage() {
     })
   }, [])
 
-  const query = search.trim().toLowerCase().replace(/^#/, '')
-  const visible = (bookings ?? []).filter(
-    (b) => !query || String(b.booking_id) === query || b.client_name.toLowerCase().includes(query),
+  // A number is an EXACT booking #, text matches part of the client (lib/search.ts).
+  const visible = (bookings ?? []).filter((b) =>
+    numberQuery(search) !== null ? idMatches(search, b.booking_id) : textMatches(search, b.client_name),
   )
   const paged = usePaged(visible, search)
   // Nothing picked yet: show the newest booking's bill.
@@ -135,11 +137,11 @@ function BillingPage() {
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-5 py-6 text-ink-muted">
-                    {search ? 'No bookings match.' : 'No bookings yet.'}
-                  </td>
-                </tr>
+                search.trim() ? (
+                  <NoMatchRow colSpan={4} message={noMatchText('booking', search)} onClear={() => setSearch('')} />
+                ) : (
+                  <NoMatchRow colSpan={4} message="No bookings yet." />
+                )
               ) : (
                 paged.rows.map((b) => {
                   const active = String(b.booking_id) === bookingId

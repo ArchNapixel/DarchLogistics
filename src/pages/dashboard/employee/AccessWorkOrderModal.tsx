@@ -29,6 +29,7 @@ import { showToast } from '../../../components/Toast'
 import { ALL_STATUSES, type WorkOrder } from '../../../lib/mechanicWorkOrders'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDateTime, formatDate } from '../../../lib/format'
+import { textMatches } from '../../../lib/search'
 
 const fieldClasses =
   'min-h-11 w-full rounded-[2px] border border-line-control bg-white px-3 text-sm font-medium text-ink-metric placeholder:font-normal placeholder:text-ink-muted focus:border-primary'
@@ -195,11 +196,7 @@ function AccessWorkOrderModal({
     loadNotes()
   }
 
-  const visibleStockItems = partSearch.trim()
-    ? inventoryItems.filter((item) =>
-        item.name.toLowerCase().includes(partSearch.trim().toLowerCase()),
-      )
-    : inventoryItems
+  const visibleStockItems = inventoryItems.filter((item) => textMatches(partSearch, item.name))
 
   const heading = 'mb-2.5 flex justify-between gap-3 border-b border-slate-200 pb-2 text-sm font-semibold text-ink'
   const partButton =
@@ -287,7 +284,7 @@ function AccessWorkOrderModal({
                 {partsLoading ? (
                   <p className="text-sm text-ink-muted">Loading...</p>
                 ) : visibleStockItems.length === 0 ? (
-                  <p className="text-sm text-ink-muted">No matching parts.</p>
+                  <p className="text-sm text-ink-muted">No part named "{partSearch.trim()}" in inventory.</p>
                 ) : (
                   visibleStockItems.map((item) => {
                     const out = item.quantity <= 0

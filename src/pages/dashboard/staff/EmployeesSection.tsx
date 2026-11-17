@@ -19,6 +19,8 @@ import PageHeader from '../../../components/PageHeader'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatDate, formatMoney, formatSlot } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { noMatchText, textMatches } from '../../../lib/search'
 import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
 // Only these positions have trips/work orders to show a detail view
@@ -483,7 +485,6 @@ function EmployeesSection() {
     setLoading(false)
   }
 
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const tabEmployees = employees.filter((employee) =>
     // Terminated people belong with the Deactivated ones, not the roster.
     activeTab === 'Deactivated'
@@ -498,12 +499,13 @@ function EmployeesSection() {
   ).sort()
   const filteredEmployees = tabEmployees.filter(
     (employee) =>
-      employee.name.toLowerCase().includes(normalizedSearchTerm) &&
+      textMatches(searchTerm, employee.name) &&
       (!positionFilter || employee.position === positionFilter) &&
       (!statusFilter || employee.status === statusFilter),
   )
 
   // One page at a time (back to page 1 when the filters change).
+  const filtering = searchTerm.trim() !== '' || positionFilter !== '' || statusFilter !== ''
   const paged = usePaged(filteredEmployees, `${activeTab}|${searchTerm}|${positionFilter}|${statusFilter}`)
   const paneEmployee = paged.rows.find((e) => e.employee_id === paneId) ?? paged.rows[0] ?? null
   return (
@@ -613,12 +615,9 @@ function EmployeesSection() {
         <EmptyState message="No employees yet." className="mt-4" />
       )}
 
-      {!loading && !error && employees.length > 0 && filteredEmployees.length === 0 && (
-        <EmptyState message="No employees match the current search and filters." className="mt-4" />
-      )}
-
-      {!loading && !error && filteredEmployees.length > 0 && (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_520px] xl:items-start">
+      {/* The table stays when nothing matches -- one "No employee matches" row instead. */}
+      {!loading && !error && employees.length > 0 && (
+        <div className={`mt-4 grid gap-4 xl:items-start ${paneEmployee ? 'xl:grid-cols-[minmax(0,1fr)_520px]' : ''}`}>
           <section aria-label="Employee masterlist" className="card flex min-h-[calc(100dvh-19rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {/* Header row style comes from index.css (thead th). */}
@@ -642,6 +641,22 @@ function EmployeesSection() {
                   </tr>
                 </thead>
                 <tbody>
+                  {paged.rows.length === 0 && (
+                    <NoMatchRow
+                      colSpan={7}
+                      message={filtering ? noMatchText('employee', searchTerm, positionFilter !== '' || statusFilter !== '') : `No ${activeTab.toLowerCase()} employees.`}
+                      clearLabel={positionFilter || statusFilter ? 'Clear search & filters' : 'Clear search'}
+                      onClear={
+                        filtering
+                          ? () => {
+                              setSearchTerm('')
+                              setPositionFilter('')
+                              setStatusFilter('')
+                            }
+                          : undefined
+                      }
+                    />
+                  )}
                   {paged.rows.map((employee) => {
                     const active = paneEmployee?.employee_id === employee.employee_id
                     return (

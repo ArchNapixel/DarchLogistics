@@ -42,6 +42,8 @@ import BookingSummaryPane from './BookingSummaryPane'
 import { useAuth } from '../../../context/AuthContext'
 import { isAdmin } from '../../../lib/roles'
 import { isDelivered } from '../../../lib/tripStatusFlow'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
 export type Booking = {
   booking_id: number
@@ -384,22 +386,15 @@ function BookingsSection() {
     setLoading(false)
   }
 
-  const query = search.trim().toLowerCase()
-  // A number (with or without "#") also finds the booking a trip # is on.
-  const queryNumber = /^#?\d+$/.test(query) ? Number(query.replace('#', '')) : null
+  // A number ("48" / "#48") is an EXACT booking # or trip # (lib/search.ts);
+  // text matches part of the client, places or Q- reference.
+  const queryNumber = numberQuery(search)
   const visibleBookings = bookings.filter(
     (booking) =>
       matchesStatus(booking.status, statusFilter) &&
-      (!query ||
-        (queryNumber !== null && (booking.trip_ids ?? []).includes(queryNumber)) ||
-        [
-          `#${booking.booking_id}`,
-          String(booking.booking_id),
-          booking.client_name,
-          booking.pickup_location,
-          booking.delivery_location,
-          booking.reference_code ?? '',
-        ].some((text) => text.toLowerCase().includes(query))),
+      (queryNumber !== null
+        ? idMatches(search, booking.booking_id, ...(booking.trip_ids ?? []))
+        : textMatches(search, booking.client_name, booking.pickup_location, booking.delivery_location, booking.reference_code)),
   )
   const counts = loading
     ? null
@@ -489,22 +484,8 @@ function BookingsSection() {
             <p className="text-red-700">{error}</p>
           ) : bookings.length === 0 ? (
             <EmptyState message="No bookings yet." hint="Bookings are created when a client accepts a quote offer." />
-          ) : visibleBookings.length === 0 ? (
-            <p className="text-slate-500">
-              No bookings match.{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch('')
-                  setStatusFilter('All')
-                }}
-                className="font-medium text-slate-700 underline hover:text-slate-900"
-              >
-                Clear filters
-              </button>
-            </p>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_460px] lg:items-start">
+            <div className={`grid gap-4 lg:items-start ${split && paneBooking ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
               <ListBox
                 pager={paged.pager}
                 summary={`${visibleBookings.length} ${filterWord}${visibleBookings.length === 1 ? 'booking' : 'bookings'}`}
@@ -531,6 +512,17 @@ function BookingsSection() {
                       </tr>
                     </thead>
                     <tbody>
+                      {paged.rows.length === 0 && (
+                        <NoMatchRow
+                          colSpan={7}
+                          message={`${noMatchText('booking', search)}${statusFilter !== 'All' ? ` in ${STATUS_FILTERS.find((f) => f.value === statusFilter)?.label ?? statusFilter}` : ''}`}
+                          clearLabel={statusFilter !== 'All' ? 'Clear search & show all' : 'Clear search'}
+                          onClear={() => {
+                            setSearch('')
+                            setStatusFilter('All')
+                          }}
+                        />
+                      )}
                       {paged.rows.map((booking) => {
                         const active = split && paneBooking?.booking_id === booking.booking_id
                         const payment = paymentLabel(booking)

@@ -68,6 +68,8 @@ import BreakdownModal from './BreakdownModal'
 import SwapDriverModal, { type SwapChoice } from './SwapDriverModal'
 import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { idMatches, numberQuery } from '../../../lib/search'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
@@ -2697,7 +2699,8 @@ function DispatchBoardSection() {
   const atRiskById = new Map<number, AtRisk>(atRiskTrips.map((t) => [t.row.itinerary_id, { reasons: t.reasons, actions: t.actions }]))
 
   // Filters under the tiles: Status (plus Needs assignment / At risk), Driver, Booking ID.
-  const bookingQuery = bookingFilter.trim().replace(/^#/, '')
+  // Booking ID box: an EXACT booking # or trip # (lib/search.ts); other text matches nothing.
+  const bookingQuery = numberQuery(bookingFilter)
   const needsAssignment = (r: DispatchRow) => r.status === 'Awaiting' && !isFullyAssigned(r)
   const filteredRows = dayRows
     // Trips not delivered yet first, delivered ones at the bottom (sort is stable: each group keeps its start-time order).
@@ -2709,7 +2712,7 @@ function DispatchBoardSection() {
     if (driverFilter === 'none' && r.assigned_employee_id !== null) return false
     if (!['all', 'none'].includes(driverFilter) && r.assigned_employee_id !== Number(driverFilter)) return false
     // Booking ID box also finds a trip number.
-    if (bookingQuery && String(r.booking_id) !== bookingQuery && String(r.itinerary_id) !== bookingQuery) return false
+    if (bookingFilter.trim() && (bookingQuery === null || !idMatches(bookingFilter, r.booking_id, r.itinerary_id))) return false
     return true
   })
   const pagedTrips = usePaged(filteredRows, `${day}|${view}|${statusFilter}|${driverFilter}|${bookingFilter}`)
@@ -3022,18 +3025,14 @@ function DispatchBoardSection() {
             <div className="flex flex-1 flex-col overflow-x-auto">
               {loading ? (
                 <p className="p-6 text-ink-muted">Loading dispatch board...</p>
-              ) : filteredRows.length === 0 ? (
+              ) : filteredRows.length === 0 && !anyFilter ? (
                 <div className="flex flex-1 items-center justify-center p-8">
                   <div className="flex flex-col items-center gap-3 border border-dashed border-line px-16 py-10 text-center">
                     <Icon name="truck" size={28} className="text-ink-secondary" />
                     <p className="text-[15px] font-medium text-ink">
-                      {anyFilter
-                        ? 'No trips match these filters.'
-                        : isAllDays
-                          ? 'Every trip has been delivered.'
-                          : `No trips ${isWeek ? 'this week' : day === today ? 'today' : 'on this day'}.`}
+                      {isAllDays ? 'Every trip has been delivered.' : `No trips ${isWeek ? 'this week' : day === today ? 'today' : 'on this day'}.`}
                     </p>
-                    {!isAllDays && !anyFilter && rows.some((r) => !isCompleted(r.status)) && (
+                    {!isAllDays && rows.some((r) => !isCompleted(r.status)) && (
                       <button type="button" onClick={() => setDay('all')} className="btn-primary px-5 text-sm">
                         Show All Trips Not Delivered Yet
                       </button>
@@ -3061,6 +3060,23 @@ function DispatchBoardSection() {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Filters that match nothing keep the table, with this row. */}
+                    {pagedTrips.rows.length === 0 && (
+                      <NoMatchRow
+                        colSpan={7}
+                        message={
+                          bookingFilter.trim()
+                            ? `No trip matches booking / trip #${bookingFilter.trim().replace(/^#\s*/, '')}${statusFilter !== 'all' || driverFilter !== 'all' ? ' with these filters' : ''}`
+                            : 'No trip matches these filters'
+                        }
+                        clearLabel={bookingFilter.trim() && statusFilter === 'all' && driverFilter === 'all' ? 'Clear search' : 'Clear search & filters'}
+                        onClear={() => {
+                          setBookingFilter('')
+                          setStatusFilter('all')
+                          setDriverFilter('all')
+                        }}
+                      />
+                    )}
                     {pagedTrips.rows.map((row) => {
                       const trailerPlate =
                         row.trailer_id === null ? null : (trailers.find((t) => t.trailer_id === row.trailer_id)?.plate_number ?? `#${row.trailer_id}`)

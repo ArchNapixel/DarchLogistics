@@ -24,6 +24,8 @@ import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, pmsStatus, type PmsSe
 import StatusBadge from '../../../components/StatusBadge'
 import Pager from '../../../components/Pager'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { noMatchText, textMatches } from '../../../lib/search'
 import { formatDate } from '../../../lib/format'
 import { FINISHED_IN } from '../../../lib/tripStatusFlow'
 
@@ -333,11 +335,10 @@ function FleetSection() {
     loadFleet()
   }
 
-  const term = search.trim().toLowerCase()
   const viewTrucks = trucks.filter((t) => !t.is_active === showInactive)
   const viewTrailers = trailers.filter((t) => !t.is_active === showInactive)
-  const shownTrucks = viewTrucks.filter((t) => t.plate_number.toLowerCase().includes(term))
-  const shownTrailers = viewTrailers.filter((t) => trailerName(t).toLowerCase().includes(term))
+  const shownTrucks = viewTrucks.filter((t) => textMatches(search, t.plate_number))
+  const shownTrailers = viewTrailers.filter((t) => textMatches(search, trailerName(t)))
 
   // One page at a time (back to page 1 when the filters change).
   const pagedTrucks = usePaged(shownTrucks, `${activeTab}|${search}|${showInactive}`)
@@ -462,13 +463,10 @@ function FleetSection() {
           className="mt-4"
         />
       ) : (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px] xl:items-start">
+        <div className={`mt-4 grid gap-4 xl:items-start ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
           <section aria-label={activeTab} className="card flex min-h-[calc(100dvh-19rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {activeTab === 'Trucks' ? (
-                shownTrucks.length === 0 ? (
-                  <EmptyState message="No truck matches that plate." className="m-5" />
-                ) : (
                   <table className="w-full min-w-[820px] text-left text-sm text-ink-metric">
                     <thead>
                       <tr>
@@ -484,6 +482,9 @@ function FleetSection() {
                       </tr>
                     </thead>
                     <tbody>
+                      {pagedTrucks.rows.length === 0 && (
+                        <NoMatchRow colSpan={7} message={noMatchText('truck', search)} onClear={() => setSearch('')} />
+                      )}
                       {pagedTrucks.rows.map((t) => {
                         const schedule = nextSchedule({ type: 'truck', plateNumber: t.plate_number })
                         const next = [t.next_service_date, schedule?.due_date].filter((d): d is string => !!d).sort()[0] ?? null
@@ -507,9 +508,6 @@ function FleetSection() {
                       })}
                     </tbody>
                   </table>
-                )
-              ) : shownTrailers.length === 0 ? (
-                <EmptyState message="No trailer matches that plate." className="m-5" />
               ) : (
                 <table className="w-full min-w-[820px] text-left text-sm text-ink-metric">
                   <thead>
@@ -526,6 +524,9 @@ function FleetSection() {
                     </tr>
                   </thead>
                   <tbody>
+                    {pagedTrailers.rows.length === 0 && (
+                      <NoMatchRow colSpan={7} message={noMatchText('trailer', search)} onClear={() => setSearch('')} />
+                    )}
                     {pagedTrailers.rows.map((t) => {
                       const schedule = nextSchedule({ type: 'trailer', trailerId: t.trailer_id })
                       return (

@@ -17,6 +17,7 @@ import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
 import { formatDate, manilaTimestamp } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
+import { idMatches, noMatchText, searchText, textMatches } from '../../../lib/search'
 import { manilaWeek } from '../../../lib/tripSchedule'
 import {
   DAY_MS,
@@ -158,15 +159,36 @@ function ScheduleOverviewSection() {
   const squareButton =
     'flex h-11 w-11 items-center justify-center rounded-[2px] border border-line-control bg-white text-ink-secondary hover:bg-slate-50'
 
-  // Search matches a lane's name, its trip / booking numbers and routes.
-  const q = search.trim().toLowerCase()
-  const matches = (row: TimelineRow) =>
-    !q ||
-    [row.label, row.sublabel ?? '', ...row.bars.flatMap((b) => [`trip #${b.itinerary_id}`, `booking #${b.booking_id}`, b.route])]
-      .join(' ')
-      .toLowerCase()
-      .includes(q)
-  const sections = (data?.sections ?? []).map((s) => ({ ...s, rows: s.rows.filter(matches) }))
+  // Search (lib/search.ts): a number is an EXACT trip or booking # ("trip 12" /
+  // "booking #12" pick one); text matches part of a lane's name, plate, details
+  // or a trip's route. On Resources a number also matches part of a plate.
+  const q = searchText(search)
+  const kindNumber = /^(trip|booking) ?#? ?(\d+)$/.exec(q)
+  const matches = (row: TimelineRow) => {
+    if (!q) return true
+    if (kindNumber) {
+      const n = Number(kindNumber[2])
+      return row.bars.some((b) => (kindNumber[1] === 'trip' ? b.itinerary_id : b.booking_id) === n)
+    }
+    if (row.bars.some((b) => idMatches(q, b.itinerary_id, b.booking_id))) return true
+    // Trips / Bookings lanes are labelled "Trip #12": only the exact number above counts.
+    if (view !== 'resources' && /^#?\d+$/.test(q)) return false
+    return textMatches(q, row.label, row.sublabel, ...row.bars.map((b) => b.route))
+  }
+  // What an empty section says when the search found nothing in it.
+  const NO_MATCH_THING: Record<string, string> = { Drivers: 'driver', Helpers: 'helper', Trucks: 'truck', Trailers: 'trailer' }
+  const sections: TimelineSection[] = (data?.sections ?? []).map((s) => ({
+    ...s,
+    rows: s.rows.filter(matches),
+    empty: q ? (
+      <span>
+        {noMatchText(NO_MATCH_THING[s.title] ?? (view === 'bookings' ? 'booking' : 'trip'), search)}{' '}
+        <button type="button" onClick={() => setSearch('')} className="font-semibold text-primary underline">
+          Clear search
+        </button>
+      </span>
+    ) : undefined,
+  }))
   const laneCount = sections.reduce((n, s) => n + s.rows.length, 0)
   const attention = data?.attention ?? []
 
@@ -268,14 +290,16 @@ function ScheduleOverviewSection() {
               {s === 'day' ? 'Day' : 'Week'}
             </button>
           ))}
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search the schedule"
-            placeholder="Name, plate, trip # or booking #"
-            className="min-h-11 w-64 max-w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm text-ink-metric placeholder:text-ink-muted focus:border-primary"
-          />
+          <label className="flex items-center gap-2.5 text-sm font-medium text-ink-secondary">
+            Search
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name, plate, trip # or booking #"
+              className="min-h-11 w-64 max-w-full rounded-[2px] border border-line-control bg-white px-3 py-2 text-sm font-normal text-ink-metric placeholder:text-ink-muted focus:border-primary"
+            />
+          </label>
         </div>
       </div>
 
@@ -292,13 +316,12 @@ function ScheduleOverviewSection() {
         <p className="text-red-700">{error}</p>
       ) : data === null ? (
         <p className="text-ink-muted">Loading schedule…</p>
-      ) : laneCount === 0 && (q || view !== 'resources') ? (
-        <EmptyState
-          message={q ? 'Nothing matches your search.' : view === 'trips' ? 'No trips in this period.' : 'No bookings with trips in this period.'}
-        />
+      ) : laneCount === 0 && !q && view !== 'resources' ? (
+        <EmptyState message={view === 'trips' ? 'No trips in this period.' : 'No bookings with trips in this period.'} />
       ) : (
+        // A search that finds nothing keeps the timeline; each empty section says so.
         <ScheduleTimeline
-          sections={sections.filter((s) => !q || s.rows.length > 0)}
+          sections={sections}
           columnLabel={view === 'trips' ? 'Trip' : view === 'bookings' ? 'Booking' : 'Resource'}
           view={span}
           from={from}

@@ -9,6 +9,8 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import PageHeader from '../../../components/PageHeader'
 import EmptyState from '../../../components/EmptyState'
+import NoMatchRow from '../../../components/NoMatchRow'
+import { noMatchText, textMatches } from '../../../lib/search'
 import StatusBadge from '../../../components/StatusBadge'
 import Pager from '../../../components/Pager'
 import { promptDialog } from '../../../components/ConfirmDialog'
@@ -64,8 +66,7 @@ function CashAdvanceLedgerPage() {
   }, [])
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return employees.filter((e) => (tab === 'All' || tabOf(e) === tab) && (!q || e.name.toLowerCase().includes(q)))
+    return employees.filter((e) => (tab === 'All' || tabOf(e) === tab) && textMatches(search, e.name))
   }, [employees, tab, search])
   const paged = usePaged(visible, `${tab}|${search}`)
   // The panel shows the picked employee, else the first one in the list.
@@ -187,8 +188,6 @@ function CashAdvanceLedgerPage() {
         <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       ) : employees.length === 0 ? (
         <EmptyState message="No cash advances yet." hint="Advances are issued on Human Resource → Cash Advances." className="mt-4" />
-      ) : visible.length === 0 ? (
-        <EmptyState message={search ? `No employees match "${search}".` : `No ${tab.toLowerCase()} employees.`} className="mt-4" />
       ) : (
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_640px] xl:items-start">
           <section aria-label="Employees" className="card flex flex-col">
@@ -204,6 +203,13 @@ function CashAdvanceLedgerPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {paged.rows.length === 0 && (
+                    <NoMatchRow
+                      colSpan={5}
+                      message={search.trim() ? noMatchText('employee', search) : `No ${tab.toLowerCase()} employees.`}
+                      onClear={search.trim() ? () => setSearch('') : undefined}
+                    />
+                  )}
                   {paged.rows.map((e) => {
                     const active = selected?.employee_id === e.employee_id
                     return (
