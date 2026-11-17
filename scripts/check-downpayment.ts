@@ -22,6 +22,9 @@ assert.equal(downpaymentForContract(20000, 2003.3, 4), 11009.9)
 // 2 x 4,000 + 2 x 6,000 = 20,000 too (the average is what matters, not the split).
 assert.equal(downpaymentForContract(4000 * 2 + 6000 * 2, 2003.3, 4), 11009.9)
 assert.equal(downpaymentForContract(null, 2003.3, 4), null)
+// Exactly half a centavo rounds UP, like the DB's round(x, 2) (booking #4,
+// 2026-11-17: 3 x 8,695.70 cost on a 60,000 contract = 34,565.325).
+assert.equal(downpaymentForContract(60000, 8695.7, 3), 34565.33)
 
 const base = { contract: 20000, costPerTrip: 2003.3, trips: 4, waivedAt: null }
 const partly = downpaymentStatus({ ...base, amountPaid: 2000 })!

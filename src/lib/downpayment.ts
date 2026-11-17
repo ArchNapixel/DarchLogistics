@@ -15,7 +15,11 @@
 
 export const DOWNPAYMENT_SHARE_OF_REMAINING = 0.25
 
-const cents = (n: number) => Math.round(n * 100) / 100
+// Rounds to centavos the way Postgres round(x, 2) does (half up on the exact
+// decimal). A plain Math.round(n * 100) rounds â‚±34,565.325 DOWN (the float is
+// 34565.32499...) while the DB trigger asks for .33 -- the client then pays a
+// centavo short and no trip can start. toPrecision(12) drops that float noise.
+const cents = (n: number) => Math.round(Number((n * 100).toPrecision(12))) / 100
 
 // `contract` = the sum of the trips' own rates (they can differ per cargo line).
 export function downpaymentForContract(
