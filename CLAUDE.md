@@ -2352,6 +2352,11 @@ in the Maintenance Requests bullet and the 2026-10-25 Truck Monitoring line.
   Storage buckets emptied by hand first (file paths use booking / trip ids).
   Older notes above that name specific trips / bookings / employees refer to
   the wiped test data.
+  **Wiped again 2026-11-17** (same rules; admin is now employee #1, found by
+  username `admin`; inventory items and insurance companies wiped too; buckets
+  `trip-documents` / `payment-proofs` emptied by hand first). Truncate WITHOUT
+  cascade -- cascading through truck_profiles / clients would delete the admin's
+  employees / users rows.
 - **Phase 2 (live):** app_settings rows `weekly_salary_warn` / `_max`,
   `cash_advance_max`, `cash_advance_confirm_above`, `cash_advance_max_weeks`,
   `duplicate_advance_minutes`, `min_net_pay`; CHECKs
