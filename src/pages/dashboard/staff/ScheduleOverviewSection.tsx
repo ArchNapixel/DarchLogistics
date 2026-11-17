@@ -330,6 +330,12 @@ function ScheduleOverviewSection() {
               Re-plan Booking #{b.bookingId} ({b.tripIds.length})
             </button>
           ))}
+          {/* Always there: greyed out when no waiting trip is blocked. */}
+          {atRisk.length === 0 && (
+            <button type="button" disabled title="No waiting trip is blocked by the shop, leave or an expired licence" className="btn-secondary px-4 text-sm font-medium">
+              Re-plan
+            </button>
+          )}
         </div>
       </div>
 
