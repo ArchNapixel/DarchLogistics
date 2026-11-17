@@ -14,12 +14,15 @@ import {
   HOUR_MS,
   SEARCH_DAYS_PAST_DEADLINE,
   STEP_MS,
+  isAtRisk,
   manilaMidnight,
+  replanTrips,
   withPlannedHolds,
   type BookedTrip,
   type BusyWindow,
   type Demand,
   type PlanWorld,
+  type Replan,
   type Resource,
   type TripPlan,
 } from './capacity'
@@ -225,4 +228,77 @@ export async function loadCapacityInputs(
 
   const world = withPlannedHolds({ resources, booked, pay, horizon: to }, holds)
   return { inputs: { world, defaultStartMinutes }, error: null }
+}
+
+// Re-plan waiting trips (Booking Detail): the booking's Awaiting trips that
+// are at risk (isAtRisk) and where the planner puts them now (replanTrips).
+// Earliest start = the next half hour, never before the booking's pickup date
+// + default start; deadline = the quote's delivery-by date. Staff only.
+export type ReplanLoad = { replan: Replan; labels: Map<string, string>; deadlineEnd: number | null }
+
+export async function loadReplan(bookingId: number, now = Date.now()): Promise<{ data: ReplanLoad | null; error: string | null }> {
+  const fail = (error: string) => ({ data: null, error })
+  const [tripsResult, bookingResult] = await Promise.all([
+    supabase
+      .from('itineraries')
+      .select('itinerary_id, trip_start_at, trip_end_at')
+      .eq('booking_id', bookingId)
+      .eq('itinerary_status', 'Awaiting')
+      .not('trip_start_at', 'is', null),
+    supabase.from('bookings').select('quote_request_id').eq('booking_id', bookingId).maybeSingle(),
+  ])
+  if (tripsResult.error) return fail(tripsResult.error.message)
+  if (bookingResult.error) return fail(bookingResult.error.message)
+  const tripRows = tripsResult.data ?? []
+  let pickup: string | null = null
+  let deadline: string | null = null
+  if (bookingResult.data?.quote_request_id != null) {
+    const { data: quote, error } = await supabase
+      .from('quote_requests')
+      .select('preferred_pickup_date, preferred_delivery_date')
+      .eq('quote_request_id', bookingResult.data.quote_request_id)
+      .maybeSingle()
+    if (error) return fail(error.message)
+    pickup = quote?.preferred_pickup_date ?? null
+    deadline = quote?.preferred_delivery_date ?? null
+  }
+  const deadlineEnd = deadline ? new Date(manilaTimestamp(deadline, 24 * 60)).getTime() - 1 : null
+  const nextHalfHour = Math.ceil(now / STEP_MS) * STEP_MS
+  // Just for how far to read; the real start needs the default start time.
+  const reach: Demand = {
+    trips: tripRows.map((t) => ({ hours: (Date.parse(t.trip_end_at!) - Date.parse(t.trip_start_at!)) / HOUR_MS, trailerType: null })),
+    requestedStart: nextHalfHour,
+    deadlineEnd,
+  }
+  const { inputs, error } = await loadCapacityInputs(reach, null)
+  if (!inputs) return fail(error ?? 'No data')
+  const floor = pickup ? new Date(manilaTimestamp(pickup, inputs.defaultStartMinutes)).getTime() : 0
+  const ids = new Set(tripRows.map((t) => t.itinerary_id))
+  const atRisk = inputs.world.booked.filter((t) => ids.has(t.id) && t.status === 'Awaiting' && isAtRisk(t, inputs.world.resources))
+  return {
+    data: {
+      replan: replanTrips(inputs.world, atRisk, Math.max(nextHalfHour, floor), deadlineEnd),
+      labels: new Map(inputs.world.resources.map((r) => [r.id, r.label])),
+      deadlineEnd,
+    },
+    error: null,
+  }
+}
+
+// Saves a re-plan in one transaction (replan_booking_trips): new time, driver,
+// truck and trailer per moved trip. Returns the error message, or null.
+export async function saveReplan(bookingId: number, moves: Replan['moves']): Promise<string | null> {
+  const rest = (id: string) => id.slice(1)
+  const { error } = await supabase.rpc('replan_booking_trips', {
+    p_booking_id: bookingId,
+    p_trips: moves.map(({ trip, to }) => ({
+      itinerary_id: trip.id,
+      start: new Date(to.start).toISOString(),
+      end: new Date(to.end).toISOString(),
+      driver_id: Number(rest(to.driverId)),
+      plate_number: rest(to.truckId),
+      trailer_id: Number(rest(to.trailerId)),
+    })),
+  })
+  return error?.message ?? null
 }

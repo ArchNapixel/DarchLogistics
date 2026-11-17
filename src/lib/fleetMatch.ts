@@ -5,8 +5,8 @@
 //
 // A vehicle can't take the trip (Unavailable, with the reason) when it is
 // Under Maintenance / Out of Service, is in the shop (a work order In
-// Progress / On Hold), has a Created / Scheduled work order scheduled on a
-// day of the trip, or is on another trip whose slot overlaps (back to back is fine; a trip on the
+// Progress / On Hold), has a Created / Scheduled work order dated on or
+// before the trip's last day (in the shop until solved, 2026-11-17), or is on another trip whose slot overlaps (back to back is fine; a trip on the
 // road stays busy until delivered). Trailers of the wrong type are left out
 // entirely (the cargo decides Flatbed / Skeletal -- a container may also use
 // the other of the two, see trailerRules.ts).
@@ -15,7 +15,7 @@
 //   1. already on this booking (so one rig stays with the booking),
 //   2. no service coming up during the trip (a pending maintenance schedule
 //      or next service date then) and no work order waiting to start (Created
-//      / Scheduled with no date or another date) -- moved down and labelled,
+//      / Scheduled with no date or a date after the trip) -- moved down and labelled,
 //      not blocked,
 //   3. idle longest since their last trip (never used first).
 import { tripsClash, type ScheduledTrip } from './tripSchedule.ts'
@@ -85,8 +85,9 @@ export function rankVehicles(
       const theirs = tripsOf(v.id).filter((t) => t.itinerary_id !== trip.itinerary_id)
       const clash = theirs.find((t) => tripsClash(trip, t, now))
       const inShop = v.workOrders.some((w) => SHOP_STATUSES.includes(w.status))
-      const onTripDay = (d: string | null) => !!d && !!tripFrom && !!tripTo && d >= tripFrom && d <= tripTo
-      const scheduledThen = v.workOrders.find((w) => !SHOP_STATUSES.includes(w.status) && onTripDay(w.scheduledDate))
+      // A dated job blocks from its date until it's completed (in the shop until solved).
+      const byTripEnd = (d: string | null) => !!d && !!tripTo && d <= tripTo
+      const scheduledThen = v.workOrders.find((w) => !SHOP_STATUSES.includes(w.status) && byTripEnd(w.scheduledDate))
       const blockedBy =
         v.current_status === 'Under Maintenance' || v.current_status === 'Out of Service'
           ? v.current_status

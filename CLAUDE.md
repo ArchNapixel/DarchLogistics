@@ -2465,3 +2465,33 @@ pure math in `lib/moneySummary.ts` (self-check `node scripts/check-money-summary
   Quotations' local `MessageRow` was replaced by NoMatchRow.
 - Bills Receivable gained a search box (client or booking #). Schedule
   Overview's search has a visible "Search" label now.
+
+## 2026-11-17: In the shop until solved + Re-plan waiting trips (migration 20261117000000)
+Supersedes "In Progress = busy until end of today" in Capacity / Schedule
+Overview and Fleet Match's "work order on a trip day" rule.
+- **Rule:** a truck / trailer is unavailable from the moment it's in the shop
+  until the job is completed and it's set back to Available: work order In
+  Progress / On Hold or status Under Maintenance = from now on; Created /
+  Scheduled WITH a date = from that date on; Out of Service = always.
+  Created with no date (auto PMS) still doesn't block. Same rule in
+  `get_capacity_inputs` (shop CTE + "In the shop" lines end at p_to),
+  `fleetMatch.ts` (dated job blocks trips ending on/after its date), Schedule
+  Overview bands (`scheduleData.ts`: drawn to the edge of the view; undated job
+  = "Work order pending", `Band.notice`, not counted as down) and the Capacity
+  card ("Not used until solved: ...").
+- **Cascade** (`tripRetime.ts`) ignores blocks that run to the end of its read
+  window, so a truck in the shop doesn't push trips 60 days out -- those trips
+  stay and show At-risk.
+- **No DB guard (user's choice):** Dispatch Board `handleTruckChange` /
+  `handleTrailerChange` ask "Use it anyway?" (`confirmShopVehicle`) when the
+  picked vehicle is in the shop. Overlaps are still refused by the DB.
+- **Re-plan waiting trips** (Booking Detail -> Trips, staff, `ReplanTripsModal`):
+  `isAtRisk` / `replanTrips` in `lib/capacity.ts` (self-check
+  `node scripts/check-capacity.ts`), `loadReplan` / `saveReplan` in
+  `lib/capacityLoad.ts`. Awaiting trips whose driver / truck / trailer is
+  blocked during the slot are planned again with planTrips (no swaps, from the
+  next half hour but not before pickup date + default start, deadline = quote
+  delivery-by date, each keeps its length); trips that can't be placed keep
+  their slot. Preview first; Save = RPC `replan_booking_trips(p_booking_id,
+  p_trips)` (staff, one transaction: check + park trips with no time / truck /
+  trailer, set new ones, add new drivers -- writes 2 schedule-log rows per trip).

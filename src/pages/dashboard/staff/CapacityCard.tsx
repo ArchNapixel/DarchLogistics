@@ -39,6 +39,8 @@ type View = {
   hasHolds: boolean
   // "Skeletal instead of the Flatbed asked for" -- containers on the other trailer type.
   substitutes: string[]
+  // "LBE 4409 (In the shop)" -- blocked until solved (to the end of what was checked).
+  unavailable: string[]
 }
 
 function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineDate, onResult, onReject }: Props) {
@@ -88,6 +90,10 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
         substitutes: [
           ...new Set(plan.trips.flatMap((p, i) => substituteNote(demand.trips[i].trailerType, byId.get(p.trailerId)?.trailerType) ?? [])),
         ],
+        unavailable: inputs.world.resources.flatMap((r) => {
+          const block = r.busy.find((b) => !b.tentative && b.end >= inputs.world.horizon)
+          return block ? [`${r.label} (${block.reason})`] : []
+        }),
       })
       onResult({ plan, swapLines })
     }, TYPING_DELAY_MS)
@@ -209,6 +215,9 @@ function CapacityCard({ quoteId, cargoLines, hoursPerTrip, pickupDate, deadlineD
           </div>
         )}
         {view.substitutes.length > 0 && <p className="mt-2 text-xs text-slate-600">Using a {view.substitutes.join(', ')}.</p>}
+        {view.unavailable.length > 0 && (
+          <p className="mt-2 text-xs text-slate-600">Not used until solved: {view.unavailable.join(', ')}.</p>
+        )}
         {view.hasHolds && <p className="mt-2 text-xs text-slate-600">Offers still waiting for the client's answer are counted as booked.</p>}
       </>
     )

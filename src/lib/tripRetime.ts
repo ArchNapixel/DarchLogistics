@@ -42,9 +42,10 @@ const ms = (value: string) => new Date(value).getTime()
 // earliest time involved (where to start reading).
 export async function retimeTrips(seeds: { fixed?: Map<number, Slot>; lengths?: Map<number, number> }, around: number): Promise<RetimeResult> {
   const fail = (warning: string): RetimeResult => ({ warning, late: [], failedTripId: null })
+  const windowEnd = around + 60 * DAY_MS
   const { data, error } = await supabase.rpc('get_capacity_inputs', {
     p_from: new Date(around - DAY_MS).toISOString(),
-    p_to: new Date(around + 60 * DAY_MS).toISOString(),
+    p_to: new Date(windowEnd).toISOString(),
     p_exclude_quote: null,
   })
   if (error || !data) return fail(`Couldn't re-time the later trips: ${error?.message ?? 'no data'}`)
@@ -61,9 +62,15 @@ export async function retimeTrips(seeds: { fixed?: Map<number, Slot>; lengths?: 
     trailer: t.trailer_id === null ? null : `R${t.trailer_id}`,
   }))
   // Leave, shop, licence expiry per line key (trip windows come from `trips`).
+  // Left out: blocks that run to the end of the window -- a vehicle in the
+  // shop until solved, an expired licence. Stepping past those would push the
+  // trip 60 days out; they stay put and show under At-risk (Re-plan fixes them).
   const busy = new Map<string, Slot[]>()
   const addBusy = (prefix: string) => (r: RawResource) =>
-    busy.set(`${prefix}${r.id}`, r.busy.filter((b) => b.trip_id == null).map((b) => ({ start: b.start, end: b.end })))
+    busy.set(
+      `${prefix}${r.id}`,
+      r.busy.filter((b) => b.trip_id == null && b.end < windowEnd).map((b) => ({ start: b.start, end: b.end })),
+    )
   raw.drivers.forEach(addBusy('D'))
   raw.trucks.forEach(addBusy('T'))
   raw.trailers.forEach(addBusy('R'))

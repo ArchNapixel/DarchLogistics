@@ -30,7 +30,8 @@ export type Bar = {
 }
 
 // A grey stretch behind the bars (approved leave, a truck in the shop...).
-export type Band = { key: string; start: number; end: number; label: string }
+// notice = shown only, the lane is still usable (a work order with no date yet).
+export type Band = { key: string; start: number; end: number; label: string; notice?: boolean }
 
 export type TimelineRow = {
   id: number | string
@@ -214,7 +215,7 @@ async function fetchVehicleSchedule(kind: VehicleKind, from: number, to: number)
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from('work_orders')
-      .select('work_order_id, work_order_number, plate_number, trailer_id, scheduled_start_date')
+      .select('work_order_id, work_order_number, work_order_status, plate_number, trailer_id, scheduled_start_date')
       .not('work_order_status', 'in', '("Completed","Cancelled")'),
     supabase.from('maintenance_schedules').select('schedule_id, plate_number, trailer_id, maintenance_type, due_date').eq('status', 'Pending'),
   ])
@@ -226,18 +227,25 @@ async function fetchVehicleSchedule(kind: VehicleKind, from: number, to: number)
   const trips = await fetchTrips(from, to)
   const details = await fetchTripDetails(trips)
 
-  const todayEnd = dayStartMs(toManilaDate(new Date())) + DAY_MS
-  // ponytail: an open work order has no end date, so it is drawn from its
-  // start until the end of today. Add an expected-finish column if it matters.
-  const orderBand = (wo: { work_order_id: number; work_order_number: string | null; scheduled_start_date: string | null }): Band => {
-    const start = wo.scheduled_start_date ? dayStartMs(wo.scheduled_start_date) : todayEnd - DAY_MS
-    return {
-      key: `wo${wo.work_order_id}`,
-      start,
-      end: Math.max(start + DAY_MS, todayEnd),
-      label: `In shop · ${wo.work_order_number ?? `WO #${wo.work_order_id}`}`,
-    }
+  const todayStart = dayStartMs(toManilaDate(new Date()))
+  // In the shop until solved (same rule as Capacity, get_capacity_inputs): a
+  // job In Progress / On Hold, or Created / Scheduled with a date, is drawn
+  // from today (or its date) to the edge of the view. A Created job with no
+  // date doesn't block (the auto PMS) -- just a one-day "Work order pending".
+  type OpenOrder = { work_order_id: number; work_order_number: string | null; work_order_status: string; scheduled_start_date: string | null }
+  const blocks = (wo: OpenOrder) => wo.work_order_status === 'In Progress' || wo.work_order_status === 'On Hold' || !!wo.scheduled_start_date
+  const orderBand = (wo: OpenOrder): Band => {
+    const name = wo.work_order_number ?? `WO #${wo.work_order_id}`
+    if (!blocks(wo)) return { key: `wo${wo.work_order_id}`, start: todayStart, end: todayStart + DAY_MS, label: `Work order pending · ${name}`, notice: true }
+    const start = wo.scheduled_start_date ? dayStartMs(wo.scheduled_start_date) : todayStart
+    return { key: `wo${wo.work_order_id}`, start, end: Math.max(to, start + DAY_MS), label: `In shop · ${name}` }
   }
+  // Status Under Maintenance / Out of Service with no blocking job on file:
+  // the status alone keeps it in the shop.
+  const statusBand = (status: string | null, orders: OpenOrder[]): Band[] =>
+    (status === 'Under Maintenance' || status === 'Out of Service') && !orders.some(blocks)
+      ? [{ key: 'status', start: todayStart, end: Math.max(to, todayStart + DAY_MS), label: status }]
+      : []
   const dueBand = (key: string, date: string, label: string): Band => ({
     key,
     start: dayStartMs(date),
@@ -251,8 +259,10 @@ async function fetchVehicleSchedule(kind: VehicleKind, from: number, to: number)
   if (kind === 'Truck') {
     return trucksResult.data.map((v) => {
       const plate = v.plate_number as string
+      const orders = workOrders.filter((w) => w.plate_number === plate)
       const bands = [
-        ...workOrders.filter((w) => w.plate_number === plate).map(orderBand),
+        ...statusBand(v.current_status, orders),
+        ...orders.map(orderBand),
         ...schedules
           .filter((s) => s.plate_number === plate)
           .map((s) => dueBand(`ms${s.schedule_id}`, s.due_date, `Due · ${s.maintenance_type}`)),
@@ -269,12 +279,14 @@ async function fetchVehicleSchedule(kind: VehicleKind, from: number, to: number)
   }
   return trailersResult.data.map((v) => {
     const id = v.trailer_id as number
+    const orders = workOrders.filter((w) => w.trailer_id === id)
     return {
       id,
       label: v.plate_number ?? `Trailer #${id}`,
       sublabel: [v.trailer_type, v.current_status && v.current_status !== 'Available' ? v.current_status : null].filter(Boolean).join(' · '),
       bands: [
-        ...workOrders.filter((w) => w.trailer_id === id).map(orderBand),
+        ...statusBand(v.current_status, orders),
+        ...orders.map(orderBand),
         ...schedules
           .filter((s) => s.trailer_id === id)
           .map((s) => dueBand(`ms${s.schedule_id}`, s.due_date, `Due · ${s.maintenance_type}`)),

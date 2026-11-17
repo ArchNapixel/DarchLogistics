@@ -42,7 +42,7 @@ const VIEWS: { view: View; label: string }[] = [
 const scheduleDay = (at: number) => toManilaDate(new Date(at - DAY_START_HOUR * HOUR_MS))
 
 // A lane whose leave / shop band covers this moment.
-const bandedNow = (row: TimelineRow, now: number) => row.bands.some((b) => b.start <= now && now < b.end)
+const bandedNow = (row: TimelineRow, now: number) => row.bands.some((b) => !b.notice && b.start <= now && now < b.end)
 
 // Loads what one view draws: four sections for Resources, one for the others.
 async function loadView(view: View, from: number, to: number, now: number): Promise<{ sections: TimelineSection[]; attention: AttentionItem[] }> {

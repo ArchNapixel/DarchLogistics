@@ -53,9 +53,10 @@ assert.equal(ranked[3].blockedBy, null) // labelled, not blocked
 assert.ok(ranked[4].blockedBy?.startsWith('on trip #110'))
 assert.equal(ranked[5].blockedBy, 'Under Maintenance')
 
-// Work orders: In Progress blocks; Created with a date on the trip blocks;
-// Created with no date (MAK 1452's WO-TR3) only moves it down. Wrong
-// trailer type is left out entirely.
+// Work orders: In Progress blocks; Created / Scheduled dated on or before the
+// trip blocks (in the shop until solved -- F6's job was due Oct 20 and is
+// still open); a date after the trip or no date (MAK 1452's WO-TR3) only
+// moves it down. Wrong trailer type is left out entirely.
 const trailers = rankVehicles(
   t105,
   [
@@ -65,12 +66,14 @@ const trailers = rankVehicles(
     vehicle('F3', { trailer_type: 'Flatbed', workOrders: [{ status: 'Created', scheduledDate: null }] }),
     vehicle('F4', { trailer_type: 'Flatbed', workOrders: [{ status: 'Scheduled', scheduledDate: '2026-10-25' }] }),
     vehicle('F5', { trailer_type: 'Flatbed', workOrders: [{ status: 'Created', scheduledDate: '2026-11-02' }] }),
+    vehicle('F6', { trailer_type: 'Flatbed', workOrders: [{ status: 'Scheduled', scheduledDate: '2026-10-20' }] }),
   ],
   () => [],
   now,
   slot,
 )
-assert.deepEqual(trailers.map((v) => v.id), ['F2', 'F3', 'F5', 'F1', 'F4'])
+assert.deepEqual(trailers.map((v) => v.id), ['F2', 'F3', 'F5', 'F1', 'F4', 'F6'])
+assert.equal(trailers[5].blockedBy, 'work order scheduled 2026-10-20')
 assert.equal(trailers[1].blockedBy, null)
 assert.equal(trailers[1].note, 'work order pending')
 assert.equal(trailers[3].blockedBy, 'in the shop (work order)')

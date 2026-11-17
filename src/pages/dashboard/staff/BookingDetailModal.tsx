@@ -35,6 +35,7 @@ import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
 import EditTripCargo from './EditTripCargo'
+import ReplanTripsModal from './ReplanTripsModal'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, slotLines } from '../../../lib/format'
 import { retimeTrips } from '../../../lib/tripRetime'
@@ -381,6 +382,8 @@ function BookingDetailModal({
   const [docsTripId, setDocsTripId] = useState<number | null>(null)
   // The trip whose cargo is being edited (EditTripCargo under its row).
   const [cargoTripId, setCargoTripId] = useState<number | null>(null)
+  // "Re-plan waiting trips" pop-up open.
+  const [showReplan, setShowReplan] = useState(false)
   // Time the card opened -- enough for the storage badges (render must stay pure).
   const [now] = useState(() => Date.now())
 
@@ -1029,9 +1032,16 @@ function BookingDetailModal({
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <h4 className="text-base font-semibold text-slate-900">Trips · {tripsTitle}</h4>
             {!isClosed && onChanged && (
-              <Link to="/dashboard/dispatch" className="text-sm font-semibold text-primary hover:underline">
-                Assign in Dispatch Board →
-              </Link>
+              <div className="flex flex-wrap items-center gap-4">
+                {awaitingTrips.length > 0 && (
+                  <button type="button" onClick={() => setShowReplan(true)} className="btn-secondary px-3 py-1 text-sm font-medium">
+                    Re-plan waiting trips
+                  </button>
+                )}
+                <Link to="/dashboard/dispatch" className="text-sm font-semibold text-primary hover:underline">
+                  Assign in Dispatch Board →
+                </Link>
+              </div>
             )}
           </div>
           {loadError ? (
@@ -1234,6 +1244,17 @@ function BookingDetailModal({
           )}
 
         </section>
+
+        {showReplan && (
+          <ReplanTripsModal
+            bookingId={booking.booking_id}
+            onClose={() => setShowReplan(false)}
+            onSaved={() => {
+              setShowReplan(false)
+              onChanged?.()
+            }}
+          />
+        )}
 
         {!inline && (
           <div className="flex justify-end">

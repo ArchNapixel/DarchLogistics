@@ -364,3 +364,49 @@ export function withPlannedHolds(world: PlanWorld, offers: { label: string; dema
   }
   return current
 }
+
+// ---------------------------------------------------------------------------
+// replanTrips: "Re-plan waiting trips" (Booking Detail, 2026-11-17).
+//
+// A booked trip is at risk when its driver, truck or trailer is blocked during
+// its slot -- approved leave, an expired licence, a vehicle in the shop until
+// solved (get_capacity_inputs). Those trips come off the calendar and are
+// placed again with planTrips, earliest first, each keeping its length: the
+// driver's own free truck, else a spare, else another driver, else later. No
+// swaps -- only this booking's trips change. A trip that still can't be placed
+// keeps its old slot (`stuck`); the planner is re-run with it back on the
+// calendar so the moved trips never land on what it still holds.
+// ---------------------------------------------------------------------------
+export function isAtRisk(trip: BookedTrip, resources: Resource[]): boolean {
+  const ids = [trip.driverId, trip.truckId, trip.trailerId]
+  return resources.some(
+    (r) => ids.includes(r.id) && r.busy.some((b) => !b.tentative && b.tripId == null && b.start < trip.end && b.end > trip.start),
+  )
+}
+
+export type Replan = { moves: { trip: BookedTrip; to: PlannedTrip }[]; stuck: BookedTrip[]; plan: TripPlan }
+
+export function replanTrips(world: PlanWorld, trips: BookedTrip[], requestedStart: number, deadlineEnd: number | null): Replan {
+  let movable = [...trips].sort((a, b) => a.start - b.start || a.id - b.id)
+  let stuck: BookedTrip[] = []
+  for (;;) {
+    const away = new Set(movable.map((t) => t.id))
+    const demand: Demand = {
+      trips: movable.map((t) => ({
+        hours: (t.end - t.start) / HOUR_MS,
+        trailerType: t.trailerType,
+        trailerSize: t.trailerSize,
+        exactSize: t.exactSize,
+        cargoType: t.cargoType,
+        rate: t.rate,
+      })),
+      requestedStart,
+      deadlineEnd,
+    }
+    const plan = planTrips(demand, { ...world, booked: world.booked.filter((t) => !away.has(t.id)) }, { swaps: false })
+    if (plan.trips.length === movable.length) return { moves: movable.map((trip, i) => ({ trip, to: plan.trips[i] })), stuck, plan }
+    // Planner stops at the first trip it can't place: keep that one and the rest where they are.
+    stuck = [...movable.slice(plan.trips.length), ...stuck]
+    movable = movable.slice(0, plan.trips.length)
+  }
+}

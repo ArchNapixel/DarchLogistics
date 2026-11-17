@@ -5,7 +5,9 @@ import assert from 'node:assert/strict'
 import {
   DAY_MS,
   HOUR_MS,
+  isAtRisk,
   planTrips,
+  replanTrips,
   shortageLabel,
   withPlannedHolds,
   type BookedTrip,
@@ -185,6 +187,27 @@ const two40 = planTrips(
 assert.deepEqual(two40.trips.map((t) => [t.trailerId, t.start]), [['S40', oct24], ['S40', oct24 + 6 * HOUR_MS]])
 // A trailer whose size isn't set yet still counts (until it's entered in Fleet).
 assert.equal(planTrips(box40(1), world([own('D1', 'T1'), truck('T1'), sized('S?', 'Skeletal', null)])).status, 'fits')
+
+// Re-plan (booking #23, 2026-11-17): D1's own truck T1 is in the shop until
+// solved, no spare. Trips #1 and #3 on T1 are at risk; #2 on D2 / T2 isn't.
+// Re-planned they go to D2 after #2, back to back.
+const shopForever = [{ start: oct24, end: horizon, reason: 'In the shop' }]
+const rpFleet = [own('D1', 'T1'), own('D2', 'T2'), truck('T1', shopForever), truck('T2'), trailer('F1', 'Flatbed'), trailer('F2', 'Flatbed')]
+const rp1 = bookedTrip(1, oct24, 6, { driverId: 'D1', truckId: 'T1', trailerId: 'F1' })
+const rp2 = bookedTrip(2, oct24, 6, { driverId: 'D2', truckId: 'T2', trailerId: 'F2' })
+const rp3 = bookedTrip(3, oct24 + 6 * HOUR_MS, 6, { driverId: 'D1', truckId: 'T1', trailerId: 'F1' })
+assert.deepEqual([rp1, rp2, rp3].map((t) => isAtRisk(t, rpFleet)), [true, false, true])
+const rp = replanTrips(world(rpFleet, [rp1, rp2, rp3]), [rp3, rp1], oct24, null)
+assert.deepEqual(rp.moves.map((m) => [m.trip.id, m.to.driverId, m.to.truckId, m.to.start]), [
+  [1, 'D2', 'T2', oct24 + 6 * HOUR_MS],
+  [3, 'D2', 'T2', oct24 + 12 * HOUR_MS],
+])
+assert.equal(rp.stuck.length, 0)
+// Nothing known past +12 h: #3 can't be placed and keeps its slot (and its
+// trailer F1), so #1 is placed again around it -- on F2, not F1.
+const rpShort = replanTrips({ ...world(rpFleet, [rp1, rp2, rp3]), horizon: oct24 + 12 * HOUR_MS }, [rp1, rp3], oct24, null)
+assert.deepEqual(rpShort.stuck.map((t) => t.id), [3])
+assert.deepEqual(rpShort.moves.map((m) => [m.trip.id, m.to.trailerId]), [[1, 'F2']])
 
 // Labels for the card.
 assert.equal(shortageLabel({ kind: 'Trailer', trailerType: 'Flatbed', tripIndex: 0 }), 'No Flatbed trailer free')

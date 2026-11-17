@@ -2177,11 +2177,31 @@ function DispatchBoardSection() {
     }
   }
 
+  // A vehicle in the shop (until solved) or with a job dated by the trip:
+  // putting it on the trip only warns -- staff decide (2026-11-17, no DB block).
+  // Overlapping trips aren't asked about here; the database refuses those.
+  async function confirmShopVehicle(kind: 'Truck' | 'Trailer', itineraryId: number, vehicleId: string): Promise<boolean> {
+    const row = rows.find((r) => r.itinerary_id === itineraryId)
+    if (!row) return true
+    const candidates = (kind === 'Truck' ? truckCandidates(trucks, vehicleService) : trailerCandidates(trailers, vehicleService)).filter(
+      (v) => v.id === vehicleId,
+    )
+    const pick = rankFleet(kind, row, candidates, rows, now).ranked[0]
+    if (!pick?.blockedBy || pick.blockedBy.startsWith('on trip')) return true
+    return confirmDialog({
+      title: `${pick.label} is in the shop`,
+      message: `${pick.label}: ${pick.blockedBy}. It stays unavailable until the work order is completed and it's set back to Available. Put it on trip #${itineraryId} anyway?`,
+      confirmLabel: 'Use it anyway',
+      danger: true,
+    })
+  }
+
   async function handleTruckChange(
     itineraryId: number,
     previousPlateNumber: string | null,
     plateNumber: string | null,
   ): Promise<boolean> {
+    if (plateNumber !== null && !(await confirmShopVehicle('Truck', itineraryId, `T:${plateNumber}`))) return false
     setSavingId(itineraryId)
     setError(null)
 
@@ -2224,6 +2244,7 @@ function DispatchBoardSection() {
       )
       return false
     }
+    if (trailerId !== null && !(await confirmShopVehicle('Trailer', itineraryId, `R:${trailerId}`))) return false
 
     setSavingId(itineraryId)
     setError(null)
