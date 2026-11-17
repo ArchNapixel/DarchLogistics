@@ -702,24 +702,27 @@ function StaffDashboard() {
         {allAlerts.length > 0 && (
           <section
             aria-label="Needs attention"
-            className="flex min-w-0 flex-1 basis-[480px] flex-wrap items-center gap-x-7 border border-amber-600 bg-amber-100 px-4 text-sm text-amber-900"
+            className="min-w-0 flex-1 basis-[480px] border border-amber-600 bg-amber-100 px-4 py-2 text-sm text-amber-900"
           >
-            <strong className="flex min-h-11 items-center gap-2 font-bold">
+            <strong className="flex min-h-9 items-center gap-2 font-bold">
               <Icon name="warning" size={18} />
               Needs Attention
             </strong>
-            {allAlerts.map((a) => (
-              <Link
-                key={a.label}
-                to={a.to}
-                className="flex min-h-11 items-center gap-2 font-medium underline underline-offset-2 hover:no-underline"
-              >
-                <span>
-                  <strong>{a.count} {a.label}</strong> · {a.page}
-                </span>
-                <Icon name="arrow" />
-              </Link>
-            ))}
+            {/* Same-width columns so the links line up however many there are. */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-6">
+              {allAlerts.map((a) => (
+                <Link
+                  key={a.label}
+                  to={a.to}
+                  className="flex min-h-9 items-center gap-2 font-medium underline underline-offset-2 hover:no-underline"
+                >
+                  <span className="min-w-0">
+                    <strong>{a.count} {a.label}</strong> · {a.page}
+                  </span>
+                  <Icon name="arrow" />
+                </Link>
+              ))}
+            </div>
           </section>
         )}
 
