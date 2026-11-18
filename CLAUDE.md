@@ -2725,3 +2725,9 @@ stopped them being dispatched. Supersedes the "Find a faster driver" and
 - The cascade (`reflow`) still may push a trip past the deadline (it can't
   change drivers) -- it shows as late in At-risk with Re-plan.
 - Booking #19's trips (#38 Delivered, #39 Dispatched) were left as they are.
+- **Status times can't be in the future (migration 20261119010000):** trigger
+  `dispatch_status_logs_not_future` clamps `status_changed_at` to the server's
+  now() (the picker only checks the browser's clock -- a PC set ahead logged
+  trip #33's moves 7 h early). Clamps instead of refusing because the log is
+  inserted AFTER the status update. `statusTimeError` says "a computer's clock
+  was wrong" when the last change is later than now.

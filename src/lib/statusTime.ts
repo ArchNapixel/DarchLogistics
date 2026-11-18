@@ -29,6 +29,8 @@ export async function loadLastStatusTime(itineraryId: number): Promise<number | 
 export function statusTimeError(at: number, lastChange: number | null, now = Date.now()): string | null {
   if (at > now + 60_000) return "That time is in the future."
   if (lastChange !== null && at < lastChange - 60_000) {
+    // The last change is later than "now": a computer's clock was off when it
+    // was logged (or this one is). No pick can fix that here.
     const when = new Date(lastChange).toLocaleString('en-PH', {
       timeZone: 'Asia/Manila',
       month: 'short',
@@ -36,6 +38,9 @@ export function statusTimeError(at: number, lastChange: number | null, now = Dat
       hour: 'numeric',
       minute: '2-digit',
     })
+    if (lastChange > now + 60_000) {
+      return `The trip's last status change is logged at ${when}, which is later than now. A computer's clock was wrong when it was saved -- check this computer's date and time, or ask an Admin to fix that log entry.`
+    }
     return `That is before the trip's last status change (${when}).`
   }
   return null
