@@ -59,6 +59,9 @@ export type TripNeed = {
   exactSize?: boolean | null
   cargoType?: string | null
   rate?: number | null
+  // Re-plan only: the trip's current driver / truck / trailer. Kept when still
+  // free at the moment the trip lands, so a re-plan never just reshuffles crews.
+  keep?: { driverId: string | null; truckId: string | null; trailerId: string | null }
 }
 
 export type Demand = {
@@ -265,9 +268,20 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
     for (const s of moments) {
       const e = s + length
       if (e > world.horizon) break
-      const trailer = trailerFor(s, e, need.trailerType, cargoType, need.trailerSize, need.exactSize)
+      const keep = need.keep
+      const keptTrailer = keep?.trailerId ? trailers.find((r) => r.id === keep.trailerId) : undefined
+      const trailer =
+        keptTrailer &&
+        free(keptTrailer.id, s, e) &&
+        trailerAllowed(cargoType, need.trailerType, keptTrailer.trailerType, need.trailerSize, keptTrailer.trailerSize, need.exactSize)
+          ? keptTrailer
+          : trailerFor(s, e, need.trailerType, cargoType, need.trailerSize, need.exactSize)
       if (!trailer) continue
-      let driver: Resource | undefined = drivers.filter((d) => free(d.id, s, e) && truckFor(d, s, e)).sort(fairest(s))[0]
+      const keptDriver = keep?.driverId ? drivers.find((d) => d.id === keep.driverId) : undefined
+      let driver: Resource | undefined =
+        keptDriver && free(keptDriver.id, s, e) && truckFor(keptDriver, s, e)
+          ? keptDriver
+          : drivers.filter((d) => free(d.id, s, e) && truckFor(d, s, e)).sort(fairest(s))[0]
 
       if (!driver && allowSwaps) {
         // A driver blocked only by one Awaiting booked trip, which another driver can take.
@@ -295,7 +309,14 @@ export function planTrips(demand: Demand, world: PlanWorld, opts: { swaps?: bool
           break
         }
       }
-      const unit = driver ? truckFor(driver, s, e) : null
+      // The kept truck stays if it's still free and his own or a spare (never another driver's).
+      const keptTruck = driver && driver === keptDriver && keep?.truckId ? truckById.get(keep.truckId) : undefined
+      const unit =
+        keptTruck && free(keptTruck.id, s, e) && (keptTruck.id === driver!.truckId || !ownedTrucks.has(keptTruck.id))
+          ? { truck: keptTruck, spare: keptTruck.id !== driver!.truckId }
+          : driver
+            ? truckFor(driver, s, e)
+            : null
       if (!driver || !unit) continue
 
       const slot = { start: s, end: e }
@@ -379,6 +400,9 @@ export function withPlannedHolds(world: PlanWorld, offers: { label: string; dema
 // Also used for "All waiting trips" (every Awaiting trip of the booking, e.g.
 // to spread them again once a truck is back from the shop). `moves` leaves out
 // trips whose slot, driver, truck and trailer all stay the same (`unchanged`).
+// Each trip keeps its own driver / truck / trailer when they're still free at
+// the moment it lands (TripNeed.keep), so a re-plan only moves a trip when it
+// gets earlier or was blocked -- never a same-time reshuffle of crews.
 // ---------------------------------------------------------------------------
 export function isAtRisk(trip: BookedTrip, resources: Resource[]): boolean {
   const ids = [trip.driverId, trip.truckId, trip.trailerId]
@@ -405,6 +429,7 @@ export function replanTrips(world: PlanWorld, trips: BookedTrip[], requestedStar
         exactSize: t.exactSize,
         cargoType: t.cargoType,
         rate: t.rate,
+        keep: { driverId: t.driverId, truckId: t.truckId, trailerId: t.trailerId },
       })),
       requestedStart,
       deadlineEnd,

@@ -220,6 +220,15 @@ assert.deepEqual(new Set(spread.plan.trips.map((t) => t.driverId)), new Set(['D1
 const settled = bookedTrip(20, oct24, 6, { driverId: 'D1', truckId: 'T1', trailerId: 'F1' })
 const same = replanTrips(world(backFleet, [settled]), [settled], oct24, null)
 assert.deepEqual([same.moves.length, same.unchanged], [0, 1])
+// Same times, crews "the wrong way round" for fairness: kept, not reshuffled.
+const crossed = [
+  bookedTrip(30, oct24, 6, { driverId: 'D2', truckId: 'T2', trailerId: 'F1' }),
+  bookedTrip(31, oct24, 6, { driverId: 'D1', truckId: 'T1', trailerId: 'F2' }),
+]
+assert.equal(replanTrips(world(backFleet, crossed), crossed, oct24, null).moves.length, 0)
+// Saving a re-plan and re-planning again changes nothing.
+const saved = chain.map((t, i) => ({ ...t, ...spread.plan.trips[i] }))
+assert.equal(replanTrips(world(backFleet, saved), saved, oct24, null).moves.length, 0)
 
 // Labels for the card.
 assert.equal(shortageLabel({ kind: 'Trailer', trailerType: 'Flatbed', tripIndex: 0 }), 'No Flatbed trailer free')
