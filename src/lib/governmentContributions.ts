@@ -1,8 +1,9 @@
 // governmentContributions: pure math for SSS / PhilHealth / Pag-IBIG
 // contributions and BIR withholding tax on a WEEKLY payslip. No
 // Supabase calls in here -- payslip.ts loads the data, EditDraftPayslipModal
-// shows/edits the result. Rates are the 2026 rules; when a government
-// agency changes them, this is the only file to update.
+// shows/edits the result. The rates themselves are rows in the
+// `government_rates` table -- when an agency changes them, add a new row
+// with the date they start (no code change).
 //
 // Contributions are MONTHLY amounts, but payslips are weekly, so each
 // weekly payslip takes its share and the month corrects itself:
@@ -20,73 +21,85 @@
 // Employer (ER) shares follow the same steps -- never deducted from the
 // employee, just stored per payslip for remittance reports.
 
-// --- Rate tables (2026) -------------------------------------------------
+// --- Rate tables ---------------------------------------------------------
 
-// SSS (RA 11199 schedule, 15% total since 2025): MSC ₱5,000-₱35,000 in
-// ₱500 steps. EE 5%, ER 10% of the whole MSC (the part above ₱20,000
-// goes to the MPF / MySSS Pension Booster -- same rate, reporting only).
-// EC is employer-only: ₱10 below ₱15,000 MSC, ₱30 from ₱15,000.
-const SSS_MSC_MIN = 5_000
-const SSS_MSC_MAX = 35_000
-const SSS_EE_RATE = 0.05
-const SSS_ER_RATE = 0.1
+// The rates live in the `government_rates` table (one row per date they
+// take effect from) -- loadGovernmentRates() in payslip.ts reads them.
+// Rates are PERCENT (5 = 5%). A tax bracket: tax = fixed + (pay - over) x
+// rate%, for the highest `over` the pay is above.
+export type TaxBracket = { over: number; fixed: number; rate: number }
+export type GovernmentRates = {
+  effective_from: string
+  // SSS: MSC = pay rounded to the nearest step, kept between min and max.
+  // EC (employer only): low below the threshold MSC, high from it.
+  sss_msc_min: number
+  sss_msc_max: number
+  sss_msc_step: number
+  sss_ee_rate: number
+  sss_er_rate: number
+  sss_ec_threshold: number
+  sss_ec_low: number
+  sss_ec_high: number
+  philhealth_floor: number
+  philhealth_ceiling: number
+  philhealth_ee_rate: number
+  philhealth_er_rate: number
+  pagibig_salary_cap: number
+  pagibig_low_salary: number
+  pagibig_ee_rate_low: number
+  pagibig_ee_rate: number
+  pagibig_er_rate: number
+  weekly_tax_brackets: TaxBracket[]
+}
 
-// PhilHealth (2026): 5% of monthly basic salary, floor ₱10,000, ceiling
-// ₱100,000, split 50/50 -> ₱250 to ₱2,500 each.
-const PHILHEALTH_FLOOR = 10_000
-const PHILHEALTH_CEILING = 100_000
-const PHILHEALTH_SHARE_RATE = 0.025
-
-// Pag-IBIG (HDMF Circular 460, since Feb 2024): fund salary capped at
-// ₱10,000. ER 2%; EE 2%, or 1% if salary is ₱1,500 or less. Max ₱200 each.
-const PAGIBIG_MAX_FUND_SALARY = 10_000
-const PAGIBIG_LOW_SALARY = 1_500
-
-// BIR weekly withholding tax table (TRAIN law, Jan 1 2023 onwards):
-// [over, fixed tax, rate on the excess over `over`].
-const WEEKLY_TAX_BRACKETS: [number, number, number][] = [
-  [153_846, 42_355.65, 0.35],
-  [38_462, 7_740.45, 0.3],
-  [15_385, 1_971.2, 0.25],
-  [7_692, 432.6, 0.2],
-  [4_808, 0, 0.15],
-]
+// The rate set in force on a YYYY-MM-DD date: the latest one that took
+// effect on or before it. null = none (date before the first row).
+export function ratesFor(sets: GovernmentRates[], date: string): GovernmentRates | null {
+  let best: GovernmentRates | null = null
+  for (const set of sets) {
+    if (set.effective_from <= date && (!best || set.effective_from > best.effective_from)) best = set
+  }
+  return best
+}
 
 // --- Monthly formulas ---------------------------------------------------
 
 const round2 = (value: number) => Math.round(value * 100) / 100
+const pct = (rate: number) => rate / 100
 
-export function sssMonthly(monthlyPay: number) {
-  // Nearest ₱500 with halves rounding up = the SSS bracket table
-  // (e.g. ₱5,250-₱5,749.99 -> ₱5,500).
-  const msc = Math.min(SSS_MSC_MAX, Math.max(SSS_MSC_MIN, Math.round(monthlyPay / 500) * 500))
+export function sssMonthly(monthlyPay: number, r: GovernmentRates) {
+  // Nearest step with halves rounding up = the SSS bracket table
+  // (e.g. ₱5,250-₱5,749.99 -> ₱5,500 with a ₱500 step).
+  const stepped = Math.round(monthlyPay / r.sss_msc_step) * r.sss_msc_step
+  const msc = Math.min(r.sss_msc_max, Math.max(r.sss_msc_min, stepped))
   return {
     msc,
-    ee: round2(msc * SSS_EE_RATE),
-    er: round2(msc * SSS_ER_RATE),
-    ec: msc < 15_000 ? 10 : 30,
+    ee: round2(msc * pct(r.sss_ee_rate)),
+    er: round2(msc * pct(r.sss_er_rate)),
+    ec: msc < r.sss_ec_threshold ? r.sss_ec_low : r.sss_ec_high,
   }
 }
 
-export function philhealthMonthly(monthlyPay: number) {
-  const basis = Math.min(PHILHEALTH_CEILING, Math.max(PHILHEALTH_FLOOR, monthlyPay))
-  const share = round2(basis * PHILHEALTH_SHARE_RATE)
-  return { ee: share, er: share }
+export function philhealthMonthly(monthlyPay: number, r: GovernmentRates) {
+  const basis = Math.min(r.philhealth_ceiling, Math.max(r.philhealth_floor, monthlyPay))
+  return { ee: round2(basis * pct(r.philhealth_ee_rate)), er: round2(basis * pct(r.philhealth_er_rate)) }
 }
 
-export function pagibigMonthly(monthlyPay: number) {
-  const fundSalary = Math.min(PAGIBIG_MAX_FUND_SALARY, monthlyPay)
+export function pagibigMonthly(monthlyPay: number, r: GovernmentRates) {
+  const fundSalary = Math.min(r.pagibig_salary_cap, monthlyPay)
+  const eeRate = monthlyPay <= r.pagibig_low_salary ? r.pagibig_ee_rate_low : r.pagibig_ee_rate
   return {
-    ee: round2(fundSalary * (monthlyPay <= PAGIBIG_LOW_SALARY ? 0.01 : 0.02)),
-    er: round2(fundSalary * 0.02),
+    ee: round2(fundSalary * pct(eeRate)),
+    er: round2(fundSalary * pct(r.pagibig_er_rate)),
   }
 }
 
-export function weeklyWithholdingTax(weeklyTaxablePay: number) {
-  const bracket = WEEKLY_TAX_BRACKETS.find(([over]) => weeklyTaxablePay > over)
+export function weeklyWithholdingTax(weeklyTaxablePay: number, r: GovernmentRates) {
+  const bracket = [...r.weekly_tax_brackets]
+    .sort((a, b) => b.over - a.over)
+    .find(({ over }) => weeklyTaxablePay > over)
   if (!bracket) return 0
-  const [over, fixed, rate] = bracket
-  return round2(fixed + (weeklyTaxablePay - over) * rate)
+  return round2(bracket.fixed + (weeklyTaxablePay - bracket.over) * pct(bracket.rate))
 }
 
 // --- Weekly payslip share -----------------------------------------------
@@ -123,6 +136,7 @@ export function computeWeeklyContributions(
   weekGross: number,
   periodEnd: string,
   earlierThisMonth: EarlierPayslip[],
+  rates: GovernmentRates,
 ): Contributions & { sss_msc: number; projectedMonthlyPay: number } {
   const n = payslipsInMonth(periodEnd)
   const k = earlierThisMonth.length + 1
@@ -130,9 +144,9 @@ export function computeWeeklyContributions(
   const monthGross = earlierThisMonth.reduce((sum, p) => sum + p.gross_pay, weekGross)
   const projectedMonthlyPay = k >= n ? monthGross : (monthGross / k) * n
 
-  const sss = sssMonthly(projectedMonthlyPay)
-  const philhealth = philhealthMonthly(projectedMonthlyPay)
-  const pagibig = pagibigMonthly(projectedMonthlyPay)
+  const sss = sssMonthly(projectedMonthlyPay, rates)
+  const philhealth = philhealthMonthly(projectedMonthlyPay, rates)
+  const pagibig = pagibigMonthly(projectedMonthlyPay, rates)
   const monthly: Contributions = {
     sss_ee: sss.ee,
     sss_er: sss.er,

@@ -60,10 +60,13 @@ import { fetchAll, fetchIn } from './dashboardExpenses'
 import { deliveryDatesInPeriod, tripKey, tripsToPay } from './payslipPeriod'
 import {
   computeWeeklyContributions,
+  ratesFor,
   weeklyWithholdingTax,
   type Contributions,
   type EarlierPayslip,
+  type GovernmentRates,
 } from './governmentContributions'
+import { cached } from './shortCache'
 import { DELIVERED_STATUSES } from './tripStatusFlow'
 
 export type PayrollSettings = {
@@ -568,6 +571,43 @@ export async function loadEarlierPayslipsThisMonth(
   return { payslips: data, error: null }
 }
 
+// The government_rates row in force for a payslip's period END (the month
+// it belongs to). All rows are read once and kept a few seconds, so a
+// Payroll run over many employees asks once.
+export async function loadGovernmentRates(
+  periodEnd: string,
+): Promise<{ rates: GovernmentRates | null; error: string | null }> {
+  const all = await cached('government_rates', async () => {
+    const { data, error } = await supabase.from('government_rates').select('*')
+    // numeric columns can arrive as text ("5.000") -- turn every field
+    // except the date and the bracket list into a real number.
+    const sets = (data ?? []).map((row: Record<string, unknown>) => {
+      const set: Record<string, unknown> = { ...row }
+      for (const [key, value] of Object.entries(row)) {
+        if (key !== 'effective_from' && key !== 'weekly_tax_brackets' && key !== 'note' && key !== 'created_at') {
+          set[key] = Number(value)
+        }
+      }
+      set.weekly_tax_brackets = (row.weekly_tax_brackets as Record<string, unknown>[]).map((b) => ({
+        over: Number(b.over),
+        fixed: Number(b.fixed),
+        rate: Number(b.rate),
+      }))
+      return set as unknown as GovernmentRates
+    })
+    return { sets, error: error?.message ?? null }
+  })
+  if (all.error) return { rates: null, error: all.error }
+  const rates = ratesFor(all.sets, periodEnd)
+  if (!rates) {
+    return {
+      rates: null,
+      error: `No government rates (SSS / PhilHealth / Pag-IBIG / tax) are set for ${periodEnd}. Add a row to government_rates that starts on or before that date.`,
+    }
+  }
+  return { rates, error: null }
+}
+
 export type PayslipDeductions = Contributions & {
   sss_msc: number
   withholding_tax: number
@@ -694,10 +734,15 @@ async function computeAutoDeductions(
   periodEnd: string,
   isMinimumWageEarner: boolean,
 ): Promise<{ deductions: PayslipDeductions | null; error: string | null }> {
-  const earlier = await loadEarlierPayslipsThisMonth(employeeId, periodEnd)
+  const [earlier, rateResult] = await Promise.all([
+    loadEarlierPayslipsThisMonth(employeeId, periodEnd),
+    loadGovernmentRates(periodEnd),
+  ])
   if (earlier.error) return { deductions: null, error: earlier.error }
+  if (!rateResult.rates) return { deductions: null, error: rateResult.error }
+  const rates = rateResult.rates
 
-  const c = computeWeeklyContributions(grossPay, periodEnd, earlier.payslips)
+  const c = computeWeeklyContributions(grossPay, periodEnd, earlier.payslips, rates)
   const employeeShares = c.sss_ee + c.philhealth_ee + c.pagibig_ee
   return {
     deductions: {
@@ -709,7 +754,7 @@ async function computeAutoDeductions(
       philhealth_er: c.philhealth_er,
       pagibig_ee: c.pagibig_ee,
       pagibig_er: c.pagibig_er,
-      withholding_tax: isMinimumWageEarner ? 0 : weeklyWithholdingTax(grossPay - employeeShares),
+      withholding_tax: isMinimumWageEarner ? 0 : weeklyWithholdingTax(grossPay - employeeShares, rates),
       deductions_note: null,
     },
     error: null,

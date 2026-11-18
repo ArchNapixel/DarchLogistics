@@ -17,6 +17,7 @@ import { supabase } from '../../../lib/supabaseClient'
 import {
   getOutstandingCashAdvance,
   loadEarlierPayslipsThisMonth,
+  loadGovernmentRates,
   loadPayslipLineItems,
   totalEmployeeDeductions,
   updateDraftPayslip,
@@ -29,9 +30,12 @@ import {
   weeklyWithholdingTax,
   type ContributionKey,
   type EarlierPayslip,
+  type GovernmentRates,
 } from '../../../lib/governmentContributions'
 import { formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
+
+const NO_CONTRIBUTIONS = Object.fromEntries(CONTRIBUTION_KEYS.map((key) => [key, 0])) as Record<ContributionKey, number>
 
 export type DraftToEdit = {
   payrollId: number
@@ -105,6 +109,8 @@ function EditDraftPayslipModal({
   const [outstandingAdvance, setOutstandingAdvance] = useState(0)
   const [deductAmount, setDeductAmount] = useState('0')
   const [earlierThisMonth, setEarlierThisMonth] = useState<EarlierPayslip[]>([])
+  // The government_rates row for this payslip's period (null until loaded).
+  const [rates, setRates] = useState<GovernmentRates | null>(null)
   // Admin-typed amounts, keyed by deduction; anything not in here uses
   // the auto value.
   const [deductionOverrides, setDeductionOverrides] = useState<Partial<Record<DeductionKey, string>>>({})
@@ -113,7 +119,7 @@ function EditDraftPayslipModal({
   const [error, setError] = useState<string | null>(null)
 
   async function loadDraft() {
-    const [payslipResult, employeeResult, linesResult, advanceResult, earlierResult] = await Promise.all([
+    const [payslipResult, employeeResult, linesResult, advanceResult, earlierResult, ratesResult] = await Promise.all([
       supabase
         .from('payroll_payslips')
         .select(`cash_advance_deducted, ${CONTRIBUTION_KEYS.join(', ')}, withholding_tax`)
@@ -123,6 +129,7 @@ function EditDraftPayslipModal({
       loadPayslipLineItems(draft.payrollId),
       getOutstandingCashAdvance(draft.employeeId),
       loadEarlierPayslipsThisMonth(draft.employeeId, periodEnd),
+      loadGovernmentRates(periodEnd),
     ])
 
     const loadError =
@@ -130,12 +137,14 @@ function EditDraftPayslipModal({
       employeeResult.error?.message ??
       linesResult.error ??
       advanceResult.error ??
-      earlierResult.error
-    if (loadError) {
-      setError(loadError)
+      earlierResult.error ??
+      ratesResult.error
+    if (loadError || !ratesResult.rates) {
+      setError(loadError ?? 'Could not load the government rates.')
       setLoading(false)
       return
     }
+    const loadedRates = ratesResult.rates
 
     const saved = payslipResult.data as unknown as Record<DeductionKey | 'cash_advance_deducted', number>
     const lines = linesResult.lineItems.map(toEditableLine)
@@ -144,14 +153,14 @@ function EditDraftPayslipModal({
     // Anything saved that differs from what the formulas give now was
     // an admin override last time -- keep showing it as one.
     const gross = lines.reduce((sum, line) => sum + Number(line.amount), 0)
-    const auto = computeWeeklyContributions(gross, periodEnd, earlierResult.payslips)
+    const auto = computeWeeklyContributions(gross, periodEnd, earlierResult.payslips, loadedRates)
     const overrides: Partial<Record<DeductionKey, string>> = {}
     for (const key of CONTRIBUTION_KEYS) {
       if (roundPeso(saved[key]) !== roundPeso(auto[key])) overrides[key] = String(saved[key])
     }
     const employeeShares =
       saved.sss_ee + saved.philhealth_ee + saved.pagibig_ee
-    const autoTax = isMwe ? 0 : weeklyWithholdingTax(gross - employeeShares)
+    const autoTax = isMwe ? 0 : weeklyWithholdingTax(gross - employeeShares, loadedRates)
     if (roundPeso(saved.withholding_tax) !== roundPeso(autoTax)) {
       overrides.withholding_tax = String(saved.withholding_tax)
     }
@@ -163,6 +172,7 @@ function EditDraftPayslipModal({
     setOutstandingAdvance(advanceResult.outstanding + saved.cash_advance_deducted)
     setDeductAmount(String(saved.cash_advance_deducted))
     setEarlierThisMonth(earlierResult.payslips)
+    setRates(loadedRates)
     setDeductionOverrides(overrides)
     setLoading(false)
   }
@@ -196,7 +206,10 @@ function EditDraftPayslipModal({
   // admin's overrides on top. Tax is worked out from the EFFECTIVE
   // employee shares (contributions aren't taxable), so overriding e.g.
   // SSS updates the auto tax too.
-  const contributions = computeWeeklyContributions(grossPay, periodEnd, earlierThisMonth)
+  // All zero until the rates have loaded (Save is locked while loading).
+  const contributions = rates
+    ? computeWeeklyContributions(grossPay, periodEnd, earlierThisMonth, rates)
+    : { ...NO_CONTRIBUTIONS, sss_msc: 0, projectedMonthlyPay: 0 }
   const effectiveValue = (key: DeductionKey, auto: number) => {
     const override = deductionOverrides[key]
     return override !== undefined ? Number(override) || 0 : auto
@@ -213,7 +226,7 @@ function EditDraftPayslipModal({
     philhealth_er: contributions.philhealth_er,
     pagibig_ee: contributions.pagibig_ee,
     pagibig_er: contributions.pagibig_er,
-    withholding_tax: isMinimumWageEarner ? 0 : weeklyWithholdingTax(grossPay - effectiveEmployeeShares),
+    withholding_tax: isMinimumWageEarner || !rates ? 0 : weeklyWithholdingTax(grossPay - effectiveEmployeeShares, rates),
   }
   const deductions = Object.fromEntries(
     (Object.keys(autoDeductions) as DeductionKey[]).map((key) => [

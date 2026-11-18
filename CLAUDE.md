@@ -325,7 +325,10 @@ before creating it.
   any auto line amount or add manual lines; changes are tagged in the
   saved line description ("adjusted by admin, auto: ₱X").
   **Government deductions (2026-09-28):** `lib/governmentContributions.ts`
-  (pure math, 2026 rates as constants — self-check:
+  (pure math; rates come from table `government_rates` since 2026-11-19 --
+  one row per `effective_from` date, a payslip uses the latest row on or
+  before its period end, `loadGovernmentRates()` in payslip.ts; a rate
+  change = add a NEW row, migration 20261119020000 — self-check:
   `node scripts/check-government-contributions.ts`) computes SSS
   (MSC ₱5k–35k, EE 5% / ER 10% + EC ₱10/₱30), PhilHealth (2.5%/2.5%,
   floor ₱10k, ceiling ₱100k), Pag-IBIG (fund salary cap ₱10k, EE 1% if
