@@ -26,10 +26,23 @@ create trigger dispatch_status_logs_not_future
   before insert or update of status_changed_at on public.dispatch_status_logs
   for each row execute function public.dispatch_status_logs_not_future();
 
--- Rows already in the future (from a wrong clock) come back to now.
-update public.dispatch_status_logs
-   set status_changed_at = now()
- where status_changed_at > now();
+-- Rows already in the future (from a wrong clock): shift each trip's future
+-- rows back by the same amount, so its latest one lands a minute before now and
+-- the order / gaps between its moves are kept (clamping them all to now() would
+-- give six moves the same time).
+-- ponytail: assumes the whole session was off by one amount; a shifted row
+-- could land before that trip's last correct row -- check the trip if so.
+with off as (
+  select itinerary_id, max(status_changed_at) - now() + interval '1 minute' as d
+  from public.dispatch_status_logs
+  where status_changed_at > now()
+  group by itinerary_id
+)
+update public.dispatch_status_logs l
+   set status_changed_at = l.status_changed_at - off.d
+  from off
+ where l.itinerary_id = off.itinerary_id
+   and l.status_changed_at > now();
 
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20261119010000', 'status_time_not_future') on conflict (version) do nothing;
