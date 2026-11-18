@@ -47,12 +47,12 @@ test('downpayment never exceeds the contract value (rate below cost)', () => {
   const rate = 1000
   const costPerTrip = 1500
   const trips = 2
-  const required = downpaymentFor(rate, costPerTrip, trips)!
+  const required = downpaymentFor(rate, costPerTrip, trips, 25)!
   assert.ok(required <= rate * trips, `downpayment ₱${required} > contract ₱${rate * trips}`)
 })
 
 test('a client who paid the whole contract has met the downpayment', () => {
-  const status = downpaymentStatus({ contract: 2000, costPerTrip: 1500, trips: 2, amountPaid: 2000, waivedAt: null })!
+  const status = downpaymentStatus({ contract: 2000, costPerTrip: 1500, trips: 2, amountPaid: 2000, waivedAt: null, percent: 25 })!
   assert.equal(status.met, true, `paid ₱2000 of a ₱2000 contract, still ₱${status.missing} "to go"`)
 })
 

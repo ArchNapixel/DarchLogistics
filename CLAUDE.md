@@ -2734,3 +2734,20 @@ stopped them being dispatched. Supersedes the "Find a faster driver" and
   trip #33's moves 7 h early). Clamps instead of refusing because the log is
   inserted AFTER the status update. `statusTimeError` says "a computer's clock
   was wrong" when the last change is later than now.
+
+## 2026-11-19: Policy numbers moved to Settings (migrations 20261119020000 / 030000)
+- **Government rates** live in table `government_rates` (see the Payroll bullet).
+- `app_settings` rows (read with `loadSettingValue(key, fallback)` in
+  `lib/appSettings.ts`; fallback = the old fixed value when the row is missing):
+  `downpayment_percent` (25), `annual_paid_leave_days` (5,
+  `loadAnnualPaidLeaveDays()` in leaveRequests.ts), `quote_low_margin_percent`
+  (50, Review Quote warning + "Rate at the N% line"), `weekly_working_days`
+  (6, `PayrollSettings.weeklyWorkingDays` -- only the divisor; leave counting
+  and attendance still assume Mon-Sat).
+- **Downpayment % is saved per booking**: `bookings.downpayment_percent`
+  (old rows backfilled 25), filled from Settings by trigger
+  `bookings_downpayment_percent_default` on insert, used by SQL
+  `booking_downpayment()` and every `downpaymentStatus({ percent })` call --
+  so changing the setting only affects NEW bookings. Quote screens (no
+  booking yet) use the current setting. `downpaymentFor*` take `percent` as
+  the last argument (null = 25).

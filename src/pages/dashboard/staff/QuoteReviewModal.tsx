@@ -32,8 +32,8 @@
 //
 // Profitability panel: diesel (price/liter x km / km per litre), driver commission
 // (commission% x rate) and the per-trip fee, against rate x trips, with a
-// warning at 50% (lib/tripCost.ts). Plus a pricing guide: the break-even
-// rate and the rate at the 50% line (lib/quotePricing.ts), and on a
+// warning at Settings -> quote_low_margin_percent (50 by default). Plus a pricing guide: the break-even
+// rate and the rate at that line (lib/quotePricing.ts), and on a
 // counter-offer, our last offer vs the client's rate side by side. The
 // cost per trip saved with an offer is what the downpayment uses.
 import { useEffect, useRef, useState } from 'react'
@@ -55,7 +55,7 @@ import {
   tripCargoLabel,
   type RejectionTag,
 } from '../../../lib/quoteRequest'
-import { downpaymentForContract } from '../../../lib/downpayment'
+import { DEFAULT_DOWNPAYMENT_PERCENT, downpaymentForContract } from '../../../lib/downpayment'
 import { rateForCostShare } from '../../../lib/quotePricing'
 import { filterAmountInput } from '../../../lib/amountInput'
 import {
@@ -87,6 +87,8 @@ import WordCount from '../../../components/WordCount'
 import { limitWords } from '../../../lib/wordLimit'
 
 // Same cap as the bookings.hours_per_trip CHECK constraint.
+// Used until Settings loads, or when quote_low_margin_percent has no row.
+const DEFAULT_LOW_MARGIN_PERCENT = 50
 const MAX_HOURS_PER_TRIP = 72
 
 const fieldClasses =
@@ -301,6 +303,11 @@ function QuoteReviewModal({
   const [driverPerTripFee, setDriverPerTripFee] = useState<number | null>(
     null,
   )
+  // Settings -> downpayment_percent / quote_low_margin_percent (the old fixed
+  // 25% / 50% until loaded or when the row is missing).
+  const [downpaymentPercent, setDownpaymentPercent] = useState(DEFAULT_DOWNPAYMENT_PERCENT)
+  const [lowMarginPercent, setLowMarginPercent] = useState(DEFAULT_LOW_MARGIN_PERCENT)
+  const lowMarginShare = lowMarginPercent / 100
   // True once staff typed in the distance box (or it came saved with an
   // earlier offer) -- the background estimate must never overwrite it.
   const distanceTypedRef = useRef(quote.estimated_distance_km != null)
@@ -332,6 +339,8 @@ function QuoteReviewModal({
           'diesel_km_per_liter',
           'driver_commission_rate',
           'driver_per_trip_fee',
+          'downpayment_percent',
+          'quote_low_margin_percent',
         ])
 
       if (settingsError || !data) {
@@ -362,6 +371,10 @@ function QuoteReviewModal({
       if (perTripFeeSetting) {
         setDriverPerTripFee(perTripFeeSetting.setting_value)
       }
+      const downpaymentSetting = data.find((setting) => setting.setting_key === 'downpayment_percent')
+      if (downpaymentSetting) setDownpaymentPercent(Number(downpaymentSetting.setting_value))
+      const marginSetting = data.find((setting) => setting.setting_key === 'quote_low_margin_percent')
+      if (marginSetting) setLowMarginPercent(Number(marginSetting.setting_value))
     }
 
     loadSettings()
@@ -864,12 +877,12 @@ function QuoteReviewModal({
   const costRatio = canCalculateProfitability
     ? totalCost / totalContractValue
     : 0
-  const isLowMargin = canCalculateProfitability && costRatio >= 0.5
+  const isLowMargin = canCalculateProfitability && costRatio >= lowMarginShare
   // Sent with the offer (quote_requests.cost_per_trip) and copied to the
   // booking; the client's downpayment comes from it.
   const costPerTrip = Math.round((totalCost / deliveryCount) * 100) / 100
   const downpayment = canCalculateProfitability
-    ? downpaymentForContract(totalContractValue, costPerTrip, deliveryCount)
+    ? downpaymentForContract(totalContractValue, costPerTrip, deliveryCount, downpaymentPercent)
     : null
 
   // Pricing guide (lib/quotePricing.ts) and "what if" at any rate -- same
@@ -883,7 +896,7 @@ function QuoteReviewModal({
       }
     : null
   const breakEvenRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, guideKm, 1) : null
-  const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, guideKm, 0.5) : null
+  const fiftyLineRate = costSettings && distanceForCalc > 0 ? rateForCostShare(costSettings, guideKm, lowMarginShare) : null
   function profitAt(rates: number[]) {
     if (!costSettings || !(distanceForCalc > 0) || rates.length === 0 || !rates.every((r) => r > 0)) return null
     const costs = estimateLineCosts(costSettings, cargoLines, rates, distanceForCalc, returnKmForCalc)
@@ -904,7 +917,7 @@ function QuoteReviewModal({
   // The offer the client is looking at (Offered): its downpayment.
   const offeredDownpayment =
     waitingOnClient && quote.cost_per_trip != null
-      ? downpaymentForContract(contractTotal(cargoLines, savedRates), quote.cost_per_trip, deliveryCount)
+      ? downpaymentForContract(contractTotal(cargoLines, savedRates), quote.cost_per_trip, deliveryCount, downpaymentPercent)
       : null
 
   const estimatedProfit = totalContractValue - totalCost
@@ -1593,7 +1606,7 @@ function QuoteReviewModal({
                           value={breakEvenRate !== null ? formatMoney(breakEvenRate) : '—'}
                         />
                         <CostRow
-                          label="Rate at the 50% line"
+                          label={`Rate at the ${lowMarginPercent}% line`}
                           value={fiftyLineRate !== null ? formatMoney(fiftyLineRate) : '—'}
                         />
                         {fiftyLineRate !== null && (
@@ -1621,7 +1634,7 @@ function QuoteReviewModal({
                               ['Contract value', (x: NonNullable<typeof counterAt>) => formatMoney(x.contract)],
                               ['Total cost', (x: NonNullable<typeof counterAt>) => formatMoney(x.total)],
                               ['Est. profit', (x: NonNullable<typeof counterAt>) => formatMoney(x.profit)],
-                              ['Cost vs. rate', (x: NonNullable<typeof counterAt>) => `${(x.ratio * 100).toFixed(1)}%${x.ratio >= 0.5 ? ' ⚠' : ''}`],
+                              ['Cost vs. rate', (x: NonNullable<typeof counterAt>) => `${(x.ratio * 100).toFixed(1)}%${x.ratio >= lowMarginShare ? ' ⚠' : ''}`],
                             ] as const).map(([label, show]) => (
                               <tr key={label} className="border-t border-slate-100">
                                 <td className="py-1 text-slate-700">{label}</td>
@@ -1689,7 +1702,7 @@ function QuoteReviewModal({
                           </div>
                           {isLowMargin && (
                             <p className="mt-2 text-[13px] font-medium text-red-700">
-                              Costs are at or above 50% of the rate. Informational only; the offer is still your call.
+                              Costs are at or above {lowMarginPercent}% of the rate. Informational only; the offer is still your call.
                             </p>
                           )}
                         </div>

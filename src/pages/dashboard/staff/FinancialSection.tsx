@@ -880,6 +880,7 @@ function FinancialSection() {
             amountPaid: r.amount_paid,
             waivedAt: r.downpayment_waived_at,
             fixed: r.downpayment_fixed,
+            percent: r.downpayment_percent,
           }),
         ]),
       ),

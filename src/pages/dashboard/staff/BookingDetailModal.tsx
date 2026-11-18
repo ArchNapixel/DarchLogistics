@@ -117,6 +117,7 @@ type Details = {
   // Downpayment inputs (lib/downpayment.ts) and the Admin waiver, if any.
   cost_per_trip: number | null
   downpayment_fixed: number | null
+  downpayment_percent: number | null
   downpayment_waived_at: string | null
   downpayment_waive_reason: string | null
   // Admin let this booking's trips start before its start date (allow_early_start).
@@ -199,7 +200,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_fixed, downpayment_waived_at, downpayment_waive_reason, early_start_allowed_at, early_start_reason, cancellation_reason, cancelled_at, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_fixed, downpayment_percent, downpayment_waived_at, downpayment_waive_reason, early_start_allowed_at, early_start_reason, cancellation_reason, cancelled_at, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -327,6 +328,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       hours_per_trip: b.hours_per_trip,
       cost_per_trip: b.cost_per_trip,
       downpayment_fixed: b.downpayment_fixed === null ? null : Number(b.downpayment_fixed),
+      downpayment_percent: b.downpayment_percent === null ? null : Number(b.downpayment_percent),
       downpayment_waived_at: b.downpayment_waived_at,
       downpayment_waive_reason: b.downpayment_waive_reason,
       early_start_allowed_at: b.early_start_allowed_at,
@@ -454,6 +456,7 @@ function BookingDetailModal({
         amountPaid: booking.amount_paid,
         waivedAt: details.downpayment_waived_at,
         fixed: details.downpayment_fixed,
+        percent: details.downpayment_percent,
       })
     : null
 

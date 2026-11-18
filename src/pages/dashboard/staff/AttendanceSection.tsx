@@ -358,7 +358,7 @@ function AttendanceSection() {
                 {days.map((date, i) => (
                   <th key={date} className="px-2 py-2.5 text-center">
                     <div className={date === today ? 'text-primary' : ''}>{DAY_NAMES[i]} {formatShort(date).split(' ')[1]}</div>
-                    {/* Not on Sundays: weekly salary pays (salary / 6) per
+                    {/* Not on Sundays: weekly salary pays (salary / working days) per
                         day present, so a whole-staff Sunday click would pay
                         everyone 7/6 of a week. A real Sunday shift can still
                         be marked per person. */}

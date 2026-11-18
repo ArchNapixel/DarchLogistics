@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import {
-  ANNUAL_PAID_LEAVE_DAYS,
+  DEFAULT_ANNUAL_PAID_LEAVE_DAYS,
+  loadAnnualPaidLeaveDays,
   LEAVE_TYPES,
   getLeaveDaysUsed,
   loadLeaveForEmployee,
@@ -40,6 +41,7 @@ function MyLeaveSection() {
   const { employeeId, role } = useAuth()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [used, setUsed] = useState(0)
+  const [allowance, setAllowance] = useState(DEFAULT_ANNUAL_PAID_LEAVE_DAYS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -58,10 +60,15 @@ function MyLeaveSection() {
   const load = useCallback(
     async (id: number) => {
       setLoading(true)
-      const [list, days] = await Promise.all([loadLeaveForEmployee(id), getLeaveDaysUsed(id, year)])
+      const [list, days, paidDays] = await Promise.all([
+        loadLeaveForEmployee(id),
+        getLeaveDaysUsed(id, year),
+        loadAnnualPaidLeaveDays(),
+      ])
       setRequests(list.requests)
       setUsed(days.used)
-      setError(list.error ?? days.error)
+      setAllowance(paidDays.value)
+      setError(list.error ?? days.error ?? paidDays.error)
       setLoading(false)
     },
     [year],
@@ -140,9 +147,9 @@ function MyLeaveSection() {
         // balance are approved as unpaid leave).
         <section aria-label={`Leave balance for ${year}`} className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
-            { label: 'Paid leave per year', value: ANNUAL_PAID_LEAVE_DAYS },
+            { label: 'Paid leave per year', value: allowance },
             { label: `Used in ${year}`, value: used },
-            { label: 'Remaining', note: `${ANNUAL_PAID_LEAVE_DAYS} − used`, value: Math.max(0, ANNUAL_PAID_LEAVE_DAYS - used) },
+            { label: 'Remaining', note: `${allowance} − used`, value: Math.max(0, allowance - used) },
           ].map((tile) => (
             <div key={tile.label} className="card px-[18px] py-3.5">
               <p className="text-sm font-medium text-ink-secondary">

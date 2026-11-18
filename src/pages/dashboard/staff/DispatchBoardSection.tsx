@@ -155,6 +155,7 @@ type BoardBookingRow = {
   amount_paid: number | null
   downpayment_waived_at: string | null
   downpayment_fixed: number | null
+  downpayment_percent: number | null
   storage_deadline: string | null
   // Admin allowed this booking's trips to start before its start date.
   early_start_allowed_at: string | null
@@ -1645,7 +1646,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, storage_deadline, early_start_allowed_at, quote_request_id, place_of_return_id')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, downpayment_percent, storage_deadline, early_start_allowed_at, quote_request_id, place_of_return_id')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1700,6 +1701,7 @@ function DispatchBoardSection() {
           amountPaid: b.amount_paid,
           waivedAt: b.downpayment_waived_at,
           fixed: b.downpayment_fixed,
+          percent: b.downpayment_percent,
         }),
       ]),
     )

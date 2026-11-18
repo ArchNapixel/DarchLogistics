@@ -80,6 +80,7 @@ type DueBookingRow = {
   cost_per_trip: number | null
   downpayment_waived_at: string | null
   downpayment_fixed: number | null
+  downpayment_percent: number | null
   place_of_pickup_id: number
   place_of_delivery_id: number
 }
@@ -98,6 +99,7 @@ export type PaymentDueRow = {
   downpayment_waived_at: string | null
   // Downpayment kept as it was when the booking was repriced after paying it.
   downpayment_fixed: number | null
+  downpayment_percent: number | null
   // Average per trip; trip_rates = each live trip's own rate (cargo lines
   // can be priced differently -- the contract / billed amounts add these up).
   rate_per_trip: number | null
@@ -142,7 +144,7 @@ export async function loadPaymentDueReport(
     let query = supabase
       .from('bookings')
       .select(
-        'booking_id, booking_date, created_at, client_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_paid, cost_per_trip, downpayment_waived_at, downpayment_fixed, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_date, created_at, client_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_paid, cost_per_trip, downpayment_waived_at, downpayment_fixed, downpayment_percent, place_of_pickup_id, place_of_delivery_id',
       )
       .order('booking_id', { ascending: true })
     if (clientId !== undefined) query = query.eq('client_id', clientId)
@@ -291,6 +293,7 @@ export async function loadPaymentDueReport(
         cost_per_trip: booking.cost_per_trip,
         downpayment_waived_at: booking.downpayment_waived_at,
         downpayment_fixed: booking.downpayment_fixed === null ? null : Number(booking.downpayment_fixed),
+        downpayment_percent: booking.downpayment_percent === null ? null : Number(booking.downpayment_percent),
         rate_per_trip: booking.rate_of_delivery_service,
         trip_rates: balance.trip_rates,
         total_trips: balance.total_trips,

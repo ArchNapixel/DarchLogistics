@@ -79,6 +79,7 @@ type Raw = {
   storage_deadline: string | null
   downpayment_waived_at: string | null
   downpayment_fixed: number | null
+  downpayment_percent: number | null
 }
 
 // The form's values (also what was loaded, to see what changed).
@@ -118,7 +119,7 @@ async function loadEditData(bookingId: number) {
   const { data: b, error } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, booking_date, payment_terms, place_of_pickup_id, place_of_delivery_id, place_of_return_id, pickup_address_detail, delivery_address_detail, return_address_detail, pickup_landmark, delivery_landmark, return_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, return_lat, return_lng, estimated_distance_km, return_distance_km, hours_per_trip, cost_per_trip, storage_deadline, downpayment_waived_at, downpayment_fixed',
+      'quote_request_id, booking_date, payment_terms, place_of_pickup_id, place_of_delivery_id, place_of_return_id, pickup_address_detail, delivery_address_detail, return_address_detail, pickup_landmark, delivery_landmark, return_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, return_lat, return_lng, estimated_distance_km, return_distance_km, hours_per_trip, cost_per_trip, storage_deadline, downpayment_waived_at, downpayment_fixed, downpayment_percent',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -310,6 +311,7 @@ function BookingEditForm({
     amountPaid: booking.amount_paid,
     waivedAt: raw.downpayment_waived_at,
     fixed: raw.downpayment_fixed,
+    percent: raw.downpayment_percent,
   })
   // Paid already (and repriced): the database keeps it as it was.
   const downpaymentNow = downpaymentStatus({
@@ -319,6 +321,7 @@ function BookingEditForm({
     amountPaid: booking.amount_paid,
     waivedAt: raw.downpayment_waived_at,
     fixed: raw.downpayment_fixed,
+    percent: raw.downpayment_percent,
   })
   const downpaymentShown = downpaymentNow?.met ? downpaymentNow : downpayment
 

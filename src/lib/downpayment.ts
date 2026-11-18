@@ -6,7 +6,11 @@
 //   cost     = cost_per_trip x trips (diesel + driver commission + per-trip
 //              fee, saved on the booking at approval)
 //   contract = the sum of the trips' rates (rate x trips when all the same)
-//   downpayment = cost + 25% x (contract - cost)
+//   downpayment = cost + P% x (contract - cost)
+//
+// P = bookings.downpayment_percent, saved on the booking when it's created
+// (from Settings -> downpayment_percent), so changing the setting only
+// affects new bookings. Quotes (no booking yet) use the current setting.
 //
 // Cancelled trips don't count. A booking with no saved cost_per_trip (made
 // before this existed) has no downpayment requirement (null). Once paid --
@@ -18,7 +22,10 @@
 // new prices only change the balance. booking_downpayment() in SQL returns
 // the fixed amount too.
 
-export const DOWNPAYMENT_SHARE_OF_REMAINING = 0.25
+// When a booking has no saved % (or Settings has no row) -- same as the SQL coalesce.
+export const DEFAULT_DOWNPAYMENT_PERCENT = 25
+// Number(): a numeric column can arrive as text.
+const share = (percent: number | null) => (percent == null ? DEFAULT_DOWNPAYMENT_PERCENT : Number(percent)) / 100
 
 // Rounds to centavos the way Postgres round(x, 2) does (half up on the exact
 // decimal). A plain Math.round(n * 100) rounds â‚±34,565.325 DOWN (the float is
@@ -31,11 +38,12 @@ export function downpaymentForContract(
   contract: number | null,
   costPerTrip: number | null,
   trips: number,
+  percent: number | null,
 ): number | null {
   if (costPerTrip === null || contract === null) return null
   const cost = costPerTrip * trips
   const remaining = Math.max(contract - cost, 0)
-  return cents(cost + DOWNPAYMENT_SHARE_OF_REMAINING * remaining)
+  return cents(cost + share(percent) * remaining)
 }
 
 // Every trip at the same rate.
@@ -43,8 +51,9 @@ export function downpaymentFor(
   ratePerTrip: number | null,
   costPerTrip: number | null,
   trips: number,
+  percent: number | null,
 ): number | null {
-  return downpaymentForContract(ratePerTrip === null ? null : ratePerTrip * trips, costPerTrip, trips)
+  return downpaymentForContract(ratePerTrip === null ? null : ratePerTrip * trips, costPerTrip, trips, percent)
 }
 
 export type DownpaymentStatus = {
@@ -67,11 +76,13 @@ export function downpaymentStatus(args: {
   waivedAt: string | null
   // bookings.downpayment_fixed: kept as it was when repriced after paying it.
   fixed?: number | null
+  // bookings.downpayment_percent (null = DEFAULT_DOWNPAYMENT_PERCENT).
+  percent: number | null
 }): DownpaymentStatus | null {
   const required =
     args.fixed !== undefined && args.fixed !== null
       ? Number(args.fixed)
-      : downpaymentForContract(args.contract, args.costPerTrip, args.trips)
+      : downpaymentForContract(args.contract, args.costPerTrip, args.trips, args.percent)
   if (required === null) return null
   const paid = args.amountPaid ?? 0
   const missing = cents(Math.max(required - paid, 0))

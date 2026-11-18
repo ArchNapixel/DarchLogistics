@@ -11,7 +11,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { filterAmountInput } from '../../../lib/amountInput'
 import { formatDate, formatMoney } from '../../../lib/format'
-import { downpaymentForContract } from '../../../lib/downpayment'
+import { DEFAULT_DOWNPAYMENT_PERCENT, downpaymentForContract } from '../../../lib/downpayment'
+import { loadSettingValue } from '../../../lib/appSettings'
 import { contractTotal, lineRateError, parseLineRates, rateLabel, ratesDiffer } from '../../../lib/lineRates'
 import { loadQuoteOffers, respondToQuoteOffer, type QuoteOfferRow } from '../../../lib/quoteOffers'
 import OfferComparison from '../../../components/OfferComparison'
@@ -109,7 +110,13 @@ function QuoteOfferCard({
   // Past its pickup date the offer can't be accepted (the trips would start in the past).
   const timing = offerTiming(quote.preferred_pickup_date, todayDateString())
   const trips = quote.delivery_order_count ?? 1
-  const downpayment = quote.cost_per_trip != null ? downpaymentForContract(contract, quote.cost_per_trip, trips) : null
+  // Settings -> downpayment_percent (null until loaded; the booking saves the
+  // same setting when it's created).
+  const [downpaymentPercent, setDownpaymentPercent] = useState<number | null>(null)
+  const downpayment =
+    quote.cost_per_trip != null && downpaymentPercent !== null
+      ? downpaymentForContract(contract, quote.cost_per_trip, trips, downpaymentPercent)
+      : null
   const [note, setNote] = useState<string | null>(null)
   // On a new offer after the client's counter: their counter and our offer,
   // compared (changes highlighted). Null on a first offer.
@@ -135,6 +142,16 @@ function QuoteOfferCard({
       setCompare(ours && theirs ? { before: theirs, now: ours } : null)
     })
   }, [quote.quote_request_id])
+
+  useEffect(() => {
+    let cancelled = false
+    loadSettingValue('downpayment_percent', DEFAULT_DOWNPAYMENT_PERCENT).then(({ value }) => {
+      if (!cancelled) setDownpaymentPercent(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function accept() {
     const ok = await confirmDialog({

@@ -6,27 +6,34 @@ import { downpaymentFor, downpaymentForContract, downpaymentStatus, tripsMayStar
 
 // The example agreed with the owner: 4 trips x ₱5,000, cost ₱2,003.30/trip.
 // cost 8,013.20 + 25% x (20,000 - 8,013.20 = 11,986.80) = 8,013.20 + 2,996.70
-assert.equal(downpaymentFor(5000, 2003.3, 4), 11009.9)
+assert.equal(downpaymentFor(5000, 2003.3, 4, 25), 11009.9)
 // One trip: 2,003.30 + 25% x 2,996.70 = 2,752.475 -> 2,752.48
-assert.equal(downpaymentFor(5000, 2003.3, 1), 2752.48)
+assert.equal(downpaymentFor(5000, 2003.3, 1, 25), 2752.48)
 // Cost above the rate: nothing "remaining" to add 25% of.
-assert.equal(downpaymentFor(1000, 1500, 2), 3000)
+assert.equal(downpaymentFor(1000, 1500, 2, 25), 3000)
 // No trips left (all cancelled) -> nothing to pay.
-assert.equal(downpaymentFor(5000, 2003.3, 0), 0)
+assert.equal(downpaymentFor(5000, 2003.3, 0, 25), 0)
 // Old booking without a saved cost -> no requirement.
-assert.equal(downpaymentFor(5000, null, 4), null)
+assert.equal(downpaymentFor(5000, null, 4, 25), null)
 
 // Lines priced differently: the contract is the sum of the trips' own rates.
 // 2 x 5,000 + 2 x 5,000 = 20,000 -> same as 4 trips at 5,000.
-assert.equal(downpaymentForContract(20000, 2003.3, 4), 11009.9)
+assert.equal(downpaymentForContract(20000, 2003.3, 4, 25), 11009.9)
 // 2 x 4,000 + 2 x 6,000 = 20,000 too (the average is what matters, not the split).
-assert.equal(downpaymentForContract(4000 * 2 + 6000 * 2, 2003.3, 4), 11009.9)
-assert.equal(downpaymentForContract(null, 2003.3, 4), null)
+assert.equal(downpaymentForContract(4000 * 2 + 6000 * 2, 2003.3, 4, 25), 11009.9)
+assert.equal(downpaymentForContract(null, 2003.3, 4, 25), null)
 // Exactly half a centavo rounds UP, like the DB's round(x, 2) (booking #4,
 // 2026-11-17: 3 x 8,695.70 cost on a 60,000 contract = 34,565.325).
-assert.equal(downpaymentForContract(60000, 8695.7, 3), 34565.33)
+assert.equal(downpaymentForContract(60000, 8695.7, 3, 25), 34565.33)
 
-const base = { contract: 20000, costPerTrip: 2003.3, trips: 4, waivedAt: null }
+// The booking's own saved % (Settings -> downpayment_percent at creation).
+// 30%: 8,013.20 + 30% x 11,986.80 = 8,013.20 + 3,596.04
+assert.equal(downpaymentForContract(20000, 2003.3, 4, 30), 11609.24)
+// No saved % (null) = the old 25%; text from a numeric column works too.
+assert.equal(downpaymentForContract(20000, 2003.3, 4, null), 11009.9)
+assert.equal(downpaymentForContract(20000, 2003.3, 4, '30' as unknown as number), 11609.24)
+
+const base = { contract: 20000, costPerTrip: 2003.3, trips: 4, waivedAt: null, percent: 25 }
 const partly = downpaymentStatus({ ...base, amountPaid: 2000 })!
 assert.equal(partly.missing, 9009.9)
 assert.equal(partly.met, false)

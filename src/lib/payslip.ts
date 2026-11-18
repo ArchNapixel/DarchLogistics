@@ -27,7 +27,7 @@
 //   ever end up overlapping.
 // - rate_type 'Weekly Salary' (everyone but Drivers): paid against
 //   attendance (employee_attendance, Present/Leave days count) --
-//   (weekly_salary / 6 working days) x paid days.
+//   (weekly_salary / app_settings.weekly_working_days) x paid days.
 //   No overtime (removed 2026-11-17 -- the business doesn't pay it).
 // - The admin can override any calculated line amount, or add manual
 //   lines, in IssuePayslipModal before issuing -- issuePayslip() just
@@ -72,9 +72,14 @@ import { DELIVERED_STATUSES } from './tripStatusFlow'
 export type PayrollSettings = {
   driverCommissionRate: number
   driverPerTripFee: number
+  // Settings -> weekly_working_days: weekly salary / this = one paid day.
+  weeklyWorkingDays: number
 }
 
-const SETTINGS_KEYS = ['driver_commission_rate', 'driver_per_trip_fee'] as const
+// Used when weekly_working_days has no row (the old fixed Mon-Sat week).
+export const DEFAULT_WEEKLY_WORKING_DAYS = 6
+
+const SETTINGS_KEYS = ['driver_commission_rate', 'driver_per_trip_fee', 'weekly_working_days'] as const
 
 export async function loadPayrollSettings(): Promise<{
   settings: PayrollSettings | null
@@ -95,6 +100,10 @@ export async function loadPayrollSettings(): Promise<{
     settings: {
       driverCommissionRate: valueByKey.get('driver_commission_rate') ?? 0,
       driverPerTripFee: valueByKey.get('driver_per_trip_fee') ?? 0,
+      // Never 0 or less: it's a divisor.
+      weeklyWorkingDays: Number(valueByKey.get('weekly_working_days')) > 0
+        ? Number(valueByKey.get('weekly_working_days'))
+        : DEFAULT_WEEKLY_WORKING_DAYS,
     },
     error: null,
   }
@@ -382,10 +391,14 @@ function buildCommissionTripLineItems(
   return { lineItems, error: null }
 }
 
-// Weekly Salary: paid against attendance -- (weekly_salary / 6 working
-// days) x paid days, using this employee's own weekly_salary.
+// Weekly Salary: paid against attendance -- (weekly_salary / working days
+// per week) x paid days, using this employee's own weekly_salary.
+// ponytail: only the divisor is a setting. Leave days, "All present" and
+// the auto-Absent rule still treat Mon-Sat as the working week, so set
+// weekly_working_days to 5 only together with a Mon-Fri change there.
 function buildAttendanceBasedLineItems(
   employee: EmployeePayRate,
+  settings: PayrollSettings,
   data: PeriodPayData,
 ): { lineItems: PayslipLineItem[]; error: string | null } {
   const days = (data.daysByEmployee.get(employee.employee_id) ?? []).length
@@ -399,8 +412,8 @@ function buildAttendanceBasedLineItems(
     lineItems: [
       {
         itinerary_id: null,
-        description: `${employee.position} weekly salary (${days}/6 paid attendance days)`,
-        amount: (employee.weekly_salary / 6) * days,
+        description: `${employee.position} weekly salary (${days}/${settings.weeklyWorkingDays} paid attendance days)`,
+        amount: (employee.weekly_salary / settings.weeklyWorkingDays) * days,
       },
     ],
     error: null,
@@ -416,7 +429,7 @@ function buildEmployeePayLineItems(
   if (employee.rate_type === 'Commission Per Trip') {
     return buildCommissionTripLineItems(employee, settings, data)
   }
-  return buildAttendanceBasedLineItems(employee, data)
+  return buildAttendanceBasedLineItems(employee, settings, data)
 }
 
 // Total cash advances issued minus what's already been deducted across

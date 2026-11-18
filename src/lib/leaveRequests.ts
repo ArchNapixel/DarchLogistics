@@ -10,6 +10,7 @@
 // so payroll pays those days. Drivers are paid per trip, so for them
 // approval is just a record -- no attendance rows.
 import { supabase } from './supabaseClient'
+import { loadSettingValue } from './appSettings'
 import { loadAttendanceRecords, saveAttendanceRecord } from './employeeAttendance'
 import { FINISHED_IN } from './tripStatusFlow'
 
@@ -18,9 +19,12 @@ export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export const LEAVE_TYPES: LeaveType[] = ['Vacation', 'Sick', 'Emergency', 'Other']
 
-// Paid leave days per calendar year (PH Service Incentive Leave minimum).
-// Company-wide constant -- not stored per employee.
-export const ANNUAL_PAID_LEAVE_DAYS = 5
+// Paid leave days per calendar year: Settings -> annual_paid_leave_days.
+// Company-wide, not per employee. 5 (the PH Service Incentive Leave
+// minimum) when the row is missing.
+export const DEFAULT_ANNUAL_PAID_LEAVE_DAYS = 5
+export const loadAnnualPaidLeaveDays = () =>
+  loadSettingValue('annual_paid_leave_days', DEFAULT_ANNUAL_PAID_LEAVE_DAYS)
 
 export type LeaveRequest = {
   leave_id: number
@@ -281,19 +285,22 @@ export async function decideLeaveRequest({
 }
 
 // How many of a request's Mon-Sat days the yearly paid balance
-// (ANNUAL_PAID_LEAVE_DAYS) still covers, and how many go past it (those
+// (annual_paid_leave_days, returned as `allowance`) still covers, and how many go past it (those
 // become 'Unpaid Leave'). Call it BEFORE the request is Approved --
 // getLeaveDaysUsed counts approved requests. Balance is per calendar year
 // of the start date.
 // ponytail: a request spanning New Year uses the start year's balance only.
 export async function paidLeaveSplit(
   request: LeaveRequest,
-): Promise<{ paid: number; unpaid: number; error: string | null }> {
+): Promise<{ paid: number; unpaid: number; allowance: number; error: string | null }> {
   const days = leaveDayCount(request.start_date, request.end_date)
-  const { used, error } = await getLeaveDaysUsed(request.employee_id, Number(request.start_date.slice(0, 4)))
-  if (error) return { paid: 0, unpaid: 0, error }
-  const paid = Math.min(days, Math.max(0, ANNUAL_PAID_LEAVE_DAYS - used))
-  return { paid, unpaid: days - paid, error: null }
+  const [{ used, error }, allowance] = await Promise.all([
+    getLeaveDaysUsed(request.employee_id, Number(request.start_date.slice(0, 4))),
+    loadAnnualPaidLeaveDays(),
+  ])
+  if (error || allowance.error) return { paid: 0, unpaid: 0, allowance: allowance.value, error: error ?? allowance.error }
+  const paid = Math.min(days, Math.max(0, allowance.value - used))
+  return { paid, unpaid: days - paid, allowance: allowance.value, error: null }
 }
 
 // One row per Mon-Sat day: the first `paidDays` written are 'Leave' (paid),

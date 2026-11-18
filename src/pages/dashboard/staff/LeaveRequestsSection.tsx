@@ -9,7 +9,6 @@ import { usePaged } from '../../../lib/usePaged'
 import { useAuth } from '../../../context/AuthContext'
 import { confirmDialog, promptDialog } from '../../../components/ConfirmDialog'
 import {
-  ANNUAL_PAID_LEAVE_DAYS,
   paidLeaveSplit,
   decideLeaveRequest,
   leaveDayCount,
@@ -77,7 +76,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
           title: `Approve ${request.employee_name}'s leave?`,
           message:
             `${split.unpaid} of these ${split.paid + split.unpaid} working days go past the ` +
-            `${ANNUAL_PAID_LEAVE_DAYS} paid leave days for the year, so they'll be marked Unpaid Leave ` +
+            `${split.allowance} paid leave days for the year, so they'll be marked Unpaid Leave ` +
             `(not paid)${split.paid > 0 ? `; the other ${split.paid} are paid` : ''}.`,
           confirmLabel: 'Approve',
         }))

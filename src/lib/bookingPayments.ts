@@ -234,6 +234,7 @@ export async function downpaymentVoidWarning(bookingId: number, amount: number):
     trips: row.total_trips,
     waivedAt: row.downpayment_waived_at,
     fixed: row.downpayment_fixed,
+    percent: row.downpayment_percent,
   }
   const before = downpaymentStatus({ ...args, amountPaid: row.amount_paid })
   const after = downpaymentStatus({ ...args, amountPaid: row.amount_paid - amount })
