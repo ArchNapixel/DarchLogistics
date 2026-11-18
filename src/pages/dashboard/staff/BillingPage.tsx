@@ -18,7 +18,7 @@ import StatusBadge from '../../../components/StatusBadge'
 import BillingCharges from './BillingCharges'
 import { PAYMENT_TERMS_LABELS } from '../../../lib/quoteRequest'
 import { toManilaDate } from '../../../lib/payslip'
-import { COMPANY } from '../../../lib/company'
+import { formatPhone, useCompany } from '../../../lib/company'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
 import { bookingRateLabel } from '../../../lib/lineRates'
@@ -26,6 +26,7 @@ import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
 function BillingPage() {
+  const company = useCompany()
   // Set when opened from a booking's "Billing" link.
   const { bookingId: linkedBookingId } = useParams()
   const [pickedBookingId, setBookingId] = useState(linkedBookingId ?? '')
@@ -236,8 +237,9 @@ function BillingPage() {
           <div className="p-6 print:p-0">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="text-sm font-bold text-slate-900">{COMPANY.name}</p>
-              <p className="text-xs text-slate-500">{COMPANY.address} · {COMPANY.phone}</p>
+              <p className="text-sm font-bold text-slate-900">{company.company_name}</p>
+              <p className="text-xs text-slate-500">{company.address} · {formatPhone(company.phone_number)}
+                {company.tin_number && ` · TIN ${company.tin_number}`}</p>
               <h3 className="mt-3 text-lg font-bold text-slate-900">Billing</h3>
             </div>
             <div className="text-right text-sm text-slate-600">

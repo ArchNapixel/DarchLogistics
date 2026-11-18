@@ -12,12 +12,12 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { filterAmountInput } from '../../../lib/amountInput'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { DEFAULT_DOWNPAYMENT_PERCENT, downpaymentForContract } from '../../../lib/downpayment'
-import { loadSettingValue } from '../../../lib/appSettings'
+import { loadSettingValue, useSettingValues } from '../../../lib/appSettings'
 import { contractTotal, lineRateError, parseLineRates, rateLabel, ratesDiffer } from '../../../lib/lineRates'
 import { loadQuoteOffers, respondToQuoteOffer, type QuoteOfferRow } from '../../../lib/quoteOffers'
 import OfferComparison from '../../../components/OfferComparison'
 import { parseCargoLines, todayDateString, tripCargoLabel } from '../../../lib/quoteRequest'
-import { offerTiming } from '../../../lib/offerTiming'
+import { OFFER_EXPIRY_DEFAULTS, offerTiming } from '../../../lib/offerTiming'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import WordCount from '../../../components/WordCount'
 import { limitWords } from '../../../lib/wordLimit'
@@ -108,7 +108,8 @@ function QuoteOfferCard({
   const rates = parseLineRates(quote.line_rates, cargoLines.length, quote.proposed_rate)
   const contract = contractTotal(cargoLines, rates)
   // Past its pickup date the offer can't be accepted (the trips would start in the past).
-  const timing = offerTiming(quote.preferred_pickup_date, todayDateString())
+  const expiryDays = useSettingValues(OFFER_EXPIRY_DEFAULTS).offer_expiry_days
+  const timing = offerTiming(quote.preferred_pickup_date, todayDateString(), expiryDays)
   const trips = quote.delivery_order_count ?? 1
   // Settings -> downpayment_percent (null until loaded; the booking saves the
   // same setting when it's created).

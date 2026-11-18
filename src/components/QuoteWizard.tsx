@@ -21,6 +21,7 @@ import { CargoFields, RouteFields, ScheduleFields, type SectionProps } from './Q
 import { QuoteSummary } from './QuoteSummary'
 import QuoteAvailabilityNote from './QuoteAvailabilityNote'
 import {
+  useQuoteLimits,
   validateShipment,
   type FieldErrors,
   type RecentLocation,
@@ -100,6 +101,7 @@ function QuoteWizard({
   // Shows a Cancel button in the footer (the portal's New Quote page).
   onCancel?: () => void
 }) {
+  const limits = useQuoteLimits()
   // Opening with errors already set (a rejected quote sent back for
   // fixing): start on the first step with a highlighted field, and let
   // every step be clicked so the client can jump straight to Review.
@@ -138,7 +140,7 @@ function QuoteWizard({
   }
 
   function continueToNext() {
-    const stepErrors = errorsForStep(stepIndex, validateShipment(form))
+    const stepErrors = errorsForStep(stepIndex, validateShipment(form, limits))
     if (Object.keys(stepErrors).length > 0) {
       setErrors(stepErrors)
       return
@@ -155,7 +157,7 @@ function QuoteWizard({
       return
     }
 
-    const all = validateShipment(form)
+    const all = validateShipment(form, limits)
     const firstBadStep = STEPS.findIndex(
       (_, index) => Object.keys(errorsForStep(index, all)).length > 0,
     )

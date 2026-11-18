@@ -26,6 +26,7 @@ import { QuoteSubmitted } from '../../../components/QuoteSummary'
 import {
   buildQuoteRow,
   loadRecentLocations,
+  useQuoteLimits,
   useShipmentForm,
   type FieldErrors,
   type RecentLocation,
@@ -69,6 +70,7 @@ function ClientQuoteForm({
   onCancel?: () => void
 }) {
   const { form, setField, errors, setErrors } = useShipmentForm(resubmit?.form, resubmit?.errors)
+  const quoteLimits = useQuoteLimits()
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null)
   const [contactInfoError, setContactInfoError] = useState<string | null>(null)
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([])
@@ -120,7 +122,7 @@ function ClientQuoteForm({
     setSubmitError(null)
     if (!contactInfo) return
 
-    const result = buildQuoteRow(form)
+    const result = buildQuoteRow(form, quoteLimits)
     if (result.errors) {
       setErrors(result.errors)
       return

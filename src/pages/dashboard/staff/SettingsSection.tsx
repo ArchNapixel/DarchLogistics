@@ -17,6 +17,8 @@ import { showToast } from '../../../components/Toast'
 import EmptyState from '../../../components/EmptyState'
 import TimeInput12 from '../../../components/TimeInput12'
 import { formatMinutesOfDay } from '../../../lib/format'
+import GovernmentRatesSettings from './GovernmentRatesSettings'
+import CompanySettings from './CompanySettings'
 
 type Setting = {
   setting_key: string
@@ -200,6 +202,9 @@ function SettingsSection() {
           </button>
         </div>
       )}
+
+      <CompanySettings />
+      <GovernmentRatesSettings />
     </div>
   )
 }

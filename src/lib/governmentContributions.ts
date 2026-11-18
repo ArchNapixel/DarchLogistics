@@ -29,6 +29,8 @@
 // rate%, for the highest `over` the pay is above.
 export type TaxBracket = { over: number; fixed: number; rate: number }
 export type GovernmentRates = {
+  // The row's id (set on rows read from the table).
+  rate_set_id?: number
   effective_from: string
   // SSS: MSC = pay rounded to the nearest step, kept between min and max.
   // EC (employer only): low below the threshold MSC, high from it.
@@ -50,6 +52,54 @@ export type GovernmentRates = {
   pagibig_ee_rate: number
   pagibig_er_rate: number
   weekly_tax_brackets: TaxBracket[]
+}
+
+// Every plain number field of a rate set (all but the date and brackets).
+export const RATE_NUMBER_KEYS = [
+  'sss_msc_min',
+  'sss_msc_max',
+  'sss_msc_step',
+  'sss_ee_rate',
+  'sss_er_rate',
+  'sss_ec_threshold',
+  'sss_ec_low',
+  'sss_ec_high',
+  'philhealth_floor',
+  'philhealth_ceiling',
+  'philhealth_ee_rate',
+  'philhealth_er_rate',
+  'pagibig_salary_cap',
+  'pagibig_low_salary',
+  'pagibig_ee_rate_low',
+  'pagibig_ee_rate',
+  'pagibig_er_rate',
+] as const
+export type RateNumberKey = (typeof RATE_NUMBER_KEYS)[number]
+
+// What's wrong with a rate set before it's saved, or null. Same rules as
+// the table's government_rates_sane CHECK (change both), plus sane brackets.
+export function governmentRatesError(r: GovernmentRates): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.effective_from)) return 'Pick the date these rates take effect from.'
+  for (const key of RATE_NUMBER_KEYS) {
+    if (!Number.isFinite(r[key]) || r[key] < 0) return 'Every rate and amount must be a number, 0 or more.'
+    if (key.endsWith('_rate') || key.endsWith('_rate_low')) {
+      if (r[key] > 100) return 'A rate is a percentage -- 100 at most.'
+    }
+  }
+  if (r.sss_msc_min <= 0 || r.sss_msc_min > r.sss_msc_max) return "SSS: the lowest salary credit must be more than 0 and not above the highest."
+  if (r.sss_msc_step <= 0) return 'SSS: the salary credit step must be more than 0.'
+  if (r.philhealth_floor > r.philhealth_ceiling) return "PhilHealth: the floor can't be above the ceiling."
+  if (r.pagibig_salary_cap <= 0) return 'Pag-IBIG: the salary cap must be more than 0.'
+  const overs = new Set<number>()
+  for (const b of r.weekly_tax_brackets) {
+    if (![b.over, b.fixed, b.rate].every((n) => Number.isFinite(n) && n >= 0)) {
+      return 'Tax table: every bracket needs numbers, 0 or more.'
+    }
+    if (b.rate > 100) return 'Tax table: a rate is a percentage -- 100 at most.'
+    if (overs.has(b.over)) return 'Tax table: two brackets start at the same amount.'
+    overs.add(b.over)
+  }
+  return null
 }
 
 // The rate set in force on a YYYY-MM-DD date: the latest one that took

@@ -8,38 +8,38 @@ const H = 3_600_000
 const t0 = Date.parse('2026-11-13T08:00:00Z')
 
 // Going home
-assert.equal(goesHome(t0, []), true) // nothing next
-assert.equal(goesHome(t0, [t0 + 13 * H]), true) // next trip tomorrow-ish
-assert.equal(goesHome(t0, [t0 + 12 * H]), false) // exactly 12 h -> straight on
-assert.equal(goesHome(t0, [t0 + 2 * H]), false)
-assert.equal(goesHome(t0, [t0 - 5 * H]), false) // overdue next trip waiting for this truck
+assert.equal(goesHome(12, t0, []), true) // nothing next
+assert.equal(goesHome(12, t0, [t0 + 13 * H]), true) // next trip tomorrow-ish
+assert.equal(goesHome(12, t0, [t0 + 12 * H]), false) // exactly 12 h -> straight on
+assert.equal(goesHome(12, t0, [t0 + 2 * H]), false)
+assert.equal(goesHome(12, t0, [t0 - 5 * H]), false) // overdue next trip waiting for this truck
 
 // Legs
-assert.deepEqual(tripLegs({ outKm: 12.345, tripKm: 80, backKm: 70.1, home: true }), {
+assert.deepEqual(tripLegs({ outKm: 12.345, tripKm: 80, backKm: 70.1, home: true, gapHours: 12 }), {
   out: 12.35,
   trip: 80,
   back: 70.1,
   total: 162.45,
   notes: [],
 })
-const noRoute = tripLegs({ outKm: null, tripKm: 80, backKm: null, home: true })
+const noRoute = tripLegs({ outKm: null, tripKm: 80, backKm: null, home: true, gapHours: 12 })
 assert.equal(noRoute.out, 0)
 assert.equal(noRoute.back, 80) // same road back
 assert.equal(noRoute.total, 160)
 assert.equal(noRoute.notes.length, 2)
 // Empty container return: added to the trip leg; the drive back is from the return place.
-const withReturn = tripLegs({ outKm: 10, tripKm: 80, returnKm: 30.004, backKm: 50, home: true })
+const withReturn = tripLegs({ outKm: 10, tripKm: 80, returnKm: 30.004, backKm: 50, home: true, gapHours: 12 })
 assert.equal(withReturn.trip, 110)
 assert.equal(withReturn.back, 50)
 assert.equal(withReturn.total, 170)
 assert.deepEqual(withReturn.notes, ['Incl. 30 km empty container return'])
-const returnUnrouted = tripLegs({ outKm: 10, tripKm: 80, returnKm: null, backKm: 50, home: true })
+const returnUnrouted = tripLegs({ outKm: 10, tripKm: 80, returnKm: null, backKm: 50, home: true, gapHours: 12 })
 assert.equal(returnUnrouted.trip, 80)
 assert.equal(returnUnrouted.notes.length, 1)
 // No return: same as before.
-assert.equal(tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: true }).notes.length, 0)
+assert.equal(tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: true, gapHours: 12 }).notes.length, 0)
 
-const straightOn = tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: false })
+const straightOn = tripLegs({ outKm: 10, tripKm: 80, backKm: 70, home: false, gapHours: 12 })
 assert.equal(straightOn.back, 0) // routed back ignored: truck didn't go home
 assert.equal(straightOn.total, 90)
 
@@ -63,5 +63,8 @@ assert.deepEqual(
   uncountedTrips(trips, log).map((t) => t.itinerary_id),
   [6, 7, 9], // oldest first
 )
+
+// A longer gap from Settings: a next trip 13 h later now means straight on.
+assert.equal(goesHome(14, t0, [t0 + 13 * H]), false)
 
 console.log('ok')

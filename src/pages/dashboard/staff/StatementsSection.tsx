@@ -8,11 +8,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadStatement, type Statement } from '../../../lib/statement'
 import { toManilaDate } from '../../../lib/payslip'
-import { COMPANY } from '../../../lib/company'
+import { formatPhone, useCompany } from '../../../lib/company'
 import PageHeader from '../../../components/PageHeader'
 import { formatMoney, formatDate } from '../../../lib/format'
 
 function StatementsSection() {
+  const company = useCompany()
   const today = toManilaDate(new Date())
   const [clients, setClients] = useState<{ client_id: number; client_name: string }[]>([])
   const [clientId, setClientId] = useState('')
@@ -122,9 +123,10 @@ function StatementsSection() {
         <section aria-label="Statement of account" className="card flex flex-col print:border-0">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-6 py-4 print:px-0">
             <div>
-              <p className="text-sm font-bold text-ink">{COMPANY.name}</p>
+              <p className="text-sm font-bold text-ink">{company.company_name}</p>
               <p className="text-[13px] text-ink-muted">
-                {COMPANY.address} · {COMPANY.phone}
+                {company.address} · {formatPhone(company.phone_number)}
+                {company.tin_number && ` · TIN ${company.tin_number}`}
               </p>
               <h2 className="mt-3 text-lg leading-[26px] font-bold text-ink">Statement of Account · {clientName}</h2>
             </div>

@@ -9,8 +9,6 @@ import { useState, type ChangeEvent, type InputHTMLAttributes, type ReactNode } 
 import LocationPicker from './LocationPicker'
 import DateRangePicker from './DateRangePicker'
 import {
-  MAX_DELIVERY_ORDERS,
-  MAX_WEIGHT_TONS,
   PAYMENT_TERMS_LABELS,
   cargoLineErrors,
   emptyCargoLine,
@@ -18,6 +16,7 @@ import {
   returnsContainer,
   todayDateString,
   totalTrips,
+  useQuoteLimits,
   type CargoLine,
   type CargoLineErrors,
   type FieldErrors,
@@ -210,6 +209,9 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
 
   const lines = form.cargoLines
   const trips = totalTrips(lines)
+  const limits = useQuoteLimits()
+  const maxWeight = limits.quote_max_weight_tons
+  const maxTrips = limits.quote_max_trips
 
   function updateLine(index: number, change: Partial<CargoLine>) {
     setField(
@@ -227,11 +229,11 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
       )}
 
       {lines.map((line, index) => {
-        const lineErrors: CargoLineErrors = showLineErrors ? cargoLineErrors(line) : {}
+        const lineErrors: CargoLineErrors = showLineErrors ? cargoLineErrors(line, limits) : {}
         // Over the limit shows red while typing, not only on submit.
         const weightError =
           lineErrors.weight ??
-          (Number(line.weight) > MAX_WEIGHT_TONS ? `Max ${MAX_WEIGHT_TONS} tons.` : undefined)
+          (Number(line.weight) > maxWeight ? `Max ${maxWeight} tons.` : undefined)
         return (
           <fieldset
             key={index}
@@ -342,7 +344,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
                 onChange={(e) => {
                   const quantity = e.target.value.replace(/\D/g, '')
                   // One details box per trip -- add/remove boxes to match.
-                  updateLine(index, { quantity, descriptions: resizeDescriptions(line.descriptions, quantity) })
+                  updateLine(index, { quantity, descriptions: resizeDescriptions(line.descriptions, quantity, maxTrips) })
                 }}
                 placeholder="e.g. 3"
                 aria-invalid={lineErrors.quantity ? true : undefined}
@@ -410,9 +412,9 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         >
           + Add cargo line
         </button>
-        <span className={`text-sm font-semibold ${trips > MAX_DELIVERY_ORDERS ? 'text-red-600' : 'text-slate-700'}`}>
+        <span className={`text-sm font-semibold ${trips > maxTrips ? 'text-red-600' : 'text-slate-700'}`}>
           Total: {trips} {trips === 1 ? 'trip' : 'trips'}
-          {trips > MAX_DELIVERY_ORDERS && ` (max ${MAX_DELIVERY_ORDERS})`}
+          {trips > maxTrips && ` (max ${maxTrips})`}
         </span>
       </div>
     </>

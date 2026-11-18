@@ -30,6 +30,7 @@ import {
   phoneDigits,
   phoneError,
   phoneInput,
+  useQuoteLimits,
   useShipmentForm,
   useSummaryDrawer,
   type ShipmentForm,
@@ -94,7 +95,8 @@ function NewQuoteRequestModal({
   onCreated: () => void
 }) {
   const { form, setField, errors, setErrors, reset } = useShipmentForm()
-  const summaryDrawer = useSummaryDrawer(form)
+  const quoteLimits = useQuoteLimits()
+  const summaryDrawer = useSummaryDrawer(form, quoteLimits)
   // Set once saved: shows the confirmation instead of the form.
   const [created, setCreated] = useState<{
     code: string
@@ -170,7 +172,7 @@ function NewQuoteRequestModal({
     }
     setClientErrors(foundClientErrors)
 
-    const result = buildQuoteRow(form)
+    const result = buildQuoteRow(form, quoteLimits)
     if (result.errors) setErrors(result.errors)
 
     if (result.errors || Object.keys(foundClientErrors).length > 0) {

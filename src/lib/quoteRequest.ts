@@ -6,6 +6,7 @@
 // Each channel only adds its own client-identity columns on top of
 // buildQuoteRow().
 import { useEffect, useState } from 'react'
+import { useSettingValues } from './appSettings'
 import { supabase } from './supabaseClient'
 
 // One end of the route, as picked in components/LocationPicker.tsx.
@@ -63,9 +64,9 @@ export const emptyCargoLine: CargoLine = {
 
 // Keeps `descriptions` one per trip when the quantity changes: new trips
 // start blank, removed trips drop off the end. Invalid quantity -> 1 box.
-export function resizeDescriptions(descriptions: string[], quantity: string): string[] {
+export function resizeDescriptions(descriptions: string[], quantity: string, maxTrips: number): string[] {
   const n = Number(quantity)
-  const count = Number.isInteger(n) && n > 0 ? Math.min(n, MAX_DELIVERY_ORDERS) : 1
+  const count = Number.isInteger(n) && n > 0 ? Math.min(n, maxTrips) : 1
   return Array.from({ length: count }, (_, i) => descriptions[i] ?? '')
 }
 
@@ -183,11 +184,14 @@ export function emailError(email: string): string | null {
   return null
 }
 
-// Heaviest load one trailer can carry.
-export const MAX_WEIGHT_TONS = 45
-// Most trips one quote can ask for -- Approve creates one itinerary per
-// delivery, so an unbounded number would flood the Dispatch Board.
-export const MAX_DELIVERY_ORDERS = 50
+// Settings: the heaviest load one trailer can carry (the database's
+// itineraries_weight_limit trigger reads the same row), and the most trips
+// one quote can ask for -- Approve creates one itinerary per delivery, so an
+// unbounded number would flood the Dispatch Board. Defaults = the old fixed
+// values, used until the rows load or when they're missing.
+export type QuoteLimits = { quote_max_weight_tons: number; quote_max_trips: number }
+export const DEFAULT_QUOTE_LIMITS: QuoteLimits = { quote_max_weight_tons: 45, quote_max_trips: 50 }
+export const useQuoteLimits = () => useSettingValues(DEFAULT_QUOTE_LIMITS)
 
 // Trips the cargo lines add up to (quote_requests.delivery_order_count).
 // A line with a blank/invalid quantity counts as 0.
@@ -202,7 +206,7 @@ export type CargoLineErrors = Partial<Record<keyof CargoLine, string>>
 
 // Problems with one cargo line (empty object = fine). The cargo section
 // shows these under each line; validateShipment just needs to know if any.
-export function cargoLineErrors(line: CargoLine): CargoLineErrors {
+export function cargoLineErrors(line: CargoLine, limits: QuoteLimits): CargoLineErrors {
   const errors: CargoLineErrors = {}
   if (!line.trailerType) {
     errors.trailerType = 'Select a trailer type.'
@@ -217,8 +221,8 @@ export function cargoLineErrors(line: CargoLine): CargoLineErrors {
   const weight = Number(line.weight)
   if (!line.weight || Number.isNaN(weight) || weight <= 0) {
     errors.weight = 'Enter a weight.'
-  } else if (weight > MAX_WEIGHT_TONS) {
-    errors.weight = `Max ${MAX_WEIGHT_TONS} tons.`
+  } else if (weight > limits.quote_max_weight_tons) {
+    errors.weight = `Max ${limits.quote_max_weight_tons} tons.`
   } else if (!/^\d+(\.\d{1,2})?$/.test(line.weight)) {
     errors.weight = 'Max 2 decimals.'
   }
@@ -239,7 +243,7 @@ export function returnsContainer(form: Pick<ShipmentForm, 'returnContainer' | 'c
 // a problem (empty object = all good). Number(...) on an empty/invalid
 // string gives NaN, which would otherwise be sent to Supabase and
 // silently saved as null -- caught here instead.
-export function validateShipment(form: ShipmentForm): FieldErrors {
+export function validateShipment(form: ShipmentForm, limits: QuoteLimits): FieldErrors {
   const errors: FieldErrors = {}
   const { pickup, delivery } = form
 
@@ -267,10 +271,10 @@ export function validateShipment(form: ShipmentForm): FieldErrors {
   const trips = totalTrips(form.cargoLines)
   if (form.cargoLines.length === 0) {
     errors.cargoLines = 'Add at least one cargo line.'
-  } else if (form.cargoLines.some((line) => Object.keys(cargoLineErrors(line)).length > 0)) {
+  } else if (form.cargoLines.some((line) => Object.keys(cargoLineErrors(line, limits)).length > 0)) {
     errors.cargoLines = 'Fix the cargo lines marked below.'
-  } else if (trips > MAX_DELIVERY_ORDERS) {
-    errors.cargoLines = `Max ${MAX_DELIVERY_ORDERS} trips per quote (now ${trips}).`
+  } else if (trips > limits.quote_max_trips) {
+    errors.cargoLines = `Max ${limits.quote_max_trips} trips per quote (now ${trips}).`
   }
 
   if (!form.preferredPickupDate) {
@@ -307,8 +311,8 @@ function generateReferenceCode(): string {
 }
 
 // Validates, then maps the shipment fields onto quote_requests columns.
-export function buildQuoteRow(form: ShipmentForm) {
-  const errors = validateShipment(form)
+export function buildQuoteRow(form: ShipmentForm, limits: QuoteLimits) {
+  const errors = validateShipment(form, limits)
   if (Object.keys(errors).length > 0) {
     return { errors }
   }
@@ -347,7 +351,7 @@ export function buildQuoteRow(form: ShipmentForm) {
           // Validated above: never '' here.
           trailer_type: line.trailerType as CargoLineRow['trailer_type'],
           weight: Number(line.weight),
-          cargo_descriptions: resizeDescriptions(line.descriptions, line.quantity).map((d) => d.trim()),
+          cargo_descriptions: resizeDescriptions(line.descriptions, line.quantity, limits.quote_max_trips).map((d) => d.trim()),
           quantity: Number(line.quantity),
         }),
       ),
@@ -578,10 +582,10 @@ export function useShipmentForm(initial: ShipmentForm = emptyShipment, initialEr
 // valid, held for a second so it doesn't pop up mid-typing (e.g. after
 // the first digit of the rate). Closing keeps it closed until the form
 // goes incomplete again.
-export function useSummaryDrawer(form: ShipmentForm) {
+export function useSummaryDrawer(form: ShipmentForm, limits: QuoteLimits) {
   const [filledIn, setFilledIn] = useState(false)
   const [dismissed, setDismissed] = useState(false)
-  const complete = Object.keys(validateShipment(form)).length === 0
+  const complete = Object.keys(validateShipment(form, limits)).length === 0
   const [wasComplete, setWasComplete] = useState(complete)
   if (wasComplete !== complete) {
     setWasComplete(complete)

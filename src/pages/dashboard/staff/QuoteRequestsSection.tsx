@@ -22,7 +22,7 @@ import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import StatusBadge from '../../../components/StatusBadge'
-import { offerTiming } from '../../../lib/offerTiming'
+import { OFFER_EXPIRY_DEFAULTS, offerTiming } from '../../../lib/offerTiming'
 import { usePaged } from '../../../lib/usePaged'
 
 // Rows per page on every tab (Pending, Approved, Rejected).
@@ -31,6 +31,7 @@ import { REJECTION_TAGS, cargoSummary, parseCargoLines, type RejectionTag } from
 import { parseLineRates, rateLabel } from '../../../lib/lineRates'
 import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
+import { useSettingValues } from '../../../lib/appSettings'
 
 // The shape of a row from the quote_requests table (only the fields we
 // use here -- the modal reads more fields directly from the same row).
@@ -327,6 +328,7 @@ function QuoteRequestsSection() {
   const visiblePending = (tab === 'waiting' ? waitingQuotes : pricingQuotes).filter((q) => matchesSearch(q, search))
   const pendingPaged = usePaged(visiblePending, `${tab}|${search}`, QUOTES_PER_PAGE)
   const today = toManilaDate(new Date())
+  const expiryDays = useSettingValues(OFFER_EXPIRY_DEFAULTS).offer_expiry_days
 
   // Called by the modal after an offer / accept / withdraw / reject -- the
   // quote moved tab, so reload the open ones.
@@ -474,9 +476,9 @@ function QuoteRequestsSection() {
                     </span>
                   )}
                   {/* An offer nobody answered by its pickup date: stale, then expired. */}
-                  {quote.request_status === 'Offered' && offerTiming(quote.preferred_pickup_date, today) !== 'open' && (
+                  {quote.request_status === 'Offered' && offerTiming(quote.preferred_pickup_date, today, expiryDays) !== 'open' && (
                     <span className={`${CHIP} mt-1 bg-red-100 text-red-800`}>
-                      {offerTiming(quote.preferred_pickup_date, today) === 'expired' ? 'Offer expired' : 'Pickup date passed'}
+                      {offerTiming(quote.preferred_pickup_date, today, expiryDays) === 'expired' ? 'Offer expired' : 'Pickup date passed'}
                     </span>
                   )}
                 </td>

@@ -8,7 +8,8 @@ import { useEffect, useState } from 'react'
 import { formatDate } from '../lib/format'
 import { toManilaDate } from '../lib/payslip'
 import { planTrips } from '../lib/capacity'
-import { DEFAULT_HOURS_PER_TRIP, buildDemand, loadCapacityInputs } from '../lib/capacityLoad'
+import { buildDemand, loadCapacityInputs } from '../lib/capacityLoad'
+import { loadSettingValues } from '../lib/appSettings'
 import type { ShipmentForm } from '../lib/quoteRequest'
 
 // Wait for typing to settle before asking the database.
@@ -17,6 +18,8 @@ const TYPING_DELAY_MS = 600
 // `forKey` = the inputs it was worked out for; a note for older inputs isn't
 // shown (instead of clearing it in the effect, which React's lint forbids).
 type Note = { tone: 'ok' | 'later'; text: string; forKey: string }
+
+const HOURS_DEFAULTS = { availability_hours_per_trip: 6 }
 
 function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
   const [note, setNote] = useState<Note | null>(null)
@@ -32,9 +35,11 @@ function QuoteAvailabilityNote({ form }: { form: ShipmentForm }) {
     if (!form.preferredPickupDate) return
     let cancelled = false
     const timer = setTimeout(async () => {
+      // The client gives no trip length -- assume Settings -> availability_hours_per_trip.
+      const { availability_hours_per_trip: hours } = await loadSettingValues(HOURS_DEFAULTS)
       const args = {
         cargoLines: JSON.parse(cargoKey),
-        hours: DEFAULT_HOURS_PER_TRIP,
+        hours,
         pickupDate: form.preferredPickupDate,
         deadlineDate: form.preferredDeliveryDate || null,
       }

@@ -6,7 +6,7 @@
 // client's browser never learns who is booked or what they earn.
 import { supabase } from './supabaseClient'
 import { manilaTimestamp } from './format'
-import { offerTiming } from './offerTiming'
+import { DEFAULT_OFFER_EXPIRY_DAYS, offerTiming } from './offerTiming'
 import { toManilaDate } from './payslip'
 import { earliestStart } from './tripSchedule'
 import { expandCargoLines, parseCargoLines } from './quoteRequest'
@@ -90,12 +90,10 @@ export type CapacityInputs = {
 }
 
 // What the quote needs. `hours` is the booking's hours per trip (staff
-// enter it; a client's estimate assumes DEFAULT_HOURS_PER_TRIP).
-// ponytail: a client's estimate assumes 6 h per trip because the real
-// figure comes from staff pricing; the staff card uses the entered hours.
+// enter it; a client's estimate assumes Settings ->
+// availability_hours_per_trip, see QuoteAvailabilityNote).
 // ponytail: new trips carry no rate, so within one quote fairness counts only
 // the per-trip fee for them -- pass the line rates if that ever matters.
-export const DEFAULT_HOURS_PER_TRIP = 6
 
 export function buildDemand(args: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,8 +213,9 @@ export async function loadCapacityInputs(
   // Offers sent but not accepted yet hold their slots, oldest first.
   const today = toManilaDate(new Date())
   const holds = raw.offers
-    // An offer past its pickup date can't be accepted any more -- it holds nothing.
-    .filter((o) => offerTiming(o.pickup_date, today) === 'open')
+    // An offer past its pickup date can't be accepted any more -- it holds
+    // nothing. ('open' doesn't depend on the expiry days.)
+    .filter((o) => offerTiming(o.pickup_date, today, DEFAULT_OFFER_EXPIRY_DAYS) === 'open')
     .map((o) => ({
       label: o.label,
       demand: {

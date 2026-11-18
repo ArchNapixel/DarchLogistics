@@ -9,6 +9,7 @@
 // (no client row yet) show nothing. A failed lookup also shows nothing: these
 // are hints, not rules.
 import { useEffect, useState } from 'react'
+import { useSettingValues } from '../../../lib/appSettings'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { loadCurrentlyDelinquentClients } from '../../../lib/clientDelinquency'
@@ -16,7 +17,8 @@ import { loadPaymentDueReport } from '../../../lib/paymentDue'
 import { addDays } from '../../../lib/offerTiming'
 
 // How many days either side of the pickup date count as "the same day".
-const SIMILAR_DAYS = 2
+// Settings -> similar_quote_days (2 until loaded / when missing).
+const SIMILAR_DEFAULTS = { similar_quote_days: 2 }
 
 type Similar = { quote_request_id: number; label: string; status: string; pickup: string; booking_id: number | null }
 type Owing = { overdue: number; oldestDays: number; delinquentSince: string | null; reason: string | null }
@@ -38,13 +40,14 @@ function QuoteWarnings({
 }) {
   const [similar, setSimilar] = useState<Similar[]>([])
   const [owing, setOwing] = useState<Owing | null>(null)
+  const similarDays = useSettingValues(SIMILAR_DEFAULTS).similar_quote_days
 
   useEffect(() => {
     if (clientId === null) return
     let cancelled = false
 
     async function load() {
-      // Similar quotes: same client, same barangays, pickup within +-2 days.
+      // Similar quotes: same client, same barangays, pickup within +-similarDays.
       if (pickupBarangay && deliveryBarangay && pickupDate) {
         const { data: quotes } = await supabase
           .from('quote_requests')
@@ -54,8 +57,8 @@ function QuoteWarnings({
           .eq('pickup_barangay', pickupBarangay)
           .eq('delivery_barangay', deliveryBarangay)
           .in('request_status', ['Pending', 'Offered', 'Countered', 'Approved'])
-          .gte('preferred_pickup_date', addDays(pickupDate, -SIMILAR_DAYS))
-          .lte('preferred_pickup_date', addDays(pickupDate, SIMILAR_DAYS))
+          .gte('preferred_pickup_date', addDays(pickupDate, -similarDays))
+          .lte('preferred_pickup_date', addDays(pickupDate, similarDays))
         const approvedIds = (quotes ?? []).filter((q) => q.request_status === 'Approved').map((q) => q.quote_request_id)
         const { data: bookings } = approvedIds.length
           ? await supabase.from('bookings').select('booking_id, quote_request_id').in('quote_request_id', approvedIds)
@@ -96,14 +99,14 @@ function QuoteWarnings({
     return () => {
       cancelled = true
     }
-  }, [quoteId, clientId, pickupBarangay, deliveryBarangay, pickupDate])
+  }, [quoteId, clientId, pickupBarangay, deliveryBarangay, pickupDate, similarDays])
 
   if (similar.length === 0 && !owing) return null
   return (
     <>
       {similar.length > 0 && (
         <div className="border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
-          <p className="font-semibold">Similar quote from {clientName}: same route, pickup within {SIMILAR_DAYS} days</p>
+          <p className="font-semibold">Similar quote from {clientName}: same route, pickup within {similarDays} days</p>
           <ul className="mt-1">
             {similar.map((s) => (
               <li key={s.quote_request_id}>

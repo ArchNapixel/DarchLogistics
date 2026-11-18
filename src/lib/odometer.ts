@@ -14,6 +14,8 @@ import { supabase } from './supabaseClient'
 import { fetchAll } from './dashboardExpenses'
 import { fetchDrivingDistanceKm, geocodePlace } from './geocoding'
 import { goesHome, tripLegs, uncountedTrips, type DeliveredTrip } from './odometerRules'
+import { loadCompany } from './company'
+import { loadSettingValues } from './appSettings'
 import { DEFAULT_PMS_DUE_SOON_KM, DEFAULT_PMS_INTERVAL_KM, pmsStatus, type PmsSettings } from './pms'
 import { COMPLETED_STATUSES, FINISHED_IN } from './tripStatusFlow'
 
@@ -31,8 +33,10 @@ export async function loadPmsSettings(): Promise<PmsSettings> {
   }
 }
 
-// Where every truck starts and ends its day.
-const BASE = { city: 'Panabo City', barangay: 'J.P. Laurel' }
+// Where every truck starts and ends its day: company_profile's base
+// barangay (Settings). How soon a next trip must start for the truck to go
+// straight on instead of home: Settings -> odometer_home_gap_hours.
+const GAP_DEFAULTS = { odometer_home_gap_hours: 12 }
 
 type Stop = { placeId: number | null; city: string | null; barangay: string | null; lat: number | null; lng: number | null }
 
@@ -97,6 +101,10 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
   const returns = trip?.return_container === true
   if (!trip?.plate_number) return { error: `Trip #${itineraryId} has no truck.` }
   const plate: string = trip.plate_number
+  const [companyResult, gap] = await Promise.all([loadCompany(), loadSettingValues(GAP_DEFAULTS)])
+  if (companyResult.error) return { error: companyResult.error }
+  const basePlace = { city: companyResult.company.base_city, barangay: companyResult.company.base_barangay }
+  const gapHours = gap.odometer_home_gap_hours
 
   const [deliveredResult, prevResult, othersResult, baseResult] = await Promise.all([
     supabase
@@ -124,7 +132,7 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
       .neq('itinerary_id', itineraryId)
       .not('itinerary_status', 'in', FINISHED_IN)
       .not('trip_start_at', 'is', null),
-    supabase.from('places').select('place_id').ilike('city', BASE.city).ilike('barangay', BASE.barangay).maybeSingle(),
+    supabase.from('places').select('place_id').ilike('city', basePlace.city).ilike('barangay', basePlace.barangay).maybeSingle(),
   ])
   const loadError = deliveredResult.error ?? prevResult.error ?? othersResult.error ?? baseResult.error
   if (loadError) return { error: loadError.message }
@@ -173,7 +181,7 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
     lat,
     lng,
   })
-  const base: Stop = { placeId: baseResult.data?.place_id ?? null, city: BASE.city, barangay: BASE.barangay, lat: null, lng: null }
+  const base: Stop = { placeId: baseResult.data?.place_id ?? null, city: basePlace.city, barangay: basePlace.barangay, lat: null, lng: null }
   const pickup = stop(booking.place_of_pickup_id, booking.pickup_lat, booking.pickup_lng)
   const delivery = stop(booking.place_of_delivery_id, booking.delivery_lat, booking.delivery_lng)
   // Where a trip ends: its return place when it brought the container back.
@@ -193,12 +201,13 @@ export async function estimateTripKm(itineraryId: number): Promise<TripKmEstimat
         : null
 
   const home = goesHome(
+    gapHours,
     deliveredMs,
     (othersResult.data ?? []).map((t) => Date.parse(t.trip_start_at as string)),
   )
   const outKm = await legKm(from, pickup)
   const backKm = home ? await legKm(end, base) : null
-  const legs = tripLegs({ outKm, tripKm, returnKm, backKm, home })
+  const legs = tripLegs({ outKm, tripKm, returnKm, backKm, home, gapHours })
   if (prevBooking) {
     legs.notes.unshift(`From trip #${prev!.itinerary_id}'s ${prevReturned ? 'container return place' : 'delivery spot'}`)
   }

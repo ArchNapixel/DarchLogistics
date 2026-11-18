@@ -47,7 +47,7 @@ import { formatMoney, formatDate, formatDateTime } from '../../../lib/format'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import { toManilaDate } from '../../../lib/payslip'
 import {
-  MAX_DELIVERY_ORDERS,
+  useQuoteLimits,
   PAYMENT_TERMS_LABELS,
   REJECTION_TAGS,
   expandCargoLines,
@@ -85,11 +85,13 @@ import QuoteWarnings from './QuoteWarnings'
 import type { CapacityCheck } from '../../../lib/capacity'
 import WordCount from '../../../components/WordCount'
 import { limitWords } from '../../../lib/wordLimit'
+import { useSettingValues } from '../../../lib/appSettings'
 
 // Same cap as the bookings.hours_per_trip CHECK constraint.
 // Used until Settings loads, or when quote_low_margin_percent has no row.
 const DEFAULT_LOW_MARGIN_PERCENT = 50
-const MAX_HOURS_PER_TRIP = 72
+// Settings -> max_hours_per_trip (72 until loaded / when missing).
+const HOURS_DEFAULTS = { max_hours_per_trip: 72 }
 
 const fieldClasses =
   'w-full border-2 border-line-control bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary min-h-11'
@@ -188,11 +190,11 @@ function Icon({ name, size = 16 }: { name: keyof typeof ICONS; size?: number }) 
 }
 
 // Hours-per-trip rule, used on blur and again on Approve.
-function hoursProblem(value: string): string | null {
+function hoursProblem(value: string, maxHours: number): string | null {
   const hours = Number(value)
   if (!value.trim()) return 'Enter how many hours one trip takes.'
   if (!(hours > 0)) return 'Enter a number of hours greater than 0.'
-  if (hours > MAX_HOURS_PER_TRIP) return `One trip can be at most ${MAX_HOURS_PER_TRIP} hours.`
+  if (hours > maxHours) return `One trip can be at most ${maxHours} hours.`
   return null
 }
 
@@ -308,6 +310,8 @@ function QuoteReviewModal({
   const [downpaymentPercent, setDownpaymentPercent] = useState(DEFAULT_DOWNPAYMENT_PERCENT)
   const [lowMarginPercent, setLowMarginPercent] = useState(DEFAULT_LOW_MARGIN_PERCENT)
   const lowMarginShare = lowMarginPercent / 100
+  const quoteLimits = useQuoteLimits()
+  const maxHoursPerTrip = useSettingValues(HOURS_DEFAULTS).max_hours_per_trip
   // True once staff typed in the distance box (or it came saved with an
   // earlier offer) -- the background estimate must never overwrite it.
   const distanceTypedRef = useRef(quote.estimated_distance_km != null)
@@ -494,7 +498,7 @@ function QuoteReviewModal({
       return null
     }
     // Shown under the box, not as a top error.
-    const hoursMessage = hoursProblem(hoursPerTrip)
+    const hoursMessage = hoursProblem(hoursPerTrip, maxHoursPerTrip)
     if (hoursMessage) {
       setHoursError(hoursMessage)
       hoursInputRef.current?.focus()
@@ -519,9 +523,9 @@ function QuoteReviewModal({
       setError('This quote has no cargo lines. Reject it ("Other") so the client adds the cargo.')
       return null
     }
-    if (tripCargo.length > MAX_DELIVERY_ORDERS) {
+    if (tripCargo.length > quoteLimits.quote_max_trips) {
       setError(
-        `This quote asks for ${tripCargo.length} trips (max ${MAX_DELIVERY_ORDERS}). Reject it ("Other") so the client splits it into smaller quotes.`,
+        `This quote asks for ${tripCargo.length} trips (max ${quoteLimits.quote_max_trips}). Reject it ("Other") so the client splits it into smaller quotes.`,
       )
       return null
     }
@@ -625,7 +629,7 @@ function QuoteReviewModal({
   // Countered: take the client's rate and dates -> the booking is created.
   async function handleAcceptCounter() {
     const distance = Number(estimatedDistanceKm)
-    const hoursMessage = hoursProblem(hoursPerTrip)
+    const hoursMessage = hoursProblem(hoursPerTrip, maxHoursPerTrip)
     if (!(distance > 0)) {
       setError('Enter the estimated trip distance.')
       return
@@ -1441,7 +1445,7 @@ function QuoteReviewModal({
                           ref={hoursInputRef}
                           type="number"
                           min="0.5"
-                          max={MAX_HOURS_PER_TRIP}
+                          max={maxHoursPerTrip}
                           step="0.5"
                           required
                           value={hoursPerTrip}
@@ -1451,9 +1455,9 @@ function QuoteReviewModal({
                           onChange={(e) => {
                             setHoursPerTrip(e.target.value)
                             // Clear the error as soon as the value is fixed.
-                            if (hoursError && !hoursProblem(e.target.value)) setHoursError(null)
+                            if (hoursError && !hoursProblem(e.target.value, maxHoursPerTrip)) setHoursError(null)
                           }}
-                          onBlur={() => setHoursError(hoursProblem(hoursPerTrip))}
+                          onBlur={() => setHoursError(hoursProblem(hoursPerTrip, maxHoursPerTrip))}
                           className={`${fieldClasses} mt-1.5 tabular-nums ${hoursError ? 'border-red-700' : ''}`}
                         />
                         {hoursError && (

@@ -65,6 +65,7 @@ import {
   type Contributions,
   type EarlierPayslip,
   type GovernmentRates,
+  RATE_NUMBER_KEYS,
 } from './governmentContributions'
 import { cached } from './shortCache'
 import { DELIVERED_STATUSES } from './tripStatusFlow'
@@ -584,38 +585,41 @@ export async function loadEarlierPayslipsThisMonth(
   return { payslips: data, error: null }
 }
 
+// Every government_rates row, newest first. numeric columns can arrive as
+// text ("5.000"), so every number is turned into a real one here.
+export async function loadGovernmentRateSets(): Promise<{ sets: GovernmentRates[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('government_rates')
+    .select('*')
+    .order('effective_from', { ascending: false })
+  if (error) return { sets: [], error: error.message }
+  const sets = data.map((row: Record<string, unknown>) => {
+    const set: Record<string, unknown> = { ...row }
+    for (const key of RATE_NUMBER_KEYS) set[key] = Number(row[key])
+    set.weekly_tax_brackets = (row.weekly_tax_brackets as Record<string, unknown>[]).map((b) => ({
+      over: Number(b.over),
+      fixed: Number(b.fixed),
+      rate: Number(b.rate),
+    }))
+    return set as unknown as GovernmentRates
+  })
+  return { sets, error: null }
+}
+
 // The government_rates row in force for a payslip's period END (the month
 // it belongs to). All rows are read once and kept a few seconds, so a
-// Payroll run over many employees asks once.
+// Payroll run over many employees asks once (Settings clears the cache when
+// it saves rates).
 export async function loadGovernmentRates(
   periodEnd: string,
 ): Promise<{ rates: GovernmentRates | null; error: string | null }> {
-  const all = await cached('government_rates', async () => {
-    const { data, error } = await supabase.from('government_rates').select('*')
-    // numeric columns can arrive as text ("5.000") -- turn every field
-    // except the date and the bracket list into a real number.
-    const sets = (data ?? []).map((row: Record<string, unknown>) => {
-      const set: Record<string, unknown> = { ...row }
-      for (const [key, value] of Object.entries(row)) {
-        if (key !== 'effective_from' && key !== 'weekly_tax_brackets' && key !== 'note' && key !== 'created_at') {
-          set[key] = Number(value)
-        }
-      }
-      set.weekly_tax_brackets = (row.weekly_tax_brackets as Record<string, unknown>[]).map((b) => ({
-        over: Number(b.over),
-        fixed: Number(b.fixed),
-        rate: Number(b.rate),
-      }))
-      return set as unknown as GovernmentRates
-    })
-    return { sets, error: error?.message ?? null }
-  })
+  const all = await cached('government_rates', loadGovernmentRateSets)
   if (all.error) return { rates: null, error: all.error }
   const rates = ratesFor(all.sets, periodEnd)
   if (!rates) {
     return {
       rates: null,
-      error: `No government rates (SSS / PhilHealth / Pag-IBIG / tax) are set for ${periodEnd}. Add a row to government_rates that starts on or before that date.`,
+      error: `No government rates (SSS / PhilHealth / Pag-IBIG / tax) are set for ${periodEnd}. Add them on the Settings page with a start date on or before that date.`,
     }
   }
   return { rates, error: null }

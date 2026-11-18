@@ -1,7 +1,9 @@
 // Footer: shared across the landing page and the quote request page.
 import { Link } from 'react-router-dom'
+import { formatPhone, useCompany } from '../lib/company'
 
 function Footer() {
+  const company = useCompany()
   return (
     <footer className="bg-brand-navy">
       <div className="mx-auto grid grid-cols-1 max-w-6xl gap-8 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
@@ -18,15 +20,15 @@ function Footer() {
           <p className="text-xs font-semibold tracking-[0.15em] text-slate-500 uppercase">
             Office
           </p>
-          <p className="mt-2 text-sm text-slate-300">Panabo City</p>
+          <p className="mt-2 text-sm text-slate-300">{company.address}</p>
         </div>
 
         <div>
           <p className="text-xs font-semibold tracking-[0.15em] text-slate-500 uppercase">
             Dispatch
           </p>
-          <p className="mt-2 text-sm text-slate-300">09660475467</p>
-          <p className="mt-1 text-sm text-slate-300">colesarch48@gmail.com</p>
+          <p className="mt-2 text-sm text-slate-300">{formatPhone(company.phone_number)}</p>
+          {company.email && <p className="mt-1 text-sm text-slate-300">{company.email}</p>}
         </div>
 
         <div>

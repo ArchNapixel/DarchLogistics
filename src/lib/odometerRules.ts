@@ -2,7 +2,7 @@
 // odometer (which PMS counts on). Pure -- self-check:
 //   node scripts/check-odometer-rules.ts
 //
-// Every truck is based at Brgy. J.P. Laurel, Panabo City. A trip adds
+// Every truck is based at the company's base barangay (Settings). A trip adds
 // drive out + the trip itself + drive back:
 //  - Drive out starts at base, unless the truck's previous counted trip
 //    didn't go home (its drive back was 0) -- then it starts where that
@@ -10,16 +10,16 @@
 //  - A trip that brings the empty container back adds the return leg
 //    (delivery -> return place) to the trip km, and ends at the return place.
 //  - Drive back to base (from where the trip ended) is counted unless the
-//    truck has another trip starting within HOME_GAP_HOURS of the trip's end
+//    truck has another trip starting within `gapHours` of the trip's end
 //    (it goes straight on).
 
-export const HOME_GAP_HOURS = 12
+// gapHours: Settings -> odometer_home_gap_hours (12 by default).
 
 // Did the truck go home after a delivery? Not if an open trip of the same
-// truck starts within HOME_GAP_HOURS (a start already in the past counts --
+// truck starts within gapHours (a start already in the past counts --
 // that trip is waiting for this truck).
-export function goesHome(deliveredMs: number, otherTripStartsMs: number[]): boolean {
-  const limit = deliveredMs + HOME_GAP_HOURS * 3_600_000
+export function goesHome(gapHours: number, deliveredMs: number, otherTripStartsMs: number[]): boolean {
+  const limit = deliveredMs + gapHours * 3_600_000
   return !otherTripStartsMs.some((start) => start <= limit)
 }
 
@@ -36,12 +36,14 @@ export function tripLegs({
   returnKm,
   backKm,
   home,
+  gapHours,
 }: {
   outKm: number | null
   tripKm: number
   returnKm?: number | null
   backKm: number | null
   home: boolean
+  gapHours: number
 }): { out: number; trip: number; back: number; total: number; notes: string[] } {
   const notes: string[] = []
   const out = outKm ?? 0
@@ -49,7 +51,7 @@ export function tripLegs({
   if (returnKm === null) notes.push("Empty container return couldn't be routed, not counted")
   else if (returnKm !== undefined) notes.push(`Incl. ${round2(returnKm)} km empty container return`)
   let back = 0
-  if (!home) notes.push(`Next trip within ${HOME_GAP_HOURS} h, no drive back`)
+  if (!home) notes.push(`Next trip within ${gapHours} h, no drive back`)
   else if (backKm === null) {
     back = tripKm
     notes.push("Drive back couldn't be routed, same as trip")

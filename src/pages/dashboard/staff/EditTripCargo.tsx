@@ -4,7 +4,7 @@
 // BookingDetailModal, like the documents panel.
 //
 // Rules (same as the quote form, lib/quoteRequest.ts): loose cargo always
-// goes on a Flatbed, weight > 0 and at most MAX_WEIGHT_TONS, details
+// goes on a Flatbed, weight > 0 and at most maxWeight, details
 // required. Only while the trip is not Delivered/Cancelled. If the trip
 // already has a trailer of a different type than the new one, the save is
 // refused -- unassign the trailer on the Dispatch Board first -- so a trip
@@ -13,7 +13,7 @@
 // Rate, cost and downpayment don't depend on cargo, so nothing else changes.
 import { useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
-import { MAX_WEIGHT_TONS, type TripCargo } from '../../../lib/quoteRequest'
+import { useQuoteLimits, type TripCargo } from '../../../lib/quoteRequest'
 import { trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
 import { ACTIVE_TRIP_OR } from '../../../lib/tripStatusFlow'
 
@@ -43,13 +43,14 @@ function EditTripCargo({
   const [weight, setWeight] = useState(cargo.weight != null ? String(cargo.weight) : '')
   const [description, setDescription] = useState(cargo.cargo_description ?? '')
   const [saving, setSaving] = useState(false)
+  const maxWeight = useQuoteLimits().quote_max_weight_tons
   const [error, setError] = useState<string | null>(null)
 
   async function save() {
     const weightValue = Number(weight)
     if (!trailerType) return setError('Select a trailer type.')
     if (!weight || !(weightValue > 0)) return setError('Enter a weight.')
-    if (weightValue > MAX_WEIGHT_TONS) return setError(`Max ${MAX_WEIGHT_TONS} tons.`)
+    if (weightValue > maxWeight) return setError(`Max ${maxWeight} tons.`)
     if (!/^\d+(\.\d{1,2})?$/.test(weight)) return setError('Weight: max 2 decimals.')
     if (!description.trim()) return setError('Enter the cargo details.')
 
@@ -167,11 +168,11 @@ function EditTripCargo({
           inputMode="decimal"
           value={weight}
           onChange={(e) => setWeight(e.target.value.replace(/[^\d.]/g, ''))}
-          aria-invalid={Number(weight) > MAX_WEIGHT_TONS || undefined}
-          className={`${inputClasses} ${Number(weight) > MAX_WEIGHT_TONS ? 'border-red-400' : ''}`}
+          aria-invalid={Number(weight) > maxWeight || undefined}
+          className={`${inputClasses} ${Number(weight) > maxWeight ? 'border-red-400' : ''}`}
         />
-        {Number(weight) > MAX_WEIGHT_TONS && (
-          <span className="font-normal text-red-600">Max {MAX_WEIGHT_TONS} tons.</span>
+        {Number(weight) > maxWeight && (
+          <span className="font-normal text-red-600">Max {maxWeight} tons.</span>
         )}
       </label>
       <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">

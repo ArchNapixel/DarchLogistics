@@ -12,6 +12,7 @@ import {
   payslipsInMonth,
   computeWeeklyContributions,
   ratesFor,
+  governmentRatesError,
   type GovernmentRates,
 } from '../src/lib/governmentContributions.ts'
 
@@ -84,5 +85,15 @@ assert.equal(monthTotal('sss_ee'), sssMonthly(30_000, R).ee)
 assert.equal(monthTotal('sss_ec'), 30)
 assert.equal(monthTotal('philhealth_er'), philhealthMonthly(30_000, R).er)
 assert.equal(monthTotal('pagibig_ee'), 200)
+
+// Save checks (Settings -> Government contributions & tax)
+assert.equal(governmentRatesError(R), null)
+assert.match(governmentRatesError({ ...R, sss_ee_rate: 120 })!, /100 at most/)
+assert.match(governmentRatesError({ ...R, sss_msc_min: 40_000 })!, /SSS/)
+assert.match(governmentRatesError({ ...R, philhealth_floor: 200_000 })!, /PhilHealth/)
+assert.match(governmentRatesError({ ...R, pagibig_ee_rate: NaN })!, /number/)
+assert.match(governmentRatesError({ ...R, effective_from: '' })!, /date/)
+assert.match(governmentRatesError({ ...R, weekly_tax_brackets: [R.weekly_tax_brackets[0], R.weekly_tax_brackets[0]] })!, /same amount/)
+assert.equal(governmentRatesError({ ...R, weekly_tax_brackets: [] }), null) // no tax at all is allowed
 
 console.log('ok')

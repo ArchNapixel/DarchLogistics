@@ -2751,3 +2751,25 @@ stopped them being dispatched. Supersedes the "Find a faster driver" and
   so changing the setting only affects NEW bookings. Quote screens (no
   booking yet) use the current setting. `downpaymentFor*` take `percent` as
   the last argument (null = 25).
+- **Settings page sections (below the app_settings list):**
+  `staff/CompanySettings.tsx` and `staff/GovernmentRatesSettings.tsx`
+  (same "Takes effect from" date = fix that rate set, new date = new set;
+  `governmentRatesError()` mirrors the table CHECK).
+- **Group 2 (migration 20261119040000):** app_settings `quote_max_weight_tons`
+  (45), `quote_max_trips` (50) -- `useQuoteLimits()` / `QuoteLimits`
+  in quoteRequest.ts, passed to `validateShipment` / `cargoLineErrors` /
+  `buildQuoteRow` / `resizeDescriptions` / `useSummaryDrawer`; the old
+  `itineraries_weight_check` CHECK is now trigger `itineraries_weight_limit`
+  reading the same row. `max_hours_per_trip` (72), `offer_expiry_days` (3,
+  `offerTiming(..., expiryDays)`), `availability_hours_per_trip` (6),
+  `service_due_soon_days` (14), `similar_quote_days` (2),
+  `odometer_home_gap_hours` (12, `goesHome(gapHours, ...)` /
+  `tripLegs({ gapHours })`). Components read them with
+  `useSettingValues(DEFAULTS)` (lib/appSettings.ts; DEFAULTS = a module
+  constant), async code with `loadSettingValues`.
+- **`company_profile`** (one row, id = 1; anon + authenticated SELECT, Admin
+  UPDATE): name, address, phone (09 digits), email, TIN, base_city /
+  base_barangay. `lib/company.ts` `loadCompany()` / `useCompany()` /
+  `formatPhone()`; used by Billing, Statements, Footer and odometer.ts
+  (truck base). `COMPANY` constant removed. The 8-hour attendance day was left
+  fixed (only the removed Hourly pay type ever read hours).

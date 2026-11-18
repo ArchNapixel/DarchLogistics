@@ -48,6 +48,7 @@ import {
   type PmsSettings,
 } from '../../../lib/pms'
 import { limitWords } from '../../../lib/wordLimit'
+import { useSettingValues } from '../../../lib/appSettings'
 
 type Truck = {
   plate_number: string
@@ -87,7 +88,8 @@ type Alert = {
 const OPEN_WORK_ORDER_STATUSES = ['Created', 'Scheduled', 'In Progress', 'On Hold']
 const NOT_OPERATIONAL = ['Under Maintenance', 'Out of Service']
 // A service date / schedule this close counts as an alert.
-const DUE_SOON_DAYS = 14
+// Settings -> service_due_soon_days (14 until loaded / when missing).
+const DUE_SOON_DEFAULTS = { service_due_soon_days: 14 }
 
 const TH = 'px-2 py-2.5 first:pl-5 last:pr-5'
 const TD = 'px-2 py-2 first:pl-5 last:pr-5'
@@ -303,6 +305,7 @@ function OdometerPanel({
 }
 
 function TruckMaintenanceMonitoringSection() {
+  const dueSoonDays = useSettingValues(DUE_SOON_DEFAULTS).service_due_soon_days
   const today = toManilaDate(new Date())
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [trailers, setTrailers] = useState<Trailer[]>([])
@@ -420,7 +423,7 @@ function TruckMaintenanceMonitoringSection() {
   for (const t of trucks) {
     if (!t.next_service_date || down(t.current_status)) continue
     const days = daysUntil(t.next_service_date, today)
-    if (days > DUE_SOON_DAYS) continue
+    if (days > dueSoonDays) continue
     alerts.push({
       key: `service-${t.plate_number}`,
       title: `${t.plate_number} service ${days < 0 ? 'overdue' : 'due soon'}`,

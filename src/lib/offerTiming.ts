@@ -7,13 +7,15 @@
 //   pickup-passed  the pickup date is over: accepting would create trips in
 //                  the past, so the client has to counter with a new date
 //                  (the database refuses an accept too)
-//   expired        3 days after the pickup date: the offer is dead -- shown
+//   expired        N days after the pickup date (Settings -> offer_expiry_days): the offer is dead -- shown
 //                  "Expired" to staff, no longer holds capacity; staff
 //                  withdraw it and send a new one
 //
 // An offer with no pickup date is always open.
 
-export const OFFER_EXPIRY_DAYS = 3
+// Used until the setting loads, or when its row is missing.
+export const DEFAULT_OFFER_EXPIRY_DAYS = 3
+export const OFFER_EXPIRY_DEFAULTS = { offer_expiry_days: DEFAULT_OFFER_EXPIRY_DAYS }
 
 export type OfferTiming = 'open' | 'pickup-passed' | 'expired'
 
@@ -24,7 +26,7 @@ export function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-export function offerTiming(pickupDate: string | null, today: string): OfferTiming {
+export function offerTiming(pickupDate: string | null, today: string, expiryDays: number): OfferTiming {
   if (!pickupDate || pickupDate >= today) return 'open'
-  return today > addDays(pickupDate, OFFER_EXPIRY_DAYS) ? 'expired' : 'pickup-passed'
+  return today > addDays(pickupDate, expiryDays) ? 'expired' : 'pickup-passed'
 }
