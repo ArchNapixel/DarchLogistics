@@ -73,6 +73,10 @@ export type Booking = {
   // The source quote's customer-facing reference ("Q-7F3K9A"), when it
   // has one. Optional so other screens building a Booking can skip it.
   reference_code?: string | null
+  // The source quote's agreed start (pickup) and deadline (deliver-by)
+  // dates. Optional for the same reason.
+  start_date?: string | null
+  deadline_date?: string | null
   // When the booking was created (Bills Receivable: earliest allowed
   // "date received" for its payments). Optional for the same reason.
   created_at?: string
@@ -256,10 +260,15 @@ function BookingsSection() {
             .in('place_id', chunk)
             .range(from, to),
       ),
-      fetchIn<{ quote_request_id: number; reference_code: string | null }>(quoteIds, (chunk, from, to) =>
+      fetchIn<{
+        quote_request_id: number
+        reference_code: string | null
+        preferred_pickup_date: string | null
+        preferred_delivery_date: string | null
+      }>(quoteIds, (chunk, from, to) =>
         supabase
           .from('quote_requests')
-          .select('quote_request_id, reference_code')
+          .select('quote_request_id, reference_code, preferred_pickup_date, preferred_delivery_date')
           .in('quote_request_id', chunk)
           .range(from, to),
       ),
@@ -292,9 +301,7 @@ function BookingsSection() {
 
     const clientNameById = new Map(clientsResult.rows.map((c) => [c.client_id, c.client_name]))
     const placeById = new Map(placesResult.rows.map((p) => [p.place_id, p]))
-    const referenceByQuote = new Map(
-      quotesResult.rows.map((q) => [q.quote_request_id, q.reference_code]),
-    )
+    const quoteById = new Map(quotesResult.rows.map((q) => [q.quote_request_id, q]))
 
     // "Warehouse 3, Brgy. Sasa, Davao City" -- falls back to the place's
     // own name for older places rows without city/barangay.
@@ -338,7 +345,12 @@ function BookingsSection() {
           amount_paid: balance.amount_paid,
           balance_due: balance.balance_due,
           reference_code:
-            b.quote_request_id !== null ? (referenceByQuote.get(b.quote_request_id) ?? null) : null,
+            b.quote_request_id !== null ? (quoteById.get(b.quote_request_id)?.reference_code ?? null) : null,
+          // The quote's agreed start (pickup) and deadline (deliver-by) dates.
+          start_date:
+            b.quote_request_id !== null ? (quoteById.get(b.quote_request_id)?.preferred_pickup_date ?? null) : null,
+          deadline_date:
+            b.quote_request_id !== null ? (quoteById.get(b.quote_request_id)?.preferred_delivery_date ?? null) : null,
           cancelled_trips: balance.cancelled_trips,
           cancelled_at: b.cancelled_at,
           trip_ids: tripIdsByBooking.get(b.booking_id) ?? [],

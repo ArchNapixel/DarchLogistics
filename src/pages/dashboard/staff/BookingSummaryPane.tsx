@@ -101,6 +101,14 @@ function BookingSummaryPane({
               <dt className={LABEL}>Booked</dt>
               <dd className={VALUE}>{booking.date ? formatDate(booking.date) : '—'}</dd>
             </div>
+            <div>
+              <dt className={LABEL}>Start date</dt>
+              <dd className={VALUE}>{booking.start_date ? formatDate(booking.start_date) : '—'}</dd>
+            </div>
+            <div>
+              <dt className={LABEL}>Deadline</dt>
+              <dd className={VALUE}>{booking.deadline_date ? formatDate(booking.deadline_date) : '—'}</dd>
+            </div>
             <div className="col-span-2">
               <dt className={LABEL}>Route</dt>
               <dd className={VALUE}>
