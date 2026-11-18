@@ -12,7 +12,9 @@ import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { promptDialog } from '../../../components/ConfirmDialog'
 import { formatDate, formatMoney } from '../../../lib/format'
 
-function BillingCharges({ bookingId, onChanged }: { bookingId: number; onChanged: () => void }) {
+// locked: the bill is closed (cancelled, or delivered and fully paid) -- no new
+// charges; a wrong one can still be voided.
+function BillingCharges({ bookingId, locked, onChanged }: { bookingId: number; locked: string | null; onChanged: () => void }) {
   const { employeeId } = useAuth()
   const [charges, setCharges] = useState<BookingCharge[] | null>(null)
   const [description, setDescription] = useState('')
@@ -98,6 +100,9 @@ function BillingCharges({ bookingId, onChanged }: { bookingId: number; onChanged
         Damage charged to the client (Damage Charges page) is already on the bill above and isn&apos;t listed here.
       </p>
 
+      {locked ? (
+        <p className="mt-3 bg-slate-50 px-3 py-2 text-sm text-ink-secondary">No new charges: {locked.replace(", so it can't be edited", '')}</p>
+      ) : (
       <form
         className="mt-3 flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
@@ -132,6 +137,7 @@ function BillingCharges({ bookingId, onChanged }: { bookingId: number; onChanged
           {saving ? 'Adding...' : 'Add Charge'}
         </button>
       </form>
+      )}
       {error && <p className="mt-2 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
     </section>
   )

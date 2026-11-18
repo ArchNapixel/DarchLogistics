@@ -169,8 +169,10 @@ function StatementsSection() {
                     <td className={`${TD} whitespace-nowrap text-ink-secondary`}>{formatDate(line.date)}</td>
                     <td className={`${TD} text-ink-secondary`}>#{line.booking_id}</td>
                     <td className={TD}>{line.description}</td>
-                    <td className={`${TD} text-right tabular-nums`}>{line.amount > 0 ? formatMoney(line.amount) : ''}</td>
-                    <td className={`${TD} text-right tabular-nums`}>{line.amount < 0 ? formatMoney(-line.amount) : ''}</td>
+                    {/* By kind, so the columns add up to the totals below: a discount is a
+                        minus charge, a refund a minus payment. */}
+                    <td className={`${TD} text-right tabular-nums`}>{line.kind !== 'Payment' ? formatMoney(line.amount) : ''}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{line.kind === 'Payment' ? formatMoney(-line.amount) : ''}</td>
                     <td className={`${TD} text-right font-semibold tabular-nums`}>{formatMoney(line.balance)}</td>
                   </tr>
                 ))}

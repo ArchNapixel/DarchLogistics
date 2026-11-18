@@ -38,4 +38,10 @@ assert.match(due.detail, /Rest ₱5,000\.00 due/)
 // Not in the report at all.
 assert.equal(clientPaymentState(undefined, null).key, 'none')
 
+// Only the overdue part is called late (a newer trip isn't due yet).
+const partLate = clientPaymentState({ ...row({ balance_due: 8000, due_date: '2026-10-20', days_until_due: -3 }), overdue_amount: 5000 }, null)
+assert.equal(partLate.key, 'overdue')
+assert.ok(partLate.detail.startsWith('₱5,000.00 was due'), partLate.detail)
+assert.ok(partLate.detail.endsWith('₱3,000.00 not due yet'), partLate.detail)
+
 console.log('ok')

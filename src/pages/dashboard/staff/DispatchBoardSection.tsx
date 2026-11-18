@@ -155,6 +155,7 @@ type BoardBookingRow = {
   cost_per_trip: number | null
   amount_paid: number | null
   downpayment_waived_at: string | null
+  downpayment_fixed: number | null
   storage_deadline: string | null
   quote_request_id: number | null
   // Where the empty containers go back to (null = the booking doesn't return them).
@@ -1610,7 +1611,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, storage_deadline, quote_request_id, place_of_return_id')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, storage_deadline, quote_request_id, place_of_return_id')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1658,6 +1659,7 @@ function DispatchBoardSection() {
           trips: tripRatesByBooking.get(b.booking_id)?.live.length ?? 0,
           amountPaid: b.amount_paid,
           waivedAt: b.downpayment_waived_at,
+          fixed: b.downpayment_fixed,
         }),
       ]),
     )

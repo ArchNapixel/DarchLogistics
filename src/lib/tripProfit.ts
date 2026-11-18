@@ -20,6 +20,7 @@ import { tripProfit, type TripProfit } from './tripProfitTotals'
 import { tripDistanceKm } from './tripCost'
 import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 import { isDelivered } from './tripStatusFlow'
+import { cached } from './shortCache'
 
 export function currentTripProfitMonth(): string {
   return toManilaDate(new Date()).slice(0, 7)
@@ -43,6 +44,7 @@ type TripRow = {
   itinerary_status: string | null
   trip_rate: number | string | null
   return_container: boolean
+  costed_distance_km: number | string | null
 }
 type BookingRow = {
   booking_id: number
@@ -54,11 +56,15 @@ type BookingRow = {
 type ExpenseRow = { itinerary_id: number; amount: number | string; category: string }
 type DamageRow = DamageCostRow & { itinerary_id: number }
 
-export async function loadTripProfitReport(month: string): Promise<{
-  rows: TripProfitRow[]
-  settingsMissing: string[]
-  error: string | null
-}> {
+type TripProfitReport = { rows: TripProfitRow[]; settingsMissing: string[]; error: string | null }
+
+// Kept for a few seconds (lib/shortCache.ts): Financial Summary reads the
+// same month for both Profit and Money in / Money out.
+export function loadTripProfitReport(month: string): Promise<TripProfitReport> {
+  return cached(`trip-profit:${month}`, () => readTripProfitReport(month))
+}
+
+async function readTripProfitReport(month: string): Promise<TripProfitReport> {
   const from = `${month}-01`
   const to = nextMonthStart(month)
 
@@ -76,7 +82,7 @@ export async function loadTripProfitReport(month: string): Promise<{
     supabase
       .from('app_settings')
       .select('setting_key, setting_value')
-      .in('setting_key', ['diesel_price_per_liter', 'driver_commission_rate', 'driver_per_trip_fee']),
+      .in('setting_key', ['diesel_price_per_liter', 'diesel_km_per_liter', 'driver_commission_rate', 'driver_per_trip_fee']),
   ])
   if (logs.error) return { rows: [], settingsMissing: [], error: logs.error }
   if (settings.error) return { rows: [], settingsMissing: [], error: settings.error.message }
@@ -96,6 +102,7 @@ export async function loadTripProfitReport(month: string): Promise<{
   )
   const costSettings = {
     dieselPricePerLiter: setting.get('diesel_price_per_liter') ?? 0,
+    kmPerLiter: setting.get('diesel_km_per_liter'),
     driverCommissionRate: setting.get('driver_commission_rate') ?? 0,
     driverPerTripFee: setting.get('driver_per_trip_fee') ?? 0,
   }
@@ -103,7 +110,7 @@ export async function loadTripProfitReport(month: string): Promise<{
   const trips = await fetchIn<TripRow>(inMonthIds, (chunk, a, b) =>
     supabase
       .from('itineraries')
-      .select('itinerary_id, booking_id, plate_number, itinerary_status, trip_rate, return_container')
+      .select('itinerary_id, booking_id, plate_number, itinerary_status, trip_rate, return_container, costed_distance_km')
       .in('itinerary_id', chunk)
       .range(a, b),
   )
@@ -164,7 +171,7 @@ export async function loadTripProfitReport(month: string): Promise<{
     const booking = bookingById.get(trip.booking_id)
     if (!booking) return []
     // Plus the empty-container return leg on a trip that brings it back.
-    const km = tripDistanceKm(booking, trip.return_container)
+    const km = tripDistanceKm(booking, trip.return_container, trip.costed_distance_km)
     const fuelLogged = fuelByTrip.get(trip.itinerary_id) ?? 0
     return [
       {

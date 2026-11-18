@@ -56,7 +56,7 @@ function OperationalExpensesCard({
     ? [
         { label: 'Payroll', value: data.payroll },
         { label: 'Employer contributions', value: data.employerShares },
-        { label: 'Diesel (logged)', value: data.dieselActual },
+        { label: 'Diesel (extra fuel logged)', value: data.dieselActual },
         {
           label: `Diesel (estimated, ${data.estimatedTrips} ${data.estimatedTrips === 1 ? 'trip' : 'trips'})`,
           value: data.dieselEstimated,

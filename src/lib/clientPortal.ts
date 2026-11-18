@@ -36,6 +36,7 @@ export type ClientBooking = {
   cost_per_trip: number | null
   amount_paid: number | null
   downpayment_waived_at: string | null
+  downpayment_fixed: number | null
   // The quote it came from ("Q-84KMUJ"), if any.
   quote_reference: string | null
   pickup_place_name: string
@@ -65,6 +66,7 @@ export function bookingDownpayment(booking: ClientBooking): DownpaymentStatus | 
     trips: billableTrips(booking).length,
     amountPaid: booking.amount_paid,
     waivedAt: booking.downpayment_waived_at,
+    fixed: booking.downpayment_fixed,
   })
 }
 
@@ -80,7 +82,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
   const { data: bookingRows, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'booking_id, booking_status, booking_date, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, quote_request_id, place_of_pickup_id, place_of_delivery_id, place_of_return_id',
+      'booking_id, booking_status, booking_date, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, quote_request_id, place_of_pickup_id, place_of_delivery_id, place_of_return_id',
     )
     .eq('client_id', clientId)
     .order('booking_date', { ascending: false })
@@ -146,6 +148,7 @@ export async function loadClientBookings(clientId: number): Promise<{ bookings: 
       booking_date: b.booking_date,
       rate_of_delivery_service: b.rate_of_delivery_service,
       cost_per_trip: b.cost_per_trip,
+      downpayment_fixed: b.downpayment_fixed,
       amount_paid: b.amount_paid,
       downpayment_waived_at: b.downpayment_waived_at,
       quote_reference: b.quote_request_id ? (references.get(b.quote_request_id) ?? null) : null,
@@ -196,6 +199,7 @@ export async function loadClientPaymentCards(clientId: number): Promise<{ cards:
               trips: row.total_trips,
               amountPaid: row.amount_paid,
               waivedAt: extra.downpayment_waived_at,
+              fixed: row.downpayment_fixed,
             })
       return {
         row,

@@ -12,6 +12,11 @@
 // before this existed) has no downpayment requirement (null). Once paid --
 // or waived by an Admin -- all the booking's trips can go. The payment
 // terms then apply to what's left after delivery, as before.
+//
+// Repriced after it was paid (2026-11-18): the downpayment stays what it
+// was (bookings.downpayment_fixed, saved by update_booking_details) -- the
+// new prices only change the balance. booking_downpayment() in SQL returns
+// the fixed amount too.
 
 export const DOWNPAYMENT_SHARE_OF_REMAINING = 0.25
 
@@ -60,8 +65,13 @@ export function downpaymentStatus(args: {
   trips: number
   amountPaid: number | null
   waivedAt: string | null
+  // bookings.downpayment_fixed: kept as it was when repriced after paying it.
+  fixed?: number | null
 }): DownpaymentStatus | null {
-  const required = downpaymentForContract(args.contract, args.costPerTrip, args.trips)
+  const required =
+    args.fixed !== undefined && args.fixed !== null
+      ? Number(args.fixed)
+      : downpaymentForContract(args.contract, args.costPerTrip, args.trips)
   if (required === null) return null
   const paid = args.amountPaid ?? 0
   const missing = cents(Math.max(required - paid, 0))

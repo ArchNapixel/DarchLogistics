@@ -13,6 +13,7 @@ import { loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDu
 import {
   PAYMENT_METHODS,
   buildCollectionsCsv,
+  downpaymentVoidWarning,
   loadPayments,
   paymentProofUrl,
   voidBookingPayment,
@@ -103,9 +104,11 @@ function CollectionsSection() {
   }
 
   async function handleVoid(row: PaymentRow) {
+    // Trips already left on this payment's downpayment? Say so first.
+    const warning = await downpaymentVoidWarning(row.booking_id, row.amount)
     const reason = await promptDialog({
       title: `Void payment #${row.payment_id}`,
-      message: `${formatMoney(row.amount)} from ${row.client_name} (booking #${row.booking_id}). It stays on record but stops counting, and the booking's amount paid goes back down. Why is it being voided?`,
+      message: `${warning ?? ''}${formatMoney(row.amount)} from ${row.client_name} (booking #${row.booking_id}). It stays on record but stops counting, and the booking's amount paid goes back down. Why is it being voided?`,
       confirmLabel: 'Void payment',
       danger: true,
     })

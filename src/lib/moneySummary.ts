@@ -6,10 +6,14 @@
 // match the rest of the app. Supplier bills are left out on purpose
 // (Accounts Payable is hidden for now).
 
+import { csvField } from './csv.ts'
+
 export type MoneySummaryInput = {
   earned: number // trips delivered this month x rate, plus adjustments
   // Per booking: revenue this month and its client (grouped by client below).
-  revenueRows: { client_name: string; amount: number }[]
+  // client_id groups the rows (two clients can share a name); old rows
+  // without one group by name.
+  revenueRows: { client_id?: number | null; client_name: string; amount: number }[]
   collected: number // money actually received this month
   tripCount: number
   salaries: number // payroll gross + employer SSS/PhilHealth/Pag-IBIG
@@ -28,8 +32,12 @@ export type MoneySummary = {
   // Where the money went, biggest first, zero lines left out.
   spending: { label: string; amount: number }[]
   // Where the money came from: revenue per client, biggest first, zero left out.
-  revenueByClient: { label: string; amount: number }[]
+  revenueByClient: { key: string; label: string; amount: number }[]
 }
+
+// The grouping key for one client: its id, else (no id) its name.
+export const clientKey = (r: { client_id?: number | null; client_name: string }) =>
+  r.client_id != null ? `id:${r.client_id}` : `name:${r.client_name}`
 
 const cents = (n: number) => Math.round(n * 100) / 100
 
@@ -46,9 +54,14 @@ export function buildMoneySummary(input: MoneySummaryInput): MoneySummary {
     .sort((a, b) => b.amount - a.amount)
   const earned = cents(input.earned)
   const spent = cents(spending.reduce((sum, line) => sum + line.amount, 0))
-  const byClient = new Map<string, number>()
-  input.revenueRows.forEach((r) => byClient.set(r.client_name, (byClient.get(r.client_name) ?? 0) + r.amount))
-  const revenueByClient = Array.from(byClient, ([label, amount]) => ({ label, amount: cents(amount) }))
+  const byClient = new Map<string, { label: string; amount: number }>()
+  input.revenueRows.forEach((r) => {
+    const key = clientKey(r)
+    const row = byClient.get(key) ?? { label: r.client_name, amount: 0 }
+    row.amount += r.amount
+    byClient.set(key, row)
+  })
+  const revenueByClient = Array.from(byClient, ([key, r]) => ({ key, label: r.label, amount: cents(r.amount) }))
     .filter((line) => line.amount !== 0)
     .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label))
   return {
@@ -70,12 +83,18 @@ export type CashFlowInput = {
   repayments: number // cash advances paid back outside payroll, by paid_on
   refunds: number // booking_payments refunds (positive number), by paid_on
   salariesPaid: number // net pay of payslips paid this month
-  government: number // those payslips' SSS / PhilHealth / Pag-IBIG (EE + ER) + tax
+  // Money actually sent to SSS / PhilHealth / Pag-IBIG / BIR this month
+  // (government_remittances by paid_on) -- the shares withheld from pay
+  // stay in the company's cash until they're remitted.
+  remittances: number
   advancesGiven: number // Approved cash advances, by issued_at
   dieselEstimated: number // distance x diesel price of trips delivered this month
   tripExpenses: number // crew-logged fuel top-ups / tolls / parking / other
   stockBought: number // inventory received x its price
-  companyDamage: number // damage the company pays (Company / Insurance share), by decision month
+  // The company's share of damage decided this month (Company in full,
+  // Insurance minus what the insurer covers -- the insurer pays the client /
+  // repair shop directly, so its part never passes through us).
+  companyDamage: number
 }
 
 export type CashFlow = {
@@ -93,7 +112,7 @@ export function buildCashFlow(input: CashFlowInput): CashFlow {
   ]
   const moneyOut = [
     { label: 'Salaries paid (net pay)', amount: cents(input.salariesPaid) },
-    { label: 'SSS / PhilHealth / Pag-IBIG / tax', amount: cents(input.government) },
+    { label: 'Government remittances (SSS / PhilHealth / Pag-IBIG / BIR)', amount: cents(input.remittances) },
     { label: 'Cash advances given', amount: cents(input.advancesGiven) },
     { label: 'Diesel', amount: cents(input.dieselEstimated) },
     { label: 'Trip expenses (incl. extra fuel)', amount: cents(input.tripExpenses) },
@@ -110,38 +129,6 @@ export function buildCashFlow(input: CashFlowInput): CashFlow {
 export function pctChange(now: number, before: number): number | null {
   if (before === 0) return null
   return Math.round(((now - before) / Math.abs(before)) * 1000) / 10
-}
-
-// Per delivered trip, and collected / revenue as a percent. null = no trips
-// (or no revenue) to divide by.
-export function perTripNumbers(s: { earned: number; spent: number; collected: number; tripCount: number }) {
-  const per = (n: number) => (s.tripCount > 0 ? cents(n / s.tripCount) : null)
-  return {
-    revenue: per(s.earned),
-    cost: per(s.spent),
-    profit: per(s.earned - s.spent),
-    collectionRate: s.earned > 0 ? Math.round((s.collected / s.earned) * 1000) / 10 : null,
-  }
-}
-
-// "YYYY-MM" months from `from` (included) up to `to` (left out).
-export function monthsBetween(from: string, to: string): string[] {
-  const out: string[] = []
-  for (let m = from; m < to; m = shiftMonth(m, 1)) out.push(m)
-  return out
-}
-
-// Cash on hand for `month`: the latest count on or before it, plus every
-// month's net money movement since that count. null = no count yet (or only
-// counts after this month).
-export function cashPosition(
-  check: { month: string; amount: number } | null,
-  netByMonth: Map<string, number>,
-  month: string,
-): { opening: number; closing: number; countedMonth: string } | null {
-  if (!check || check.month > month) return null
-  const opening = cents(monthsBetween(check.month, month).reduce((sum, m) => sum + (netByMonth.get(m) ?? 0), check.amount))
-  return { opening, closing: cents(opening + (netByMonth.get(month) ?? 0)), countedMonth: check.month }
 }
 
 export const AGENCIES = ['SSS', 'PhilHealth', 'Pag-IBIG', 'BIR'] as const
@@ -163,26 +150,23 @@ export function remittanceStatus(due: Record<Agency, number>, paid: Record<Agenc
 
 // Revenue by client next to what that client paid this month (any booking).
 export function billedVsCollected(
-  revenue: { label: string; amount: number }[],
-  collected: { client_name: string; amount: number }[],
+  revenue: { key: string; label: string; amount: number }[],
+  collected: { client_id?: number | null; client_name: string; amount: number }[],
 ): { label: string; billed: number; collected: number }[] {
-  const map = new Map<string, { billed: number; collected: number }>()
-  revenue.forEach((r) => map.set(r.label, { billed: r.amount, collected: 0 }))
+  const map = new Map<string, { label: string; billed: number; collected: number }>()
+  revenue.forEach((r) => map.set(r.key, { label: r.label, billed: r.amount, collected: 0 }))
   collected.forEach((c) => {
-    const row = map.get(c.client_name) ?? { billed: 0, collected: 0 }
+    const key = clientKey(c)
+    const row = map.get(key) ?? { label: c.client_name, billed: 0, collected: 0 }
     row.collected += c.amount
-    map.set(c.client_name, row)
+    map.set(key, row)
   })
-  return Array.from(map, ([label, v]) => ({ label, billed: cents(v.billed), collected: cents(v.collected) }))
+  return Array.from(map.values(), (v) => ({ label: v.label, billed: cents(v.billed), collected: cents(v.collected) }))
     .filter((r) => r.billed !== 0 || r.collected !== 0)
     .sort((a, b) => b.billed - a.billed || b.collected - a.collected || a.label.localeCompare(b.label))
 }
 
 // One CSV cell: quoted when it holds a comma, quote or line break.
-function csvCell(value: string | number): string {
-  const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
 
 // The Money Summary page as a CSV file ("Export"): the totals, how the net
 // is worked out, and revenue per client. Amounts are plain numbers (no ₱ or
@@ -219,7 +203,7 @@ export function buildMoneySummaryCsv(month: string, summary: MoneySummary, cashF
     ...summary.revenueByClient.map((r) => [r.label, r.amount]),
     ...flowRows,
   ]
-  return rows.map((cells) => cells.map(csvCell).join(',')).join('\n')
+  return rows.map((cells) => cells.map(csvField).join(',')).join('\n')
 }
 
 // "2026-10" moved by `delta` months -> "2026-11" / "2026-09".

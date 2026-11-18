@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import ComplianceExpiryAlerts from './ComplianceExpiryAlerts'
 import TripNotifications from './TripNotifications'
+import ClientNotifications from './ClientNotifications'
 import { isAdmin } from '../lib/roles'
 import RoleBadge from './RoleBadge'
 import { showToast } from './Toast'
@@ -209,6 +210,7 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-4">
           <TripNotifications />
+          <ClientNotifications />
           <ComplianceExpiryAlerts />
           {/* Role pill is nice-to-have; drop it on phones to save room */}
           <span className="hidden sm:inline">
@@ -309,7 +311,10 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
           </>
         )}
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
+        {/* relative: absolutely placed bits inside a page (e.g. sr-only table
+            labels) are measured against <main>, not the whole window --
+            otherwise they stretch the page and add a second scrollbar. */}
+        <main className="relative min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

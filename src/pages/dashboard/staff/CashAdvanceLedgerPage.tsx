@@ -88,6 +88,9 @@ function CashAdvanceLedgerPage() {
     }
     return {
       outstanding: cents(employees.reduce((sum, e) => sum + Math.max(e.outstanding, 0), 0)),
+      // Same balance payroll and the advance limit use: deductions already on
+      // draft payslips count as taken (maxRepayment).
+      afterDrafts: cents(employees.reduce((sum, e) => sum + maxRepayment(e.outstanding, e.draftDeducted), 0)),
       owing: employees.filter((e) => e.outstanding > 0).length,
       issued: cents(issued),
       paidBack: cents(paidBack),
@@ -136,6 +139,9 @@ function CashAdvanceLedgerPage() {
         <div className={tile}>
           <p className={tileLabel}>Total still owed</p>
           <p className={`${tileValue} text-primary`}>{formatMoney(totals.outstanding)}</p>
+          {totals.afterDrafts !== totals.outstanding && (
+            <p className="text-[13px] text-ink-muted">{formatMoney(totals.afterDrafts)} after draft payslips</p>
+          )}
         </div>
         <div className={tile}>
           <p className={tileLabel}>Employees owing</p>
@@ -331,7 +337,9 @@ function EmployeePanel({
       </div>
       {employee.draftDeducted > 0 && (
         <p className="border-b border-line bg-slate-50 px-5 py-2.5 text-[13px] text-ink-secondary">
-          {formatMoney(employee.draftDeducted)} more is on a draft payslip. It shows here once that payslip is finalized.
+          {formatMoney(employee.draftDeducted)} more is on a draft payslip, so payroll and the advance limit count{' '}
+          {formatMoney(maxRepayment(employee.outstanding, employee.draftDeducted))} as still owed. It shows in the log once
+          that payslip is finalized.
         </p>
       )}
 

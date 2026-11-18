@@ -110,10 +110,25 @@ function DamageDecisionPanel({
         return
       }
     }
+    // Only the claim's progress changed (Filed -> Paid, a new reference): the
+    // company's cost is the same, so keep the original decision date --
+    // otherwise the damage would jump to the month the insurer paid. A claim
+    // going to / from Denied does change the cost, so that re-stamps it.
+    const cols = decision.columns
+    const claimProgressOnly =
+      decided &&
+      damage.charge_to === 'Insurance' &&
+      cols.charge_to === 'Insurance' &&
+      cols.insurance_company_id === damage.insurance_company_id &&
+      Number(cols.insurance_covered_amount) === Number(damage.insurance_covered_amount) &&
+      damage.claim_status !== 'Denied' &&
+      cols.claim_status !== 'Denied'
+    // (undefined keys aren't sent, so approved_at / approved_by stay as they were.)
+    const columns = claimProgressOnly ? { ...cols, approved_at: undefined, approved_by: undefined } : cols
     // .select() so a silent RLS no-op shows as an error, not fake success.
     const { data: updated, error: updateError } = await supabase
       .from('delivery_damage_records')
-      .update(decision.columns)
+      .update(columns)
       .eq('damage_id', damage.damage_id)
       .select('damage_id')
       .maybeSingle()

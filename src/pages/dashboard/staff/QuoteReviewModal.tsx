@@ -30,7 +30,7 @@
 //   3. Best-effort estimate between the two barangays' centres.
 // A distance/hours saved with an earlier offer is used as-is.
 //
-// Profitability panel: diesel (price/liter x km), driver commission
+// Profitability panel: diesel (price/liter x km / km per litre), driver commission
 // (commission% x rate) and the per-trip fee, against rate x trips, with a
 // warning at 50% (lib/tripCost.ts). Plus a pricing guide: the break-even
 // rate and the rate at the 50% line (lib/quotePricing.ts), and on a
@@ -40,7 +40,8 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { showToast } from '../../../components/Toast'
 import { formatLocationDisplay } from '../../../lib/locationReference'
-import { fetchDrivingDistanceKm, geocodePlace } from '../../../lib/geocoding'
+import { fetchDrivingDistanceKm } from '../../../lib/geocoding'
+import { estimateLegKm, findCachedDistance, findPlaceIdByCityBarangay, geocodeToLatLng } from '../../../lib/routeDistance'
 import type { QuoteRequest } from './QuoteRequestsSection'
 import { formatMoney, formatDate, formatDateTime } from '../../../lib/format'
 import { confirmDialog } from '../../../components/ConfirmDialog'
@@ -91,97 +92,8 @@ const MAX_HOURS_PER_TRIP = 72
 const fieldClasses =
   'w-full border-2 border-line-control bg-white px-3 py-2.5 text-[15px] text-slate-900 focus:border-primary min-h-11'
 
-// Looks up a place by city+barangay (trimmed, case-insensitive) -- only to
-// preview whether a cached distance exists. Never creates a place; the
-// database does that when the booking is created.
-async function findPlaceIdByCityBarangay(
-  city: string | null,
-  barangay: string | null,
-): Promise<number | null> {
-  if (!city || !barangay) {
-    return null
-  }
-
-  const { data } = await supabase
-    .from('places')
-    .select('place_id')
-    .ilike('city', city.trim())
-    .ilike('barangay', barangay.trim())
-    .maybeSingle()
-
-  return data?.place_id ?? null
-}
-
-// route_cache stores each pair with the lower place_id first, so a
-// route reads the same regardless of pickup/delivery direction.
-function orderPlacePair(placeIdA: number, placeIdB: number): [number, number] {
-  return placeIdA < placeIdB ? [placeIdA, placeIdB] : [placeIdB, placeIdA]
-}
-
-async function findCachedDistance(
-  placeIdA: number,
-  placeIdB: number,
-): Promise<number | null> {
-  const [lowId, highId] = orderPlacePair(placeIdA, placeIdB)
-
-  const { data } = await supabase
-    .from('route_cache')
-    .select('distance_km')
-    .eq('place_id_a', lowId)
-    .eq('place_id_b', highId)
-    .maybeSingle()
-
-  return data?.distance_km ?? null
-}
-
-// Best-effort auto-distance for a route with no route_cache hit yet --
-// same free OSM stack LocationPicker already uses for its map picker
-// (Nominatim), plus OSRM's public routing server for real driving
-// distance. Never trusted blindly (same spirit as the map picker's
-// reverse-geocode): a bad/no match just returns null and the caller
-// leaves the field blank for manual entry, exactly like before this
-// feature existed.
-async function geocodeToLatLng(
-  city: string,
-  barangay: string,
-): Promise<{ lat: number; lon: number } | null> {
-  return geocodePlace(`Barangay ${barangay}, ${city}, Philippines`)
-}
-
 // "67.73" -- km with at most 2 decimals, thousands separated.
 const formatKm = (km: number) => km.toLocaleString('en-PH', { maximumFractionDigits: 2 })
-
-type LegStop = { city: string | null; barangay: string | null; lat: number | null; lng: number | null }
-
-// Driving km between two stops, most precise first: both pins (OSRM), a
-// cached route, then the two barangay centres. Null = couldn't tell (staff
-// type it). Used for the empty-container return leg (delivery -> return place).
-// ponytail: the main distance (loadDistance below) does the same steps inline
-// because it also shows where its figure came from.
-async function estimateLegKm(a: LegStop, b: LegStop): Promise<number | null> {
-  const round = (km: number) => Math.round(km * 100) / 100
-  try {
-    if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
-      const km = await fetchDrivingDistanceKm({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng })
-      if (km !== null) return round(km)
-    }
-    const [idA, idB] = await Promise.all([
-      findPlaceIdByCityBarangay(a.city, a.barangay),
-      findPlaceIdByCityBarangay(b.city, b.barangay),
-    ])
-    if (idA !== null && idB !== null) {
-      const cached = await findCachedDistance(idA, idB)
-      if (cached !== null) return cached
-    }
-    if (!a.city || !a.barangay || !b.city || !b.barangay) return null
-    const [pointA, pointB] = await Promise.all([geocodeToLatLng(a.city, a.barangay), geocodeToLatLng(b.city, b.barangay)])
-    if (!pointA || !pointB) return null
-    const km = await fetchDrivingDistanceKm(pointA, pointB)
-    return km === null ? null : round(km)
-  } catch {
-    return null
-  }
-}
 
 // Link to the exact pinned spot on OpenStreetMap, so staff can check
 // where the customer actually meant before approving. Null when the
@@ -381,6 +293,8 @@ function QuoteReviewModal({
   const [dieselPricePerLiter, setDieselPricePerLiter] = useState<number | null>(
     null,
   )
+  // Optional (Settings "km per litre"); missing = 1 km per litre (tripCost.ts).
+  const [kmPerLiter, setKmPerLiter] = useState<number | undefined>(undefined)
   const [driverCommissionRate, setDriverCommissionRate] = useState<
     number | null
   >(null)
@@ -415,6 +329,7 @@ function QuoteReviewModal({
         .select('setting_key, setting_value')
         .in('setting_key', [
           'diesel_price_per_liter',
+          'diesel_km_per_liter',
           'driver_commission_rate',
           'driver_per_trip_fee',
         ])
@@ -439,6 +354,8 @@ function QuoteReviewModal({
       if (dieselSetting) {
         setDieselPricePerLiter(dieselSetting.setting_value)
       }
+      const kmPerLiterSetting = data.find((setting) => setting.setting_key === 'diesel_km_per_liter')
+      if (kmPerLiterSetting) setKmPerLiter(Number(kmPerLiterSetting.setting_value))
       if (commissionSetting) {
         setDriverCommissionRate(commissionSetting.setting_value)
       }
@@ -930,6 +847,7 @@ function QuoteReviewModal({
     ? estimateLineCosts(
         {
           dieselPricePerLiter: dieselPricePerLiter!,
+          kmPerLiter,
           driverCommissionRate: driverCommissionRate!,
           driverPerTripFee: driverPerTripFee!,
         },
@@ -959,6 +877,7 @@ function QuoteReviewModal({
   const costSettings = settingsLoaded
     ? {
         dieselPricePerLiter: dieselPricePerLiter!,
+        kmPerLiter,
         driverCommissionRate: driverCommissionRate!,
         driverPerTripFee: driverPerTripFee!,
       }

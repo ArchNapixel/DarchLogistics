@@ -15,7 +15,7 @@
 // the employee yet, so it must not inflate what gets deducted from
 // their next payslip.
 import { supabase } from './supabaseClient'
-import { getOutstandingCashAdvance } from './payslip'
+import { getOutstandingCashAdvance, toManilaDate } from './payslip'
 import { fetchAll } from './dashboardExpenses'
 
 export type CashAdvanceStatus = 'Pending' | 'Approved' | 'Rejected'
@@ -180,6 +180,9 @@ export async function decideCashAdvanceRequest({
       approved_by: approvedByEmployeeId,
       approved_at: new Date().toISOString(),
       rejection_reason: approve ? null : rejectionReason ?? null,
+      // The money is handed over when it's approved, so that's the day it's
+      // "issued" (the ledger and Money out date it by issued_at, Manila).
+      ...(approve ? { issued_at: toManilaDate(new Date()) } : {}),
     })
     .eq('cash_advance_id', cashAdvanceId)
     .eq('status', 'Pending')

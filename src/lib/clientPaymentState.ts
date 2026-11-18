@@ -16,6 +16,9 @@ export type DueInfo = {
   completed_trips: number
   due_date: string | null
   days_until_due: number | null
+  // The part of the balance already past its own due date (paymentDue.ts);
+  // left out = treat the whole balance as overdue once due_date has passed.
+  overdue_amount?: number
 }
 
 export type PaymentStateKey = 'downpaymentDue' | 'due' | 'overdue' | 'paid' | 'none'
@@ -46,10 +49,15 @@ export function clientPaymentState(row: DueInfo | undefined, downpayment: Downpa
   const balance = row.balance_due
   if (balance > 0 && row.days_until_due !== null && row.days_until_due < 0) {
     const late = Math.abs(row.days_until_due)
+    // Only the overdue part is late; a newer trip may not be due yet.
+    const lateAmount = row.overdue_amount !== undefined && row.overdue_amount > 0 ? Math.min(row.overdue_amount, balance) : balance
+    const rest = Math.round((balance - lateAmount) * 100) / 100
     return {
       key: 'overdue',
       label: 'Overdue',
-      detail: `${formatMoney(balance)} was due ${row.due_date ? formatDate(row.due_date) : ''} · ${late} ${late === 1 ? 'day' : 'days'} late`,
+      detail:
+        `${formatMoney(lateAmount)} was due ${row.due_date ? formatDate(row.due_date) : ''} · ${late} ${late === 1 ? 'day' : 'days'} late` +
+        (rest > 0 ? ` · ${formatMoney(rest)} not due yet` : ''),
     }
   }
   if (balance <= 0) {

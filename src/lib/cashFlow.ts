@@ -3,10 +3,13 @@
 // What each line reads:
 //   Client payments / refunds  booking_payments, non-voided, by paid_on
 //   Cash advances paid back    cash_advance_repayments, non-voided, by paid_on
-//   Salaries + government      payslips marked Paid, by paid_at (Manila);
-//                              Paid before paid_at existed -> payroll_period_end.
-//                              Net pay, and EE + ER shares + tax counted the
-//                              same month (the app doesn't record remittances).
+//   Salaries                   net pay of payslips marked Paid, by paid_at
+//                              (Manila); Paid before paid_at existed ->
+//                              payroll_period_end
+//   Government remittances     government_remittances, non-voided, by paid_on
+//                              (2026-11-18: what was really sent to SSS /
+//                              PhilHealth / Pag-IBIG / BIR -- the shares
+//                              withheld from pay stay in our cash until then)
 //   Cash advances given        cash_advances Approved, by issued_at
 //   Diesel                     distance x diesel price of trips delivered this
 //                              month (loadTripProfitReport's dieselEstimate --
@@ -14,8 +17,12 @@
 //   Trip expenses              itinerary_expenses, by created_at -- includes the
 //                              Fuel top-ups drivers log ON TOP of the estimate
 //   Parts / stock bought       inventory_movements 'receive', qty x unit_cost
-//   Damage we paid for         Company / Insurance share, by decision month
-//                              (loadCompanyDamageCost, same as the dashboard)
+//   Damage we paid for         the company's share, by decision month
+//                              (loadCompanyDamageCost): Company in full,
+//                              Insurance = cost - what the insurer covers
+//                              (all of it if Denied). The insurer pays the
+//                              client / repair shop directly -- that money
+//                              never passes through us.
 // Left out: the stock that was there before the app ('opening').
 import { supabase } from './supabaseClient'
 import { fetchAll, loadCompanyDamageCost } from './dashboardExpenses'
@@ -23,18 +30,8 @@ import { loadTripProfitReport } from './tripProfit'
 import { nextMonthStart } from './remittanceTotals'
 import { buildCashFlow, type CashFlow } from './moneySummary'
 
-type PaidPayslip = {
-  net_pay: number
-  sss_ee: number
-  sss_er: number
-  sss_ec: number
-  philhealth_ee: number
-  philhealth_er: number
-  pagibig_ee: number
-  pagibig_er: number
-  withholding_tax: number
-}
-const PAYSLIP_COLUMNS = 'net_pay, sss_ee, sss_er, sss_ec, philhealth_ee, philhealth_er, pagibig_ee, pagibig_er, withholding_tax'
+type PaidPayslip = { net_pay: number }
+const PAYSLIP_COLUMNS = 'net_pay'
 
 const sum = <T,>(rows: T[], pick: (row: T) => number) => rows.reduce((total, row) => total + Number(pick(row) ?? 0), 0)
 
@@ -44,7 +41,7 @@ export async function loadCashFlow(month: string): Promise<{ data: CashFlow | nu
   const fromTs = `${from}T00:00:00+08:00`
   const toTs = `${to}T00:00:00+08:00`
 
-  const [payments, repayments, paidNow, paidBefore, advances, expenses, received, trips, damage] = await Promise.all([
+  const [payments, repayments, paidNow, paidBefore, advances, expenses, received, trips, damage, remitted] = await Promise.all([
     fetchAll<{ amount: number }>((a, b) =>
       supabase.from('booking_payments').select('amount').is('voided_at', null).gte('paid_on', from).lt('paid_on', to).order('payment_id').range(a, b),
     ),
@@ -83,10 +80,20 @@ export async function loadCashFlow(month: string): Promise<{ data: CashFlow | nu
     ),
     loadTripProfitReport(month),
     loadCompanyDamageCost(fromTs, toTs),
+    fetchAll<{ amount: number }>((a, b) =>
+      supabase
+        .from('government_remittances')
+        .select('amount')
+        .is('voided_at', null)
+        .gte('paid_on', from)
+        .lt('paid_on', to)
+        .order('remittance_id')
+        .range(a, b),
+    ),
   ])
   const error =
     payments.error ?? repayments.error ?? paidNow.error ?? paidBefore.error ?? advances.error ?? expenses.error ?? received.error ??
-    trips.error ?? damage.error
+    trips.error ?? damage.error ?? remitted.error
   if (error) return { data: null, error }
 
   const paid = [...paidNow.rows, ...paidBefore.rows]
@@ -96,12 +103,7 @@ export async function loadCashFlow(month: string): Promise<{ data: CashFlow | nu
       refunds: -sum(payments.rows.filter((p) => Number(p.amount) < 0), (p) => p.amount),
       repayments: sum(repayments.rows, (r) => r.amount),
       salariesPaid: sum(paid, (p) => p.net_pay),
-      government: sum(
-        paid,
-        (p) =>
-          Number(p.sss_ee) + Number(p.sss_er) + Number(p.sss_ec) + Number(p.philhealth_ee) + Number(p.philhealth_er) +
-          Number(p.pagibig_ee) + Number(p.pagibig_er) + Number(p.withholding_tax),
-      ),
+      remittances: sum(remitted.rows, (r) => r.amount),
       advancesGiven: sum(advances.rows, (a) => a.amount),
       dieselEstimated: sum(trips.rows, (t) => t.dieselEstimate),
       tripExpenses: sum(expenses.rows, (e) => e.amount),

@@ -22,7 +22,7 @@ import { buildProfitLoss } from './profitLossTotals'
 export type ProfitLoss = ReturnType<typeof buildProfitLoss> & {
   tripCount: number
   // Each booking's revenue this month (trips + adjustments), with its client.
-  revenueRows: { client_name: string; amount: number }[]
+  revenueRows: { client_id: number | null; client_name: string; amount: number }[]
   parts: {
     payroll: number // gross + employer shares
     diesel: number // logged + estimated
@@ -101,6 +101,7 @@ export async function loadProfitLoss(
       }),
       tripCount: trips.rows.length,
       revenueRows: recon.data.rows.map((r) => ({
+        client_id: r.client_id,
         client_name: r.client_name,
         amount: r.trip_revenue + r.adjustments,
       })),

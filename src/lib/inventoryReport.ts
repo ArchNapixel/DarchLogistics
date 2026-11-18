@@ -8,6 +8,7 @@
 // were taken off the shelf -- this is a STOCK report (what left the
 // shelf), not the cost report (which counts by completion date).
 // csvField is also used by other reports' CSVs.
+import { csvField } from './csv'
 import { supabase } from './supabaseClient'
 import { toManilaDate } from './payslip'
 import { fetchAll } from './dashboardExpenses'
@@ -221,10 +222,9 @@ export async function loadInventoryReport(
   }
 }
 
-export function csvField(value: string | number): string {
-  const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
+// The shared CSV cell (lib/csv.ts, quotes + formula-injection guard),
+// re-exported here because other CSVs import it from this file.
+export { csvField }
 
 // Manila date + time for the CSV (the same on every laptop).
 function manilaDateTime(iso: string): string {

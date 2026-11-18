@@ -14,14 +14,13 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { supabase } from '../../../lib/supabaseClient'
 import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
-import { deliveryAmountFor } from '../../../lib/paymentDue'
-import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
+import { bookingBalances } from '../../../lib/bookingBalance'
+import { bookingRateLabel } from '../../../lib/lineRates'
 import BookingDetailModal from './BookingDetailModal'
 import { type Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import { formatMoney, formatDate } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
-import { isDelivered } from '../../../lib/tripStatusFlow'
 
 type ClientBooking = Booking & { cargo: string }
 
@@ -101,7 +100,7 @@ function ClientBookingHistoryModal({
     const { data: bookingRows, error: bookingsError } = await supabase
       .from('bookings')
       .select(
-        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid',
+        'booking_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_paid',
       )
       .eq('client_id', client.client_id)
       .order('created_at', { ascending: false })
@@ -159,54 +158,23 @@ function ClientBookingHistoryModal({
       placesResult.data.map((p) => [p.place_id, p.place_name]),
     )
 
-    const totalTripsByBooking = new Map<number, number>()
-    const completedTripsByBooking = new Map<number, number>()
-    const cancelledTripsByBooking = new Map<number, number>()
     // "Container"/"Loose" -> trip count, per booking (non-cancelled trips).
     const cargoCountsByBooking = new Map<number, Map<string, number>>()
     itinerariesResult.data.forEach((itinerary) => {
-      // Cancelled trips aren't part of the booking any more (counted separately).
-      if (itinerary.itinerary_status === 'Cancelled') {
-        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
-        return
-      }
+      if (itinerary.itinerary_status === 'Cancelled') return
       const counts = cargoCountsByBooking.get(itinerary.booking_id) ?? new Map<string, number>()
       const type = itinerary.cargo_type === 'Loose' ? 'loose' : itinerary.cargo_type ? 'container' : 'no cargo'
       counts.set(type, (counts.get(type) ?? 0) + 1)
       cargoCountsByBooking.set(itinerary.booking_id, counts)
-      totalTripsByBooking.set(
-        itinerary.booking_id,
-        (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-      )
-      if (isDelivered(itinerary.itinerary_status)) {
-        completedTripsByBooking.set(
-          itinerary.booking_id,
-          (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-        )
-      }
     })
 
-    // Every trip's own rate (cargo lines can be priced differently).
-    const tripRatesByBooking = groupTripRates(
-      itinerariesResult.data,
-      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
-    )
+    // Trip counts, contract, billed and balance: the shared rule
+    // (lib/bookingBalance.ts), same as Bills Receivable and Payments Due.
+    const balances = bookingBalances(bookingRows, itinerariesResult.data, damageByBooking)
 
     setBookings(
       bookingRows.map((b) => {
-        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
-        const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
-        const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = sumRates(tripRates.delivered)
-        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        const billableAmount =
-          deliveryAmountFor({
-            amountToPay: b.amount_to_pay,
-            computedBillable: computedBillableAmount,
-            hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
-          }) + damageCharges
-        const amountPaid = b.amount_paid ?? 0
-
+        const balance = balances.get(b.booking_id)!
         return {
           booking_id: b.booking_id,
           client_name: client.client_name,
@@ -215,19 +183,18 @@ function ClientBookingHistoryModal({
           date: b.booking_date,
           status: b.booking_status ?? 'Draft',
           rate: b.rate_of_delivery_service,
-          trip_rates: tripRates.live,
-          total_trips: totalTrips,
-          completed_trips: completedTrips,
-          total_contract_value: sumRates(tripRates.live),
-          computed_billable_amount: computedBillableAmount,
-          amount_to_pay: b.amount_to_pay,
-          damage_charges: damageCharges,
-          billable_amount: billableAmount,
-          amount_paid: amountPaid,
-          balance_due: billableAmount - amountPaid,
+          trip_rates: balance.trip_rates,
+          total_trips: balance.total_trips,
+          completed_trips: balance.completed_trips,
+          total_contract_value: balance.total_contract_value,
+          computed_billable_amount: balance.computed_billable_amount,
+          damage_charges: balance.damage_charges,
+          billable_amount: balance.billable_amount,
+          amount_paid: balance.amount_paid,
+          balance_due: balance.balance_due,
           cargo:
             [...(cargoCountsByBooking.get(b.booking_id) ?? [])].map(([type, n]) => `${n} ${type}`).join(' · ') || '—',
-          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
+          cancelled_trips: balance.cancelled_trips,
           cancelled_at: b.cancelled_at,
         }
       }),

@@ -4,7 +4,6 @@
 // 2026-10-25): booking_id, description, amount, created_by, created_at, and
 // voided_at / voided_by / void_reason (a wrong charge is VOIDED, not
 // deleted, so the bill's history stays readable).
-//
 // A booking's "extra charges" = approved Client damage (decided on Damage
 // Charges) + its non-voided added charges. Everything that shows a balance
 // adds that ON TOP of the trips' amount, through loadExtraChargesByBooking()
@@ -14,6 +13,7 @@
 import { supabase } from './supabaseClient'
 import { fetchIn } from './dashboardExpenses'
 import { splitManila } from './format'
+import { clearShortCache } from './shortCache'
 
 export type BookingCharge = {
   charge_id: number
@@ -163,6 +163,11 @@ export async function addBookingCharge(args: {
     amount: Math.round(args.amount * 100) / 100,
     created_by: args.createdBy,
   })
+  if (!error) clearShortCache()
+  // The database refuses a charge on a closed bill (booking_charge_allowed).
+  if (error?.message.includes('row-level security')) {
+    return "This bill is closed (cancelled, or delivered and fully paid) -- no new charges."
+  }
   return error ? error.message : null
 }
 
@@ -177,5 +182,6 @@ export async function voidBookingCharge(chargeId: number, reason: string, voided
     .select('charge_id')
     .maybeSingle()
   if (error) return error.message
+  if (data) clearShortCache()
   return data ? null : 'That charge was already voided (or you have no permission to void it).'
 }

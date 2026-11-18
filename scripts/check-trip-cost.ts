@@ -2,7 +2,7 @@
 //   node scripts/check-trip-cost.ts
 // Prints "ok" or throws on the first wrong number.
 import assert from 'node:assert/strict'
-import { estimateTripCosts, dieselForTrip, tripDistanceKm } from '../src/lib/tripCost.ts'
+import { estimateTripCosts, dieselForTrip, dieselPerKm, tripDistanceKm } from '../src/lib/tripCost.ts'
 
 const settings = { dieselPricePerLiter: 60, driverCommissionRate: 5, driverPerTripFee: 300 }
 
@@ -15,6 +15,12 @@ assert.deepEqual(estimateTripCosts(settings, 10_000, 100, 2), {
   total: 13_600,
 })
 
+// km per litre: 60/L at 3 km/L = 20 per km; missing or 0 = 1 km/L (old estimate).
+assert.equal(dieselPerKm({ dieselPricePerLiter: 60, kmPerLiter: 3 }), 20)
+assert.equal(dieselPerKm({ dieselPricePerLiter: 60 }), 60)
+assert.equal(dieselPerKm({ dieselPricePerLiter: 60, kmPerLiter: 0 }), 60)
+assert.equal(estimateTripCosts({ ...settings, kmPerLiter: 3 }, 10_000, 100, 2).diesel, 4_000)
+
 // Logged fuel is a top-up ON TOP of the estimate, never a replacement.
 assert.deepEqual(dieselForTrip(2_000, 4_578.3), { amount: 6_578.3, logged: 2_000, estimate: 4_578.3 })
 assert.deepEqual(dieselForTrip(0, 6_000), { amount: 6_000, logged: 0, estimate: 6_000 })
@@ -24,5 +30,8 @@ assert.equal(tripDistanceKm({ estimated_distance_km: '80', return_distance_km: 3
 assert.equal(tripDistanceKm({ estimated_distance_km: 80, return_distance_km: 30 }, false), 80)
 assert.equal(tripDistanceKm({ estimated_distance_km: 80, return_distance_km: null }, true), 80)
 assert.equal(tripDistanceKm({ estimated_distance_km: null }, false), 0)
+// A delivered trip keeps the km it was costed with after the distance is edited.
+assert.equal(tripDistanceKm({ estimated_distance_km: 120, return_distance_km: 30 }, true, 95), 95)
+assert.equal(tripDistanceKm({ estimated_distance_km: 120 }, false, null), 120)
 
 console.log('ok')

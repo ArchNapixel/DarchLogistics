@@ -6,7 +6,7 @@
 // Takes the month's lines from the Statement of Account ledger
 // (statementTotals.ts, all clients together) and splits them into:
 //   trip revenue = delivered trips x rate (what Trip Profitability counts)
-//   adjustments  = damage charges / discounts / advance billing
+//   adjustments  = extra charges, discounts and old overrides / advance locks
 //   collected    = payments received minus refunds
 // and works out, per booking, why billed and collected differ.
 // Opening receivable + trip revenue + adjustments - collected = closing
@@ -14,6 +14,7 @@
 import type { StatementLine } from './statementTotals.ts'
 
 export type BookingMeta = {
+  client_id?: number // groups "revenue by client" by client, not by name
   client_name: string
   balance_due: number
   total_trips: number
@@ -22,6 +23,7 @@ export type BookingMeta = {
 
 export type ReconRow = {
   booking_id: number
+  client_id: number | null
   client_name: string
   trip_revenue: number
   adjustments: number
@@ -74,6 +76,7 @@ export function reconcileRevenue(lines: StatementLine[], meta: Map<number, Booki
     }
     return {
       booking_id,
+      client_id: info?.client_id ?? null,
       client_name: info?.client_name ?? '—',
       trip_revenue: cents(r.trip),
       adjustments: cents(r.adj),
@@ -91,4 +94,36 @@ export function reconcileRevenue(lines: StatementLine[], meta: Map<number, Booki
     collected: sum((r) => r.collected),
     difference: sum((r) => r.difference),
   }
+}
+
+// "Paid for earlier months' trips": which trips delivered BEFORE the month
+// were still unpaid when it started -- this month's money paid for them.
+// Payments go to the oldest billed items first (same rule as the bill's due
+// dates, lib/bookingBalance.ts), charges included; only trips are returned,
+// each with what was still unpaid on it.
+export type DatedAmount = { id: number; date: string; amount: number }
+
+export function unpaidAtMonthStart(
+  trips: DatedAmount[],
+  charges: DatedAmount[],
+  paidBefore: number, // payments minus refunds dated before `from`
+  from: string, // YYYY-MM-DD, first day of the month
+): (DatedAmount & { unpaid: number })[] {
+  const items = [
+    ...trips.map((t) => ({ ...t, isTrip: true })),
+    ...charges.map((c) => ({ ...c, isTrip: false })),
+  ]
+    .filter((i) => i.date < from && i.amount > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || Number(b.isTrip) - Number(a.isTrip) || a.id - b.id)
+  // A lowered price before the month (negative line) counts like a payment.
+  const lowered = charges.filter((c) => c.date < from && c.amount < 0).reduce((s, c) => s - c.amount, 0)
+  let credit = paidBefore + lowered
+  const out: (DatedAmount & { unpaid: number })[] = []
+  for (const item of items) {
+    const covered = Math.min(Math.max(credit, 0), item.amount)
+    credit = cents(credit - covered)
+    const unpaid = cents(item.amount - covered)
+    if (item.isTrip && unpaid > 0) out.push({ id: item.id, date: item.date, amount: item.amount, unpaid })
+  }
+  return out
 }

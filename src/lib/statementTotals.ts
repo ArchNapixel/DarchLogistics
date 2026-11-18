@@ -8,8 +8,9 @@
 //   - Charge: each extra charge on its own line (approved client damage on
 //     the day it was decided, Billing's added charges on the day added).
 //   - Adjustment: whatever else makes the booking's billable amount differ
-//     from its delivered trips + charges -- a manual discount (amount_to_pay
-//     override) or an advance lock at the full contract. One line per
+//     from its delivered trips + charges. Nothing makes one any more (the
+//     amount_to_pay override was removed 2026-11-18 -- prices are edited on
+//     the trips instead); kept so an odd figure still shows. One line per
 //     booking, dated its latest delivery (or the booking date if nothing is
 //     delivered yet).
 //   - Payments (and refunds, which are negative payments) on the date
@@ -104,7 +105,7 @@ export function buildStatement(
       date: lastDelivery ?? b.booking_date,
       kind: 'Adjustment',
       booking_id: b.booking_id,
-      description: 'Adjustment (discount / advance billing)',
+      description: 'Adjustment',
       amount: adjustment,
     })
   })
@@ -142,8 +143,10 @@ export function buildStatement(
       return { date: e.date, kind: e.kind, booking_id: e.booking_id, description: e.description, amount: cents(e.amount), balance: running }
     })
 
-  const billed = cents(lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0))
-  const paid = cents(-lines.filter((l) => l.amount < 0).reduce((s, l) => s + l.amount, 0))
+  // Billed = trips + charges + adjustments; paid = payments - refunds.
+  // (By kind, not by sign: a refund isn't a bill.)
+  const billed = cents(lines.filter((l) => l.kind !== 'Payment').reduce((s, l) => s + l.amount, 0))
+  const paid = cents(-lines.filter((l) => l.kind === 'Payment').reduce((s, l) => s + l.amount, 0))
 
   return { opening, billed, paid, closing: cents(opening + billed - paid), lines }
 }

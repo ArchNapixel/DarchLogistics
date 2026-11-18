@@ -220,7 +220,8 @@ function BillingPage() {
                 Booking #{billing.booking_id}
               </h2>
               {billing.balance_due <= 0 && billing.billed > 0 ? (
-                <StatusBadge status="Paid" icon />
+                // Trips still to come: paid for what's delivered, not the whole booking.
+                <StatusBadge status="Paid" label={billing.pendingTrips.length > 0 ? 'Paid so far' : undefined} icon />
               ) : billing.balance_due > 0 ? (
                 <StatusBadge status="Unpaid" label={`${formatMoney(billing.balance_due)} due`} />
               ) : null}
@@ -291,8 +292,9 @@ function BillingPage() {
                   <tr key={i} className="border-b border-slate-200 align-top">
                     <td className="whitespace-nowrap px-3 py-2 text-ink-secondary">{formatDate(row.line.date)}</td>
                     <td className="px-3 py-2">{row.line.description}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.line.amount > 0 ? formatMoney(row.line.amount) : ''}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.line.amount < 0 ? formatMoney(-row.line.amount) : ''}</td>
+                    {/* By kind: a discount is a minus charge, a refund a minus payment. */}
+                    <td className="px-3 py-2 text-right tabular-nums">{row.line.kind !== 'Payment' ? formatMoney(row.line.amount) : ''}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.line.kind === 'Payment' ? formatMoney(-row.line.amount) : ''}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatMoney(row.line.balance)}</td>
                   </tr>
                 ),
@@ -300,7 +302,7 @@ function BillingPage() {
             </tbody>
           </table>
 
-          <BillingCharges bookingId={billing.booking_id} onChanged={() => setBillReload((k) => k + 1)} />
+          <BillingCharges bookingId={billing.booking_id} locked={billing.locked} onChanged={() => setBillReload((k) => k + 1)} />
 
           <div className="mt-4 ml-auto w-full max-w-xs text-sm">
             <div className="flex justify-between py-1 text-slate-700">
@@ -313,7 +315,7 @@ function BillingPage() {
             </div>
             <div className="flex justify-between border-t border-slate-300 py-2 text-base font-bold text-slate-900">
               <span>{billing.balance_due > 0 ? 'Amount due' : billing.balance_due < 0 ? 'Credit' : 'Balance'}</span>
-              <span>{billing.balance_due === 0 ? 'PAID' : formatMoney(Math.abs(billing.balance_due))}</span>
+              <span>{billing.balance_due === 0 ? (billing.pendingTrips.length > 0 ? 'Nothing due yet' : 'PAID') : formatMoney(Math.abs(billing.balance_due))}</span>
             </div>
           </div>
           </div>

@@ -45,4 +45,11 @@ assert.equal(tripsMayStart(downpaymentStatus({ ...base, amountPaid: 0, waivedAt:
 assert.equal(downpaymentStatus({ ...base, costPerTrip: null, amountPaid: 0 }), null)
 assert.equal(tripsMayStart(null), true)
 
+// Repriced after the downpayment was paid: it stays what it was.
+const kept = downpaymentStatus({ ...base, contract: 40_000, amountPaid: 11009.9, fixed: 11009.9 })!
+assert.equal(kept.required, 11009.9)
+assert.equal(kept.met, true)
+// Not fixed: a bigger contract asks for more.
+assert.ok(downpaymentStatus({ ...base, contract: 40_000, amountPaid: 11009.9 })!.required > 11009.9)
+
 console.log('ok')

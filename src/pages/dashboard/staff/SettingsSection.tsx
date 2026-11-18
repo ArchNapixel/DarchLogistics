@@ -76,6 +76,10 @@ function SettingsSection() {
     const isPercent = setting.unit?.includes('%') || setting.setting_key.endsWith('_rate')
     if (isPercent && value > 100) return `"${setting.label}" is a percentage -- 100 at most.`
     if (setting.unit === 'time' && value >= 24 * 60) return `"${setting.label}" must be a time within the day.`
+    // Diesel: a truck drives N km on 1 litre (N > 0, at most 20).
+    if (setting.setting_key === 'diesel_km_per_liter' && (value <= 0 || value > 20)) {
+      return `"${setting.label}" must be more than 0 and at most 20 km per litre.`
+    }
     // PMS: every N km (N > 0), warn M km before (M below N).
     if (setting.setting_key === 'pms_interval_km' && value <= 0) return `"${setting.label}" must be more than 0 km.`
     if (setting.setting_key === 'pms_due_soon_km') {

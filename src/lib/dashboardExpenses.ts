@@ -1,19 +1,25 @@
 // dashboardExpenses.ts: loads the numbers for the Admin dashboard's
 // Operational Expenses and Maintenance Expenses cards. The math itself is
 // in expenseTotals.ts (self-checked); this file only fetches and wires.
+// Since 2026-11-18 the cards count by the SAME dates as Financial Summary
+// (profitLoss.ts), so a month reads the same on both:
 //
 // OPERATIONAL = payroll (gross + employer shares, DRAFT payslips included
 // so this week's run shows live) + trip expenses the crew logged +
 // diesel + the company's share of damage (charged to the Company, or the
 // part an insurer didn't cover -- insuranceRules.ts companyDamageShare),
 // counted in the period it was DECIDED (loadCompanyDamageCost, approved_at).
+//   - Payslips count by payroll_period_END (the month the government
+//     contributions belong to). A rolling "last N days" range also counts
+//     the current week, whose end is still ahead (payslipInPeriod).
+//   - Trip expenses and diesel belong to DELIVERED trips, by the trip's
+//     delivery date (latest Delivered row in dispatch_status_logs, Manila
+//     time, the date payroll uses), whenever they were logged. Expenses on
+//     a trip still on the road count once it's delivered.
+//   - Diesel per delivered trip = the calculator's estimate (tripCost.ts)
+//     PLUS any Fuel the crew logged on top.
 //   - Commission and the per-trip fee are NOT added again: they're already
 //     inside drivers' gross_pay.
-//   - Diesel is counted once per delivered trip: the Fuel the crew logged
-//     if any, otherwise the quote calculator's estimate (tripCost.ts).
-//     Fuel logged on a trip that isn't delivered yet counts as actual.
-//     A delivered trip's date is its latest Delivered row in
-//     dispatch_status_logs (Manila time), the same date payroll uses.
 // MAINTENANCE = parts used (quantity x unit_cost copied at time of use) on
 //   work orders completed in the period, by completion date (same rule as
 //   the Maintenance Cost Report and P&L).
@@ -21,7 +27,7 @@
 // Every row is counted once; every query is paged past Supabase's
 // 1000-row default so a long range can't silently cap.
 import { supabase } from './supabaseClient'
-import { dieselForTrip, tripDistanceKm } from './tripCost'
+import { dieselForTrip, dieselPerKm, tripDistanceKm } from './tripCost'
 import { companyDamageShare, type DamageCostRow } from './insuranceRules'
 import {
   payslipCost,
@@ -68,12 +74,20 @@ export async function fetchIn<T>(
   return { rows, error: null }
 }
 
+// Does a payslip count in this period? By its period END, like Financial
+// Summary. A rolling range (days / months back from today) also counts the
+// current week, which ends after today -- otherwise this week's draft run
+// wouldn't show until Saturday.
+function payslipInPeriod(row: { payroll_period_end: string }, period: Period, end: string): boolean {
+  return row.payroll_period_end < end || !('month' in period)
+}
+
 export type OperationalExpenses = {
   payroll: number // gross pay, finalized + draft
   employerShares: number // SSS ER+EC, PhilHealth ER, Pag-IBIG ER
   draftPayroll: number // part of the two lines above that is still a draft
-  tripExpenses: number // logged Toll / Parking / Other
-  dieselActual: number // logged Fuel (top-ups, on top of the estimate)
+  tripExpenses: number // logged Toll / Parking / Other on trips delivered in the period
+  dieselActual: number // logged Fuel on those trips (top-ups, on top of the estimate)
   dieselEstimated: number // calculator estimate for every delivered trip
   estimatedTrips: number // how many trips the estimate covers
   tripsMissingDistance: number // of those, trips with no distance (estimated as 0)
@@ -82,9 +96,15 @@ export type OperationalExpenses = {
   dieselPriceMissing: boolean
 }
 
-type PayslipRow = PayslipCostRow & { finalized_at: string | null }
-type LogRow = { itinerary_id: number }
-type TripRow = { itinerary_id: number; booking_id: number; itinerary_status: string | null; return_container: boolean }
+type PayslipRow = PayslipCostRow & { finalized_at: string | null; payroll_period_end: string }
+type LogRow = { itinerary_id: number; status_changed_at: string }
+type TripRow = {
+  itinerary_id: number
+  booking_id: number
+  itinerary_status: string | null
+  return_container: boolean
+  costed_distance_km: number | string | null
+}
 type BookingRow = { booking_id: number; estimated_distance_km: number | string | null; return_distance_km: number | string | null }
 type ExpenseRow = { expense_id: number; itinerary_id: number; amount: number | string; category: string }
 type DamageRow = DamageCostRow
@@ -117,52 +137,50 @@ export async function loadOperationalExpenses(
   const end = rangeEndManila(period)
   const endTs = `${end}T00:00:00+08:00`
 
-  // Payslips by period START (the current week's end is still in the
-  // future) -- drafts included, so a payroll run shows as it happens.
-  const [payslips, deliveredLogs, expensesInRange, settings] = await Promise.all([
+  // Payslips by period END (payslipInPeriod) -- drafts included, so a
+  // payroll run shows as it happens.
+  const [payslipRows, deliveredLogs, settings] = await Promise.all([
     fetchAll<PayslipRow>((from, to) =>
       supabase
         .from('payroll_payslips')
-        .select('finalized_at, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
-        .gte('payroll_period_start', cutoff)
+        .select('finalized_at, payroll_period_end, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
+        .gte('payroll_period_end', cutoff)
         .lt('payroll_period_start', end)
         .range(from, to),
     ),
     fetchAll<LogRow>((from, to) =>
       supabase
         .from('dispatch_status_logs')
-        .select('itinerary_id')
+        .select('itinerary_id, status_changed_at')
         .eq('new_status', 'Delivered')
         .gte('status_changed_at', cutoffTs)
-        .lt('status_changed_at', endTs)
-        .range(from, to),
-    ),
-    fetchAll<ExpenseRow>((from, to) =>
-      supabase
-        .from('itinerary_expenses')
-        .select('expense_id, itinerary_id, amount, category')
-        .gte('created_at', cutoffTs)
-        .lt('created_at', endTs)
         .range(from, to),
     ),
     supabase
       .from('app_settings')
-      .select('setting_value')
-      .eq('setting_key', 'diesel_price_per_liter')
-      .maybeSingle(),
+      .select('setting_key, setting_value')
+      .in('setting_key', ['diesel_price_per_liter', 'diesel_km_per_liter']),
   ])
 
-  const firstError =
-    payslips.error ?? deliveredLogs.error ?? expensesInRange.error ?? settings.error?.message
+  const firstError = payslipRows.error ?? deliveredLogs.error ?? settings.error?.message
   if (firstError) return { data: null, error: firstError }
+  const payslips = payslipRows.rows.filter((row) => payslipInPeriod(row, period, end))
 
-  // Delivered trips in range: still Delivered now (a corrected-back trip
-  // isn't), with their distance for the diesel estimate.
-  const loggedIds = Array.from(new Set(deliveredLogs.rows.map((r) => r.itinerary_id)))
+  // A trip belongs to the period of its LATEST Delivered row (a later
+  // re-delivery moves it out), and only while it's still delivered now.
+  const latestByTrip = new Map<number, number>()
+  for (const l of deliveredLogs.rows) {
+    const at = new Date(l.status_changed_at).getTime()
+    if (at > (latestByTrip.get(l.itinerary_id) ?? 0)) latestByTrip.set(l.itinerary_id, at)
+  }
+  const endMs = new Date(endTs).getTime()
+  const loggedIds = Array.from(latestByTrip)
+    .filter(([, at]) => at < endMs)
+    .map(([id]) => id)
   const trips = await fetchIn<TripRow>(loggedIds, (chunk, from, to) =>
     supabase
       .from('itineraries')
-      .select('itinerary_id, booking_id, itinerary_status, return_container')
+      .select('itinerary_id, booking_id, itinerary_status, return_container, costed_distance_km')
       .in('itinerary_id', chunk)
       .range(from, to),
   )
@@ -179,13 +197,12 @@ export async function loadOperationalExpenses(
         .in('booking_id', chunk)
         .range(from, to),
     ),
-    // Fuel on delivered trips counts by trip, whenever it was logged.
+    // Every expense on those trips, whenever it was logged.
     fetchIn<ExpenseRow>(deliveredIds, (chunk, from, to) =>
       supabase
         .from('itinerary_expenses')
         .select('expense_id, itinerary_id, amount, category')
         .in('itinerary_id', chunk)
-        .eq('category', 'Fuel')
         .range(from, to),
     ),
     loadCompanyDamageCost(cutoffTs, endTs),
@@ -197,42 +214,34 @@ export async function loadOperationalExpenses(
   let payroll = 0
   let employerShares = 0
   let draftPayroll = 0
-  for (const row of payslips.rows) {
+  for (const row of payslips) {
     const cost = payslipCost(row)
     payroll += cost.gross
     employerShares += cost.employerShares
     if (!row.finalized_at) draftPayroll += cost.total
   }
 
-  // Trip expenses + diesel
-  const deliveredSet = new Set(deliveredIds)
+  // Trip expenses + diesel (delivered trips only)
   let tripExpenses = 0
-  let dieselActual = 0
-  for (const e of expensesInRange.rows) {
-    if (e.category !== 'Fuel') tripExpenses += Number(e.amount)
-    // Fuel on delivered trips is handled per trip below; fuel on trips
-    // still on the road counts here, by the date it was logged.
-    else if (!deliveredSet.has(e.itinerary_id)) dieselActual += Number(e.amount)
-  }
-
   const fuelByTrip = new Map<number, number>()
   for (const e of deliveredExpenses.rows) {
-    fuelByTrip.set(e.itinerary_id, (fuelByTrip.get(e.itinerary_id) ?? 0) + Number(e.amount))
+    if (e.category === 'Fuel') fuelByTrip.set(e.itinerary_id, (fuelByTrip.get(e.itinerary_id) ?? 0) + Number(e.amount))
+    else tripExpenses += Number(e.amount)
   }
   const bookingById = new Map(bookings.rows.map((b) => [b.booking_id, b]))
-  const dieselPrice = settings.data ? Number(settings.data.setting_value) : null
+  const setting = new Map((settings.data ?? []).map((row) => [row.setting_key, Number(row.setting_value)]))
+  const dieselPrice = setting.get('diesel_price_per_liter') ?? null
+  const perKm = dieselPerKm({ dieselPricePerLiter: dieselPrice ?? 0, kmPerLiter: setting.get('diesel_km_per_liter') })
 
+  let dieselActual = 0
   let dieselEstimated = 0
   let estimatedTrips = 0
   let tripsMissingDistance = 0
   for (const trip of deliveredTrips) {
     // Plus the empty-container return leg on a trip that brings it back.
     const booking = bookingById.get(trip.booking_id)
-    const km = booking ? tripDistanceKm(booking, trip.return_container) : 0
-    const diesel = dieselForTrip(
-      fuelByTrip.get(trip.itinerary_id) ?? 0,
-      (dieselPrice ?? 0) * km,
-    )
+    const km = booking ? tripDistanceKm(booking, trip.return_container, trip.costed_distance_km) : 0
+    const diesel = dieselForTrip(fuelByTrip.get(trip.itinerary_id) ?? 0, perKm * km)
     // Every delivered trip gets the estimate; logged Fuel is on top of it.
     dieselEstimated += diesel.estimate
     dieselActual += diesel.logged
@@ -275,11 +284,12 @@ export async function loadPayrollExpenses(
   period: Period,
 ): Promise<{ data: PayrollExpenses | null; error: string | null }> {
   const [slips, people] = await Promise.all([
+    // By period END, like loadOperationalExpenses (payslipInPeriod).
     fetchAll<PayslipRow & { employee_id: number }>((from, to) =>
       supabase
         .from('payroll_payslips')
-        .select('employee_id, finalized_at, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
-        .gte('payroll_period_start', rangeStartManila(period))
+        .select('employee_id, finalized_at, payroll_period_end, gross_pay, sss_er, sss_ec, philhealth_er, pagibig_er')
+        .gte('payroll_period_end', rangeStartManila(period))
         .lt('payroll_period_start', rangeEndManila(period))
         .range(from, to),
     ),
@@ -294,7 +304,9 @@ export async function loadPayrollExpenses(
   const grossById = new Map<number, number>()
   let total = 0
   let draft = 0
-  for (const row of slips.rows) {
+  const end = rangeEndManila(period)
+  const counted = slips.rows.filter((row) => payslipInPeriod(row, period, end))
+  for (const row of counted) {
     const cost = payslipCost(row)
     total += cost.total
     if (!row.finalized_at) draft += cost.total
@@ -309,7 +321,7 @@ export async function loadPayrollExpenses(
       gross: grossById.get(p.employee_id)!,
     }))
     .sort((x, y) => y.gross - x.gross)
-  return { data: { draft, payslips: slips.rows.length, total, earners }, error: null }
+  return { data: { draft, payslips: counted.length, total, earners }, error: null }
 }
 
 export type MaintenanceExpenses = ReturnType<typeof summarizeParts>

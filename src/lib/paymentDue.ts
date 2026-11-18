@@ -15,30 +15,28 @@
 // - computed_billable_amount = the sum of the rates of the trips actually
 //   Delivered so far (what the trips alone justify, always auto-calculated)
 // - billable_amount = the EFFECTIVE amount currently due:
-//   bookings.amount_to_pay if staff has manually overridden it in
-//   Financial Records (FinancialSection.tsx -- e.g. a discount or
-//   special arrangement), otherwise computed_billable_amount -- PLUS
-//   damage_charges = EXTRA charges: approved Client damage + charges
-//   added on the Billing page (lib/bookingCharges.ts)
+//   computed_billable_amount (no override since 2026-11-18 -- prices are
+//   edited on the trips) PLUS damage_charges = EXTRA charges: approved
+//   Client damage + added charges (lib/bookingCharges.ts). The math is
+//   lib/bookingBalance.ts.
 // - balance_due = billable_amount - amount_paid (what's currently owed)
 // Payments themselves are recorded in Financial Records, not here --
 // this module only computes what's owed and when; it doesn't write
-// amount_paid or amount_to_pay.
+// amount_paid.
 // This is one row per booking with a running/partial amount, not one
 // row per itinerary -- as more trips complete, billable_amount and
 // balance_due grow, independent of whether the rest of the booking is
 // done yet (unless staff has overridden the total, in which case it
 // stays fixed at that override until changed again).
 //
-// Due date rule: the countdown starts when a trip is DELIVERED. The date
-// used is the latest moment one of the booking's trips was marked
-// Delivered (dispatch_status_logs, new_status 'Delivered', Manila date --
-// itineraries.trip_date_to is just the original plan). One due date per
-// booking. Before any trip is delivered there is NO due date (screens say
-// "Starts when delivered") -- the quote's dates are never used, so a
-// booking can't show as overdue before anything was delivered.
-// Cash terms are due on the base date itself; 7/14/30-day terms are due
-// that many days after it.
+// Due date rule (2026-11-18, lib/bookingBalance.ts): each delivered trip
+// falls due on its OWN delivery date (dispatch_status_logs, latest Delivered
+// row, Manila date) + the payment terms, each extra charge on the day it was
+// added + the terms. Payments pay the oldest first; the booking's due date is
+// that of the oldest part still unpaid (open_items / overdue_amount give the
+// detail). Before any trip is delivered there is NO due date (screens say
+// "Starts when delivered") -- a booking can't be overdue before delivery.
+// Cash terms are due on the day itself; 7/14/30-day terms that many days after.
 //
 // Cancelled bookings are included, billed only for their delivered trips
 // (a cancelled booking's other trips are Cancelled, so it drops off like
@@ -52,114 +50,103 @@ import { supabase } from './supabaseClient'
 import { loadExtraChargesByBooking, type ExtraChargeItem } from './bookingCharges'
 import { fetchAll, fetchIn } from './dashboardExpenses'
 import { toManilaDate } from './payslip'
-import { groupTripRates, sumRates } from './lineRates'
 import { isDelivered } from './tripStatusFlow'
+import { loadTripPriceChanges } from './tripPriceChanges'
+import {
+  PAYMENT_TERM_DAYS,
+  bookingBalances,
+  bookingDueDate,
+  daysBetween,
+  openDueItems,
+  originalRate,
+  overdueAmount,
+  type BilledItem,
+  type OpenItem,
+} from './bookingBalance'
 
-// One row of the bookings / quote queries in loadPaymentDueReport().
+export type { OpenItem } from './bookingBalance'
+
+// One row of the bookings query in loadPaymentDueReport().
 type DueBookingRow = {
   booking_id: number
   booking_date: string
+  created_at: string | null
   client_id: number
   booking_status: string | null
   cancelled_at: string | null
   payment_terms: string
   rate_of_delivery_service: number | null
-  amount_to_pay: number | null
   amount_paid: number | null
+  cost_per_trip: number | null
+  downpayment_waived_at: string | null
+  downpayment_fixed: number | null
   place_of_pickup_id: number
   place_of_delivery_id: number
-}
-
-// What a booking's DELIVERY amount is (damage is added on top elsewhere).
-// Normally staff's locked/overridden amount_to_pay, else the delivered
-// trips' rates added up. Once a booking had ANY cancellation -- fully Cancelled, or
-// cancelled partway and ended Delivered -- it's only billed for trips
-// actually delivered, so an earlier lock at the full contract value is
-// capped. Shared by Payments Due, Bills Receivable, Bookings and the
-// client booking history so they can't disagree.
-export function deliveryAmountFor(args: {
-  amountToPay: number | null
-  computedBillable: number // sum of the delivered trips' rates
-  hadCancellation: boolean // booking_status Cancelled OR cancelled_at set
-}): number {
-  return args.hadCancellation
-    ? Math.min(args.amountToPay ?? Infinity, args.computedBillable)
-    : (args.amountToPay ?? args.computedBillable)
 }
 
 export type PaymentDueRow = {
   booking_id: number
   booking_date: string
+  created_at: string | null
   client_id: number
   client_name: string
   pickup_place_name: string
   delivery_place_name: string
+  booking_status: string | null
+  cancelled_at: string | null
+  cost_per_trip: number | null
+  downpayment_waived_at: string | null
+  // Downpayment kept as it was when the booking was repriced after paying it.
+  downpayment_fixed: number | null
   // Average per trip; trip_rates = each live trip's own rate (cargo lines
   // can be priced differently -- the contract / billed amounts add these up).
   rate_per_trip: number | null
   trip_rates: number[]
   total_trips: number
   completed_trips: number
+  cancelled_trips: number
   total_contract_value: number
   computed_billable_amount: number
-  amount_to_pay_override: number | null
   damage_charges: number
-  // The extra charges one by one (damage, added charges), oldest first.
+  // The extra charges / discounts one by one, oldest first.
   extra_items: ExtraChargeItem[]
   billable_amount: number
   amount_paid: number
   balance_due: number
   payment_terms: string
-  base_date: string | null
+  base_date: string | null // latest delivery (Manila date)
   base_date_source: 'actual' | 'none' // 'none' = nothing delivered yet
+  // Oldest unpaid part's due date (else the last item's); null = nothing delivered.
   due_date: string | null
   days_until_due: number | null
-}
-
-const PAYMENT_TERM_DAYS: Record<string, number> = {
-  Cash: 0,
-  '7Days': 7,
-  '14Days': 14,
-  '30Days': 30,
-}
-
-// Done in UTC on purpose: building the date at local midnight and then
-// calling toISOString() shifts it back a day in Manila (UTC+8).
-function addDays(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day + days))
-    .toISOString()
-    .slice(0, 10)
-}
-
-function daysFromToday(dateStr: string): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const target = new Date(`${dateStr}T00:00:00`)
-  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  // The unpaid parts of the bill, oldest first, and how much is past due.
+  open_items: OpenItem[]
+  overdue_amount: number
 }
 
 // Pass clientId to scope the report to one client's own bookings
 // (the client portal); omit it for the admin view across all clients.
 // includeSettled keeps the fully delivered + fully paid bookings too
 // (the Statement of Account needs every booking, not just open ones).
+// bookingId narrows it to one booking (the Billing page).
 export async function loadPaymentDueReport(
   clientId?: number,
-  options?: { includeSettled?: boolean },
+  options?: { includeSettled?: boolean; bookingId?: number },
 ): Promise<{ rows: PaymentDueRow[]; error: string | null }> {
   // Cancelled bookings stay in: they still owe for trips delivered before
-  // the cancellation (billed below, same cap as FinancialSection). Ones with
-  // nothing delivered owe 0 and drop off at the filter at the bottom.
+  // the cancellation. Ones with nothing delivered owe 0 and drop off at the
+  // filter at the bottom.
   // fetchAll / fetchIn below: every page (Supabase stops at 1000 rows) and
   // ids in chunks (one long id list makes the request URL too big).
   const { rows: bookingRows, error: bookingError } = await fetchAll<DueBookingRow>((from, to) => {
     let query = supabase
       .from('bookings')
       .select(
-        'booking_id, booking_date, client_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_to_pay, amount_paid, place_of_pickup_id, place_of_delivery_id',
+        'booking_id, booking_date, created_at, client_id, booking_status, cancelled_at, payment_terms, rate_of_delivery_service, amount_paid, cost_per_trip, downpayment_waived_at, downpayment_fixed, place_of_pickup_id, place_of_delivery_id',
       )
       .order('booking_id', { ascending: true })
     if (clientId !== undefined) query = query.eq('client_id', clientId)
+    if (options?.bookingId !== undefined) query = query.eq('booking_id', options.bookingId)
     return query.range(from, to)
   })
 
@@ -181,9 +168,7 @@ export async function loadPaymentDueReport(
   )
   const bookingIds = bookingRows.map((b) => b.booking_id)
 
-  // Damage charges only need the booking ids, so they load alongside the
-  // rest instead of as a separate round afterwards.
-  const [clientsResult, placesResult, itinerariesResult, damageResult] =
+  const [clientsResult, placesResult, itinerariesResult, extrasResult] =
     await Promise.all([
       fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
         supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
@@ -191,17 +176,14 @@ export async function loadPaymentDueReport(
       fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
         supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
       ),
-      fetchIn<{ itinerary_id: number; booking_id: number; itinerary_status: string; trip_rate: number | string | null }>(
+      // Every trip, cancelled ones too (counted separately, never billed).
+      fetchIn<{ itinerary_id: number; booking_id: number; itinerary_status: string | null; trip_rate: number | string | null }>(
         bookingIds,
         (chunk, from, to) =>
           supabase
             .from('itineraries')
             .select('itinerary_id, booking_id, itinerary_status, trip_rate')
             .in('booking_id', chunk)
-            // Cancelled trips aren't billed and don't count toward the
-            // contract -- otherwise a partly cancelled booking could never
-            // reach "all trips done" and would stay on the report forever.
-            .neq('itinerary_status', 'Cancelled')
             .range(from, to),
       ),
       loadExtraChargesByBooking(bookingIds),
@@ -216,133 +198,119 @@ export async function loadPaymentDueReport(
   if (itinerariesResult.error) {
     return { rows: [], error: itinerariesResult.error }
   }
-
-  const { byBooking: damageByBooking, items: extraItemsByBooking, error: damageError } = damageResult
-  if (damageError) {
-    return { rows: [], error: damageError }
+  if (extrasResult.error) {
+    return { rows: [], error: extrasResult.error }
   }
 
-  const deliveredItineraryIds = itinerariesResult.rows
-    .filter((i) => isDelivered(i.itinerary_status))
-    .map((i) => i.itinerary_id)
+  const deliveredTrips = itinerariesResult.rows.filter((i) => isDelivered(i.itinerary_status))
 
-  // When each trip was marked Delivered on the Dispatch Board. Oldest
-  // first, so the Map below keeps the latest one per trip.
-  const { rows: deliveredLogRows, error: deliveredLogError } = await fetchIn<{
-    itinerary_id: number
-    status_changed_at: string
-  }>(deliveredItineraryIds, (chunk, from, to) =>
-    supabase
-      .from('dispatch_status_logs')
-      .select('itinerary_id, status_changed_at')
-      .in('itinerary_id', chunk)
-      .eq('new_status', 'Delivered')
-      .order('status_changed_at', { ascending: true })
-      .order('itinerary_id', { ascending: true })
-      .range(from, to),
+  // When each trip was marked Delivered on the Dispatch Board (latest row
+  // wins), and any price change made after it was delivered.
+  const deliveredIds = deliveredTrips.map((i) => i.itinerary_id)
+  const [deliveredLogs, priceChanges] = await Promise.all([
+    fetchIn<{ itinerary_id: number; status_changed_at: string }>(deliveredIds, (chunk, from, to) =>
+      supabase
+        .from('dispatch_status_logs')
+        .select('itinerary_id, status_changed_at')
+        .in('itinerary_id', chunk)
+        .eq('new_status', 'Delivered')
+        .order('status_changed_at', { ascending: true })
+        .order('itinerary_id', { ascending: true })
+        .range(from, to),
+    ),
+    loadTripPriceChanges(deliveredIds),
+  ])
+  const deliveredLogRows = deliveredLogs.rows
+  if (deliveredLogs.error) return { rows: [], error: deliveredLogs.error }
+  if (priceChanges.error) return { rows: [], error: priceChanges.error }
+  const changesByTrip = new Map<number, typeof priceChanges.rows>()
+  for (const c of priceChanges.rows) changesByTrip.set(c.itinerary_id, [...(changesByTrip.get(c.itinerary_id) ?? []), c])
+
+  const clientNameById = new Map(clientsResult.rows.map((c) => [c.client_id, c.client_name]))
+  const placeNameById = new Map(placesResult.rows.map((p) => [p.place_id, p.place_name]))
+  // Manila date (like Statements/payroll) -- slicing the UTC timestamp put
+  // deliveries made 12 MN-8 AM on the day before.
+  const deliveredOnByTrip = new Map(
+    deliveredLogRows.map((r) => [r.itinerary_id, toManilaDate(r.status_changed_at)]),
   )
 
-  if (deliveredLogError) {
-    return { rows: [], error: deliveredLogError }
+  const balances = bookingBalances(bookingRows, itinerariesResult.rows, extrasResult.byBooking)
+  const bookingById = new Map(bookingRows.map((b) => [b.booking_id, b]))
+
+  // Billed items per booking: each delivered trip at its ORIGINAL price on
+  // its delivery date (a trip with no Delivered log -- shouldn't happen -- on
+  // the booking date), each later price change on the day it was made, each
+  // extra charge on its own date. Discounts (negative) are left to the
+  // balance; openDueItems uses them up like a payment.
+  const itemsByBooking = new Map<number, BilledItem[]>()
+  const lastDeliveryByBooking = new Map<number, string>()
+  for (const trip of deliveredTrips) {
+    const deliveredOn = deliveredOnByTrip.get(trip.itinerary_id)
+    if (deliveredOn && deliveredOn > (lastDeliveryByBooking.get(trip.booking_id) ?? '')) {
+      lastDeliveryByBooking.set(trip.booking_id, deliveredOn)
+    }
+    const booking = bookingById.get(trip.booking_id)
+    if (!booking) continue
+    const fallback = booking.rate_of_delivery_service ?? 0
+    const list = itemsByBooking.get(trip.booking_id) ?? []
+    const changes = changesByTrip.get(trip.itinerary_id) ?? []
+    list.push({
+      date: deliveredOn ?? booking.booking_date,
+      amount: originalRate(Number(trip.trip_rate ?? fallback), changes),
+    })
+    for (const c of changes) list.push({ date: c.date, amount: c.new_rate - c.old_rate })
+    itemsByBooking.set(trip.booking_id, list)
+  }
+  for (const [bookingId, items] of extrasResult.items) {
+    const list = itemsByBooking.get(bookingId) ?? []
+    items.forEach((i) => list.push({ date: i.date, amount: i.amount }))
+    itemsByBooking.set(bookingId, list)
   }
 
-  const clientNameById = new Map(
-    clientsResult.rows.map((c) => [c.client_id, c.client_name]),
-  )
-  const placeNameById = new Map(
-    placesResult.rows.map((p) => [p.place_id, p.place_name]),
-  )
-  const receivedAtByItinerary = new Map(
-    (deliveredLogRows ?? []).map((r) => [r.itinerary_id, r.status_changed_at as string]),
-  )
-
-  // Every trip's own rate (cargo lines can be priced differently).
-  const tripRatesByBooking = groupTripRates(
-    itinerariesResult.rows,
-    new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
-  )
-
-  const itinerariesByBooking = new Map<
-    number,
-    { itinerary_id: number; itinerary_status: string }[]
-  >()
-  itinerariesResult.rows.forEach((itinerary) => {
-    const list = itinerariesByBooking.get(itinerary.booking_id) ?? []
-    list.push(itinerary)
-    itinerariesByBooking.set(itinerary.booking_id, list)
-  })
+  const today = toManilaDate(new Date())
 
   const rows: PaymentDueRow[] = bookingRows
     .map((booking) => {
-      const itineraries = itinerariesByBooking.get(booking.booking_id) ?? []
-      const deliveredItineraries = itineraries.filter(
-        (itinerary) => isDelivered(itinerary.itinerary_status),
-      )
-      const totalTrips = itineraries.length
-      const completedTrips = deliveredItineraries.length
-
-      const tripRates = tripRatesByBooking.get(booking.booking_id) ?? { live: [], delivered: [] }
-      const totalContractValue = sumRates(tripRates.live)
-      const computedBillableAmount = sumRates(tripRates.delivered)
-      const damageCharges = damageByBooking.get(booking.booking_id) ?? 0
-      // Any cancellation: only delivered trips are billable (deliveryAmountFor).
-      const deliveryAmount = deliveryAmountFor({
-        amountToPay: booking.amount_to_pay,
-        computedBillable: computedBillableAmount,
-        hadCancellation: booking.booking_status === 'Cancelled' || booking.cancelled_at != null,
-      })
-      const billableAmount = deliveryAmount + damageCharges
-      const amountPaid = booking.amount_paid ?? 0
-      const balanceDue = billableAmount - amountPaid
-
-      let baseDate: string | null = null
-      let baseDateSource: PaymentDueRow['base_date_source'] = 'none'
-
-      if (completedTrips > 0) {
-        const receiptDates = deliveredItineraries
-          .map((itinerary) => receivedAtByItinerary.get(itinerary.itinerary_id))
-          .filter((date): date is string => Boolean(date))
-          // Manila date (like Statements/payroll) -- slicing the UTC timestamp
-          // put deliveries made 12 MN-8 AM on the day before.
-          .map((date) => toManilaDate(date))
-
-        if (receiptDates.length > 0) {
-          baseDate = receiptDates.reduce((latest, date) =>
-            date > latest ? date : latest,
-          )
-          baseDateSource = 'actual'
-        }
-      }
-
-      const daysToAdd = PAYMENT_TERM_DAYS[booking.payment_terms] ?? 0
-      const dueDate = baseDate ? addDays(baseDate, daysToAdd) : null
+      const balance = balances.get(booking.booking_id)!
+      const termDays = PAYMENT_TERM_DAYS[booking.payment_terms] ?? 0
+      const items = itemsByBooking.get(booking.booking_id) ?? []
+      const baseDate = lastDeliveryByBooking.get(booking.booking_id) ?? null
+      const open = openDueItems(items, balance.billable_amount, balance.amount_paid, termDays)
+      const dueDate = bookingDueDate(items, open, termDays)
 
       return {
         booking_id: booking.booking_id,
         booking_date: booking.booking_date,
+        created_at: booking.created_at,
         client_id: booking.client_id,
         client_name: clientNameById.get(booking.client_id) ?? '—',
         pickup_place_name: placeNameById.get(booking.place_of_pickup_id) ?? '—',
-        delivery_place_name:
-          placeNameById.get(booking.place_of_delivery_id) ?? '—',
+        delivery_place_name: placeNameById.get(booking.place_of_delivery_id) ?? '—',
+        booking_status: booking.booking_status,
+        cancelled_at: booking.cancelled_at,
+        cost_per_trip: booking.cost_per_trip,
+        downpayment_waived_at: booking.downpayment_waived_at,
+        downpayment_fixed: booking.downpayment_fixed === null ? null : Number(booking.downpayment_fixed),
         rate_per_trip: booking.rate_of_delivery_service,
-        trip_rates: tripRates.live,
-        total_trips: totalTrips,
-        completed_trips: completedTrips,
-        total_contract_value: totalContractValue,
-        computed_billable_amount: computedBillableAmount,
-        amount_to_pay_override: booking.amount_to_pay,
-        damage_charges: damageCharges,
-        extra_items: extraItemsByBooking.get(booking.booking_id) ?? [],
-        billable_amount: billableAmount,
-        amount_paid: amountPaid,
-        balance_due: balanceDue,
+        trip_rates: balance.trip_rates,
+        total_trips: balance.total_trips,
+        completed_trips: balance.completed_trips,
+        cancelled_trips: balance.cancelled_trips,
+        total_contract_value: balance.total_contract_value,
+        computed_billable_amount: balance.computed_billable_amount,
+        damage_charges: balance.damage_charges,
+        extra_items: extrasResult.items.get(booking.booking_id) ?? [],
+        billable_amount: balance.billable_amount,
+        amount_paid: balance.amount_paid,
+        balance_due: balance.balance_due,
         payment_terms: booking.payment_terms,
         base_date: baseDate,
-        base_date_source: baseDateSource,
+        base_date_source: baseDate ? 'actual' : 'none',
         due_date: dueDate,
-        days_until_due: dueDate ? daysFromToday(dueDate) : null,
-      }
+        days_until_due: dueDate ? daysBetween(today, dueDate) : null,
+        open_items: open,
+        overdue_amount: overdueAmount(open, today),
+      } satisfies PaymentDueRow
     })
     // Drop bookings that are fully delivered AND fully settled -- there's
     // nothing left to track. Anything else stays, including bookings with

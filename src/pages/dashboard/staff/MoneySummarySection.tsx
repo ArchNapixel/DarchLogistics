@@ -4,15 +4,17 @@
 //   alert          government remittances still due for the month
 //   tiles          Net profit (margin), Revenue (trips), Expenses (% of
 //                  revenue), Collected (% of revenue, "why?" -> the gap card)
-//   Profit         how the net result is worked out + per trip
-//   Cash           Money in / Money out, Cash on hand, why Collected != Revenue
+//   Profit         how the net result is worked out + why Collected != Revenue
+//                  ("Show trips" under Paid ahead / Paid for earlier months)
+//   Cash           Money in / Money out
 //   Government remittances   due vs remitted per agency
 //   Where we stand today     balances as of today
 //   Trends         six-month columns + revenue by client (billed vs collected)
 //
 // Profit numbers: loadProfitLoss() -> buildMoneySummary() (lib/moneySummary.ts).
-// Cash: lib/cashFlow.ts. Gap card: loadRevenueReconciliation + gapByReason.
-// Remittances / standing / cash count: lib/financeSnapshot.ts. Each block
+// Cash: lib/cashFlow.ts. Gap card: loadRevenueReconciliation + gapByReason,
+// its trips loadGapTrips (lib/revenueReconciliation.ts).
+// Remittances / standing: lib/financeSnapshot.ts. Each block
 // loads on its own, so one failing doesn't hide the rest.
 //
 // Second tab, "Expense breakdown" (?tab=expenses): the Admin dashboard's
@@ -21,13 +23,13 @@
 // the one clicked). Those cards use their own loaders (dashboardExpenses.ts),
 // so their totals can differ a little from the Summary tab's Expenses.
 import { previewCsv } from '../../../components/CsvPreview'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import PageHeader, { SectionHeader } from '../../../components/PageHeader'
-import { formatMoney } from '../../../lib/format'
+import { formatDate, formatMoney } from '../../../lib/format'
 import { toManilaDate } from '../../../lib/payslip'
 import { loadProfitLoss } from '../../../lib/profitLoss'
-import { loadRevenueReconciliation } from '../../../lib/revenueReconciliation'
+import { loadGapTrips, loadRevenueReconciliation, type GapBooking } from '../../../lib/revenueReconciliation'
 import { gapByReason } from '../../../lib/revenueReconTotals'
 import {
   billedVsCollected,
@@ -42,9 +44,7 @@ import { loadCashFlow } from '../../../lib/cashFlow'
 import { loadCollectedByClient, loadRemittances, type Remittances } from '../../../lib/financeSnapshot'
 import {
   BilledVsCollectedCard,
-  CashOnHandCard,
   ChangeNote,
-  PerTripCard,
   RemittanceAlert,
   RemittancesTable,
   StandingStrip,
@@ -150,20 +150,64 @@ type Gap = {
   billed: number
   collected: number
   lines: { reason: string; amount: number; bookings: number }[]
+  // The trips behind "Paid ahead" / "Paid for earlier months' trips" (loadGapTrips).
+  trips: Partial<Record<string, GapBooking[]>>
+  tripsError: string | null
 }
 
 async function fetchGap(month: string): Promise<Gap> {
   const { data, error } = await loadRevenueReconciliation(month)
   if (error || !data) throw new Error(error ?? 'Could not load this month.')
+  const trips = await loadGapTrips(month, data.rows)
   return {
     billed: data.tripRevenue + data.adjustments,
     collected: data.collected,
     lines: gapByReason(data.rows),
+    trips: { 'Paid ahead of delivery': trips.ahead, 'Paying earlier months': trips.earlier },
+    tripsError: trips.error,
   }
+}
+
+// The bookings + trips under one "why" line, shown under it by "Show trips".
+function GapTrips({ bookings }: { bookings: GapBooking[] }) {
+  return (
+    <ul className="mb-2 flex flex-col gap-2 bg-slate-50 px-4 py-3 text-sm">
+      {bookings.map((b) => (
+        <li key={b.booking_id}>
+          <p className="flex flex-wrap justify-between gap-x-3">
+            <Link to={`/dashboard/bookings?booking=${b.booking_id}`} className="font-semibold text-primary hover:underline">
+              Booking #{b.booking_id} · {b.client_name}
+            </Link>
+            <span className="font-medium tabular-nums">{formatMoney(Math.abs(b.amount))}</span>
+          </p>
+          {b.trips.length === 0 ? (
+            <p className="text-[13px] text-ink-muted">No trip details found.</p>
+          ) : (
+            <ul className="mt-1 flex flex-col">
+              {b.trips.map((t) => (
+                <li key={t.itinerary_id} className="flex flex-wrap justify-between gap-x-3 text-[13px] text-ink-secondary">
+                  <Link
+                    to={`/dashboard/bookings?booking=${b.booking_id}&trip=${t.itinerary_id}`}
+                    className="hover:text-ink hover:underline"
+                  >
+                    Trip #{t.itinerary_id}
+                    {t.date ? ` · ${formatDate(t.date)}` : ''} · {t.note}
+                  </Link>
+                  <span className="tabular-nums">{formatMoney(t.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 // Revenue, then each reason it differs, then Collected under a rule.
 function GapCard({ gap, error }: { gap: Gap | null; error: string | null }) {
+  // Which line's trips are shown (null = none).
+  const [openReason, setOpenReason] = useState<string | null>(null)
   const difference = gap ? gap.collected - gap.billed : 0
   const row = 'flex justify-between gap-3 border-b border-slate-200 py-3 text-sm'
   return (
@@ -193,21 +237,45 @@ function GapCard({ gap, error }: { gap: Gap | null; error: string | null }) {
           {gap.lines.length === 0 ? (
             <li className={`${row} text-ink-muted`}>Everything billed this month was collected.</li>
           ) : (
-            gap.lines.map((line) => (
-              <li key={line.reason} className={row}>
-                <span className="text-ink-secondary">
-                  {GAP_LABELS[line.reason] ?? line.reason}
-                  <span className="text-ink-muted">
-                    {' '}
-                    · {line.bookings} booking{line.bookings === 1 ? '' : 's'}
-                  </span>
-                </span>
-                <span className={`font-medium tabular-nums ${line.amount < 0 ? 'text-red-700' : 'text-green-700'}`}>
-                  {line.amount > 0 ? '+ ' : line.amount < 0 ? '− ' : ''}
-                  {formatMoney(Math.abs(line.amount))}
-                </span>
-              </li>
-            ))
+            gap.lines.map((line) => {
+              const bookings = gap.trips[line.reason]
+              const open = openReason === line.reason
+              return (
+                <Fragment key={line.reason}>
+                  <li className={`${row} items-center`}>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-secondary">
+                      {GAP_LABELS[line.reason] ?? line.reason}
+                      <span className="text-ink-muted">
+                        · {line.bookings} booking{line.bookings === 1 ? '' : 's'}
+                      </span>
+                      {bookings && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenReason(open ? null : line.reason)}
+                          aria-expanded={open}
+                          className="rounded-[2px] border border-line-control bg-white px-2 py-0.5 text-xs font-semibold text-primary hover:bg-slate-50"
+                        >
+                          {open ? 'Hide trips' : 'Show trips'}
+                        </button>
+                      )}
+                    </span>
+                    <span className={`font-medium tabular-nums ${line.amount < 0 ? 'text-red-700' : 'text-green-700'}`}>
+                      {line.amount > 0 ? '+ ' : line.amount < 0 ? '− ' : ''}
+                      {formatMoney(Math.abs(line.amount))}
+                    </span>
+                  </li>
+                  {open && bookings && (
+                    <li>
+                      {gap.tripsError ? (
+                        <p className="mb-2 bg-red-50 px-4 py-2 text-sm text-red-700">Couldn&apos;t load the trips ({gap.tripsError}).</p>
+                      ) : (
+                        <GapTrips bookings={bookings} />
+                      )}
+                    </li>
+                  )}
+                </Fragment>
+              )
+            })
           )}
           <li className="mt-px flex justify-between gap-3 border-t-2 border-ink pt-3 text-sm font-semibold text-ink">
             <span>Collected</span>
@@ -291,7 +359,7 @@ function MoneySummarySection() {
   const [prevFlow, setPrevFlow] = useState<{ month: string; flow: CashFlow | null } | null>(null)
   const [collected, setCollected] = useState<{
     month: string
-    rows: { client_name: string; amount: number }[]
+    rows: { client_id: number | null; client_name: string; amount: number }[]
     error: string | null
   } | null>(null)
   const [remitReload, setRemitReload] = useState(0)
@@ -325,11 +393,6 @@ function MoneySummarySection() {
         setGapError(null)
       })
       .catch((e: Error) => !cancelled && setGapError(e.message))
-    void loadCashFlow(month).then(({ data, error: flowError }) => {
-      if (cancelled) return
-      setCashFlow(data)
-      setCashFlowError(flowError)
-    })
     const earlier = [5, 4, 3, 2, 1].map((n) => shiftMonth(month, -n))
     // A month that fails to load shows as "No data" in the trend.
     void Promise.all(
@@ -350,6 +413,12 @@ function MoneySummarySection() {
   useEffect(() => {
     let cancelled = false
     void loadRemittances(month).then((r) => !cancelled && setRemit({ key: remitKey, ...r }))
+    // Money out counts remittances actually paid, so it reloads with them.
+    void loadCashFlow(month).then(({ data, error: flowError }) => {
+      if (cancelled) return
+      setCashFlow(data)
+      setCashFlowError(flowError)
+    })
     return () => {
       cancelled = true
     }
@@ -480,17 +549,13 @@ function MoneySummarySection() {
             <SectionHeader title="Profit" subtitle="Based on trips delivered this month" />
             <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
               <NetWaterfall summary={summary} />
-              <PerTripCard summary={summary} />
+              <GapCard gap={gap} error={gapError} />
             </div>
           </div>
 
           <div className="mt-8">
             <SectionHeader title="Cash" subtitle="Money that actually came in and went out this month" />
             <CashFlowCard flow={cashFlow} error={cashFlowError} before={prevNet} month={month} />
-            <div className="mt-4 grid gap-4 xl:grid-cols-2 xl:items-start">
-              <CashOnHandCard month={month} />
-              <GapCard gap={gap} error={gapError} />
-            </div>
           </div>
 
           <div id="remittances" className="mt-8 scroll-mt-4">

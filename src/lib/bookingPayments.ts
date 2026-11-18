@@ -1,7 +1,6 @@
 // bookingPayments: how payments are saved. Every payment (and refund) is one
 // row in booking_payments, written ONLY through the database function
-// record_booking_payment() -- that inserts the row (and, when asked, locks
-// bookings.amount_to_pay) in one transaction, and a trigger then keeps
+// record_booking_payment() -- that inserts the row, and a trigger then keeps
 // bookings.amount_paid equal to the sum of the non-voided rows. So nothing
 // in the app writes amount_paid directly any more.
 // A refund is a row with a NEGATIVE amount and method 'Refund'.
@@ -18,6 +17,9 @@ import { confirmDialog } from '../components/ConfirmDialog'
 import { toManilaDate } from './payslip'
 import { csvField } from './inventoryReport'
 import { fetchAll, fetchIn } from './dashboardExpenses'
+import { clearShortCache } from './shortCache'
+import { loadPaymentDueReport } from './paymentDue'
+import { downpaymentStatus } from './downpayment'
 
 // What staff can pick when money comes in ('Refund' is only used by the
 // Mark Refunded action).
@@ -212,6 +214,38 @@ export async function loadPayments(
   return { rows, error: null }
 }
 
+// Voiding a payment after the booking's trips have started can leave its
+// downpayment short -- the trips already ran on it, so nothing stops them,
+// but staff should know. Returns the warning, or null (also on a read error:
+// the void itself is still allowed).
+export async function downpaymentVoidWarning(bookingId: number, amount: number): Promise<string | null> {
+  if (amount <= 0) return null
+  const [{ rows }, trips] = await Promise.all([
+    loadPaymentDueReport(undefined, { includeSettled: true, bookingId }),
+    supabase.from('itineraries').select('itinerary_status').eq('booking_id', bookingId),
+  ])
+  const row = rows[0]
+  if (!row || trips.error) return null
+  const started = (trips.data ?? []).some((t) => t.itinerary_status !== 'Awaiting' && t.itinerary_status !== 'Cancelled')
+  if (!started) return null
+  const args = {
+    contract: row.total_contract_value,
+    costPerTrip: row.cost_per_trip,
+    trips: row.total_trips,
+    waivedAt: row.downpayment_waived_at,
+    fixed: row.downpayment_fixed,
+  }
+  const before = downpaymentStatus({ ...args, amountPaid: row.amount_paid })
+  const after = downpaymentStatus({ ...args, amountPaid: row.amount_paid - amount })
+  if (!before?.met || !after || after.met || after.waived) return null
+  return (
+    `Warning: this booking's trips have already started, and voiding this leaves its downpayment ` +
+    `${formatPeso(after.missing)} short (needs ${formatPeso(after.required)}). `
+  )
+}
+
+const formatPeso = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 // Voids one payment (the row stays, with the reason). Returns an error
 // message, or null when done.
 export async function voidBookingPayment(paymentId: number, reason: string): Promise<string | null> {
@@ -219,6 +253,7 @@ export async function voidBookingPayment(paymentId: number, reason: string): Pro
     p_payment_id: paymentId,
     p_reason: reason,
   })
+  clearShortCache()
   return error ? error.message : null
 }
 
@@ -243,9 +278,6 @@ export async function recordBookingPayment(args: {
   bookingId: number
   amount: number // positive = payment received, negative = refund
   details: PaymentDetails
-  // Lock the booking's delivery amount in the same transaction (Paid Full /
-  // Partial Payment do this -- see FinancialSection.getDeliveryTarget).
-  setAmountToPay?: number
   // The day the booking was created (YYYY-MM-DD): no payment before it.
   earliest?: string
 }): Promise<string | null> {
@@ -280,8 +312,8 @@ export async function recordBookingPayment(args: {
     if (uploadError) return `The proof couldn't be uploaded (${uploadError.message}). Nothing was saved.`
   }
 
-  // 2. Save the payment.
-  const { error } = await supabase.rpc('record_booking_payment', {
+  // 2. Save the payment. record_booking_payment returns the new payment's id.
+  const { data: paymentId, error } = await supabase.rpc('record_booking_payment', {
     p_booking_id: args.bookingId,
     p_amount: args.amount,
     p_method: args.details.method,
@@ -289,35 +321,21 @@ export async function recordBookingPayment(args: {
     p_reference_no: args.details.referenceNo.trim() || null,
     p_or_number: args.details.orNumber.trim() || null,
     p_note: paymentNote(args.details),
-    p_set_amount_to_pay: args.setAmountToPay ?? null,
   })
   if (error) {
     if (proofPath) await supabase.storage.from(PROOF_BUCKET).remove([proofPath])
     return error.message
   }
+  clearShortCache()
 
-  // 3. Link the proof to the row just saved: the newest matching payment
-  // on this booking that has no proof yet. The payment itself is already
-  // saved, so a failure here is only a warning -- never an error (an
-  // error makes the form keep the amount, and saving again would record
-  // the payment twice).
+  // 3. Link the proof to that payment. The payment itself is already saved,
+  // so a failure here is only a warning -- never an error (an error makes
+  // the form keep the amount, and saving again would record the payment twice).
   if (proofPath) {
-    // ponytail: "newest matching row" -- two admins saving the same amount
-    // on the same booking in the same instant could swap proofs; have
-    // record_booking_payment return the new id if that ever matters.
-    const { data: saved } = await supabase
-      .from('booking_payments')
-      .select('payment_id')
-      .eq('booking_id', args.bookingId)
-      .eq('amount', args.amount)
-      .is('proof_path', null)
-      .is('voided_at', null)
-      .order('payment_id', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const { error: attachError } = saved
-      ? await supabase.rpc('attach_payment_proof', { p_payment_id: saved.payment_id, p_path: proofPath })
-      : { error: { message: 'saved payment not found' } }
+    const { error: attachError } =
+      typeof paymentId === 'number'
+        ? await supabase.rpc('attach_payment_proof', { p_payment_id: paymentId, p_path: proofPath })
+        : { error: { message: 'the saved payment id was not returned' } }
     if (attachError) {
       await supabase.storage.from(PROOF_BUCKET).remove([proofPath])
       showToast(`Payment saved, but the proof wasn't attached (${attachError.message}).`, 'error')

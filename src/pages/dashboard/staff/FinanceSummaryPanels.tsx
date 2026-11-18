@@ -1,10 +1,8 @@
 // FinanceSummaryPanels: the Financial Summary panels below the tiles.
 //   ChangeNote             "▲ 12% vs Oct" (only when last month had data)
 //   RemittanceAlert        red banner when an agency still has money due
-//   CashOnHandCard         counted cash carried forward month to month
 //   RemittancesTable       due vs remitted per agency, Record payment / Void
 //   StandingStrip          "Where we stand today" (always today)
-//   PerTripCard            revenue / cost / profit per trip, collection rate
 //   TrendCard              six-month revenue / expenses / net profit columns
 //   BilledVsCollectedCard  revenue by client: billed vs collected
 // Loading: lib/financeSnapshot.ts and lib/cashFlow.ts. Math: lib/moneySummary.ts.
@@ -16,23 +14,17 @@ import { showToast } from '../../../components/Toast'
 import { formatDate, formatMoney } from '../../../lib/format'
 import { filterAmountInput, parseAmount } from '../../../lib/amountInput'
 import { toManilaDate } from '../../../lib/payslip'
-import { loadCashFlow } from '../../../lib/cashFlow'
 import {
-  cashPosition,
   monthLabel,
-  monthsBetween,
   pctChange,
-  perTripNumbers,
   remittanceStatus,
   shiftMonth,
   type Agency,
   type MoneySummary,
 } from '../../../lib/moneySummary'
 import {
-  loadCashCheck,
   loadStanding,
   recordRemittance,
-  saveCashCheck,
   voidRemittance,
   type Remittances,
   type Standing,
@@ -95,112 +87,6 @@ export function RemittanceAlert({ data, month }: { data: Remittances | null; mon
         Review ↓
       </a>
     </div>
-  )
-}
-
-// ---------- Cash on hand ----------
-
-export function CashOnHandCard({ month }: { month: string }) {
-  const { employeeId } = useAuth()
-  const [reload, setReload] = useState(0)
-  const [result, setResult] = useState<{
-    key: string
-    position: ReturnType<typeof cashPosition>
-    error: string | null
-  } | null>(null)
-  const key = `${month}|${reload}`
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const { check, error } = await loadCashCheck(month)
-      if (error || !check) {
-        if (!cancelled) setResult({ key, position: null, error })
-        return
-      }
-      // Every month from the count up to this one needs its net movement.
-      const months = [...monthsBetween(check.month, month), month]
-      const flows = await Promise.all(months.map((m) => loadCashFlow(m)))
-      const failed = flows.find((f) => f.error)
-      const nets = new Map(months.map((m, i) => [m, flows[i].data?.net ?? 0]))
-      if (!cancelled) setResult({ key, position: failed ? null : cashPosition(check, nets, month), error: failed?.error ?? null })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [month, key])
-
-  async function enterCount() {
-    const text = await promptDialog({
-      title: `Cash on hand at the start of ${monthLabel(month)}`,
-      message: 'Cash in the safe plus every bank / GCash balance, counted on the 1st. Later months carry this forward.',
-      confirmLabel: 'Save count',
-      placeholder: '0.00',
-    })
-    if (text === null) return
-    const cleaned = filterAmountInput(text)
-    const amount = /^0*(\.0*)?$/.test(cleaned) && cleaned !== '' ? 0 : parseAmount(cleaned).value
-    if (amount === null) {
-      showToast('Enter the amount counted, e.g. 250000.', 'error')
-      return
-    }
-    const saveError = await saveCashCheck(month, amount, employeeId)
-    if (saveError) {
-      showToast(saveError, 'error')
-      return
-    }
-    showToast('Cash count saved.')
-    setReload((n) => n + 1)
-  }
-
-  const loading = result?.key !== key
-  const p = result?.position
-  const movement = p ? p.closing - p.opening : 0
-  const row = 'flex justify-between gap-3 border-b border-slate-200 py-3 text-sm'
-  return (
-    <section className="card px-6 py-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-        <h3 className={CARD_TITLE}>Cash on hand</h3>
-        <button type="button" onClick={() => void enterCount()} className="btn-secondary px-3 text-sm font-medium">
-          {p?.countedMonth === month ? 'Change count' : 'Enter cash count'}
-        </button>
-      </div>
-      {loading ? (
-        <p className="mt-3 text-sm text-ink-muted">Loading…</p>
-      ) : result?.error ? (
-        <p className="mt-3 text-sm text-red-700">{result.error}</p>
-      ) : !p ? (
-        <p className="mt-3 text-sm text-ink-muted">
-          No cash count yet. Count the cash and bank balances on the 1st of a month and enter it here — every month after that is
-          worked out from Money in / Money out.
-        </p>
-      ) : (
-        <ul className="flex flex-col">
-          <li className={row}>
-            <span className="text-ink-secondary">
-              Start of {monthLabel(month)}
-              <span className="text-ink-muted">
-                {p.countedMonth === month ? ' · counted' : ` · counted ${monthLabel(p.countedMonth)}, carried forward`}
-              </span>
-            </span>
-            <span className="font-medium tabular-nums">{formatMoney(p.opening)}</span>
-          </li>
-          <li className={row}>
-            <span className="text-ink-secondary">Net money movement</span>
-            <span className={`font-medium tabular-nums ${movement < 0 ? 'text-red-700' : 'text-green-700'}`}>
-              {movement < 0 ? '− ' : '+ '}
-              {formatMoney(Math.abs(movement))}
-            </span>
-          </li>
-          <li className="mt-px flex items-baseline justify-between gap-3 border-t-2 border-ink pt-3">
-            <span className="text-sm font-semibold text-ink">
-              {month === toManilaDate(new Date()).slice(0, 7) ? 'Cash on hand now' : `End of ${monthLabel(month)}`}
-            </span>
-            <span className={`text-xl font-bold tabular-nums ${p.closing < 0 ? 'text-red-700' : 'text-ink'}`}>{formatMoney(p.closing)}</span>
-          </li>
-        </ul>
-      )}
-    </section>
   )
 }
 
@@ -518,35 +404,6 @@ export function StandingStrip() {
         </Link>
       ))}
     </div>
-  )
-}
-
-// ---------- Per trip ----------
-
-export function PerTripCard({ summary }: { summary: MoneySummary }) {
-  const n = perTripNumbers(summary)
-  const money = (v: number | null) => (v === null ? '—' : formatMoney(v))
-  const lines: { label: string; value: string; tone?: string }[] = [
-    { label: 'Revenue per trip', value: money(n.revenue) },
-    { label: 'Cost per trip', value: money(n.cost) },
-    { label: 'Profit per trip', value: money(n.profit), tone: n.profit !== null && n.profit < 0 ? 'text-red-700' : 'text-green-700' },
-    { label: 'Collection rate (collected ÷ revenue)', value: n.collectionRate === null ? '—' : `${n.collectionRate}%` },
-  ]
-  return (
-    <section className="card px-6 py-5">
-      <h3 className="border-b border-slate-200 pb-3 text-base">
-        <span className="font-semibold text-ink">Per trip</span>
-        <span className="text-ink-muted"> · {summary.tripCount} delivered</span>
-      </h3>
-      <ul className="flex flex-col">
-        {lines.map((l) => (
-          <li key={l.label} className="flex justify-between gap-3 border-b border-slate-200 py-3.5 text-sm last:border-b-0">
-            <span className="text-ink-secondary">{l.label}</span>
-            <span className={`font-bold tabular-nums ${l.tone ?? 'text-ink'}`}>{l.value}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
   )
 }
 

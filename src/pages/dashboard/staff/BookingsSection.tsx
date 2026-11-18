@@ -28,8 +28,8 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../../lib/supabaseClient'
 import { formatLocationDisplay } from '../../../lib/locationReference'
 import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
-import { deliveryAmountFor } from '../../../lib/paymentDue'
-import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
+import { bookingBalances } from '../../../lib/bookingBalance'
+import { bookingRateLabel } from '../../../lib/lineRates'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import TripsView from './TripsView'
 import BookingDetailModal from './BookingDetailModal'
@@ -41,7 +41,6 @@ import { FilterButtons, ListBox, PageViewSwitch, SearchBox } from './BookingsTri
 import BookingSummaryPane from './BookingSummaryPane'
 import { useAuth } from '../../../context/AuthContext'
 import { isAdmin } from '../../../lib/roles'
-import { isDelivered } from '../../../lib/tripStatusFlow'
 import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 
@@ -54,9 +53,8 @@ export type Booking = {
   status: string
   // rate is PER TRIP -- total_trips/completed_trips + the derived
   // totals below exist so nothing has to re-guess "rate x how many?"
-  // billable_amount is the EFFECTIVE amount due: amount_to_pay if staff
-  // overrode it in Financial Records, otherwise computed_billable_amount
-  // (rate x completed trips) -- PLUS damage_charges (EXTRA charges:
+  // billable_amount = computed_billable_amount (the delivered trips' rates)
+  // PLUS damage_charges (EXTRA charges:
   // approved Client damage + charges added on the Billing page,
   // lib/bookingCharges.ts). (See src/lib/paymentDue.ts for the
   // same rule applied to the Payments Due report.)
@@ -68,7 +66,6 @@ export type Booking = {
   completed_trips: number
   total_contract_value: number
   computed_billable_amount: number
-  amount_to_pay: number | null
   damage_charges: number
   billable_amount: number
   amount_paid: number
@@ -83,7 +80,7 @@ export type Booking = {
   // cancelled reads "1/1 · 2 cancelled"). Optional for the same reason.
   cancelled_trips?: number
   // Set when the booking was cancelled (fully or partway): it's then only
-  // billed for delivered trips (deliveryAmountFor in lib/paymentDue.ts).
+  // billed for delivered trips (lib/bookingBalance.ts).
   cancelled_at?: string | null
   // Its trip numbers (itineraries.itinerary_id) -- the search box finds a
   // booking by any of them. Optional for the same reason as reference_code.
@@ -103,7 +100,6 @@ type BookingRow = {
   booking_status: string | null
   cancelled_at: string | null
   rate_of_delivery_service: number | null
-  amount_to_pay: number | null
   amount_paid: number | null
 }
 
@@ -208,7 +204,7 @@ function BookingsSection() {
       supabase
         .from('bookings')
         .select(
-          'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_to_pay, amount_paid',
+          'booking_id, client_id, quote_request_id, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, booking_date, booking_status, cancelled_at, rate_of_delivery_service, amount_paid',
         )
         .order('created_at', { ascending: false })
         .order('booking_id', { ascending: false })
@@ -311,51 +307,19 @@ function BookingsSection() {
       return formatLocationDisplay({ city: place.city, barangay: place.barangay, detail })
     }
 
-    const totalTripsByBooking = new Map<number, number>()
-    const completedTripsByBooking = new Map<number, number>()
     const itineraryRows = itinerariesResult.rows
-    const cancelledTripsByBooking = new Map<number, number>()
     const tripIdsByBooking = new Map<number, number[]>()
     itineraryRows.forEach((itinerary) => {
       tripIdsByBooking.set(itinerary.booking_id, [...(tripIdsByBooking.get(itinerary.booking_id) ?? []), itinerary.itinerary_id])
-      // Cancelled trips aren't part of the contract any more (counted separately).
-      if (itinerary.itinerary_status === 'Cancelled') {
-        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
-        return
-      }
-      totalTripsByBooking.set(
-        itinerary.booking_id,
-        (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-      )
-      if (isDelivered(itinerary.itinerary_status)) {
-        completedTripsByBooking.set(
-          itinerary.booking_id,
-          (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-        )
-      }
     })
 
-    // Every trip's own rate (cargo lines can be priced differently).
-    const tripRatesByBooking = groupTripRates(
-      itineraryRows,
-      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
-    )
+    // Trip counts, contract, billed and balance: the shared rule
+    // (lib/bookingBalance.ts), same as Bills Receivable and Payments Due.
+    const balances = bookingBalances(bookingRows, itineraryRows, damageByBooking)
 
     setBookings(
       bookingRows.map((b) => {
-        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
-        const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
-        const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = sumRates(tripRates.delivered)
-        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        const billableAmount =
-          deliveryAmountFor({
-            amountToPay: b.amount_to_pay,
-            computedBillable: computedBillableAmount,
-            hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
-          }) + damageCharges
-        const amountPaid = b.amount_paid ?? 0
-
+        const balance = balances.get(b.booking_id)!
         return {
           booking_id: b.booking_id,
           client_name: clientNameById.get(b.client_id) ?? '—',
@@ -364,19 +328,18 @@ function BookingsSection() {
           date: b.booking_date,
           status: b.booking_status ?? 'Draft',
           rate: b.rate_of_delivery_service,
-          trip_rates: tripRates.live,
-          total_trips: totalTrips,
-          completed_trips: completedTrips,
-          total_contract_value: sumRates(tripRates.live),
-          computed_billable_amount: computedBillableAmount,
-          amount_to_pay: b.amount_to_pay,
-          damage_charges: damageCharges,
-          billable_amount: billableAmount,
-          amount_paid: amountPaid,
-          balance_due: billableAmount - amountPaid,
+          trip_rates: balance.trip_rates,
+          total_trips: balance.total_trips,
+          completed_trips: balance.completed_trips,
+          total_contract_value: balance.total_contract_value,
+          computed_billable_amount: balance.computed_billable_amount,
+          damage_charges: balance.damage_charges,
+          billable_amount: balance.billable_amount,
+          amount_paid: balance.amount_paid,
+          balance_due: balance.balance_due,
           reference_code:
             b.quote_request_id !== null ? (referenceByQuote.get(b.quote_request_id) ?? null) : null,
-          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
+          cancelled_trips: balance.cancelled_trips,
           cancelled_at: b.cancelled_at,
           trip_ids: tripIdsByBooking.get(b.booking_id) ?? [],
         }

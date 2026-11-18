@@ -2,7 +2,7 @@
 //   node scripts/check-revenue-recon-totals.ts
 // Prints "ok" or throws on the first wrong number.
 import assert from 'node:assert/strict'
-import { gapByReason, reconcileRevenue } from '../src/lib/revenueReconTotals.ts'
+import { gapByReason, reconcileRevenue, unpaidAtMonthStart } from '../src/lib/revenueReconTotals.ts'
 import { buildStatement } from '../src/lib/statementTotals.ts'
 
 // Same ledger as the statement check: October 2026 for three bookings.
@@ -74,5 +74,31 @@ assert.equal(earlier.rows[0].reason, 'Paying earlier months')
 assert.deepEqual(gapByReason(recon.rows), [{ reason: 'Not fully paid yet', amount: -12_000, bookings: 2 }])
 assert.equal(gapByReason(ahead.rows)[0].amount, 5_000)
 assert.deepEqual(gapByReason([]), [])
+
+// Earlier-month trips this month's money paid for: oldest first.
+// Sep 28 trip 5,000 (paid 3,000 before Oct) + Sep 30 trip 4,000 unpaid; an Oct trip is ignored.
+assert.deepEqual(
+  unpaidAtMonthStart(
+    [
+      { id: 2, date: '2026-09-30', amount: 4000 },
+      { id: 1, date: '2026-09-28', amount: 5000 },
+      { id: 3, date: '2026-10-02', amount: 6000 },
+    ],
+    [],
+    3000,
+    '2026-10-01',
+  ),
+  [
+    { id: 1, date: '2026-09-28', amount: 5000, unpaid: 2000 },
+    { id: 2, date: '2026-09-30', amount: 4000, unpaid: 4000 },
+  ],
+)
+// An earlier charge is paid first if it's older; only trips come back.
+assert.deepEqual(
+  unpaidAtMonthStart([{ id: 1, date: '2026-09-28', amount: 5000 }], [{ id: 9, date: '2026-09-20', amount: 500 }], 1000, '2026-10-01'),
+  [{ id: 1, date: '2026-09-28', amount: 5000, unpaid: 4500 }],
+)
+// Everything paid before the month: nothing.
+assert.deepEqual(unpaidAtMonthStart([{ id: 1, date: '2026-09-28', amount: 5000 }], [], 5000, '2026-10-01'), [])
 
 console.log('ok')

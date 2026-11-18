@@ -2,7 +2,7 @@
 //   node scripts/check-money-summary.ts
 // Prints "ok" or throws on the first wrong number.
 import assert from 'node:assert/strict'
-import { billedVsCollected, buildCashFlow, buildMoneySummary, cashPosition, monthLabel, monthsBetween, pctChange, perTripNumbers, remittanceStatus, shiftMonth } from '../src/lib/moneySummary.ts'
+import { billedVsCollected, buildCashFlow, buildMoneySummary, monthLabel, pctChange, remittanceStatus, shiftMonth } from '../src/lib/moneySummary.ts'
 
 const s = buildMoneySummary({
   earned: 120000,
@@ -28,9 +28,26 @@ assert.deepEqual(s.spending.map((l) => l.label), ['Salaries', 'Diesel', 'Truck r
 
 // Revenue grouped per client, biggest first.
 assert.deepEqual(s.revenueByClient, [
-  { label: 'Jomar', amount: 90000 },
-  { label: 'arch', amount: 30000 },
+  { key: 'name:Jomar', label: 'Jomar', amount: 90000 },
+  { key: 'name:arch', label: 'arch', amount: 30000 },
 ])
+
+// Two different clients with the same name stay apart (grouped by client id).
+assert.deepEqual(
+  buildMoneySummary({
+    earned: 3000,
+    revenueRows: [
+      { client_id: 1, client_name: 'ABC', amount: 1000 },
+      { client_id: 2, client_name: 'ABC', amount: 2000 },
+      { client_id: 1, client_name: 'ABC', amount: 500 },
+    ],
+    collected: 0, tripCount: 3, salaries: 0, diesel: 0, tripExpenses: 0, repairs: 0, damage: 0,
+  }).revenueByClient,
+  [
+    { key: 'id:2', label: 'ABC', amount: 2000 },
+    { key: 'id:1', label: 'ABC', amount: 1500 },
+  ],
+)
 
 // A loss shows as a negative "left"; zero lines are dropped; float sums round to cents.
 const loss = buildMoneySummary({
@@ -66,7 +83,7 @@ const flow = buildCashFlow({
   repayments: 500,
   refunds: 1000,
   salariesPaid: 20000.2,
-  government: 3000,
+  remittances: 3000,
   advancesGiven: 3200,
   dieselEstimated: 4000,
   tripExpenses: 1500,
@@ -76,9 +93,10 @@ const flow = buildCashFlow({
 assert.equal(flow.totalIn, 50500.1)
 assert.equal(flow.totalOut, 35500.2)
 assert.equal(flow.net, 14999.9)
+assert.equal(flow.moneyIn.length, 2)
 assert.equal(flow.moneyOut.length, 8) // zero lines stay (the box always shows every kind)
 assert.equal(
-  buildCashFlow({ clientPayments: 0, repayments: 0, refunds: 0, salariesPaid: 0, government: 0, advancesGiven: 0, dieselEstimated: 0, tripExpenses: 0, stockBought: 0, companyDamage: 0 }).net,
+  buildCashFlow({ clientPayments: 0, repayments: 0, refunds: 0, salariesPaid: 0, remittances: 0, advancesGiven: 0, dieselEstimated: 0, tripExpenses: 0, stockBought: 0, companyDamage: 0 }).net,
   0,
 )
 
@@ -87,34 +105,6 @@ assert.equal(pctChange(110, 100), 10)
 assert.equal(pctChange(50, -100), 150) // a loss shrinking is an improvement
 assert.equal(pctChange(5, 0), null)
 
-// Per trip + collection rate.
-assert.deepEqual(perTripNumbers({ earned: 1000, spent: 400, collected: 900, tripCount: 4 }), {
-  revenue: 250,
-  cost: 100,
-  profit: 150,
-  collectionRate: 90,
-})
-assert.deepEqual(perTripNumbers({ earned: 0, spent: 0, collected: 50, tripCount: 0 }), {
-  revenue: null,
-  cost: null,
-  profit: null,
-  collectionRate: null,
-})
-
-// Cash on hand: count in September, carried through October into November.
-assert.deepEqual(monthsBetween('2026-11', '2027-02'), ['2026-11', '2026-12', '2027-01'])
-const nets = new Map([
-  ['2026-09', 1000],
-  ['2026-10', -300.1],
-  ['2026-11', 500],
-])
-assert.deepEqual(cashPosition({ month: '2026-09', amount: 10000 }, nets, '2026-11'), {
-  opening: 10699.9,
-  closing: 11199.9,
-  countedMonth: '2026-09',
-})
-assert.equal(cashPosition({ month: '2026-12', amount: 1 }, nets, '2026-11'), null)
-assert.equal(cashPosition(null, nets, '2026-11'), null)
 
 // Remittances: due vs paid per agency.
 const rem = remittanceStatus(
@@ -134,11 +124,11 @@ assert.deepEqual(
 // Billed vs collected per client; a client who only paid still shows.
 assert.deepEqual(
   billedVsCollected(
-    [{ label: 'ABC', amount: 1000 }],
+    [{ key: 'id:7', label: 'ABC', amount: 1000 }],
     [
-      { client_name: 'ABC', amount: 300 },
-      { client_name: 'XYZ', amount: 200 },
-      { client_name: 'ABC', amount: 100.1 },
+      { client_id: 7, client_name: 'ABC', amount: 300 },
+      { client_id: 8, client_name: 'XYZ', amount: 200 },
+      { client_id: 7, client_name: 'ABC', amount: 100.1 },
     ],
   ),
   [

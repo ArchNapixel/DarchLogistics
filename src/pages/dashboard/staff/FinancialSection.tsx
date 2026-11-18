@@ -1,12 +1,9 @@
-// FinancialSection: where payments actually get recorded. Reuses the
-// same Booking type/loading logic as BookingsSection.tsx (rate is per
-// trip, so billable_amount = amount_to_pay override if staff has set
-// one, otherwise computed_billable_amount = rate x trips Delivered so
-// far -- plus approved Client damage charges on top, see
-// BookingsSection.tsx / src/lib/paymentDue.ts / src/lib/damageCharges.ts
-// for the full rule). amount_to_pay is only ever the DELIVERY amount --
-// damage is never written into it. This page is the one place that WRITES amount_to_pay
-// and records payments: each payment/refund is a booking_payments row saved
+// FinancialSection (Bills Receivable): where payments actually get recorded.
+// The numbers are the shared Payments Due rows (lib/paymentDue.ts, rules in
+// lib/bookingBalance.ts): billable = the delivered trips' rates + extra
+// charges. Since 2026-11-18 there's no "amount to pay" override and no
+// payment locks the bill -- a price is changed by editing the trip's rate
+// (Bookings & Trips -> Full Details -> Edit). This page records payments: each payment/refund is a booking_payments row saved
 // through lib/bookingPayments.ts (a DB trigger then keeps bookings.amount_paid
 // = the sum of non-voided rows -- never write amount_paid directly). The
 // Payments Due panel/tab (Bookings page, Reports page) and the client portal
@@ -15,7 +12,7 @@
 // Downpayment (#10/#11): bookings with a saved cost_per_trip need a
 // downpayment before any trip can start (lib/downpayment.ts). The
 // Downpayment column shows what's still missing, and its button records a
-// payment WITHOUT locking amount_to_pay -- so billing still follows the
+// normal payment row -- so billing still follows the
 // delivered trips and the payment terms count from delivery, just with
 // less left to pay. Paid ahead of delivery shows as "Paid ahead", not
 // "Refund".
@@ -24,8 +21,6 @@ import { usePaged } from '../../../lib/usePaged'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
-import { supabase } from '../../../lib/supabaseClient'
-import { loadExtraChargesByBooking } from '../../../lib/bookingCharges'
 import { confirmDialog } from '../../../components/ConfirmDialog'
 import {
   PAYMENT_METHODS,
@@ -46,31 +41,13 @@ import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney } from '../../../lib/format'
 import EmptyState from '../../../components/EmptyState'
 import { downpaymentStatus, type DownpaymentStatus } from '../../../lib/downpayment'
-import { bookingRateLabel, groupTripRates, sumRates } from '../../../lib/lineRates'
-import { deliveryAmountFor, loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
-import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
-import { isDelivered } from '../../../lib/tripStatusFlow'
+import { bookingRateLabel } from '../../../lib/lineRates'
+import { loadPaymentDueReport, type PaymentDueRow } from '../../../lib/paymentDue'
+import { daysBetween } from '../../../lib/bookingBalance'
 import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, noMatchText, numberQuery, textMatches } from '../../../lib/search'
 import WordCount from '../../../components/WordCount'
 import { limitWords } from '../../../lib/wordLimit'
-
-// One row of the bookings query in loadBookings().
-type ReceivableBookingRow = {
-  booking_id: number
-  client_id: number
-  place_of_pickup_id: number
-  place_of_delivery_id: number
-  booking_date: string
-  booking_status: string | null
-  rate_of_delivery_service: number | null
-  amount_to_pay: number | null
-  amount_paid: number | null
-  cost_per_trip: number | null
-  downpayment_waived_at: string | null
-  created_at: string
-  cancelled_at: string | null
-}
 
 // PaymentDetailsFields: method / date received / reference / OR number /
 // note / optional proof file, shown under the amount in every payment form.
@@ -206,24 +183,26 @@ function PaymentDetailsFields({
   )
 }
 
-// PartialPaymentModal: opened by the "Record payment" button. Shows what's
-// owed, takes the amount received (typed in, or "Full remaining") and previews
-// the balance that will be left before anything is saved.
+// PartialPaymentModal ("Record payment"): any amount up to the rest of the
+// contract. It never locks the bill -- the bill follows the delivered trips, so paying one delivered trip
+// can't turn the whole contract into "billed" (and overdue). Money above
+// what's billed so far shows as "Paid ahead" until more trips are delivered.
 function PartialPaymentModal({
   booking,
-  target,
-  deliveryTarget,
   onClose,
   onSaved,
 }: {
   booking: Booking
-  target: number // delivery + damage
-  deliveryTarget: number // delivery only -- what amount_to_pay gets locked to
   onClose: () => void
   onSaved: () => void
 }) {
-  // Everything in centavos, so a float leftover can't make "Full remaining" look too big.
-  const remaining = cents(target - booking.amount_paid)
+  // Everything in centavos, so a float leftover can't make a quick-fill look too big.
+  const owedNow = cents(Math.max(booking.balance_due, 0))
+  // The most it can take: the whole contract + extra charges (or the bill, if
+  // an old override made it bigger), minus what's paid.
+  const restOfContract = cents(
+    Math.max(Math.max(booking.total_contract_value + booking.damage_charges, booking.billable_amount) - booking.amount_paid, 0),
+  )
   const earliest = booking.created_at ? toManilaDate(booking.created_at) : undefined
   const [amountText, setAmountText] = useState('')
   const [details, setDetails] = useState(emptyPaymentDetails)
@@ -235,8 +214,8 @@ function PartialPaymentModal({
   const amount = parsed.value ?? 0
   const inputError =
     parsed.error ??
-    (parsed.value !== null && parsed.value > remaining
-      ? `Can't exceed the remaining balance (${formatMoney(remaining)}).`
+    (parsed.value !== null && parsed.value > restOfContract
+      ? `Can't exceed the rest of the contract (${formatMoney(restOfContract)}).`
       : null)
   const dateError = paymentDateError(details.paidOn, earliest)
   const canSave = parsed.value !== null && !inputError && !paymentDetailsError(details, earliest) && !saving
@@ -249,12 +228,11 @@ function PartialPaymentModal({
     setSaving(true)
     setSaveError(null)
 
-    // Saves the payment row and locks amount_to_pay in one transaction.
+    // A plain payment row -- the bill is never locked (see the comment above).
     const recordError = await recordBookingPayment({
       bookingId: booking.booking_id,
       amount,
       details,
-      setAmountToPay: deliveryTarget,
       earliest,
     })
 
@@ -286,18 +264,22 @@ function PartialPaymentModal({
 
         <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
           <div>
-            <p className="text-[13px] text-ink-muted">Total due</p>
-            <p className="font-semibold text-slate-900">{formatMoney(target)}</p>
+            <p className="text-[13px] text-ink-muted">Owed now</p>
+            <p className="font-semibold text-slate-900">{formatMoney(owedNow)}</p>
           </div>
           <div>
             <p className="text-[13px] text-ink-muted">Paid so far</p>
             <p className="font-semibold text-slate-900">{formatMoney(booking.amount_paid)}</p>
           </div>
           <div>
-            <p className="text-[13px] text-ink-muted">Remaining</p>
-            <p className="font-semibold text-slate-900">{formatMoney(remaining)}</p>
+            <p className="text-[13px] text-ink-muted">Rest of contract</p>
+            <p className="font-semibold text-slate-900">{formatMoney(restOfContract)}</p>
           </div>
         </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Owed now = delivered trips + extra charges, minus payments. Anything above it is kept as paid ahead and used
+          up as the next trips are delivered.
+        </p>
 
         <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="partial-amount">
           Amount received (₱)
@@ -317,15 +299,26 @@ function PartialPaymentModal({
         />
         {inputError && <p className="mt-1 text-xs text-red-700">{inputError}</p>}
 
-        {/* Quick-fill: the whole remaining balance (no % presets -- staff type the amount received). */}
+        {/* Quick-fills (no % presets -- staff type the amount received). */}
         <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={() => fill(remaining)}
-            className="border border-line-control px-3 py-1 text-xs font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
-          >
-            Full remaining
-          </button>
+          {owedNow > 0 && (
+            <button
+              type="button"
+              onClick={() => fill(owedNow)}
+              className="border border-line-control px-3 py-1 text-xs font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
+            >
+              All owed now
+            </button>
+          )}
+          {restOfContract > owedNow && (
+            <button
+              type="button"
+              onClick={() => fill(restOfContract)}
+              className="border border-line-control px-3 py-1 text-xs font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
+            >
+              Whole rest of contract
+            </button>
+          )}
         </div>
 
         <PaymentDetailsFields details={details} onChange={setDetails} earliest={earliest} />
@@ -334,9 +327,18 @@ function PartialPaymentModal({
         {/* Preview of what the balance becomes */}
         {amountText !== '' && !inputError && (
           <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            Balance after this payment:{' '}
-            <span className="font-semibold text-slate-900">{formatMoney(cents(remaining - amount))}</span>
-            {cents(remaining - amount) === 0 && ' (fully paid)'}
+            {cents(owedNow - amount) >= 0 ? (
+              <>
+                Owed now after this payment:{' '}
+                <span className="font-semibold text-slate-900">{formatMoney(cents(owedNow - amount))}</span>
+                {cents(owedNow - amount) === 0 && ' (fully paid)'}
+              </>
+            ) : (
+              <>
+                Owed now is paid; <span className="font-semibold text-slate-900">{formatMoney(cents(amount - owedNow))}</span>{' '}
+                is kept as paid ahead.
+              </>
+            )}
           </p>
         )}
 
@@ -355,7 +357,7 @@ function PartialPaymentModal({
 
 // DownpaymentModal: records the client's downpayment (or part of it).
 // Starts with what's still missing; saved as a normal payment row but
-// without locking amount_to_pay (see the header comment).
+// like any other payment (see the header comment).
 function DownpaymentModal({
   booking,
   status,
@@ -478,7 +480,7 @@ function DownpaymentModal({
 }
 
 // PayAheadModal: the client pays before the trips are delivered. Saved as a
-// normal payment row WITHOUT locking amount_to_pay (same as a downpayment),
+// normal payment row (same as a downpayment),
 // so billing still follows the delivered trips and the extra shows as
 // "Paid ahead" until those trips are delivered.
 function PayAheadModal({
@@ -610,37 +612,8 @@ function FinancialActionModal({
   onClose: () => void
   onUpdated: (booking: Booking) => void
 }) {
-  // The override is the delivery amount only (damage is added on top).
-  const [overrideAmount, setOverrideAmount] = useState(
-    String(booking.billable_amount - booking.damage_charges),
-  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  async function save(
-    databaseValues: Record<string, number | string | null>,
-    nextBooking: Partial<Booking>,
-  ) {
-    setSaving(true)
-    setError(null)
-
-    // .select() so a blocked update (RLS) shows as an error, not success.
-    const { data: updated, error: updateError } = await supabase
-      .from('bookings')
-      .update(databaseValues)
-      .eq('booking_id', booking.booking_id)
-      .select('booking_id')
-      .maybeSingle()
-
-    setSaving(false)
-
-    if (updateError || !updated) {
-      setError(updateError?.message ?? 'The booking was not updated (no permission, or it no longer exists).')
-      return
-    }
-
-    onUpdated({ ...booking, ...nextBooking })
-  }
 
   // Saves one booking_payments row; the database trigger updates
   // bookings.amount_paid, here we just mirror it on screen.
@@ -675,20 +648,23 @@ function FinancialActionModal({
   // a negative payment (method Refund) so it shows in the payment history
   // and brings amount_paid down to what's actually owed.
   async function refundOverpayment() {
-    // The balance on screen is from when the page loaded. If anyone
-    // recorded a payment or refund since, this one would be wrong (or a
-    // second refund) -- re-read the amount paid first.
-    const { data: fresh, error: freshError } = await supabase
-      .from('bookings')
-      .select('amount_paid')
-      .eq('booking_id', booking.booking_id)
-      .maybeSingle()
-    if (freshError || !fresh) {
-      setError(freshError?.message ?? 'Could not re-check this booking.')
+    // The balance on screen is from when the page loaded. Since then a
+    // payment / refund may have been recorded, or a trip delivered / a charge
+    // added (which shrinks the overpayment) -- re-read the WHOLE balance
+    // (same rule as everywhere, lib/paymentDue.ts) before refunding.
+    const { rows: fresh, error: freshError } = await loadPaymentDueReport(undefined, {
+      includeSettled: true,
+      bookingId: booking.booking_id,
+    })
+    if (freshError || fresh.length === 0) {
+      setError(freshError ?? 'Could not re-check this booking.')
       return
     }
-    if (cents(Number(fresh.amount_paid ?? 0)) !== cents(booking.amount_paid)) {
-      setError('Payments on this booking changed since this page loaded. Close this and reload Bills Receivable before refunding.')
+    if (cents(fresh[0].balance_due) !== cents(booking.balance_due)) {
+      setError(
+        `This booking changed since the page loaded (balance is now ${formatMoney(fresh[0].balance_due)}). ` +
+          'Close this and reload Bills Receivable before refunding.',
+      )
       return
     }
 
@@ -703,47 +679,6 @@ function FinancialActionModal({
     }
     // booking.balance_due is already negative here -- that's the refund row.
     await addPayment(booking.balance_due, { ...emptyPaymentDetails(), method: 'Refund' })
-  }
-
-  function saveOverride() {
-    const total = Number(overrideAmount)
-
-    if (overrideAmount.trim() === '' || !Number.isFinite(total) || total < 0) {
-      setError('Amount to pay must be zero or greater.')
-      return
-    }
-    // Same 2-decimal rule as every other amount box (lib/amountInput.ts).
-    if (cents(total) !== total) {
-      setError('Amount to pay can have at most 2 decimal places.')
-      return
-    }
-    if (total + booking.damage_charges < booking.amount_paid) {
-      setError(
-        `Amount to pay (plus extra charges) can't be less than what's already been paid (${formatMoney(booking.amount_paid)}).`,
-      )
-      return
-    }
-
-    save(
-      { amount_to_pay: total },
-      {
-        amount_to_pay: total,
-        billable_amount: total + booking.damage_charges,
-        balance_due: total + booking.damage_charges - booking.amount_paid,
-      },
-    )
-  }
-
-  function resetOverride() {
-    setOverrideAmount(String(booking.computed_billable_amount))
-    save(
-      { amount_to_pay: null },
-      {
-        amount_to_pay: null,
-        billable_amount: booking.computed_billable_amount + booking.damage_charges,
-        balance_due: booking.computed_billable_amount + booking.damage_charges - booking.amount_paid,
-      },
-    )
   }
 
   return (
@@ -790,11 +725,6 @@ function FinancialActionModal({
             <p className="text-[13px] text-ink-muted">Amount to pay</p>
             <p className="font-semibold text-slate-900">
               {formatMoney(booking.billable_amount)}
-              {booking.amount_to_pay !== null && (
-                <span className="ml-1 text-xs font-normal text-slate-400">
-                  (override)
-                </span>
-              )}
             </p>
             {booking.damage_charges > 0 && (
               <p className="text-xs text-slate-500">
@@ -824,25 +754,20 @@ function FinancialActionModal({
           </div>
         )}
 
-        {/* Payments are recorded with the row's "Record payment" button
-            (it locks the amount to pay the same way every time), not here. */}
+        {/* Payments are recorded with the row's "Record payment" button, not here. */}
         <div className="mt-6 bg-slate-50 p-4">
-          <h4 className="font-medium text-slate-900">Override amount to pay</h4>
+          <h4 className="font-medium text-slate-900">Prices and extra charges</h4>
           <p className="mt-1 text-xs text-slate-500">
-            Defaults to rate x trips completed ({formatMoney(booking.computed_billable_amount)}).
-            This is the delivery amount only -- extra charges (approved damage, added charges)
-            ({formatMoney(booking.damage_charges)}) are always added on top.
-            Override this for a discount or special arrangement -- it stays
-            fixed at your override even as more trips complete, until you
-            reset it.
+            The bill is the delivered trips ({formatMoney(booking.computed_billable_amount)}) plus extra charges
+            ({formatMoney(booking.damage_charges)}). Change a trip&apos;s price in Bookings &amp; Trips (Full Details →
+            Edit); add an extra charge on the Billing page.
           </p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input type="number" min="0" step="0.01" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} className="w-full border border-line-control bg-white px-3 py-2 text-slate-900 rounded-[2px] min-h-11 focus:border-primary" />
-            <button onClick={saveOverride} disabled={saving} className="border border-line-control px-4 py-2 text-sm font-medium text-ink-metric hover:bg-white disabled:opacity-50 rounded-[2px]">{saving ? 'Saving...' : 'Save Override'}</button>
-            {booking.amount_to_pay !== null && (
-              <button onClick={resetOverride} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50">Reset to computed</button>
-            )}
-          </div>
+          <Link
+            to={`/dashboard/billing/${booking.booking_id}`}
+            className="mt-3 inline-flex min-h-11 items-center border border-line-control bg-white px-4 text-sm font-medium text-ink-metric hover:bg-slate-50 rounded-[2px]"
+          >
+            Open Billing
+          </Link>
         </div>
 
         <div className="mt-6 flex justify-end">
@@ -851,25 +776,6 @@ function FinancialActionModal({
       </div>
     </div>
   )
-}
-
-// "Record payment" tracks against the FULL contract
-// value (rate x all trips) plus damage charges, not just trips completed so far -- a client
-// can pay in advance before delivery finishes. The first such payment
-// locks in amount_to_pay at that target (the existing override if
-// staff already set a discount via Manage, otherwise the full contract
-// value), so the rest of the app's "amount due" for this booking
-// switches from trip-based to full-contract-based from then on --
-// consistent everywhere, since every view already reads the same
-// amount_to_pay override (see paymentDue.ts).
-// Delivery part only -- this is what gets written to amount_to_pay.
-function getDeliveryTarget(booking: Booking): number {
-  // A booking with any cancellation is only ever billed for the trips
-  // actually delivered -- an earlier lock at the full contract value is capped.
-  if (booking.status === 'Cancelled' || booking.cancelled_at) {
-    return Math.min(booking.amount_to_pay ?? Infinity, booking.computed_billable_amount)
-  }
-  return booking.amount_to_pay ?? booking.total_contract_value
 }
 
 type Tab = 'ongoing' | 'completed' | 'cancelled'
@@ -897,11 +803,6 @@ const TAB_LABELS: Record<Tab, string> = {
   cancelled: 'Cancelled',
 }
 
-// Everything the client owes in total: delivery + extra charges (damage, added charges).
-function getPaymentTarget(booking: Booking): number {
-  return getDeliveryTarget(booking) + booking.damage_charges
-}
-
 // Row action buttons: one primary (the next step) + matching secondaries.
 const primaryAction = 'btn-primary px-3 py-1.5 text-xs font-medium'
 const secondaryAction =
@@ -914,23 +815,12 @@ function FinancialSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  // Due dates / terms per booking (Payments Due rules) for the tiles and columns.
+  // The Payments Due rows (due dates, terms, unpaid parts) the bookings were built from.
   const [dueRows, setDueRows] = useState<PaymentDueRow[]>([])
   const [clientFilter, setClientFilter] = useState('')
   const [termsFilter, setTermsFilter] = useState('')
   const [search, setSearch] = useState('')
   const dueByBooking = new Map(dueRows.map((r) => [r.booking_id, r]))
-  useEffect(() => {
-    let cancelled = false
-    loadPaymentDueReport(undefined, { includeSettled: true }).then(({ rows, error: dueError }) => {
-      if (cancelled) return
-      if (dueError) setActionError(`Couldn't load due dates (${dueError}).`)
-      else setDueRows(rows)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [bookings])
   const [tab, setTab] = useState<Tab>('ongoing')
   // Downpayment per booking (null = no requirement) and the one being recorded.
   const [downpaymentById, setDownpaymentById] = useState<Map<number, DownpaymentStatus | null>>(new Map())
@@ -963,173 +853,59 @@ function FinancialSection() {
     if (linkKey && !loading) setSearchParams({}, { replace: true })
   }, [linkKey, loading, setSearchParams])
 
+  // One read: the shared Payments Due report (lib/paymentDue.ts, rules in
+  // lib/bookingBalance.ts) with settled bookings kept -- the same numbers
+  // Statements, Billing, Financial Summary and the client portal show.
   async function loadBookings() {
     setLoading(true)
-
-    // Every page / id chunk (fetchAll, fetchIn) -- Supabase stops at 1000
-    // rows, and one long id list makes the request URL too big.
-    const { rows: bookingRows, error: bookingsError } = await fetchAll<ReceivableBookingRow>((from, to) =>
-      supabase
-        .from('bookings')
-        .select(
-          'booking_id, client_id, place_of_pickup_id, place_of_delivery_id, booking_date, booking_status, rate_of_delivery_service, amount_to_pay, amount_paid, cost_per_trip, downpayment_waived_at, created_at, cancelled_at',
-        )
-        .order('created_at', { ascending: false })
-        .order('booking_id', { ascending: false })
-        .range(from, to),
+    const { rows, error: loadError } = await loadPaymentDueReport(undefined, { includeSettled: true })
+    if (loadError) {
+      setError(loadError)
+      setLoading(false)
+      return
+    }
+    // Newest first.
+    const sorted = [...rows].sort(
+      (a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '') || b.booking_id - a.booking_id,
     )
-
-    if (bookingsError) {
-      setError(bookingsError)
-      setLoading(false)
-      return
-    }
-
-    if (bookingRows.length === 0) {
-      setBookings([])
-      setError(null)
-      setLoading(false)
-      return
-    }
-
-    const clientIds = Array.from(new Set(bookingRows.map((b) => b.client_id)))
-    const placeIds = Array.from(
-      new Set(
-        bookingRows.flatMap((b) => [b.place_of_pickup_id, b.place_of_delivery_id]),
-      ),
-    )
-    const bookingIds = bookingRows.map((b) => b.booking_id)
-
-    const [clientsResult, placesResult, itinerariesResult] = await Promise.all([
-      fetchIn<{ client_id: number; client_name: string }>(clientIds, (chunk, from, to) =>
-        supabase.from('clients').select('client_id, client_name').in('client_id', chunk).range(from, to),
-      ),
-      fetchIn<{ place_id: number; place_name: string }>(placeIds, (chunk, from, to) =>
-        supabase.from('places').select('place_id, place_name').in('place_id', chunk).range(from, to),
-      ),
-      fetchIn<{ booking_id: number; itinerary_status: string | null; trip_rate: number | string | null }>(bookingIds, (chunk, from, to) =>
-        supabase
-          .from('itineraries')
-          .select('booking_id, itinerary_status, trip_rate')
-          .in('booking_id', chunk)
-          .range(from, to),
-      ),
-    ])
-
-    if (clientsResult.error) {
-      setError(clientsResult.error)
-      setLoading(false)
-      return
-    }
-    if (placesResult.error) {
-      setError(placesResult.error)
-      setLoading(false)
-      return
-    }
-    if (itinerariesResult.error) {
-      setError(itinerariesResult.error)
-      setLoading(false)
-      return
-    }
-
-
-    // Extra charges (approved Client damage + added charges), on top of the delivery amount.
-    const { byBooking: damageByBooking, error: damageError } =
-      await loadExtraChargesByBooking(bookingIds)
-    if (damageError) {
-      setError(damageError)
-      setLoading(false)
-      return
-    }
-
-    const clientNameById = new Map(
-      clientsResult.rows.map((c) => [c.client_id, c.client_name]),
-    )
-    const placeNameById = new Map(
-      placesResult.rows.map((p) => [p.place_id, p.place_name]),
-    )
-
-    const totalTripsByBooking = new Map<number, number>()
-    const completedTripsByBooking = new Map<number, number>()
-    const cancelledTripsByBooking = new Map<number, number>()
-    itinerariesResult.rows.forEach((itinerary) => {
-      // Cancelled trips aren't part of the booking any more (counted separately).
-      if (itinerary.itinerary_status === 'Cancelled') {
-        cancelledTripsByBooking.set(itinerary.booking_id, (cancelledTripsByBooking.get(itinerary.booking_id) ?? 0) + 1)
-        return
-      }
-      totalTripsByBooking.set(
-        itinerary.booking_id,
-        (totalTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-      )
-      if (isDelivered(itinerary.itinerary_status)) {
-        completedTripsByBooking.set(
-          itinerary.booking_id,
-          (completedTripsByBooking.get(itinerary.booking_id) ?? 0) + 1,
-        )
-      }
-    })
-
-    // Every trip's own rate (cargo lines can be priced differently). The
-    // downpayment counts only non-cancelled trips.
-    const tripRatesByBooking = groupTripRates(
-      itinerariesResult.rows,
-      new Map(bookingRows.map((b) => [b.booking_id, b.rate_of_delivery_service])),
-    )
+    setDueRows(sorted)
     setDownpaymentById(
       new Map(
-        bookingRows.map((b) => [
-          b.booking_id,
+        sorted.map((r) => [
+          r.booking_id,
           downpaymentStatus({
-            contract: sumRates(tripRatesByBooking.get(b.booking_id)?.live ?? []),
-            costPerTrip: b.cost_per_trip,
-            trips: tripRatesByBooking.get(b.booking_id)?.live.length ?? 0,
-            amountPaid: b.amount_paid,
-            waivedAt: b.downpayment_waived_at,
+            contract: r.total_contract_value,
+            costPerTrip: r.cost_per_trip,
+            trips: r.total_trips,
+            amountPaid: r.amount_paid,
+            waivedAt: r.downpayment_waived_at,
+            fixed: r.downpayment_fixed,
           }),
         ]),
       ),
     )
-
     setBookings(
-      bookingRows.map((b) => {
-        const tripRates = tripRatesByBooking.get(b.booking_id) ?? { live: [], delivered: [] }
-        const totalTrips = totalTripsByBooking.get(b.booking_id) ?? 0
-        const completedTrips = completedTripsByBooking.get(b.booking_id) ?? 0
-        const computedBillableAmount = sumRates(tripRates.delivered)
-        const damageCharges = damageByBooking.get(b.booking_id) ?? 0
-        // Any cancellation: only delivered trips are billable (same cap as getDeliveryTarget).
-        const deliveryAmount = deliveryAmountFor({
-          amountToPay: b.amount_to_pay,
-          computedBillable: computedBillableAmount,
-          hadCancellation: b.booking_status === 'Cancelled' || b.cancelled_at != null,
-        })
-        const billableAmount = deliveryAmount + damageCharges
-        const amountPaid = b.amount_paid ?? 0
-
-        return {
-          booking_id: b.booking_id,
-          client_name: clientNameById.get(b.client_id) ?? '—',
-          pickup_location: placeNameById.get(b.place_of_pickup_id) ?? '—',
-          delivery_location: placeNameById.get(b.place_of_delivery_id) ?? '—',
-          date: b.booking_date,
-          status: b.booking_status ?? 'Draft',
-          rate: b.rate_of_delivery_service,
-          trip_rates: tripRates.live,
-          total_trips: totalTrips,
-          completed_trips: completedTrips,
-          total_contract_value: sumRates(tripRates.live),
-          computed_billable_amount: computedBillableAmount,
-          amount_to_pay: b.amount_to_pay,
-          damage_charges: damageCharges,
-          billable_amount: billableAmount,
-          amount_paid: amountPaid,
-          balance_due: billableAmount - amountPaid,
-          created_at: b.created_at,
-          cancelled_trips: cancelledTripsByBooking.get(b.booking_id) ?? 0,
-          cancelled_at: b.cancelled_at,
-        }
-      }),
+      sorted.map((r) => ({
+        booking_id: r.booking_id,
+        client_name: r.client_name,
+        pickup_location: r.pickup_place_name,
+        delivery_location: r.delivery_place_name,
+        date: r.booking_date,
+        status: r.booking_status ?? 'Draft',
+        rate: r.rate_per_trip,
+        trip_rates: r.trip_rates,
+        total_trips: r.total_trips,
+        completed_trips: r.completed_trips,
+        total_contract_value: r.total_contract_value,
+        computed_billable_amount: r.computed_billable_amount,
+        damage_charges: r.damage_charges,
+        billable_amount: r.billable_amount,
+        amount_paid: r.amount_paid,
+        balance_due: r.balance_due,
+        created_at: r.created_at ?? undefined,
+        cancelled_trips: r.cancelled_trips,
+        cancelled_at: r.cancelled_at,
+      })),
     )
     setError(null)
     setLoading(false)
@@ -1154,18 +930,22 @@ function FinancialSection() {
   const clientNames = [...new Set(bookings.map((b) => b.client_name))].sort((a, b) => a.localeCompare(b))
   const termsInUse = [...new Set(dueRows.map((r) => r.payment_terms))].filter(Boolean)
 
-  // The "amounts owed" tiles -- same due dates as Payments Due / AR Aging.
-  const owing = dueRows.filter((r) => r.balance_due > 0)
-  const sum = (rows: PaymentDueRow[]) => rows.reduce((total, r) => total + r.balance_due, 0)
+  // The "amounts owed" tiles. Each unpaid PART of a bill (a delivered trip, a
+  // charge) counts by its own due date, so a booking's newer, not-yet-due
+  // trip isn't counted as overdue with an older one (lib/bookingBalance.ts).
+  const today = toManilaDate(new Date())
+  const openParts = dueRows.flatMap((r) => r.open_items)
+  const sumParts = (test: (days: number | null) => boolean) =>
+    cents(
+      openParts
+        .filter((p) => test(p.due_date === null ? null : daysBetween(today, p.due_date)))
+        .reduce((total, p) => total + p.amount, 0),
+    )
   const tiles = [
-    { label: 'Total outstanding', value: sum(owing), tone: 'text-ink' },
-    { label: 'Not yet due', value: sum(owing.filter((r) => r.days_until_due === null || r.days_until_due >= 0)), tone: 'text-ink' },
-    {
-      label: 'Overdue 1–30 days',
-      value: sum(owing.filter((r) => r.days_until_due !== null && r.days_until_due < 0 && r.days_until_due >= -30)),
-      tone: 'text-amber-800',
-    },
-    { label: 'Overdue over 30 days', value: sum(owing.filter((r) => r.days_until_due !== null && r.days_until_due < -30)), tone: 'text-red-700' },
+    { label: 'Total outstanding', value: sumParts(() => true), tone: 'text-ink' },
+    { label: 'Not yet due', value: sumParts((d) => d === null || d >= 0), tone: 'text-ink' },
+    { label: 'Overdue 1–30 days', value: sumParts((d) => d !== null && d < 0 && d >= -30), tone: 'text-amber-800' },
+    { label: 'Overdue over 30 days', value: sumParts((d) => d !== null && d < -30), tone: 'text-red-700' },
   ]
 
   // One page at a time (back to page 1 when the filters change).
@@ -1481,8 +1261,6 @@ function FinancialSection() {
       {partialBooking && (
         <PartialPaymentModal
           booking={partialBooking}
-          target={getPaymentTarget(partialBooking)}
-          deliveryTarget={getDeliveryTarget(partialBooking)}
           onClose={() => setPartialBooking(null)}
           onSaved={() => {
             setPartialBooking(null)

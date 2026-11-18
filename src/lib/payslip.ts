@@ -36,9 +36,11 @@
 //   toManilaDate().
 // - No separate daily allowance line item -- removed 2026-09-23, gross
 //   pay is just the rate_type-based pay above.
-// - Cash advances (cash_advances table) are never auto-deducted --
-//   admin sees the employee's outstanding balance when issuing a
-//   payslip and chooses how much (if any) to deduct THIS time.
+// - Cash advances (cash_advances table) ARE auto-deducted (since
+//   2026-10-04): each generated / topped-up draft deducts
+//   cash_advance_deduction_rate % of gross (app_settings, default 10),
+//   capped at the outstanding balance -- autoCashAdvanceDeduction(). Admin
+//   can change the amount in EditDraftPayslipModal.
 // - Government deductions (SSS / PhilHealth / Pag-IBIG employee shares
 //   + BIR withholding tax) are computed per weekly payslip by
 //   lib/governmentContributions.ts (see there for the weekly-share
@@ -145,6 +147,10 @@ export type PayslipLineItem = {
   itinerary_id: number | null
   description: string
   amount: number
+  // Trip lines: the commission % this line was paid at (a later price change
+  // is corrected at the same %). Not kept through Edit Draft -- the % in the
+  // description is read then (commissionPercentOf).
+  commission_rate?: number | null
 }
 
 export type RateType = 'Weekly Salary' | 'Commission Per Trip'
@@ -362,6 +368,7 @@ function buildCommissionTripLineItems(
 
     return {
       itinerary_id: row.itinerary_id,
+      commission_rate: settings.driverCommissionRate,
       description:
         `Trip #${row.itinerary_id}: ${pickup} → ${delivery} (${date}) — ` +
         `${settings.driverCommissionRate}% of ₱${tripRate.toLocaleString()} + ₱${settings.driverPerTripFee.toLocaleString()} trip fee`,
@@ -639,6 +646,7 @@ export async function issuePayslip({
       itinerary_id: item.itinerary_id,
       description: item.description,
       amount: item.amount,
+      ...(item.commission_rate !== undefined ? { commission_rate: item.commission_rate } : {}),
     })),
   )
 
@@ -1104,6 +1112,300 @@ export async function updateDraftPayslip(
   return { error: null }
 }
 
+// ---- Trip price changes (2026-11-18) ----
+// A delivered trip repriced in Booking Detail after its driver's commission
+// is already on a payslip leaves a payroll_adjustments row (written by the
+// database function update_booking_details). Payroll applies them each time
+// it opens, after the drafts are generated -- before anything can be
+// finalized:
+//   - the trip's line is on a DRAFT  -> that line is corrected in place
+//     (commission % x the price difference) and the draft re-totalled
+//   - it's on a FINALIZED payslip    -> that payslip is left alone and the
+//     difference (+ or -) is added to the driver's draft for the CURRENT
+//     week (created if there isn't one yet)
+// The added line has no itinerary_id on purpose: healDraft removes repeated
+// trip lines, and one trip can be repriced more than once.
+// Each row is claimed first (status pending -> in_place / added / noop,
+// only if still pending), so two admins opening Payroll can't apply it twice.
+// If a draft holding an added line is discarded (Regenerate), its row loses
+// applied_payroll_id (on delete set null) and is applied again.
+// ponytail: claim + apply aren't one transaction; a failure after the claim
+// puts the row back to pending and reports it.
+
+type AdjustmentRow = {
+  adjustment_id: number
+  employee_id: number
+  itinerary_id: number
+  old_rate: number
+  new_rate: number
+  status: string
+}
+
+const cents2 = (n: number) => Math.round(n * 100) / 100
+
+// The commission % a trip line was paid at: its saved commission_rate, else
+// the "5% of ₱..." in its description (kept through Edit Draft), else null.
+export function commissionPercentOf(line: { commission_rate?: number | string | null; description: string }): number | null {
+  if (line.commission_rate !== null && line.commission_rate !== undefined) return Number(line.commission_rate)
+  const match = /(\d+(?:\.\d+)?)% of ₱/.exec(line.description)
+  return match ? Number(match[1]) : null
+}
+
+export function applyPayrollAdjustments(): Promise<{ applied: number; warnings: string[]; error: string | null }> {
+  const run = generateQueue.then(() => applyPayrollAdjustmentsNow())
+  generateQueue = run.catch(() => undefined)
+  return run
+}
+
+async function applyPayrollAdjustmentsNow(): Promise<{ applied: number; warnings: string[]; error: string | null }> {
+  const { data: rows, error } = await supabase
+    .from('payroll_adjustments')
+    .select('adjustment_id, employee_id, itinerary_id, old_rate, new_rate, status')
+    .or('status.eq.pending,and(status.eq.added,applied_payroll_id.is.null)')
+    .order('adjustment_id')
+  if (error) {
+    // Not set up yet (its SQL not run): nothing to apply.
+    if (error.message.includes('payroll_adjustments')) return { applied: 0, warnings: [], error: null }
+    return { applied: 0, warnings: [], error: error.message }
+  }
+  if (!rows || rows.length === 0) return { applied: 0, warnings: [], error: null }
+
+  const settingsResult = await loadPayrollSettings()
+  if (!settingsResult.settings) return { applied: 0, warnings: [], error: settingsResult.error }
+  const percent = settingsResult.settings.driverCommissionRate
+
+  const employeeIds = [...new Set((rows as AdjustmentRow[]).map((r) => r.employee_id))]
+  const { data: employees, error: employeesError } = await supabase
+    .from('employees')
+    .select('employee_id, full_name, position, rate_type, weekly_salary, is_minimum_wage_earner')
+    .in('employee_id', employeeIds)
+  if (employeesError) return { applied: 0, warnings: [], error: employeesError.message }
+  const employeeById = new Map((employees ?? []).map((e) => [e.employee_id, e]))
+
+  const current = getCurrentPayPeriod()
+  const warnings: string[] = []
+  let applied = 0
+
+  for (const adj of rows as AdjustmentRow[]) {
+    const employee = employeeById.get(adj.employee_id)
+    const name = employee?.full_name ?? `Employee #${adj.employee_id}`
+    const priceNote = `₱${Number(adj.old_rate).toLocaleString()} → ₱${Number(adj.new_rate).toLocaleString()}`
+
+    // Claim it (only if nobody else did meanwhile).
+    const claim = async (status: 'in_place' | 'added' | 'noop', payrollId: number | null) => {
+      let query = supabase
+        .from('payroll_adjustments')
+        .update({ status, applied_payroll_id: payrollId, applied_at: new Date().toISOString() })
+        .eq('adjustment_id', adj.adjustment_id)
+        .eq('status', adj.status)
+      // A re-apply (its draft was discarded): only while it still has no payslip.
+      if (adj.status === 'added') query = query.is('applied_payroll_id', null)
+      const { data } = await query.select('adjustment_id').maybeSingle()
+      return !!data
+    }
+    const unclaim = async () => {
+      await supabase
+        .from('payroll_adjustments')
+        .update({ status: 'pending', applied_payroll_id: null, applied_at: null })
+        .eq('adjustment_id', adj.adjustment_id)
+    }
+
+    if (!employee) {
+      if (await claim('noop', null)) applied += 1
+      continue
+    }
+
+    // Where the trip's commission line is (this driver's payslips only).
+    const { data: lines, error: linesError } = await supabase
+      .from('payslip_line_items')
+      .select('payslip_line_item_id, payroll_id, description, amount, commission_rate')
+      .eq('itinerary_id', adj.itinerary_id)
+    if (linesError) {
+      warnings.push(`${name}: ${linesError.message}`)
+      continue
+    }
+    const payrollIds = (lines ?? []).map((l) => l.payroll_id)
+    const { data: payslips, error: payslipsError } = payrollIds.length
+      ? await supabase
+          .from('payroll_payslips')
+          .select(`payroll_id, employee_id, finalized_at, gross_pay, cash_advance_deducted, deductions_note, payroll_period_end, ${CONTRIBUTION_COLUMNS}`)
+          .in('payroll_id', payrollIds)
+          .eq('employee_id', adj.employee_id)
+      : { data: [], error: null }
+    if (payslipsError) {
+      warnings.push(`${name}: ${payslipsError.message}`)
+      continue
+    }
+    const slip = (payslips ?? [])[0] as unknown as (ExistingDraft & { payroll_period_end: string }) | undefined
+    const line = slip ? (lines ?? []).find((l) => l.payroll_id === slip.payroll_id) : undefined
+    // The % this trip was paid at (not today's, if Settings changed since).
+    const linePercent = line ? commissionPercentOf(line) : null
+    const usedPercent = linePercent ?? percent
+    const diff = cents2((usedPercent / 100) * (Number(adj.new_rate) - Number(adj.old_rate)))
+    if (diff === 0) {
+      if (await claim('noop', null)) applied += 1
+      continue
+    }
+
+    // A rebuilt draft (Regenerate) already uses the new price -- nothing to do.
+    if (adj.status === 'added' && slip && !slip.finalized_at) {
+      if (await claim('noop', null)) applied += 1
+      continue
+    }
+
+    if (!slip || !line) {
+      // Not on a payslip any more (draft discarded): the next draft uses the new price.
+      if (await claim('noop', null)) applied += 1
+      continue
+    }
+
+    if (!slip.finalized_at) {
+      // Same week, still a draft: correct the trip line itself.
+      if (!(await claim('in_place', slip.payroll_id))) continue
+      const { error: lineError } = await supabase
+        .from('payslip_line_items')
+        .update({
+          amount: cents2(Number(line.amount) + diff),
+          description: `${line.description} · price changed ${priceNote}`,
+        })
+        .eq('payslip_line_item_id', line.payslip_line_item_id)
+      if (lineError) {
+        await unclaim()
+        warnings.push(`${name}: trip #${adj.itinerary_id}'s pay couldn't be corrected (${lineError.message}).`)
+        continue
+      }
+      const { error: totalsError } = await saveDraftTotals(
+        slip,
+        employee,
+        Number(slip.gross_pay) + diff,
+        slip.payroll_period_end,
+        `Trip #${adj.itinerary_id}'s price changed after these deductions were edited -- check them.`,
+      )
+      if (totalsError) warnings.push(`${name}: ${totalsError}`)
+      applied += 1
+      continue
+    }
+
+    // Paid on a finalized payslip: the difference goes on this week's draft.
+    const description =
+      `Trip #${adj.itinerary_id} price change (paid on an earlier payslip): ${priceNote}, ` +
+      `${usedPercent}% commission ${diff > 0 ? '+' : '−'}₱${Math.abs(diff).toLocaleString()}`
+    const { data: draftRow, error: draftError } = await supabase
+      .from('payroll_payslips')
+      .select(`payroll_id, employee_id, finalized_at, gross_pay, cash_advance_deducted, deductions_note, ${CONTRIBUTION_COLUMNS}`)
+      .eq('employee_id', adj.employee_id)
+      .eq('payroll_period_start', current.start)
+      .eq('payroll_period_end', current.end)
+      .maybeSingle()
+    if (draftError) {
+      warnings.push(`${name}: ${draftError.message}`)
+      continue
+    }
+    const draft = draftRow as unknown as ExistingDraft | null
+    if (draft && draft.finalized_at) {
+      warnings.push(`${name}: this week's payslip is already finalized, so trip #${adj.itinerary_id}'s price change waits.`)
+      continue
+    }
+
+    if (draft) {
+      if (!(await claim('added', draft.payroll_id))) continue
+      const { error: insertError } = await supabase
+        .from('payslip_line_items')
+        .insert({ payroll_id: draft.payroll_id, itinerary_id: null, description, amount: diff })
+      if (insertError) {
+        await unclaim()
+        warnings.push(`${name}: trip #${adj.itinerary_id}'s price change couldn't be added (${insertError.message}).`)
+        continue
+      }
+      const { error: totalsError } = await saveDraftTotals(
+        draft,
+        employee,
+        Number(draft.gross_pay) + diff,
+        current.end,
+        `A trip price change was added after these deductions were edited -- check them.`,
+      )
+      if (totalsError) warnings.push(`${name}: ${totalsError}`)
+      applied += 1
+      continue
+    }
+
+    // No draft this week yet: start one with just this line (the normal
+    // top-up adds this week's trips to it later). Claimed first so nobody
+    // else starts a second one; set to 'added' once the draft exists.
+    if (!(await claim('noop', null))) continue
+    const auto = await computeAutoDeductions(adj.employee_id, diff, current.end, employee.is_minimum_wage_earner)
+    if (auto.error || !auto.deductions) {
+      await unclaim()
+      warnings.push(`${name}: ${auto.error}`)
+      continue
+    }
+    const { payrollId, error: issueError } = await issuePayslip({
+      employeeId: adj.employee_id,
+      rateType: employee.rate_type,
+      periodStart: current.start,
+      periodEnd: current.end,
+      lineItems: [{ itinerary_id: null, description, amount: diff }],
+      cashAdvanceDeducted: 0,
+      deductions: auto.deductions,
+    })
+    if (payrollId === null) {
+      await unclaim()
+      warnings.push(`${name}: ${issueError ?? "could not create this week's draft"}`)
+      continue
+    }
+    if (issueError) warnings.push(`${name}: ${issueError}`)
+    await supabase
+      .from('payroll_adjustments')
+      .update({ status: 'added', applied_payroll_id: payrollId })
+      .eq('adjustment_id', adj.adjustment_id)
+    applied += 1
+  }
+
+  return { applied, warnings, error: null }
+}
+
+// Regenerate throws a draft away and rebuilds it from today's trip prices,
+// so a price correction still waiting for a trip on that draft is already
+// in the rebuilt one -- applying it later would pay the difference twice.
+// Call with the draft's trips (read BEFORE discarding it), after it was
+// discarded. Returns the error message, or null.
+export async function settleAdjustmentsForRebuiltDraft(employeeId: number, tripIds: number[]): Promise<string | null> {
+  if (tripIds.length === 0) return null
+  const { error } = await supabase
+    .from('payroll_adjustments')
+    .update({ status: 'noop', applied_at: new Date().toISOString() })
+    .eq('employee_id', employeeId)
+    .in('itinerary_id', tripIds)
+    .eq('status', 'pending')
+  // Not set up yet (its SQL not run): nothing to settle.
+  if (error && !error.message.includes('payroll_adjustments')) return error.message
+  return null
+}
+
+// The trips on a payslip (its trip lines).
+export async function payslipTripIds(payrollId: number): Promise<{ ids: number[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('payslip_line_items')
+    .select('itinerary_id')
+    .eq('payroll_id', payrollId)
+    .not('itinerary_id', 'is', null)
+  if (error) return { ids: [], error: error.message }
+  return { ids: (data ?? []).map((r) => r.itinerary_id as number), error: null }
+}
+
+// Are any trip price changes still waiting to reach these employees'
+// payslips? Finalize refuses until Payroll has applied them.
+async function pendingAdjustmentEmployees(employeeIds: number[]): Promise<number[]> {
+  if (employeeIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('payroll_adjustments')
+    .select('employee_id')
+    .in('employee_id', employeeIds)
+    .or('status.eq.pending,and(status.eq.added,applied_payroll_id.is.null)')
+  if (error) return []
+  return [...new Set((data ?? []).map((r) => r.employee_id))]
+}
+
 // Hold (Drivers only, enforced in the UI): an on-hold draft can't be
 // finalized -- neither on its own nor by "Finalize all" -- until the hold
 // is lifted, so it can't be released to the driver by accident.
@@ -1133,6 +1435,16 @@ export async function setPayslipHold(
 export async function finalizePayslips(
   payrollIds: number[],
 ): Promise<{ finalizedIds: number[]; error: string | null }> {
+  // A trip price change not on the payslips yet: apply it first (re-open Payroll).
+  const { data: owners } = await supabase.from('payroll_payslips').select('employee_id').in('payroll_id', payrollIds)
+  const waiting = await pendingAdjustmentEmployees((owners ?? []).map((o) => o.employee_id))
+  if (waiting.length > 0) {
+    return {
+      finalizedIds: [],
+      error: 'A trip price changed since Payroll was opened -- reload the page so it reaches the payslips, then finalize.',
+    }
+  }
+
   const { data, error } = await supabase
     .from('payroll_payslips')
     .update({ finalized_at: new Date().toISOString() })

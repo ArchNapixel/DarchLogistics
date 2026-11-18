@@ -9,6 +9,7 @@ import { toManilaDate } from './payslip'
 import { loadLedgerInputs } from './statement'
 import { buildStatement } from './statementTotals'
 import { groupTripCargo, tripCargoLabel } from './quoteRequest'
+import { readOnlyReason } from './bookingEdit'
 
 export type Billing = {
   booking_id: number
@@ -30,6 +31,9 @@ export type Billing = {
   pendingTrips: PendingTrip[]
   // Dated lines (delivered trips, charges, adjustment, payments) with running balance.
   lines: ReturnType<typeof buildStatement>['lines']
+  // Why no more charges can be added (cancelled, or delivered and fully
+  // paid -- the same lock as Booking Detail -> Edit), or null.
+  locked: string | null
 }
 
 // A trip still to be delivered, shown in the billing table in date order.
@@ -57,7 +61,8 @@ export async function loadBilling(
   if (!booking) return { billing: null, error: `Booking #${bookingId} not found.` }
 
   const [ledger, places, tripCargo] = await Promise.all([
-    loadLedgerInputs(booking.client_id),
+    // Only this booking's ledger (not the client's whole history).
+    loadLedgerInputs(booking.client_id, bookingId),
     supabase
       .from('places')
       .select('place_id, place_name, city, barangay')
@@ -127,6 +132,12 @@ export async function loadBilling(
       balance_due: row.balance_due,
       pendingTrips,
       lines: statement.lines,
+      locked: readOnlyReason(row.booking_status ?? 'Draft', tripCargo.data.map((t) => t.itinerary_status ?? 'Awaiting'), {
+        contract: row.total_contract_value,
+        delivered: row.computed_billable_amount,
+        extras: row.damage_charges,
+        paid: row.amount_paid,
+      }),
     },
     error: null,
   }

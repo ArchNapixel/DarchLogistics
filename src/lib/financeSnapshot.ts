@@ -1,16 +1,18 @@
 // financeSnapshot: the extra Financial Summary panels (pure math is in
 // lib/moneySummary.ts):
 //   loadStanding          "Where we stand" today: clients owe us (Payments Due
-//                         rules), employees owe us (Cash Advance Ledger),
+//                         rules; overdue = the unpaid parts past their own
+//                         due date), employees owe us (Cash Advance Ledger,
+//                         minus deductions already on draft payslips --
+//                         the same balance payroll and the advance limit use),
 //                         we owe employees (finalized payslips not marked Paid),
 //                         stock on the shelf (open inventory batches x price)
 //   loadCollectedByClient money received this month per client (Collections)
 //   loadRemittances       what the month's FINALIZED payslips say is due to
 //                         each agency vs government_remittances recorded for it
-//   loadCashCheck / saveCashCheck   the counted cash at the start of a month
 import { supabase } from './supabaseClient'
 import { fetchAll, fetchIn } from './dashboardExpenses'
-import { loadPaymentDueReport } from './paymentDue'
+import { loadLedgerInputs } from './statement'
 import { loadCashAdvanceLedger } from './cashAdvanceLedger'
 import { loadOpenLots } from './inventoryMovements'
 import { agencyAmounts, nextMonthStart, summarizeRemittances, type PayslipRemitRow } from './remittanceTotals'
@@ -29,7 +31,8 @@ export type Standing = {
 
 export async function loadStanding(): Promise<{ data: Standing | null; error: string | null }> {
   const [due, ledger, unpaid, lots] = await Promise.all([
-    loadPaymentDueReport(),
+    // The all-clients ledger Financial Summary already loaded (shortCache).
+    loadLedgerInputs(),
     loadCashAdvanceLedger(),
     fetchAll<{ net_pay: number }>((a, b) =>
       supabase
@@ -49,8 +52,8 @@ export async function loadStanding(): Promise<{ data: Standing | null; error: st
   return {
     data: {
       clientsOwe: cents(owing.reduce((s, r) => s + r.balance_due, 0)),
-      clientsOverdue: cents(owing.filter((r) => (r.days_until_due ?? 0) < 0).reduce((s, r) => s + r.balance_due, 0)),
-      employeesOwe: cents(ledger.employees.reduce((s, e) => s + Math.max(e.outstanding, 0), 0)),
+      clientsOverdue: cents(owing.reduce((s, r) => s + r.overdue_amount, 0)),
+      employeesOwe: cents(ledger.employees.reduce((s, e) => s + Math.max(e.outstanding - e.draftDeducted, 0), 0)),
       weOweEmployees: cents(unpaid.rows.reduce((s, p) => s + Number(p.net_pay), 0)),
       unpaidPayslips: unpaid.rows.length,
       // A batch with no price counts as ₱0 (same as the Inventory tile).
@@ -60,10 +63,10 @@ export async function loadStanding(): Promise<{ data: Standing | null; error: st
   }
 }
 
-// Money received this month, per client name (refunds left out).
+// Money received this month, per client (refunds left out).
 export async function loadCollectedByClient(
   month: string,
-): Promise<{ rows: { client_name: string; amount: number }[]; error: string | null }> {
+): Promise<{ rows: { client_id: number | null; client_name: string; amount: number }[]; error: string | null }> {
   const payments = await fetchAll<{ booking_id: number; amount: number }>((a, b) =>
     supabase
       .from('booking_payments')
@@ -90,6 +93,7 @@ export async function loadCollectedByClient(
   const nameOf = new Map(clients.rows.map((c) => [c.client_id, c.client_name]))
   return {
     rows: payments.rows.map((p) => ({
+      client_id: clientOf.get(p.booking_id) ?? null,
       client_name: nameOf.get(clientOf.get(p.booking_id) ?? -1) ?? `Booking #${p.booking_id}`,
       amount: Number(p.amount),
     })),
@@ -184,42 +188,15 @@ export async function recordRemittance(args: {
 }
 
 export async function voidRemittance(id: number, reason: string, employeeId: number | null): Promise<string | null> {
+  // The database also refuses a void without a reason (government_remittances_guard).
+  if (!reason.trim()) return 'Enter a reason to void a remittance.'
   const { data, error } = await supabase
     .from('government_remittances')
-    .update({ voided_at: new Date().toISOString(), voided_by: employeeId, void_reason: reason })
+    .update({ voided_at: new Date().toISOString(), voided_by: employeeId, void_reason: reason.trim() })
     .eq('remittance_id', id)
     .is('voided_at', null)
     .select('remittance_id')
     .maybeSingle()
   if (error) return error.message
   return data ? null : 'That remittance was already voided.'
-}
-
-// The latest cash count on or before `month` ("YYYY-MM").
-export async function loadCashCheck(
-  month: string,
-): Promise<{ check: { month: string; amount: number } | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('cash_on_hand_checks')
-    .select('as_of_month, amount')
-    .lte('as_of_month', `${month}-01`)
-    .order('as_of_month', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) return { check: null, error: error.message }
-  return { check: data ? { month: data.as_of_month.slice(0, 7), amount: Number(data.amount) } : null, error: null }
-}
-
-// Saves (or replaces) the cash counted at the start of `month`.
-export async function saveCashCheck(month: string, amount: number, employeeId: number | null): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('cash_on_hand_checks')
-    .upsert(
-      { as_of_month: `${month}-01`, amount, recorded_by: employeeId, updated_at: new Date().toISOString() },
-      { onConflict: 'as_of_month' },
-    )
-    .select('check_id')
-    .maybeSingle()
-  if (error) return error.message
-  return data ? null : 'The cash count was not saved (no permission?).'
 }

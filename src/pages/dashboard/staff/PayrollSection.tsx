@@ -19,6 +19,9 @@ import {
   markPayslipPaid,
   finalizePayslips,
   discardDraftPayslip,
+  applyPayrollAdjustments,
+  payslipTripIds,
+  settleAdjustmentsForRebuiltDraft,
   generateDraftPayslips,
   getDefaultPayPeriod,
   getCurrentPayPeriod,
@@ -132,6 +135,10 @@ function PayrollSection() {
       allWarnings.push(...warnings)
       if (generateError) setActionError(`Couldn't update the draft payslips: ${generateError}`)
     }
+    // Trip price changes since the payslips were made (Booking Detail -> Edit).
+    const adjustments = await applyPayrollAdjustments()
+    allWarnings.push(...adjustments.warnings)
+    if (adjustments.error) setActionError(`Couldn't apply trip price changes: ${adjustments.error}`)
     // Same employee can be flagged for both weeks -- show it once
     setGenerationWarnings([...new Set(allWarnings)])
     await firstLoad
@@ -152,8 +159,15 @@ function PayrollSection() {
     period_end: string
     on_hold: boolean
   }): Promise<string | null> {
+    // Its trips, read before it's thrown away (see settleAdjustmentsForRebuiltDraft).
+    const trips = await payslipTripIds(draft.payroll_id)
+    if (trips.error) return trips.error
     const { error: discardError } = await discardDraftPayslip(draft.payroll_id)
     if (discardError) return discardError
+    // The rebuilt draft uses today's prices: waiting price corrections for
+    // these trips are already in it.
+    const settleError = await settleAdjustmentsForRebuiltDraft(draft.employee_id, trips.ids)
+    if (settleError) return `Regenerated, but waiting price corrections couldn't be closed (${settleError}) -- check this payslip after reloading.`
 
     const { createdIds, warnings, error: generateError } = await generateDraftPayslips(
       draft.period_start,

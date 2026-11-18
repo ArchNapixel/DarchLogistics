@@ -136,9 +136,6 @@ function PaymentsDueTab() {
                             </dd>
                           </div>
                         </dl>
-                        {row.amount_to_pay_override !== null && (
-                          <p className="mt-2 text-xs text-slate-500">Billable amount was overridden.</p>
-                        )}
                       </td>
                     </tr>
                   )}

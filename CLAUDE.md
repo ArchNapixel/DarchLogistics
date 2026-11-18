@@ -876,7 +876,18 @@ before creating it.
   Oswald only for the DARCH LOGISTICS wordmark. Number inputs have no
   spinner arrows and ignore the mouse wheel (`index.css` + `main.tsx`).
 
-- **Accounting module (2026-10-19, Admin only — no Accountant role).** A
+- **Accounting module (2026-10-19, Admin only — no Accountant role).**
+  **Current state (checked 2026-11-18): the sidebar group is "Finance" =
+  Financial Summary, Bills Receivable, Collections, Client Billing,
+  Statement of Account, Cash Advance Ledger. The AR Aging, Trip
+  Profitability, Revenue Reconciliation, Profit & Loss, Payroll &
+  Remittances and Bills Payable PAGES NO LONGER EXIST** (routes and section
+  files removed; Bills Payable's tables dropped by migration 20261115000000,
+  `lib/payables.ts` / `lib/arAging.ts` / `remittanceReport.ts` gone). Their
+  libs `profitLoss.ts`, `revenueReconciliation.ts`, `tripProfit.ts`,
+  `remittanceTotals.ts` live on and only feed Financial Summary. The page
+  descriptions below are history. Money rules changed 2026-11-18 -- see
+  "2026-11-18: Finance fixes" at the end of this file. A
   sidebar group below Human Resource, **labelled "Expenses" in the nav
   since 2026-10-22** (the group heading only; its pages keep their names).
   **Also 2026-10-22: the sidebar group shows only Bills Receivable,
@@ -1633,7 +1644,8 @@ any. The patterns used to get there:
   a hook.
 
 ## Currently in progress
-Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
+(Stale -- see the "2026-11-18: Finance fixes" section for the latest
+finance state.) Accounting module Phases 1–6 built except Petty Cash (6b, skipped for
 now), awaiting user testing (6a SQL has been run). Not built: payment history in the client
 portal / BookingDetailModal, company TIN. (Last CLAUDE.md sync:
 2026-10-19.)
@@ -2504,3 +2516,147 @@ Overview and Fleet Match's "work order on a trip day" rule.
   blocked waiting trips (`loadWaitingBookings`); the booking is picked in the
   pop-up (first with blocked trips by default). Booking Detail opens it for its
   own booking.
+
+## 2026-11-18: Finance fixes + editable bookings (migration 20261118000000 -- user runs it)
+Audit of the Finance pages, then the user's follow-up decisions. Supersedes
+older lines about payment locks, "Override amount to pay", due dates,
+Money in / out, and the hours-per-trip "Edit" link in Booking Detail.
+- **One balance rule:** `lib/bookingBalance.ts` (pure, self-check
+  `node scripts/check-booking-balance.ts`): `bookingBalances()` -- billable =
+  delivered trips' rates + extra charges (client damage + added charges),
+  balance = billable - paid. **The amount_to_pay override is GONE** from the
+  app (column still exists, unused; `record_booking_payment`'s
+  p_set_amount_to_pay is always null). Used by `paymentDue.ts`, Bookings &
+  Trips, Client Booking History; **Bills Receivable maps
+  `loadPaymentDueReport(undefined, { includeSettled: true })`** (no loader of
+  its own). PaymentDueRow gained booking_status, cancelled_at, created_at,
+  cost_per_trip, downpayment_waived_at, downpayment_fixed, cancelled_trips,
+  open_items, overdue_amount; option `bookingId`.
+- **Due date per billed item:** each delivered trip is due on its delivery
+  date + terms, each charge on its date + terms; payments pay the oldest
+  first (`openDueItems`). Booking due_date = oldest unpaid part's;
+  `overdue_amount` = parts past due. Bills Receivable tiles bucket unpaid
+  PARTS; "Where we stand" and the client portal ("₱X not due yet") use it.
+  Changing payment terms moves the due dates of what's still unpaid.
+- **Payments never lock the bill.** Record payment: Owed now / Paid / Rest of
+  contract, quick-fills "All owed now" / "Whole rest of contract"; money above
+  what's billed = "Paid ahead". No Discount line (user removed it): prices are
+  changed on the trips instead.
+- **Booking Detail -> Edit** (`staff/BookingEditForm.tsx`, rules
+  `lib/bookingEdit.ts`, self-check `node scripts/check-booking-edit.ts`;
+  Admin + Dispatcher, i.e. whenever `onChanged` is passed). ONE Edit button,
+  one Save: price per trip, pickup / delivery / container-return place
+  (LocationPicker), distance + return distance (auto from the map via
+  `lib/routeDistance.ts` -- moved out of QuoteReviewModal -- and typeable,
+  "Recalculate from map"), pickup date, deadline, last free storage day,
+  hours per trip, payment terms. Client fixed; crew / vehicles stay on the
+  Dispatch Board; "Edit cargo" shows under each trip while editing.
+  - Read-only when Cancelled, or all trips completed and fully paid.
+    Prices locked once the whole contract + extras is paid; a delivered
+    trip's price once everything delivered is paid.
+  - Cost per trip + downpayment boxes are read-only; red outline + "may
+    need updating" when the distance jumps (>= 50% and >= 20 km more).
+  - Saved by RPC **`update_booking_details(p_booking_id, p_changes jsonb,
+    p_summary text[], p_client_message text)`** (SECURITY DEFINER, is_staff,
+    one transaction; repeats the locks -- change with bookingEdit.ts). It
+    finds/creates places (`_find_or_create_place`), moves Awaiting trips to
+    the new route, updates route_cache, writes pickup/deadline to the QUOTE
+    too (the planner reads them there) and booking_date, re-averages
+    rate_of_delivery_service, logs to `booking_change_logs` (who + when +
+    the lines; "Change history" in the pop-up), and notifies the client
+    (`client_notifications` -> `components/ClientNotifications.tsx` bell,
+    `lib/clientNotifications.ts`).
+  - After save: new hours -> `retimeTrips`; new pickup / deadline -> waiting
+    trips re-planned (`loadReplan` -> `replans.all` -> `saveReplan`).
+  - **Downpayment paid, then repriced:** stays as it was --
+    `bookings.downpayment_fixed` (set by the RPC), returned by SQL
+    `booking_downpayment()` and the `fixed` arg of `downpaymentStatus()`.
+  - **Driver pay:** a repriced trip already on a payslip ->
+    `payroll_adjustments` row. `applyPayrollAdjustments()` (payslip.ts, run
+    on every Payroll open after generation, queued with it): line on a DRAFT
+    -> corrected in place; on a FINALIZED payslip -> the +/- difference goes
+    on the driver's current-week draft (created if none), with
+    itinerary_id null (healDraft would delete a repeated trip line).
+    `finalizePayslips` refuses while adjustments for those employees wait.
+- **Money in / Money out** (`lib/cashFlow.ts`): Government line =
+  `government_remittances` actually paid that month; damage = the company's
+  share only (insurer pays the client / repair shop directly -- never
+  through us). Recording / voiding a remittance reloads Money in / out and
+  Cash on hand. Damage panel: Filed -> Paid (same insurer and amount) keeps
+  the original `approved_at`.
+- **Diesel km per litre:** `app_settings.diesel_km_per_liter` (1 = old
+  estimate; Settings validates 0 < N <= 20); `dieselPerKm()` in tripCost.ts.
+- **Dashboard expense cards use Financial Summary's dates** (payslips by
+  period end, `payslipInPeriod`; trip expenses + fuel of trips DELIVERED in
+  the range).
+- **Cash advances:** "Employees owe us" and the ledger's "after draft
+  payslips" subtract draft deductions; `issued_at` defaults to the Manila
+  date; approving a requested advance dates it that day.
+- **Speed / smaller:** `lib/shortCache.ts` (all-clients ledger and trip
+  profit kept 20 s, cleared on payment / void / charge / booking edit);
+  Billing loads only its booking; proof attached by the returned payment
+  id; revenue grouped by `client_id`; `lib/csv.ts` `csvField` (formula
+  guard, `node scripts/check-csv.ts`) for every CSV; statement Billed / Paid
+  by line kind.
+- **Data wipes:** also truncate `booking_change_logs`, `client_notifications`
+  and `payroll_adjustments` (they reference bookings / payslips).
+- **Financial Summary layout (2026-11-18, later):** the Per trip card is
+  gone (`PerTripCard` / `perTripNumbers` removed). "Why Collected is not the
+  same as Revenue" sits beside "How the net result is worked out" in the
+  Profit row; Cash on hand is alone under Money in / out. Its "Paid ahead"
+  and "Paid for earlier months' trips" lines have **Show trips**: bookings +
+  trips from `loadGapTrips()` (lib/revenueReconciliation.ts) -- paid ahead =
+  the booking's trips not delivered yet; earlier months = trips delivered
+  before the month still unpaid when it started (`unpaidAtMonthStart`,
+  oldest paid first, in revenueReconTotals.ts, self-checked). Links open
+  `/dashboard/bookings?booking=&trip=`.
+- **Double scrollbar fix:** `<main>` in DashboardLayout is `relative`, so
+  absolutely placed bits (`sr-only` table labels) stay inside its scroll area
+  instead of stretching the window. Applies to every dashboard page.
+- **Cash on hand removed (2026-11-18, migration 20261118010000):** card,
+  `loadCashCheck` / `saveCashCheck`, `cashPosition` / `monthsBetween` and
+  table `cash_on_hand_checks` are gone. Money in / Money out stays.
+- **Override fully removed from the database (same migration):**
+  `bookings.amount_to_pay` dropped; `record_booking_payment` has no
+  `p_set_amount_to_pay` any more (7 arguments); `get_trip_payment_status`
+  owes = whole contract + client damage + added charges.
+
+## 2026-11-18: Finance loophole fixes (migration 20261118020000 -- user runs it)
+Third audit, all 10 fixed. Run AFTER 20261118000000 and 20261118010000.
+All three were applied to an empty PGlite copy of the baseline and re-run
+(safe twice); 34 behaviour checks passed (caps, locks, price changes,
+payroll corrections, kept distance, void-only, downpayment).
+- **Regenerate no longer double-pays a price change:** `regenerateDraft`
+  reads the draft's trips (`payslipTripIds`) before discarding, then
+  `settleAdjustmentsForRebuiltDraft` closes their pending
+  payroll_adjustments (the rebuilt draft already uses today's price).
+- **Mark refunded** re-reads the WHOLE balance (`loadPaymentDueReport`
+  with `bookingId`) and refuses if it changed since the page loaded.
+- **Closed bills take no new charges:** `billing.locked` (same
+  `readOnlyReason` as Booking Edit) hides Add Charge; DB:
+  `booking_charge_allowed()` in the `booking_charges_insert_admin` policy.
+- **Delivered trip repriced = dated line, closed months don't move:** table
+  `trip_price_changes` (written by `update_booking_details` for delivered
+  trips only). `lib/tripPriceChanges.ts`: the ledger keeps the trip at
+  `originalRate()` (bookingBalance.ts) on its delivery date and adds
+  "Price change, Trip #N" on the change date -- paymentDue.ts (due items)
+  and statement.ts (Statements, Billing, Financial Summary revenue as an
+  adjustment). Clients can read their own rows.
+- **Delivered trips keep their costed km:** `itineraries.costed_distance_km`,
+  saved by the RPC before the booking's distance changes;
+  `tripDistanceKm(booking, returnContainer, costedKm)` uses it (tripProfit,
+  dashboardExpenses).
+- **Void only, never edit:** triggers `booking_charges_guard` and
+  `government_remittances_guard` refuse changing an amount / details,
+  voiding twice, or voiding without a reason.
+- **Payments capped in the DB:** `record_booking_payment` refuses more than
+  the whole contract + extra charges - paid, a refund above what was paid,
+  and a date received in the future / before the booking was made.
+- Smaller: Client Billing says "Paid so far" / "Nothing due yet" while trips
+  are to come; the client's bell gets prices, places, dates and terms only
+  (distance / hours per trip stay in the staff change history); price
+  corrections use the % the trip was paid at
+  (`payslip_line_items.commission_rate`, else the "5% of ₱" in its
+  description -- `commissionPercentOf`); Collections warns when voiding
+  leaves a started booking's downpayment short (`downpaymentVoidWarning`).
+- Data wipes: also truncate `trip_price_changes`.

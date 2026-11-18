@@ -44,10 +44,11 @@ assert.deepEqual(
     ['2026-10-10', 'Payment', 500, 16_000],
   ],
 )
-// "Billed" = lines that raise the balance (the refund counts here), "paid" = lines that lower it.
-assert.equal(oct.billed, 20_000)
-assert.equal(oct.paid, 8_000)
-assert.equal(oct.closing, 4_000 + 20_000 - 8_000)
+// "Billed" = trips, charges and adjustments; "paid" = payments net of refunds
+// (by kind, not by sign: a refund isn't a bill).
+assert.equal(oct.billed, 19_500)
+assert.equal(oct.paid, 7_500)
+assert.equal(oct.closing, 4_000 + 19_500 - 7_500)
 assert.equal(oct.closing, oct.lines[oct.lines.length - 1].balance)
 
 // Whole ledger up to the end: closing = total billable - total paid, i.e.

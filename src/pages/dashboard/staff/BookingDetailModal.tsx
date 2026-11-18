@@ -9,6 +9,12 @@
 // "Show Booking Details" toggle (route, schedule, hours per trip), then the
 // trips table (cargo, crew, vehicles, expenses, documents). Finished bookings keep cargo + money inside the toggle.
 //
+// Edit (only when `onChanged` is passed -- Admin + Dispatcher on Bookings &
+// Trips): one button opens BookingEditForm for everything but the client
+// (prices per trip, route, distance, dates, hours per trip, terms); read-only
+// once the booking is cancelled or delivered and fully paid. "Change history"
+// lists who changed what and when (booking_change_logs).
+//
 // Also where a booking is cancelled (only when `onChanged` is passed --
 // the Bookings page does, the read-only ClientBookingHistoryModal
 // doesn't). Cancel rules:
@@ -35,10 +41,11 @@ import type { Booking } from './BookingsSection'
 import StatusBadge from '../../../components/StatusBadge'
 import TripDocuments from './TripDocuments'
 import EditTripCargo from './EditTripCargo'
+import BookingEditForm from './BookingEditForm'
 import ReplanTripsModal from './ReplanTripsModal'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
-import { formatMoney, formatDate, slotLines } from '../../../lib/format'
-import { retimeTrips } from '../../../lib/tripRetime'
+import { formatMoney, formatDate, formatDateTime, slotLines } from '../../../lib/format'
+import { readOnlyReason } from '../../../lib/bookingEdit'
 import { downpaymentStatus } from '../../../lib/downpayment'
 import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -108,6 +115,7 @@ type Details = {
   hours_per_trip: number | null
   // Downpayment inputs (lib/downpayment.ts) and the Admin waiver, if any.
   cost_per_trip: number | null
+  downpayment_fixed: number | null
   downpayment_waived_at: string | null
   downpayment_waive_reason: string | null
   // Shown as "Deadline date" (the latest day the client needs the cargo).
@@ -185,7 +193,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_fixed, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -312,6 +320,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       estimated_distance_km: b.estimated_distance_km,
       hours_per_trip: b.hours_per_trip,
       cost_per_trip: b.cost_per_trip,
+      downpayment_fixed: b.downpayment_fixed === null ? null : Number(b.downpayment_fixed),
       downpayment_waived_at: b.downpayment_waived_at,
       downpayment_waive_reason: b.downpayment_waive_reason,
       preferred_delivery_date: quoteResult.data?.preferred_delivery_date ?? null,
@@ -346,6 +355,29 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   }
 }
 
+// Who changed this booking and when, newest first (booking_change_logs,
+// staff-only). Null when it can't be read (e.g. its SQL not run yet).
+async function loadChangeHistory(bookingId: number) {
+  const { data, error } = await supabase
+    .from('booking_change_logs')
+    .select('log_id, changed_at, changed_by, changes')
+    .eq('booking_id', bookingId)
+    .order('changed_at', { ascending: false })
+    .limit(30)
+  if (error || !data) return null
+  const ids = [...new Set(data.map((r) => r.changed_by).filter((id): id is number => id !== null))]
+  const { data: people } = ids.length
+    ? await supabase.from('employees').select('employee_id, full_name').in('employee_id', ids)
+    : { data: [] as { employee_id: number; full_name: string }[] }
+  const nameById = new Map((people ?? []).map((p) => [p.employee_id, p.full_name]))
+  return data.map((r) => ({
+    log_id: r.log_id,
+    changed_at: r.changed_at,
+    by: r.changed_by === null ? '—' : (nameById.get(r.changed_by) ?? `Employee #${r.changed_by}`),
+    changes: (r.changes ?? []) as string[],
+  }))
+}
+
 function BookingDetailModal({
   booking,
   onClose = () => {},
@@ -369,10 +401,10 @@ function BookingDetailModal({
   const [details, setDetails] = useState<Details | null>(null)
   // "Show Booking Details" toggle: route, schedule (+ cargo/money when finished).
   const [showDetails, setShowDetails] = useState(false)
-  // Hours-per-trip editor (staff Bookings only): null = not editing.
-  const [hoursDraft, setHoursDraft] = useState<string | null>(null)
-  const [hoursSaving, setHoursSaving] = useState(false)
-  const [hoursError, setHoursError] = useState<string | null>(null)
+  // Booking Detail -> Edit open.
+  const [editing, setEditing] = useState(false)
+  // Who changed this booking, and when (newest first).
+  const [history, setHistory] = useState<{ log_id: number; changed_at: string; by: string; changes: string[] }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
@@ -412,53 +444,9 @@ function BookingDetailModal({
         trips: details.trips.filter((t) => t.status !== 'Cancelled').length,
         amountPaid: booking.amount_paid,
         waivedAt: details.downpayment_waived_at,
+        fixed: details.downpayment_fixed,
       })
     : null
-
-  // Changing hours per trip also re-times the trips that haven't left yet:
-  // every Awaiting trip with a slot gets the new length, and the trips after
-  // each one in its driver's / truck's / trailer's line follow (retimeTrips in
-  // lib/tripRetime.ts). Trips already on the road keep their slot. The
-  // database re-checks each trip's crew, so an overlap stops the re-timing
-  // with a message naming the clash.
-  async function saveHoursPerTrip() {
-    const hours = Number(hoursDraft)
-    if (!(hours > 0) || hours > 72) {
-      setHoursError('Enter more than 0 and up to 72 hours.')
-      return
-    }
-    setHoursSaving(true)
-    setHoursError(null)
-    const { data: updated, error: bookingError } = await supabase
-      .from('bookings')
-      .update({ hours_per_trip: hours })
-      .eq('booking_id', booking.booking_id)
-      .select('booking_id')
-      .maybeSingle()
-    if (bookingError || !updated) {
-      setHoursSaving(false)
-      setHoursError(bookingError?.message ?? 'The booking was not updated.')
-      return
-    }
-
-    const awaiting = (details?.trips ?? []).filter((t) => t.status === 'Awaiting' && t.trip_start_at !== null)
-    const failures: string[] = []
-    if (awaiting.length > 0) {
-      const result = await retimeTrips(
-        { lengths: new Map(awaiting.map((t) => [t.itinerary_id, hours * 3_600_000])) },
-        Math.min(...awaiting.map((t) => new Date(t.trip_start_at!).getTime())),
-      )
-      if (result.warning) failures.push(result.warning)
-      for (const message of result.late) showToast(message, 'error')
-    }
-    setHoursSaving(false)
-    if (failures.length > 0) {
-      setHoursError(`Hours per trip saved, but not every trip was re-timed: ${failures.join(' ')}`)
-    } else {
-      setHoursDraft(null)
-    }
-    reload()
-  }
 
   // Admin only: let this booking's trips start without the downpayment.
   // waive_downpayment() checks the caller is an Admin and records who/when/why.
@@ -493,6 +481,7 @@ function BookingDetailModal({
       }
       setDetails(loaded ?? null)
     })
+    loadChangeHistory(booking.booking_id).then(setHistory)
   }, [booking.booking_id])
 
   useEffect(() => {
@@ -503,6 +492,16 @@ function BookingDetailModal({
   const awaitingTrips = trips.filter((t) => t.status === 'Awaiting')
   const anyDelivered = trips.some((t) => isDelivered(t.status))
   const isClosed = booking.status === 'Cancelled' || booking.status === 'Delivered'
+  // Edit: Admin / Dispatcher (onChanged), never once cancelled or delivered + fully paid.
+  const editBlocked = details
+    ? readOnlyReason(booking.status, details.trips.map((t) => t.status), {
+        contract: booking.total_contract_value,
+        delivered: booking.computed_billable_amount,
+        extras: booking.damage_charges,
+        paid: booking.amount_paid,
+      })
+    : null
+  const canEdit = !!onChanged && !!details && !editBlocked
   // Partial cancel (some trips delivered) only makes sense with trips left to cancel.
   const canCancel = !!onChanged && !!details && !isClosed && (!anyDelivered || awaitingTrips.length > 0)
   const cancelLabel = anyDelivered ? 'Cancel remaining trips' : 'Cancel booking'
@@ -724,11 +723,7 @@ function BookingDetailModal({
           value={formatMoney(booking.total_contract_value)}
           note={`${booking.total_trips} ${booking.total_trips === 1 ? 'trip' : 'trips'}`}
         />
-        <Figure
-          label="Billable So Far"
-          value={formatMoney(booking.billable_amount)}
-          note={booking.amount_to_pay !== null ? 'manually set' : undefined}
-        />
+        <Figure label="Billable So Far" value={formatMoney(booking.billable_amount)} />
         <Figure label="Amount Paid" value={formatMoney(booking.amount_paid)} />
         <Figure label="Balance Due" value={formatMoney(booking.balance_due)} />
         {booking.damage_charges > 0 && <Figure label="Incl. Extra Charges" value={formatMoney(booking.damage_charges)} />}
@@ -788,55 +783,7 @@ function BookingDetailModal({
 
       <SectionTitle>Schedule</SectionTitle>
       <InfoRow label="Pickup date" value={booking.date ? formatDate(booking.date) : '—'} />
-      <div>
-        <p className="text-xs text-slate-500">Hours per trip</p>
-        {hoursDraft === null ? (
-          <p className="text-[15px] text-slate-900">
-            {details?.hours_per_trip != null ? `${details.hours_per_trip} h` : '—'}
-            {onChanged && details && (
-              <button
-                type="button"
-                onClick={() => {
-                  setHoursDraft(details.hours_per_trip != null ? String(details.hours_per_trip) : '')
-                  setHoursError(null)
-                }}
-                className="ml-2 text-xs font-medium text-slate-600 underline hover:text-slate-900"
-              >
-                Edit
-              </button>
-            )}
-          </p>
-        ) : (
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              type="number"
-              min="0.5"
-              max="72"
-              step="0.5"
-              aria-label="Hours per trip"
-              value={hoursDraft}
-              onChange={(e) => setHoursDraft(e.target.value)}
-              className="w-20 rounded-[2px] border border-line-control px-2 py-1 text-sm text-slate-900 focus:border-primary"
-            />
-            <button
-              type="button"
-              onClick={saveHoursPerTrip}
-              disabled={hoursSaving}
-              className="btn-primary px-3 py-1 text-xs font-medium"
-            >
-              {hoursSaving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setHoursDraft(null)}
-              className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {hoursError && <p className="mt-1 text-xs text-red-700">{hoursError}</p>}
-      </div>
+      <InfoRow label="Hours per trip" value={details?.hours_per_trip != null ? `${details.hours_per_trip} h` : '—'} />
       <InfoRow
         label="Deadline date"
         value={details?.preferred_delivery_date ? formatDate(details.preferred_delivery_date) : '—'}
@@ -879,6 +826,11 @@ function BookingDetailModal({
             <StatusBadge status={booking.status} icon />
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && !editing && (
+              <button type="button" onClick={() => setEditing(true)} className="btn-primary px-4 text-sm font-semibold">
+                Edit
+              </button>
+            )}
             {canCancel && !showCancel && (
               <button
                 type="button"
@@ -1005,8 +957,27 @@ function BookingDetailModal({
           </div>
         )}
 
+        {editing && details && (
+          <BookingEditForm
+            booking={booking}
+            trips={details.trips.map((t) => ({
+              itinerary_id: t.itinerary_id,
+              status: t.status,
+              rate: t.rate,
+              cargo: t.cargo,
+              trip_start_at: t.trip_start_at,
+            }))}
+            onCancel={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false)
+              reload()
+              onChanged?.()
+            }}
+          />
+        )}
+
         {/* Active bookings: cargo + money up front. */}
-        {!isClosed && (
+        {!isClosed && !editing && (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
             {cargoCard}
             {moneyCard}
@@ -1120,8 +1091,8 @@ function BookingDetailModal({
                           {trip.cargo.cargo_description && (
                             <span className="block max-w-56 text-primary">{trip.cargo.cargo_description}</span>
                           )}
-                          {/* Staff can change a trip's cargo until it's delivered / cancelled. */}
-                          {toRun && onChanged && (
+                          {/* While editing: a trip's cargo until it's delivered / cancelled. */}
+                          {toRun && onChanged && editing && (
                             <button
                               type="button"
                               onClick={() => setCargoTripId(cargoTripId === trip.itinerary_id ? null : trip.itinerary_id)}
@@ -1244,6 +1215,26 @@ function BookingDetailModal({
           )}
 
         </section>
+
+        {history && history.length > 0 && (
+          <section aria-label="Change history" className="border-2 border-line-card bg-white px-5 py-4">
+            <h4 className="text-base font-semibold text-slate-900">Change history</h4>
+            <ul className="mt-2 flex flex-col">
+              {history.map((h) => (
+                <li key={h.log_id} className="border-b border-slate-200 py-2 last:border-b-0">
+                  <p className="text-xs text-slate-500">
+                    {formatDateTime(h.changed_at)} · {h.by}
+                  </p>
+                  <ul className="mt-1 text-sm text-slate-900">
+                    {h.changes.map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {showReplan && (
           <ReplanTripsModal
