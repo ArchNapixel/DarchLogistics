@@ -371,7 +371,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
   const expenseTrip = trips.find((t) => t.itinerary_id === expenseTripId)
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
       <section aria-labelledby="my-tasks-h" className="flex min-w-0 flex-col gap-3">
         <h2 id="my-tasks-h" className="text-base font-semibold text-ink">
           My Tasks <span className="font-medium text-ink-muted">· only trips you're assigned to</span>
@@ -400,7 +400,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
                   <span className="h-2.5 w-2.5 bg-amber-600" aria-hidden="true" />
                   Upcoming
                 </h3>
-                <div className="grid gap-3 lg:grid-cols-2">{upcoming.map((trip) => renderTrip(trip, false))}</div>
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">{upcoming.map((trip) => renderTrip(trip, false))}</div>
               </>
             )}
           </>

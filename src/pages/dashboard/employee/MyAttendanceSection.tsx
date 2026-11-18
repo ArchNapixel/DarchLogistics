@@ -114,7 +114,7 @@ function MyAttendanceSection() {
         subtitle="You're paid weekly by attendance. A finished day with nothing recorded counts as Absent (Sundays are rest days)."
       />
 
-      <section aria-label={`${monthName} totals`} className="mb-4 grid gap-3 sm:grid-cols-3">
+      <section aria-label={`${monthName} totals`} className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {tiles.map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3.5">
             <p className="flex items-center gap-2 text-sm font-medium text-ink-secondary">
@@ -130,7 +130,7 @@ function MyAttendanceSection() {
 
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <div className="grid items-start gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         <section aria-labelledby="week-h" className="card flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
             <h2 id="week-h" className="text-base font-semibold text-ink">

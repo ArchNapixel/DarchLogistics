@@ -130,7 +130,7 @@ function EditTripTimeModal({
           Changing the start moves the end with it. Push the end later if the trip is running long.
         </p>
 
-        <div className="mt-5 grid gap-4">
+        <div className="mt-5 grid grid-cols-1 gap-4">
           <div className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Start
             <div className="flex flex-wrap items-center gap-2">

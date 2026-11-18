@@ -60,7 +60,7 @@ function ItineraryLogModal({
             <EmptyState message="No status changes logged for this itinerary yet." />
           )}
           {!loading && !error && entries.length > 0 && (
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {entries.map((entry) => (
                 <div
                   key={entry.log_id}

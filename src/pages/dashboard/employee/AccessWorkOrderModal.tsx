@@ -233,7 +233,7 @@ function AccessWorkOrderModal({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-7 py-5">
-          <div className="grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="grid grid-cols-1 items-end gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
             <dl className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3">
               <div>
                 <dt className="text-[13px] font-medium text-ink-muted">Maintenance type</dt>
@@ -269,7 +269,7 @@ function AccessWorkOrderModal({
 
           {partsError && <p className="bg-red-50 px-3 py-2 text-sm text-red-700">{partsError}</p>}
 
-          <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 min-h-0 flex-1 gap-5 lg:grid-cols-3">
             <section aria-labelledby="wo-inv" className="flex min-h-0 flex-col">
               <h3 id="wo-inv" className={heading}>
                 <span>Inventory</span>

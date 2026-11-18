@@ -95,7 +95,7 @@ function EditClientModal({
         </header>
 
         <form
-          className="grid gap-4 px-6 py-5 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
             void save()

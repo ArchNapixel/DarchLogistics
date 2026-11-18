@@ -313,8 +313,11 @@ function DashboardLayout({ sidebarLinks }: { sidebarLinks: SidebarLink[] }) {
 
         {/* relative: absolutely placed bits inside a page (e.g. sr-only table
             labels) are measured against <main>, not the whole window --
-            otherwise they stretch the page and add a second scrollbar. */}
-        <main className="relative min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
+            otherwise they stretch the page and add a second scrollbar.
+            overflow-x-hidden: the page itself never scrolls sideways on a
+            phone -- wide tables scroll inside their own overflow-x-auto box
+            (and page grids start at grid-cols-1 so they can't stretch). */}
+        <main className="relative min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

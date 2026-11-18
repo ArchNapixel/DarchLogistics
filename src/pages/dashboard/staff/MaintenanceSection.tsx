@@ -333,7 +333,7 @@ function MaintenanceSection() {
         }
       />
 
-      <section aria-label="Maintenance totals" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Maintenance totals" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Requests waiting for approval', value: String(requests.length) },
           { label: 'Work orders in progress', value: String(workOrders.filter((o) => o.work_order_status === 'In Progress').length) },
@@ -354,7 +354,7 @@ function MaintenanceSection() {
       {error && <p className="text-red-700">{error}</p>}
 
       {!loading && !error && (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div role="tablist" aria-label="Maintenance views" className="flex flex-wrap gap-2">

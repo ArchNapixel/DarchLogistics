@@ -2660,3 +2660,37 @@ payroll corrections, kept distance, void-only, downpayment).
   description -- `commissionPercentOf`); Collections warns when voiding
   leaves a started booking's downpayment short (`downpaymentVoidWarning`).
 - Data wipes: also truncate `trip_price_changes`.
+
+## 2026-11-18: Phone layout fixes (no SQL)
+Pages scrolled sideways on phones (left edge cut off) and table headings
+overlapped. Rules for new code:
+- **A page-level `grid` always has a phone column setting** -- `grid
+  grid-cols-1 ... xl:grid-cols-[...]`. A bare `grid` sizes its one column to
+  its widest content, so a `min-w-[960px]` table inside stretched the whole
+  page. (Added to 131 grids in 85 files.)
+- **Wide tables live in their own `overflow-x-auto` box** (with a `min-w-[...]`
+  so they scroll instead of squeezing). Payroll's employee list, the Capacity
+  card and Review Quote's offer comparison got one.
+- `<main>` (DashboardLayout) is `overflow-x-hidden` as a safety net: the page
+  itself never scrolls sideways.
+- `thead th` (index.css) cuts a long heading with "…" instead of spilling into
+  the next column of a `table-fixed` table.
+- Client Billing (one booking): on phones the lines are a list (date +
+  amount, description, running balance); the table is `hidden sm:table
+  print:table`, so printing is unchanged.
+- Schedule Overview timeline: the name column is 140px on phones and sticky
+  (z-20, above the bars' z-10) while the timeline scrolls.
+- Dashboard "Today's Deliveries": bars narrower on phones and the "x of y
+  delivered" label wraps.
+- Not done (bigger redesign, user's choice later): card layouts instead of
+  tables on phones for Dispatch Board, Bookings, Payroll, Bills Receivable,
+  My Trips.
+- Second pass (2026-11-19): grids whose class is picked by a condition
+  (`className={x ? 'grid ...' : ''}`) need `grid-cols-1` too -- Cash Advances'
+  layout and the quote wizard had been missed. `ConfirmDialog` caps at 90dvh
+  and its message scrolls with line breaks kept (`whitespace-pre-line`);
+  "Balance driver pay" lists moves grouped by driver pair. Clients panel
+  Bookings table: "Booked" goes under the booking # on phones. Date / time
+  inputs (index.css): `min-width: 0` everywhere, and `appearance: none` only
+  on iOS Safari (`@supports (-webkit-touch-callout: none)`) -- iPhone date
+  boxes otherwise ignore their width and spill out of two-column rows.

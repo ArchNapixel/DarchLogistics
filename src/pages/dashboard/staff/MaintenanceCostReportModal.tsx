@@ -86,7 +86,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
         ) : workOrders.length === 0 ? (
           <EmptyState message="No work orders were completed this month." className="mt-4" />
         ) : (
-          <div className="mt-4 grid gap-6">
+          <div className="mt-4 grid grid-cols-1 gap-6">
             <div className="flex flex-wrap gap-6 border border-slate-200 px-4 py-3">
               <div>
                 <p className="text-xs text-slate-500">Fleet total (parts)</p>
@@ -139,7 +139,7 @@ function MaintenanceCostReportModal({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="text-sm font-semibold text-slate-700">By Work Order</h4>
-              <div className="mt-2 grid gap-3">
+              <div className="mt-2 grid grid-cols-1 gap-3">
                 {workOrders.map((wo) => (
                   <div key={`${wo.work_order_id}-${wo.completed_at}`} className="border border-slate-200">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm">

@@ -141,7 +141,7 @@ function MyProfileSection() {
         <h2 id="employment-h" className="mb-3 text-base font-semibold text-ink">
           Employment <span className="font-medium text-ink-muted">· set by Admin</span>
         </h2>
-        <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-3">
           <div>
             <dt className="text-[13px] font-medium text-ink-muted">Name</dt>
             <dd className="m-0 text-[15px] font-semibold text-ink">{profile.full_name}</dd>
@@ -160,7 +160,7 @@ function MyProfileSection() {
 
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-3 xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 xl:items-start">
         <section aria-labelledby="contact-h" className="card flex flex-col gap-3.5 px-5 py-4">
           <h2 id="contact-h" className={CARD_TITLE}>
             Contact

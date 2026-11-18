@@ -325,7 +325,7 @@ function CashFlowCard({
   const down = flow.net < 0
   return (
     <section className="card overflow-hidden">
-      <div className="grid md:grid-cols-2 md:divide-x md:divide-slate-200">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x md:divide-slate-200">
         {column('Money in', flow.moneyIn, flow.totalIn, '+', 'text-green-700')}
         {column('Money out', flow.moneyOut, flow.totalOut, '−', 'text-ink')}
       </div>
@@ -491,7 +491,7 @@ function MoneySummarySection() {
       </div>
 
       {tab === 'expenses' ? (
-        <div className="grid gap-4 lg:grid-cols-3 lg:items-start">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
           <div id="op" className="scroll-mt-4">
             <OperationalExpensesCard period={period} refreshKey={0} />
           </div>
@@ -510,7 +510,7 @@ function MoneySummarySection() {
         <>
           <RemittanceAlert data={remitData} month={month} />
 
-          <section aria-label={`Totals for ${monthLabel(month)}`} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label={`Totals for ${monthLabel(month)}`} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Tile
               dark
               label={summary.left < 0 ? 'Net loss' : 'Net profit'}
@@ -547,7 +547,7 @@ function MoneySummarySection() {
 
           <div className="mt-8">
             <SectionHeader title="Profit" subtitle="Based on trips delivered this month" />
-            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
               <NetWaterfall summary={summary} />
               <GapCard gap={gap} error={gapError} />
             </div>
@@ -573,7 +573,7 @@ function MoneySummarySection() {
 
           <div className="mt-8">
             <SectionHeader title="Trends" />
-            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
               <TrendCard history={trend} />
               <BilledVsCollectedCard
                 rows={clientRows}

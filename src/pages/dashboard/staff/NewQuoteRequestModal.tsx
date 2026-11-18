@@ -81,7 +81,7 @@ function Section({
         </span>
         {title}
       </h3>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">{children}</div>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </section>
   )
 }
@@ -293,7 +293,7 @@ function NewQuoteRequestModal({
     <>
       {header('New quote', onClose)}
 
-      <div className="grid min-h-0 flex-1 gap-8 overflow-y-auto px-6 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 min-h-0 flex-1 gap-8 overflow-y-auto px-6 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="flex min-w-0 flex-col gap-8">
           {error && (
             <p className="bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">

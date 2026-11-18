@@ -502,7 +502,7 @@ function BookingEditForm({
             New contract {formatMoney(newContract)} (was {formatMoney(booking.total_contract_value)}). The difference moves the balance;
             a downpayment already paid stays the same.
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className={`px-4 py-3 ${warnBox}`}>
               <p className="text-xs text-slate-500">Cost per trip (saved)</p>
               <p className="text-lg font-bold tabular-nums">{formatMoney(raw.cost_per_trip)}</p>
@@ -522,7 +522,7 @@ function BookingEditForm({
         {/* Route */}
         <div className="flex flex-col gap-4">
           <h5 className="text-sm font-semibold text-slate-900">Route</h5>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div>
               <p className="mb-1.5 text-sm font-medium text-ink-secondary">Pickup</p>
               <LocationPicker stop="pickup" value={values.pickup} onChange={(v) => setStop('pickup', v)} />
@@ -577,7 +577,7 @@ function BookingEditForm({
         {/* Schedule & terms */}
         <div>
           <h5 className="text-sm font-semibold text-slate-900">Schedule &amp; terms</h5>
-          <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <label className={label}>
               Pickup date
               <input type="date" value={values.pickupDate} onChange={(e) => set({ pickupDate: e.target.value })} className={field} />

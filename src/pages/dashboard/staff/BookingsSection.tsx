@@ -448,7 +448,7 @@ function BookingsSection() {
           ) : bookings.length === 0 ? (
             <EmptyState message="No bookings yet." hint="Bookings are created when a client accepts a quote offer." />
           ) : (
-            <div className={`grid gap-4 lg:items-start ${split && paneBooking ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
+            <div className={`grid grid-cols-1 gap-4 lg:items-start ${split && paneBooking ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
               <ListBox
                 pager={paged.pager}
                 summary={`${visibleBookings.length} ${filterWord}${visibleBookings.length === 1 ? 'booking' : 'bookings'}`}

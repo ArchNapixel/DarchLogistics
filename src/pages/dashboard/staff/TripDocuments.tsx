@@ -266,7 +266,7 @@ export default function TripDocuments({
       )}
 
       {pending.length > 0 && (
-        <ul className="mt-3 grid gap-1">
+        <ul className="mt-3 grid grid-cols-1 gap-1">
           {pending.map((item) => (
             <li key={item.key} className="flex items-center gap-2 text-xs">
               <span className="truncate text-slate-700">{item.file.name}</span>

@@ -97,7 +97,7 @@ function MaintenanceSchedulesSection({ onChanged }: { onChanged?: () => void }) 
       {schedules.length === 0 ? (
         <EmptyState message="No upcoming maintenance schedules." />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {paged.rows.map((schedule) => {
             const due = formatScheduleDueDate(schedule.due_date)
             return (

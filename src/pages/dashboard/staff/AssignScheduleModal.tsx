@@ -93,7 +93,7 @@ function AssignScheduleModal({
 
         {error && <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-        <div className="mt-4 grid gap-4">
+        <div className="mt-4 grid grid-cols-1 gap-4">
           <label className={labelClasses}>
             Truck
             <select value={plateNumber} onChange={(event) => setPlateNumber(event.target.value)} className={fieldClasses}>

@@ -617,7 +617,7 @@ function EmployeesSection() {
 
       {/* The table stays when nothing matches -- one "No employee matches" row instead. */}
       {!loading && !error && employees.length > 0 && (
-        <div className={`mt-4 grid gap-4 xl:items-start ${paneEmployee ? 'xl:grid-cols-[minmax(0,1fr)_520px]' : ''}`}>
+        <div className={`mt-4 grid grid-cols-1 gap-4 xl:items-start ${paneEmployee ? 'xl:grid-cols-[minmax(0,1fr)_520px]' : ''}`}>
           <section aria-label="Employee masterlist" className="card flex min-h-[calc(100dvh-19rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {/* Header row style comes from index.css (thead th). */}

@@ -498,9 +498,11 @@ function PayrollSection() {
       )}
 
       {!loading && !error && payroll.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-[520px_minmax(0,1fr)] xl:items-start">
-          <section aria-label="Employees this period" className="card flex flex-col">
-            <table className="w-full table-fixed text-left text-sm text-ink-metric">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[520px_minmax(0,1fr)] xl:items-start">
+          <section aria-label="Employees this period" className="card flex min-w-0 flex-col">
+            {/* Scrolls on its own on a phone instead of squeezing the columns. */}
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] table-fixed text-left text-sm text-ink-metric">
               <colgroup>
                 <col />
                 <col style={{ width: '150px' }} />
@@ -541,6 +543,7 @@ function PayrollSection() {
                 })}
               </tbody>
             </table>
+            </div>
             <div className="flex min-h-[60px] items-center border-t border-line px-5 py-2 text-sm text-ink-secondary">
               {periodEntries.length} {periodEntries.length === 1 ? 'employee' : 'employees'} · {periodFinalized} of {periodEntries.length} finalized
             </div>
@@ -613,7 +616,7 @@ function PayrollSection() {
                 </table>
               </div>
 
-              <div className="grid gap-6 px-5 py-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-6 px-5 py-4 md:grid-cols-2">
                 <section aria-labelledby="ps-earn">
                   <h3 id="ps-earn" className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">
                     Earnings

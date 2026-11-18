@@ -206,7 +206,7 @@ function ClientLoginPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-slate-50">
       <NavBar />
-      <main className="mx-auto grid w-full max-w-[1040px] flex-1 items-center gap-6 px-4 py-10 md:grid-cols-[minmax(0,1fr)_440px]">
+      <main className="mx-auto grid grid-cols-1 w-full max-w-[1040px] flex-1 items-center gap-6 px-4 py-10 md:grid-cols-[minmax(0,1fr)_440px]">
         <section aria-label="About the client portal" className="hidden bg-navy px-8 py-10 text-white md:block">
           <h1 className="text-3xl leading-tight font-bold">
             Your shipments,

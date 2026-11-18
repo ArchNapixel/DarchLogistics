@@ -90,6 +90,10 @@ thead th {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+  /* A heading longer than its column is cut with "…" instead of spilling
+     over the next one (fixed-width tables on a phone). */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 thead tr {
   border-bottom: 1px solid var(--color-line);
@@ -118,6 +122,34 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/* Date / time fields on iPhone (Safari): they have a built-in width and
+   ignore the field's own, so two side by side spilled out of the form (My
+   Leave). These keep them inside their column, keep an empty one as tall as
+   a filled one, and line the value up on the left like other fields. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"] {
+  min-width: 0;
+  max-width: 100%;
+}
+/* iPhone / iPad Safari only (desktop Chrome would lose its calendar icon). */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.25em;
 }
 
 /* Makes clicking anchor links (like #quote) scroll smoothly instead of jumping */

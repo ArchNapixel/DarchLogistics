@@ -54,7 +54,7 @@ function ServicesGrid() {
         <Reveal delay={150}>
         <div
           onMouseLeave={() => setActive(DEFAULT_ACTIVE)}
-          className="mt-6 grid gap-px overflow-hidden border border-slate-300 bg-slate-300 sm:grid-cols-2 lg:grid-cols-4">
+          className="mt-6 grid grid-cols-1 gap-px overflow-hidden border border-slate-300 bg-slate-300 sm:grid-cols-2 lg:grid-cols-4">
           {services.map((service, index) => {
             const highlighted = index === active
             return (

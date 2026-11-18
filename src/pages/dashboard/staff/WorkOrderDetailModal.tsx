@@ -154,7 +154,7 @@ function WorkOrderDetailModal({
           <p className="mt-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         )}
 
-        <div className="mt-4 grid gap-2 text-sm">
+        <div className="mt-4 grid grid-cols-1 gap-2 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Maintenance type</span>
             <span className="text-slate-900">{order.maintenance_type}</span>
@@ -173,7 +173,7 @@ function WorkOrderDetailModal({
           )}
         </div>
 
-        <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Mechanic
             <select
@@ -223,7 +223,7 @@ function WorkOrderDetailModal({
           ) : parts.length === 0 ? (
             <EmptyState message="No parts logged yet." className="mt-2" />
           ) : (
-            <div className="mt-2 grid gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2">
               {parts.map((part) => (
                 <div key={part.log_id} className="border border-slate-200 p-3">
                   <p className="text-sm text-slate-900">
@@ -245,7 +245,7 @@ function WorkOrderDetailModal({
           ) : notes.length === 0 ? (
             <EmptyState message="No progress notes yet." className="mt-2" />
           ) : (
-            <div className="mt-2 grid gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2">
               {notes.map((note) => (
                 <div key={note.note_id} className="border border-slate-200 p-3">
                   <p className="text-sm text-slate-700">{note.note}</p>

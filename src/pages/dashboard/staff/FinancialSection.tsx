@@ -69,7 +69,7 @@ function PaymentDetailsFields({
   const label = 'block text-xs font-medium text-slate-600'
 
   return (
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className={label} htmlFor="pay-method">Payment method</label>
         <select
@@ -704,7 +704,7 @@ function FinancialActionModal({
           </p>
         )}
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <p className="text-[13px] text-ink-muted">Rate / trip</p>
             <p className="font-semibold text-slate-900">{bookingRateLabel(booking.trip_rates, booking.rate)}</p>
@@ -971,7 +971,7 @@ function FinancialSection() {
       />
       {actionError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
-      <section aria-label="Amounts owed" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Amounts owed" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {tiles.map((t) => (
           <div key={t.label} className="card px-[18px] py-3.5">
             <p className="text-sm font-medium text-ink-secondary">{t.label}</p>
@@ -1247,7 +1247,7 @@ function FinancialSection() {
             <h2 id="terms-h" className="mb-1 border-b border-line pb-2 text-sm font-semibold text-ink">
               How due dates are set
             </h2>
-            <div className="grid sm:grid-cols-2 xl:grid-cols-4 sm:gap-x-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 sm:gap-x-6">
               {DUE_RULES.map(([terms, rule]) => (
                 <div key={terms} className="flex items-baseline justify-between gap-3 border-b border-slate-200 py-2 text-sm xl:border-b-0">
                   <span className="text-ink-secondary">{terms}</span>

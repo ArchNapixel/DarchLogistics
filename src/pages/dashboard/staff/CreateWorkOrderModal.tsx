@@ -222,7 +222,7 @@ function CreateWorkOrderModal({
             No trucks or trailers found. Add one under Fleet first.
           </p>
         ) : (
-          <div className="mt-4 grid gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4">
             <label className={labelClasses}>
               Truck or trailer
               <select

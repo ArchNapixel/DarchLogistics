@@ -115,7 +115,7 @@ function MyPayslipSection({ onIssueReported }: { onIssueReported?: () => void })
   )
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
       <section aria-label="Payslips" className="card flex flex-col">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-line bg-slate-100 px-5 py-2.5 text-xs font-semibold tracking-[0.04em] text-ink-secondary uppercase">
           <span>Pay Period</span>

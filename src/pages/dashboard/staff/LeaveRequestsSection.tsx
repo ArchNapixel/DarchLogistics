@@ -133,7 +133,7 @@ function LeaveRequestsSection({ onDecided }: { onDecided?: () => void }) {
       {requests.length === 0 ? (
         <EmptyState message="No pending leave requests." className="mt-3" />
       ) : (
-        <div className="mt-3 grid gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-3">
           {paged.rows.map((request) => (
             <div key={request.leave_id} className="border border-line p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">

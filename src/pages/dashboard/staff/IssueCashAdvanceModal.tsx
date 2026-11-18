@@ -176,7 +176,7 @@ function IssueCashAdvanceModal({
       {loadingOptions ? (
         <p className="text-ink-muted">Loading...</p>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <label className={label}>
             Employee
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={field}>

@@ -178,7 +178,7 @@ function CashAdvanceLedgerSection({ side }: { side?: React.ReactNode } = {}) {
         </div>
       </section>
 
-      <div className={side ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start' : ''}>
+      <div className={side ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start' : ''}>
         <section aria-label="Cash advances" className="card flex min-h-[calc(100dvh-24rem)] flex-col">
           {loading ? (
             <p className="p-5 text-ink-muted">Loading cash advance ledger...</p>

@@ -241,7 +241,7 @@ function ClientBookingHistoryModal({
           )}
 
           {!loading && !error && bookings.length > 0 && (
-            <div className="grid gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {ongoing.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-slate-700">

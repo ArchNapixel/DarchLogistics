@@ -193,7 +193,7 @@ function DamageChargesSection() {
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-start">
         <div className="flex min-w-0 flex-col gap-4">
         <section aria-label="Damage charges" className="card flex min-w-0 flex-col">
           <div className="overflow-x-auto">

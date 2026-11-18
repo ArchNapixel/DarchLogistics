@@ -122,7 +122,7 @@ function ClientDashboard() {
         </Link>
       )}
 
-      <section aria-label="Summary" className="mb-4 grid gap-3 sm:grid-cols-3">
+      <section aria-label="Summary" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {tiles.map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3.5">
             <p className="text-sm font-medium text-ink-secondary">{tile.label}</p>
@@ -132,7 +132,7 @@ function ClientDashboard() {
         ))}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-start">
         <section aria-labelledby="ab-h" className="card">
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
             <h2 id="ab-h" className="text-base font-semibold text-ink">

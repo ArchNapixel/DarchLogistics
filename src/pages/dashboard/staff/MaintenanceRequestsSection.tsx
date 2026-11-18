@@ -141,7 +141,7 @@ function MaintenanceRequestsSection({ onChanged }: { onChanged?: () => void }) {
       {requests.length === 0 ? (
         <EmptyState message="No pending maintenance requests." />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {paged.rows.map((request) => (
             <div
               key={request.request_id}

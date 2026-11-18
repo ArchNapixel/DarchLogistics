@@ -81,7 +81,7 @@ function ClientPaymentsSection({ clientId }: { clientId: number }) {
 
   return (
     <div>
-      <section aria-label="Summary" className="mb-4 grid gap-3 sm:grid-cols-3">
+      <section aria-label="Summary" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {tiles.map((tile) => (
           <div key={tile.label} className="card px-[18px] py-3.5">
             <p className="text-sm font-medium text-ink-secondary">{tile.label}</p>

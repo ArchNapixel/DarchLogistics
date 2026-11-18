@@ -506,7 +506,7 @@ function TruckMaintenanceMonitoringSection() {
       />
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <section aria-label="Fleet status" className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <section aria-label="Fleet status" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {[
           { label: 'Trucks operational', value: trucks.length - trucksDown.length, of: trucks.length },
           { label: 'Trucks not operational', value: trucksDown.length, bad: trucksDown.length > 0 },
@@ -524,7 +524,7 @@ function TruckMaintenanceMonitoringSection() {
         ))}
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           <section aria-labelledby="trucks-h" className="card">
             <div className={PANEL_HEAD}>
