@@ -70,23 +70,22 @@ import { freeVehicleIfIdle, setVehicleStatus } from '../../../lib/fleetStatus'
 import { showToast } from '../../../components/Toast'
 import NoMatchRow from '../../../components/NoMatchRow'
 import { idMatches, numberQuery } from '../../../lib/search'
-import { confirmDialog } from '../../../components/ConfirmDialog'
+import { confirmDialog, promptDialog } from '../../../components/ConfirmDialog'
 import { fetchAll, fetchIn } from '../../../lib/dashboardExpenses'
 import { loadApprovedLeave, rangesOverlap, type LeaveRange } from '../../../lib/leaveRequests'
 import { loadPayrollSettings, toManilaDate, type PayrollSettings } from '../../../lib/payslip'
 import { retimeTrips } from '../../../lib/tripRetime'
-import { STEP_MS, planTrips } from '../../../lib/capacity'
 import { planRebalance } from '../../../lib/rebalance'
-import { loadCapacityInputs } from '../../../lib/capacityLoad'
 import PageHeader from '../../../components/PageHeader'
 import { formatDate, formatMoney, formatSlot, manilaTimestamp, slotLines } from '../../../lib/format'
 import StatusBadge from '../../../components/StatusBadge'
 import EditTripTimeModal from './EditTripTimeModal'
+import ReplanTripsModal from './ReplanTripsModal'
 import { downpaymentStatus, tripsMayStart, type DownpaymentStatus } from '../../../lib/downpayment'
 import { groupTripRates, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
 import { tripCargoLabel } from '../../../lib/quoteRequest'
-import { earliestFreeStart, rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
+import { rankVehicles, type VehicleCandidate } from '../../../lib/fleetMatch'
 import { loadPmsSettings } from '../../../lib/odometer'
 import { pmsStatus, type PmsSettings } from '../../../lib/pms'
 import { substituteNote, trailerAllowed, trailerLabel } from '../../../lib/trailerRules'
@@ -157,6 +156,8 @@ type BoardBookingRow = {
   downpayment_waived_at: string | null
   downpayment_fixed: number | null
   storage_deadline: string | null
+  // Admin allowed this booking's trips to start before its start date.
+  early_start_allowed_at: string | null
   quote_request_id: number | null
   // Where the empty containers go back to (null = the booking doesn't return them).
   place_of_return_id: number | null
@@ -200,6 +201,11 @@ type DispatchRow = {
   storage_deadline: string | null
   // The quote's Deadline date (delivery by, YYYY-MM-DD), or null.
   delivery_by: string | null
+  // The quote's start (pickup) date, YYYY-MM-DD, or null. No trip may start
+  // before it unless an Admin allowed an early start for the booking
+  // (DB trigger require_pickup_date).
+  start_date: string | null
+  early_start_allowed: boolean
   // This trip's own rate -- the driver's commission (fairness by pesos).
   trip_rate: number | null
   // Brings the empty container back after delivery: Delivered -> Unloading ->
@@ -612,6 +618,8 @@ type BoardContext = {
   // Fairness by pesos (driver commission settings), null until loaded.
   pay: PayrollSettings | null
   onSwap: (row: DispatchRow, employeeId: number, otherTripId: number) => void
+  // Admin: let every trip of the booking start before its start date.
+  onAllowEarlyStart: (row: DispatchRow) => void
 }
 
 // Table spacing from the canvas board: 20px at the edges, 16px between
@@ -630,6 +638,12 @@ const ON_ROAD = ON_ROAD_STATUSES
 // else its trip date.
 function tripDay(r: DispatchRow): string {
   return r.trip_start_at ? toManilaDate(new Date(r.trip_start_at)) : r.trip_date_from
+}
+
+// The booking's start date while it's still ahead (Manila) and no early start
+// was allowed -- the trip can't leave Awaiting before it. Else null.
+function startsLater(r: DispatchRow, now: number): string | null {
+  return r.start_date && !r.early_start_allowed && toManilaDate(new Date(now)) < r.start_date ? r.start_date : null
 }
 
 // 'YYYY-MM-DD' moved by n days (noon UTC, so no timezone edge).
@@ -1016,7 +1030,19 @@ function TripPanel({
         ]
       : []),
     { label: onRoadReason ? `Crew not out on another trip · ${onRoadReason}` : 'Crew not out on another trip', ok: !onRoadReason },
+    // Bookings from a quote: not before its start date (or an Admin allowed an early start).
+    ...(row.start_date
+      ? [
+          {
+            label: row.early_start_allowed
+              ? 'Early start allowed by Admin'
+              : `Start date reached · ${formatDate(row.start_date)}`,
+            ok: startsLater(row, ctx.now) === null,
+          },
+        ]
+      : []),
   ]
+  const notYetStartDate = startsLater(row, ctx.now)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -1125,7 +1151,13 @@ function TripPanel({
               <p className="mt-2 text-[13px] text-ink-muted">
                 The trip can't leave Awaiting until every item is ticked.
                 {row.downpayment ? ' Admin can waive the downpayment.' : ''}
+                {notYetStartDate && !ctx.canFreelyEditStatus ? ' Ask an Admin to allow an early start.' : ''}
               </p>
+              {notYetStartDate && ctx.canFreelyEditStatus && (
+                <button type="button" onClick={() => ctx.onAllowEarlyStart(row)} className="btn-secondary mt-2 px-4 text-sm font-medium">
+                  Allow Early Start…
+                </button>
+              )}
             </section>
           )}
 
@@ -1455,6 +1487,8 @@ function DispatchBoardSection() {
   const [myRequests, setMyRequests] = useState<MyItineraryRelogRequest[]>([])
   // Trip whose time slot is being edited (EditTripTimeModal).
   const [editTimeRow, setEditTimeRow] = useState<DispatchRow | null>(null)
+  // At-risk "Re-plan this booking": the booking open in ReplanTripsModal.
+  const [replanBookingId, setReplanBookingId] = useState<number | null>(null)
   // Driver commission settings, for fairness by pesos (null = not loaded / missing).
   const [pay, setPay] = useState<PayrollSettings | null>(null)
   // A driver planned on another trip, picked for `row` (SwapDriverModal).
@@ -1611,7 +1645,7 @@ function DispatchBoardSection() {
       fetchIn<BoardBookingRow>(bookingIds, (chunk, from, to) =>
         supabase
           .from('bookings')
-          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, storage_deadline, quote_request_id, place_of_return_id')
+          .select('booking_id, hours_per_trip, rate_of_delivery_service, cost_per_trip, amount_paid, downpayment_waived_at, downpayment_fixed, storage_deadline, early_start_allowed_at, quote_request_id, place_of_return_id')
           .in('booking_id', chunk)
           .range(from, to),
       ),
@@ -1630,12 +1664,18 @@ function DispatchBoardSection() {
       return
     }
     const bookingTypeRows = bookingTypeResult.rows
-    // Each booking's delivery-by date (its quote's Deadline date), for the "running late" alert.
+    // Each booking's delivery-by date (its quote's Deadline date), for the
+    // "running late" alert, and its start date (pickup date), before which no trip may start.
     const quoteIds = bookingTypeRows.flatMap((b) => (b.quote_request_id === null ? [] : [b.quote_request_id as number]))
     const { data: quoteDates } = quoteIds.length
-      ? await supabase.from('quote_requests').select('quote_request_id, preferred_delivery_date').in('quote_request_id', quoteIds)
+      ? await supabase.from('quote_requests').select('quote_request_id, preferred_pickup_date, preferred_delivery_date').in('quote_request_id', quoteIds)
       : { data: [] }
     const deliveryByQuote = new Map((quoteDates ?? []).map((q) => [q.quote_request_id as number, q.preferred_delivery_date as string | null]))
+    const startByQuote = new Map((quoteDates ?? []).map((q) => [q.quote_request_id as number, q.preferred_pickup_date as string | null]))
+    const startDateByBooking = new Map(
+      bookingTypeRows.map((b) => [b.booking_id as number, b.quote_request_id === null ? null : (startByQuote.get(b.quote_request_id as number) ?? null)]),
+    )
+    const earlyStartByBooking = new Map(bookingTypeRows.map((b) => [b.booking_id as number, b.early_start_allowed_at !== null]))
     const deliveryByBooking = new Map(
       bookingTypeRows.map((b) => [b.booking_id as number, b.quote_request_id === null ? null : (deliveryByQuote.get(b.quote_request_id as number) ?? null)]),
     )
@@ -1865,6 +1905,8 @@ function DispatchBoardSection() {
           cargo_description: it.cargo_description,
           storage_deadline: storageDeadlineByBooking.get(it.booking_id) ?? null,
           delivery_by: deliveryByBooking.get(it.booking_id) ?? null,
+          start_date: startDateByBooking.get(it.booking_id) ?? null,
+          early_start_allowed: earlyStartByBooking.get(it.booking_id) ?? false,
           trip_rate: it.trip_rate === null ? null : Number(it.trip_rate),
           return_container: it.return_container === true,
           return_location: it.return_container
@@ -2343,60 +2385,25 @@ function DispatchBoardSection() {
     await loadDispatchBoard()
   }
 
-  // At-risk "Find a faster driver": the planner (lib/capacity.ts) looks for the
-  // earliest any driver + truck + trailer could do this trip from now. If that
-  // ends sooner, staff confirm, and the trip is handed over and re-timed.
-  async function findFasterDriver(row: DispatchRow) {
-    if (!row.trip_start_at || !row.trip_end_at) return
-    const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
-    const demand = {
-      trips: [{ hours: length / 3_600_000, trailerType: row.required_trailer_type, trailerSize: row.container_type, exactSize: row.exact_trailer_size, cargoType: row.cargo_type }],
-      requestedStart: Math.ceil(Date.now() / STEP_MS) * STEP_MS,
-      deadlineEnd: row.delivery_by ? Date.parse(manilaTimestamp(row.delivery_by, 24 * 60)) - 1 : null,
-    }
-    const { inputs, error: loadError } = await loadCapacityInputs(demand, null)
-    if (!inputs) {
-      showToast(`Couldn't look for a driver (${loadError}).`, 'error')
-      return
-    }
-    // This trip's own driver / truck / trailer don't block it.
-    const world = { ...inputs.world, booked: inputs.world.booked.filter((t) => t.id !== row.itinerary_id) }
-    const plan = planTrips(demand, world, { swaps: false })
-    const best = plan.trips[0]
-    if (!best || best.end >= Date.parse(row.trip_end_at)) {
-      showToast(`Nobody can do trip #${row.itinerary_id} sooner.`)
-      return
-    }
-    const name = (resourceId: string) => world.resources.find((r) => r.id === resourceId)?.label ?? resourceId
-    const driverId = Number(best.driverId.slice(1))
-    const plate = best.truckId.slice(1)
-    const trailerId = Number(best.trailerId.slice(1))
-    const ok = await confirmDialog({
-      title: `Hand trip #${row.itinerary_id} to ${name(best.driverId)}?`,
-      message: `${name(best.driverId)} (truck ${plate}${best.spareTruck ? ', spare' : ''}, trailer ${name(best.trailerId)}) can do it ${formatSlot(best.start, best.end)}${
-        plan.hoursLate > 0 ? `, still ${plan.hoursLate} h after the delivery-by date` : ', on time'
-      }. Now it is ${formatSlot(row.trip_start_at, row.trip_end_at)}.`,
-      confirmLabel: 'Hand over',
+  // Admin: every trip of this booking may start before its start date.
+  // allow_early_start() checks the caller is an Admin and records who/when/why.
+  async function allowEarlyStart(row: DispatchRow) {
+    const reason = await promptDialog({
+      title: `Allow booking #${row.booking_id} to start early`,
+      message: `The agreed start date is ${row.start_date ? formatDate(row.start_date) : 'not set'}. Why may its trips start before then (e.g. the client agreed to an early pickup)?`,
+      confirmLabel: 'Allow early start',
     })
-    if (!ok) return
-    // Clear the old crew / vehicles, move the time, then put the new ones on.
-    const id = row.itinerary_id
-    const cleared =
-      (row.assigned_employee_id === null || (await handleCrewChange(id, 'Driver', row.assigned_employee_id, null))) &&
-      (row.plate_number === null || (await handleTruckChange(id, row.plate_number, null))) &&
-      (row.trailer_id === null || row.trailer_id === trailerId || (await handleTrailerChange(id, row.trailer_id, null)))
-    if (cleared) {
-      const result = await retimeTrips({ fixed: new Map([[id, { start: best.start, end: best.end }]]) }, Math.min(best.start, Date.parse(row.trip_start_at)))
-      if (result.failedTripId !== null) {
-        setError(`${result.warning} Trip #${id} now has no driver / truck -- assign them again.`)
-      } else {
-        const assigned =
-          (await handleCrewChange(id, 'Driver', null, driverId)) &&
-          (await handleTruckChange(id, null, plate)) &&
-          (row.trailer_id === trailerId || (await handleTrailerChange(id, null, trailerId)))
-        if (assigned) showToast(`Trip #${id} handed to ${name(best.driverId)}.`)
-      }
+    if (reason === null) return
+    if (!reason.trim()) {
+      showToast('A reason is required.', 'error')
+      return
     }
+    const { error: allowError } = await supabase.rpc('allow_early_start', { p_booking_id: row.booking_id, p_reason: reason.trim() })
+    if (allowError) {
+      showToast(allowError.message, 'error')
+      return
+    }
+    showToast(`Booking #${row.booking_id} may start early.`)
     await loadDispatchBoard()
   }
 
@@ -2526,7 +2533,7 @@ function DispatchBoardSection() {
   // are free then -- same overlap / leave / licence rules as the dropdowns).
   // Staff see the whole list and confirm; nothing moves before that.
   // ponytail: single-trip moves only, never touches started trips or booking
-  // deadlines -- late bookings are "Find a faster driver"'s job.
+  // deadlines -- late bookings are Re-plan's job.
   async function rebalanceDrivers() {
     if (!pay) {
       showToast('Driver commission settings are missing -- set them on Settings first.', 'error')
@@ -2608,6 +2615,8 @@ function DispatchBoardSection() {
   // Planned trips that may not happen as assigned (leave, shop, late trip,
   // no truck / trailer free for the slot...), with a fix where there is one.
   const fleet = { Truck: truckCandidates(trucks, vehicleService), Trailer: trailerCandidates(trailers, vehicleService) }
+  const REPLAN = 'Re-plan this booking'
+  const replanAction = (row: DispatchRow): AtRiskAction => ({ label: REPLAN, onClick: () => setReplanBookingId(row.booking_id) })
   const atRiskTrips = rows
     .map((row) => {
       const reasons = atRiskReasons(row, rows, leaveByEmployee, drivers, trucks, trailers, now)
@@ -2637,9 +2646,8 @@ function DispatchBoardSection() {
       }
       if (row.status === 'Awaiting' && row.trip_start_at && row.trip_end_at) {
         const short: ('Truck' | 'Trailer')[] = []
-        const freeAt: (number | null)[] = []
         for (const kind of ['Truck', 'Trailer'] as const) {
-          const { ranked, tripsOf } = rankFleet(kind, row, fleet[kind], rows, now)
+          const { ranked } = rankFleet(kind, row, fleet[kind], rows, now)
           const currentId = vehicleIdOf(kind, row)
           if (currentId === null) {
             // Nothing picked and nothing of the right kind free for this slot.
@@ -2666,28 +2674,14 @@ function DispatchBoardSection() {
               })
             }
           }
-          if (short.includes(kind)) freeAt.push(earliestFreeStart(row, fleet[kind], tripsOf, now, Date.parse(row.trip_start_at)))
         }
-        if (short.length > 0) {
-          // The slot that works for every missing kind: the latest of their
-          // earliest free times. ponytail: each kind is searched on its own,
-          // so the truck could be busy again at the trailer's time; Edit time
-          // re-checks on save.
-          if (freeAt.every((t) => t !== null)) {
-            const start = Math.max(...(freeAt as number[]))
-            const length = Date.parse(row.trip_end_at) - Date.parse(row.trip_start_at)
-            const moved = { ...row, trip_start_at: new Date(start).toISOString(), trip_end_at: new Date(start + length).toISOString() }
-            actions.push({
-              label: `Move to ${formatSlot(moved.trip_start_at, moved.trip_end_at)}`,
-              // Opens Edit time already filled in; staff check and save.
-              onClick: () => setEditTimeRow(moved),
-            })
-          }
-        }
+        // Nothing free for the slot: Re-plan finds a time when driver, truck and trailer all are.
+        if (short.length > 0) actions.push(replanAction(row))
       }
-      // The booking finishes after its delivery-by date: look for a driver who can do it sooner.
-      if (row.status === 'Awaiting' && reasons.some((r) => r.includes('will be late by'))) {
-        actions.push({ label: 'Find a faster driver', onClick: () => findFasterDriver(row) })
+      // The booking finishes after its delivery-by date: Re-plan its waiting
+      // trips over whoever is free (not before the start date).
+      if (row.status === 'Awaiting' && reasons.some((r) => r.includes('will be late by')) && !actions.some((a) => a.label === REPLAN)) {
+        actions.push(replanAction(row))
       }
       return { row, reasons, actions }
     })
@@ -2695,7 +2689,7 @@ function DispatchBoardSection() {
 
   // "Fix all at-risk": runs every fix that picks a replacement by itself
   // (driver / helper on leave, truck / trailer in the shop) after one confirm.
-  // Moving a time or finding a faster driver stay manual.
+  // Re-planning a booking stays manual.
   // ponytail: each fix was worked out at render time, so two fixes that pick
   // the same replacement for overlapping trips: the database refuses the second.
   const autoFixes = new Map<string, { label: string; run: () => Promise<unknown> }>()
@@ -2735,6 +2729,7 @@ function DispatchBoardSection() {
     onBreakdown: setBreakdownRow,
     pay,
     onSwap: (row, employeeId, otherTripId) => setSwap({ row, employeeId, otherTripId }),
+    onAllowEarlyStart: allowEarlyStart,
   }
 
   const atRiskById = new Map<number, AtRisk>(atRiskTrips.map((t) => [t.row.itinerary_id, { reasons: t.reasons, actions: t.actions }]))
@@ -2783,6 +2778,12 @@ function DispatchBoardSection() {
   function blockedReasonFor(row: DispatchRow): string | null {
     if (row.status !== 'Awaiting') return null
     if (!isFullyAssigned(row)) return `It still needs a ${missingForDispatch(row)} before it can leave Awaiting. Add them under View.`
+    const later = startsLater(row, now)
+    if (later) {
+      return `The booking starts ${formatDate(later)} -- no trip can start before then${
+        canFreelyEditStatus ? ' unless you allow an early start (View → Ready to dispatch?)' : '. Ask an Admin to allow an early start'
+      }.`
+    }
     if (!tripsMayStart(row.downpayment)) {
       return (
         `The booking's downpayment isn't paid yet${row.downpayment ? ` (${formatMoney(row.downpayment.missing)} to go)` : ''}. ` +
@@ -3441,6 +3442,7 @@ function DispatchBoardSection() {
           defaultStartMinutes={defaultStartMinutes}
           hoursPerTrip={editTimeRow.hours_per_trip}
           storageDeadline={editTimeRow.storage_deadline}
+          startDate={editTimeRow.early_start_allowed ? null : editTimeRow.start_date}
           onClose={() => setEditTimeRow(null)}
           onSaved={(warning) => {
             const itineraryId = editTimeRow.itinerary_id
@@ -3449,6 +3451,17 @@ function DispatchBoardSection() {
             loadDispatchBoard()
             if (warning) setError(warning)
             else showToast(`Trip #${itineraryId} time saved.`)
+          }}
+        />
+      )}
+
+      {replanBookingId !== null && (
+        <ReplanTripsModal
+          bookingId={replanBookingId}
+          onClose={() => setReplanBookingId(null)}
+          onSaved={() => {
+            setReplanBookingId(null)
+            loadDispatchBoard()
           }}
         />
       )}

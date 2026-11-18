@@ -46,6 +46,7 @@ import ReplanTripsModal from './ReplanTripsModal'
 import { tripCargoLabel, type TripCargo } from '../../../lib/quoteRequest'
 import { formatMoney, formatDate, formatDateTime, slotLines } from '../../../lib/format'
 import { readOnlyReason } from '../../../lib/bookingEdit'
+import { toManilaDate } from '../../../lib/payslip'
 import { downpaymentStatus } from '../../../lib/downpayment'
 import { bookingRateLabel, sumRates } from '../../../lib/lineRates'
 import { STORAGE_BADGE, storageState } from '../../../lib/storageDeadline'
@@ -118,8 +119,13 @@ type Details = {
   downpayment_fixed: number | null
   downpayment_waived_at: string | null
   downpayment_waive_reason: string | null
+  // Admin let this booking's trips start before its start date (allow_early_start).
+  early_start_allowed_at: string | null
+  early_start_reason: string | null
   // Shown as "Deadline date" (the latest day the client needs the cargo).
   preferred_delivery_date: string | null
+  // The quote's start (pickup) date: no trip may start before it (unless early_start_allowed_at).
+  preferred_pickup_date: string | null
   // Last free storage day (bookings.storage_deadline): every trip must be
   // Picked Up by 11:59 PM that day. Null = not an urgent booking.
   storage_deadline: string | null
@@ -193,7 +199,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
   const { data: b, error: bookingError } = await supabase
     .from('bookings')
     .select(
-      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_fixed, downpayment_waived_at, downpayment_waive_reason, cancellation_reason, cancelled_at, storage_deadline',
+      'quote_request_id, payment_terms, place_of_pickup_id, place_of_delivery_id, pickup_address_detail, delivery_address_detail, pickup_landmark, delivery_landmark, pickup_lat, pickup_lng, delivery_lat, delivery_lng, place_of_return_id, return_address_detail, return_landmark, return_lat, return_lng, return_distance_km, estimated_distance_km, hours_per_trip, cost_per_trip, downpayment_fixed, downpayment_waived_at, downpayment_waive_reason, early_start_allowed_at, early_start_reason, cancellation_reason, cancelled_at, storage_deadline',
     )
     .eq('booking_id', bookingId)
     .single()
@@ -207,7 +213,7 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
     b.quote_request_id !== null
       ? supabase
           .from('quote_requests')
-          .select('reference_code, preferred_delivery_date')
+          .select('reference_code, preferred_pickup_date, preferred_delivery_date')
           .eq('quote_request_id', b.quote_request_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -323,7 +329,10 @@ async function loadDetails(bookingId: number): Promise<{ details?: Details; erro
       downpayment_fixed: b.downpayment_fixed === null ? null : Number(b.downpayment_fixed),
       downpayment_waived_at: b.downpayment_waived_at,
       downpayment_waive_reason: b.downpayment_waive_reason,
+      early_start_allowed_at: b.early_start_allowed_at,
+      early_start_reason: b.early_start_reason,
       preferred_delivery_date: quoteResult.data?.preferred_delivery_date ?? null,
+      preferred_pickup_date: quoteResult.data?.preferred_pickup_date ?? null,
       storage_deadline: b.storage_deadline,
       cancellation_reason: b.cancellation_reason,
       cancelled_at: b.cancelled_at,
@@ -471,6 +480,38 @@ function BookingDetailModal({
     }
     showToast('Trips can now start without the downpayment.')
     reload()
+  }
+
+  // Still before the start date (Manila), with a trip waiting to start.
+  const startDate = details?.preferred_pickup_date ?? null
+  const startsLater =
+    startDate !== null && toManilaDate(new Date()) < startDate && (details?.trips.some((t) => t.status === 'Awaiting') ?? false)
+
+  // Admin only: let this booking's trips start before the agreed start date
+  // (DB trigger require_pickup_date). allow_early_start() checks the caller is
+  // an Admin and records who/when/why.
+  async function allowEarlyStart() {
+    const reason = await promptDialog({
+      title: 'Allow an early start',
+      message: `The agreed start date is ${startDate ? formatDate(startDate) : 'not set'}. Why may this booking's trips start before then (e.g. the client agreed to an early pickup)?`,
+      confirmLabel: 'Allow early start',
+    })
+    if (reason === null) return
+    if (!reason.trim()) {
+      showToast('A reason is required.', 'error')
+      return
+    }
+    const { error: allowError } = await supabase.rpc('allow_early_start', {
+      p_booking_id: booking.booking_id,
+      p_reason: reason.trim(),
+    })
+    if (allowError) {
+      showToast(allowError.message, 'error')
+      return
+    }
+    showToast('Trips may now start before the start date.')
+    reload()
+    onChanged?.()
   }
 
   const reload = useCallback(() => {
@@ -788,6 +829,24 @@ function BookingDetailModal({
         label="Deadline date"
         value={details?.preferred_delivery_date ? formatDate(details.preferred_delivery_date) : '—'}
       />
+      {details?.early_start_allowed_at ? (
+        <InfoRow
+          label="Early start"
+          value={`Allowed by Admin${details.early_start_reason ? ` -- ${details.early_start_reason}` : ''}`}
+        />
+      ) : (
+        startsLater &&
+        isAdmin(role) &&
+        onChanged && (
+          <div>
+            <p className="text-xs text-slate-500">Early start</p>
+            <p className="text-[15px] text-slate-900">No trip can start before {formatDate(startDate)}.</p>
+            <button type="button" onClick={allowEarlyStart} className="btn-secondary mt-1 px-4 text-sm font-medium">
+              Allow Early Start…
+            </button>
+          </div>
+        )
+      )}
       {details?.storage_deadline && (
         <div>
           <p className="text-xs text-slate-500">Storage deadline</p>

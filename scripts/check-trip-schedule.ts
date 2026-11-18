@@ -3,6 +3,7 @@
 // Prints "ok" or throws on the first wrong answer.
 import assert from 'node:assert/strict'
 import {
+  earliestStart,
   busyUntil,
   hoursLate,
   findClash,
@@ -156,5 +157,14 @@ assert.deepEqual(slotsOf(reflow(juan, delivered(2, 13, 19))), [[2, 13, 19], [3, 
 assert.equal(hoursLate(hr(27), hr(24)), 3)
 assert.equal(hoursLate(hr(20), hr(24)), 0)
 assert.equal(hoursLate(hr(99), null), 0)
+
+// Earliest planned start: the next half hour, never before the start date at the default start (8 AM)...
+const nov18late = Date.parse('2026-11-18T23:56:00+08:00')
+assert.equal(earliestStart(nov18late, '2026-11-22', 480), Date.parse('2026-11-22T08:00:00+08:00'))
+// ...unless an early start was allowed, or the booking has no start date.
+assert.equal(earliestStart(nov18late, '2026-11-22', 480, true), Date.parse('2026-11-19T00:00:00+08:00'))
+assert.equal(earliestStart(nov18late, null, 480), Date.parse('2026-11-19T00:00:00+08:00'))
+// Start date already here: the next half hour.
+assert.equal(earliestStart(Date.parse('2026-11-22T09:10:00+08:00'), '2026-11-22', 480), Date.parse('2026-11-22T09:30:00+08:00'))
 
 console.log('ok')

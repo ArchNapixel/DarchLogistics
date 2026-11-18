@@ -2694,3 +2694,34 @@ overlapped. Rules for new code:
   inputs (index.css): `min-width: 0` everywhere, and `appearance: none` only
   on iOS Safari (`@supports (-webkit-touch-callout: none)`) -- iPhone date
   boxes otherwise ignore their width and spill out of two-column rows.
+
+## 2026-11-19: Trips respect the booking's start date (migration 20261119000000 -- user runs it)
+Found on booking #19: "Find a faster driver" re-timed its trips to the next
+half hour (Nov 19) although the agreed start date was Nov 22, and nothing
+stopped them being dispatched. Supersedes the "Find a faster driver" and
+"Move to <slot>" lines above (both removed).
+- **Start date** = the quote's `preferred_pickup_date`. `earliestStart(now,
+  startDate, defaultStartMinutes, earlyAllowed)` in `lib/tripSchedule.ts`
+  (self-check `node scripts/check-trip-schedule.ts`): the next half hour, but
+  not before start date + default start time. Used by Re-plan (`loadReplan`).
+- **Starting early is blocked** by trigger `require_pickup_date` (BEFORE UPDATE
+  OF itinerary_status; Awaiting -> anything but Cancelled while the Manila date
+  is before the start date; no quote = not gated) unless an Admin allowed an
+  early start for the WHOLE booking: RPC `allow_early_start(p_booking_id,
+  p_reason)` -> `bookings.early_start_allowed_at / _by / early_start_reason`.
+  Buttons "Allow Early Start…": Dispatch Board trip panel (Ready to dispatch?
+  checklist item "Start date reached") and Booking Detail -> Schedule. Board's
+  `blockedReasonFor` / `startsLater()` grey out the next status. Driver app:
+  `get_my_trip_start_dates()` (own waiting trips only) -> "Starts Nov 22"
+  under a disabled Mark as button.
+- **Edit time** asks first when the new start is before the start date (board
+  passes no startDate once an early start is allowed).
+- **At-risk notice:** "Find a faster driver" and "Move to <slot>" were removed
+  (and `earliestFreeStart` in fleetMatch.ts) -- a late booking or "no truck /
+  trailer free" now offers **Re-plan this booking** (ReplanTripsModal).
+  Re-plan already respects the start date and deadline and saves in one
+  transaction. Kept on purpose: Use X as driver, Replace truck/trailer, Fix
+  all at-risk, Use Suggested Crew, Swap, Balance driver pay (they keep the time).
+- The cascade (`reflow`) still may push a trip past the deadline (it can't
+  change drivers) -- it shows as late in At-risk with Re-plan.
+- Booking #19's trips (#38 Delivered, #39 Dispatched) were left as they are.

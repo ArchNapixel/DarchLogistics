@@ -128,23 +128,3 @@ export function rankVehicles(
     })
 }
 
-// The earliest start (ms) from `from` at which some vehicle could take a
-// trip of this length, trying every 30 minutes for up to `days` days --
-// for "Move to earliest free time". null = none in that window.
-export function earliestFreeStart(
-  trip: MatchTrip,
-  candidates: VehicleCandidate[],
-  tripsOf: (vehicleId: string) => ScheduledTrip[],
-  now: number,
-  from: number,
-  days = 14,
-): number | null {
-  if (!trip.trip_start_at || !trip.trip_end_at) return null
-  const length = Date.parse(trip.trip_end_at) - Date.parse(trip.trip_start_at)
-  const step = 30 * 60_000
-  for (let start = Math.ceil(from / step) * step; start <= from + days * 86_400_000; start += step) {
-    const moved = { ...trip, trip_start_at: new Date(start).toISOString(), trip_end_at: new Date(start + length).toISOString() }
-    if (rankVehicles(moved, candidates, tripsOf, now, () => '').some((v) => v.blockedBy === null)) return start
-  }
-  return null
-}

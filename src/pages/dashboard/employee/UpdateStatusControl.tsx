@@ -19,6 +19,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { supabase } from '../../../lib/supabaseClient'
 import { DISPATCH_CONFIRMS, driverStatusLabel } from '../../../lib/driverTripStatus'
 import { nextStatus as nextStep, statusSteps } from '../../../lib/tripStatusFlow'
+import { formatDate } from '../../../lib/format'
 
 const STEP_ICON = {
   done: 'M5 12l5 5 9-10',
@@ -141,6 +142,7 @@ function UpdateStatusControl({
   currentStatus,
   hasTruck,
   busyOnTripId = null,
+  startsOn = null,
   returnContainer = false,
   summary,
   onStatusChanged,
@@ -151,6 +153,8 @@ function UpdateStatusControl({
   hasTruck: boolean
   // Another of this driver's trips that is still on the road (blocks starting this one).
   busyOnTripId?: number | null
+  // The booking's start date (YYYY-MM-DD) while it's still ahead -- blocks starting this one.
+  startsOn?: string | null
   // Brings the empty container back (itineraries.return_container).
   returnContainer?: boolean
   // "Pickup → Delivery · truck · trailer", shown in the confirm pop-up.
@@ -242,6 +246,8 @@ function UpdateStatusControl({
   const blockedNoTruck = currentStatus === 'Awaiting' && !hasTruck
   // ...nor while another of their trips hasn't been delivered yet.
   const blockedBusy = currentStatus === 'Awaiting' && busyOnTripId !== null
+  // ...nor before the booking's start date (unless an Admin allowed an early start).
+  const blockedStart = currentStatus === 'Awaiting' && startsOn !== null
 
   const blockedId = `status-blocked-${itineraryId}`
   return (
@@ -252,8 +258,8 @@ function UpdateStatusControl({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          disabled={updating || blockedNoTruck || blockedBusy}
-          aria-describedby={blockedNoTruck || blockedBusy ? blockedId : undefined}
+          disabled={updating || blockedNoTruck || blockedBusy || blockedStart}
+          aria-describedby={blockedNoTruck || blockedBusy || blockedStart ? blockedId : undefined}
           className="btn-primary px-5 text-sm"
         >
           {updating ? 'Saving...' : `Mark as ${nextLabel}`}
@@ -264,10 +270,14 @@ function UpdateStatusControl({
         <span id={blockedId} className="text-[13px] text-amber-900">
           Needs a truck and trailer first.
         </span>
+      ) : blockedBusy ? (
+        <span id={blockedId} className="text-[13px] text-amber-900">
+          Finish trip #{busyOnTripId} first.
+        </span>
       ) : (
-        blockedBusy && (
+        blockedStart && (
           <span id={blockedId} className="text-[13px] text-amber-900">
-            Finish trip #{busyOnTripId} first.
+            Starts {formatDate(startsOn)} -- not before then.
           </span>
         )
       )}

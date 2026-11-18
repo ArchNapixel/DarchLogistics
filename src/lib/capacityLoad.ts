@@ -8,6 +8,7 @@ import { supabase } from './supabaseClient'
 import { manilaTimestamp } from './format'
 import { offerTiming } from './offerTiming'
 import { toManilaDate } from './payslip'
+import { earliestStart } from './tripSchedule'
 import { expandCargoLines, parseCargoLines } from './quoteRequest'
 import {
   DAY_MS,
@@ -259,7 +260,7 @@ export async function loadReplan(
       .eq('booking_id', bookingId)
       .eq('itinerary_status', 'Awaiting')
       .not('trip_start_at', 'is', null),
-    supabase.from('bookings').select('quote_request_id').eq('booking_id', bookingId).maybeSingle(),
+    supabase.from('bookings').select('quote_request_id, early_start_allowed_at').eq('booking_id', bookingId).maybeSingle(),
   ])
   if (tripsResult.error) return fail(tripsResult.error.message)
   if (bookingResult.error) return fail(bookingResult.error.message)
@@ -289,15 +290,16 @@ export async function loadReplan(
   }
   const { inputs, error } = await loadCapacityInputs(reach, null)
   if (!inputs) return fail(error ?? 'No data')
-  const floor = pickup ? new Date(manilaTimestamp(pickup, inputs.defaultStartMinutes)).getTime() : 0
+  // Not before the start date (pickup date + default start), unless an Admin allowed an early start.
+  const from = earliestStart(now, pickup, inputs.defaultStartMinutes, bookingResult.data?.early_start_allowed_at != null)
   const ids = new Set(tripRows.map((t) => t.itinerary_id))
   const waiting = inputs.world.booked.filter((t) => ids.has(t.id) && t.status === 'Awaiting')
   const blocked = waiting.filter((t) => isAtRisk(t, inputs.world.resources))
   return {
     data: {
       replans: {
-        blocked: replanTrips(inputs.world, blocked, Math.max(nextHalfHour, floor), deadlineEnd),
-        all: replanTrips(inputs.world, waiting, Math.max(nextHalfHour, floor), deadlineEnd),
+        blocked: replanTrips(inputs.world, blocked, from, deadlineEnd),
+        all: replanTrips(inputs.world, waiting, from, deadlineEnd),
       },
       labels: new Map(inputs.world.resources.map((r) => [r.id, r.label])),
       deadlineEnd,

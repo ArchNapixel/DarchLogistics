@@ -2,7 +2,7 @@
 //   node scripts/check-fleet-match.ts
 // Prints "ok" or throws on the first wrong answer.
 import assert from 'node:assert/strict'
-import { earliestFreeStart, rankVehicles, type MatchTrip, type VehicleCandidate } from '../src/lib/fleetMatch.ts'
+import { rankVehicles, type MatchTrip, type VehicleCandidate } from '../src/lib/fleetMatch.ts'
 import type { ScheduledTrip } from '../src/lib/tripSchedule.ts'
 
 const iso = (s: string) => new Date(s).toISOString()
@@ -95,11 +95,5 @@ assert.deepEqual(pms.map((v) => v.id), ['P2', 'P1'])
 assert.equal(pms[1].blockedBy, null)
 assert.equal(pms[1].note, 'PMS overdue by 120 km')
 
-// Earliest free start: the only truck is on 6-9 AM, so a 5 h trip asked for
-// 6 AM can start at 9 AM.
-const onlyT2 = [vehicle('T2')]
-assert.equal(earliestFreeStart(t105, onlyT2, of, now, Date.parse(t105.trip_start_at!)), Date.parse('2026-10-25T09:00:00+08:00'))
-// Nothing ever free -> null.
-assert.equal(earliestFreeStart(t105, [vehicle('T6', { current_status: 'Out of Service' })], of, now, Date.parse(t105.trip_start_at!), 1), null)
 
 console.log('ok')

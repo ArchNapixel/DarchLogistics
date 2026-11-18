@@ -236,6 +236,17 @@ export function reflow(
   return out
 }
 
+// The earliest a waiting trip may be planned (Re-plan, Edit time): the next
+// half hour, but not before its booking's start date (the quote's pickup date,
+// YYYY-MM-DD) at the default start time -- unless an Admin allowed an early
+// start (bookings.early_start_allowed_at). No start date = just the next half hour.
+// Starting the trip itself is checked by the DB trigger require_pickup_date (by date only).
+export function earliestStart(now: number, startDate: string | null, defaultStartMinutes: number, earlyAllowed = false): number {
+  const nextHalfHour = Math.ceil(now / (30 * 60_000)) * (30 * 60_000)
+  if (!startDate || earlyAllowed) return nextHalfHour
+  return Math.max(nextHalfHour, Date.parse(`${startDate}T00:00:00+08:00`) + defaultStartMinutes * 60_000)
+}
+
 // Whole hours the last trip ends after the delivery-by date (end of that day), or 0.
 export function hoursLate(lastEnd: number, deadlineEnd: number | null): number {
   return deadlineEnd !== null && lastEnd > deadlineEnd ? Math.ceil((lastEnd - deadlineEnd) / HOUR_MS) : 0

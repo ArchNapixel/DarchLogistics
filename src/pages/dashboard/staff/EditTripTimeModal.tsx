@@ -8,7 +8,9 @@
 // one in its driver's, truck's and trailer's lines -- any booking -- start
 // when the one before them ends, earlier or later, each keeping its length.
 // Trips already on the road or delivered never move. Starting a
-// last-free-storage-day trip after 11:59 PM of the storage day asks first.
+// last-free-storage-day trip after 11:59 PM of the storage day asks first,
+// and so does a start before the booking's start date (unless an Admin
+// allowed an early start -- the board then passes no startDate).
 //
 // The database re-checks the trip's driver/helper on save
 // (itineraries_after_reschedule trigger): if the new time overlaps
@@ -35,11 +37,14 @@ function EditTripTimeModal({
   defaultStartMinutes,
   hoursPerTrip,
   storageDeadline = null,
+  startDate = null,
   onClose,
   onSaved,
 }: {
   // bookings.storage_deadline -- the trip must be picked up by 11:59 PM that day.
   storageDeadline?: string | null
+  // The booking's start date (quote pickup date, YYYY-MM-DD); null = no limit.
+  startDate?: string | null
   itineraryId: number
   start: string | null
   end: string | null
@@ -86,6 +91,18 @@ function EditTripTimeModal({
       !(await confirmDialog({
         title: 'After the storage deadline',
         message: `This trip must be picked up from the port by 11:59 PM on ${formatDate(storageDeadline)} (last free storage day). The new time starts after that. Save anyway?`,
+        confirmLabel: 'Save anyway',
+        danger: true,
+      }))
+    ) {
+      return
+    }
+    if (
+      startDate &&
+      splitManila(startMs).date < startDate &&
+      !(await confirmDialog({
+        title: 'Before the start date',
+        message: `This booking's agreed start date is ${formatDate(startDate)}. The new time starts before that, and the trip can't be dispatched until then unless an Admin allows an early start. Save anyway?`,
         confirmLabel: 'Save anyway',
         danger: true,
       }))

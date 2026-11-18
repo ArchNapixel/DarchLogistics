@@ -50,6 +50,9 @@ type Trip = {
   // read bookings, so it comes from get_trip_return_place). null = no return.
   return_container: boolean
   return_place: string | null
+  // The booking's start date while it's still ahead and no early start was
+  // allowed (get_my_trip_start_dates) -- the trip can't start before it.
+  starts_on: string | null
 }
 
 // A delivered trip for the "Recent trips" panel.
@@ -113,7 +116,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
 
     // 2. Load those itineraries, skipping finished/cancelled ones -- plus
     // the two most recently delivered, for the "Recent trips" panel.
-    const [openResult, recentResult] = await Promise.all([
+    const [openResult, recentResult, startsResult] = await Promise.all([
       supabase
         .from('itineraries')
         .select(
@@ -130,7 +133,14 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
         .order('trip_date_from', { ascending: false })
         .order('itinerary_id', { ascending: false })
         .limit(2),
+      // Crew can't read bookings / quotes: this returns only the start date of
+      // their own waiting trips that may not start yet. If it fails, the
+      // database still refuses an early start (trigger require_pickup_date).
+      supabase.rpc('get_my_trip_start_dates'),
     ])
+    const startsOn = new Map(
+      ((startsResult.data ?? []) as { itinerary_id: number; start_date: string }[]).map((t) => [t.itinerary_id, t.start_date]),
+    )
 
     if (openResult.error) {
       setError(openResult.error.message)
@@ -215,6 +225,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
         expenses: (expensesResult.data ?? []).filter((e) => e.itinerary_id === trip.itinerary_id),
         return_container: trip.return_container === true,
         return_place: trip.return_container ? (returnPlaceById.get(trip.itinerary_id) ?? '—') : null,
+        starts_on: startsOn.get(trip.itinerary_id) ?? null,
         cargo: {
           cargo_type: trip.cargo_type,
           container_type: trip.container_type,
@@ -346,6 +357,7 @@ function DriverTasks({ crewRole }: { crewRole: 'Driver' | 'Helper' }) {
             currentStatus={trip.itinerary_status}
             hasTruck={!noVehicles}
             returnContainer={trip.return_container}
+            startsOn={trip.starts_on}
             busyOnTripId={
               tripOnRoad(
                 trips.map((t) => ({ itinerary_id: t.itinerary_id, status: t.itinerary_status })),
