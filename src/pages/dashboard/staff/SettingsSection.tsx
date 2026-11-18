@@ -143,7 +143,7 @@ function SettingsSection() {
 
       {!loading && !error && settings.length > 0 && (
         <div className="mt-6 border-2 border-line-card bg-white p-6">
-          <div className="grid items-end gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 items-end gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
             {settings.map((setting) => (
               <label
                 key={setting.setting_key}

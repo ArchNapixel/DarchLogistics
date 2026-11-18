@@ -119,7 +119,7 @@ function TripsView({
       ) : groups.length === 0 && !search.trim() ? (
         <EmptyState message={`No ${filter.toLowerCase()} trips.`} />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-start">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-start">
           <ListBox
             pager={paged.pager}
             summary={`${visible.length} ${filter.toLowerCase()} ${visible.length === 1 ? 'trip' : 'trips'}`}

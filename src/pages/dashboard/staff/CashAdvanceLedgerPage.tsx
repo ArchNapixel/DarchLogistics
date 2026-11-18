@@ -197,7 +197,7 @@ function CashAdvanceLedgerPage() {
       ) : employees.length === 0 ? (
         <EmptyState message="No cash advances yet." hint="Advances are issued on Human Resource → Cash Advances." className="mt-4" />
       ) : (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_640px] xl:items-start">
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_640px] xl:items-start">
           <section aria-label="Employees" className="card flex flex-col">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-sm text-ink-metric">
@@ -473,7 +473,7 @@ function RecordRepaymentModal({
           Full balance
         </button>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className={LABEL} htmlFor="repay-method">Payment method</label>
             <select id="repay-method" value={method} onChange={(e) => setMethod(e.target.value as RepaymentMethod)} className={INPUT}>

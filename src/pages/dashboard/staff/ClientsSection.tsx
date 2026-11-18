@@ -373,7 +373,7 @@ function ClientsSection() {
           className="mt-4"
         />
       ) : (
-        <div className={`mt-4 grid gap-4 xl:items-start ${paneClient ? 'xl:grid-cols-[minmax(0,1fr)_640px]' : ''}`}>
+        <div className={`mt-4 grid grid-cols-1 gap-4 xl:items-start ${paneClient ? 'xl:grid-cols-[minmax(0,1fr)_640px]' : ''}`}>
           <section aria-label="Client list" className="card flex min-h-[calc(100dvh-15rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {/* Header row style comes from index.css (thead th). */}
@@ -601,11 +601,14 @@ function ClientsSection() {
                   {paneBookings.length === 0 ? (
                     <p className="py-3 text-sm text-ink-muted">No bookings yet.</p>
                   ) : (
+                    // Phone: the "Booked" date goes under the booking # (four
+                    // columns don't fit the panel); scrolls on its own if still too wide.
+                    <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-ink-metric">
                       <thead>
                         <tr>
                           <th className="px-2 py-2 first:pl-3">Booking</th>
-                          <th className="px-2 py-2">Booked</th>
+                          <th className="hidden px-2 py-2 sm:table-cell">Booked</th>
                           <th className="px-2 py-2">Rate</th>
                           <th className="px-2 py-2 last:pr-3">Status</th>
                         </tr>
@@ -619,8 +622,9 @@ function ClientsSection() {
                                 <Link to={`/dashboard/bookings?booking=${b.booking_id}`} className="font-semibold text-primary hover:underline">
                                   #{b.booking_id}
                                 </Link>
+                                <span className="block text-[13px] whitespace-nowrap text-ink-muted sm:hidden">{formatDate(b.booking_date)}</span>
                               </td>
-                              <td className="px-2">{formatDate(b.booking_date)}</td>
+                              <td className="hidden px-2 sm:table-cell">{formatDate(b.booking_date)}</td>
                               <td className="px-2 tabular-nums">
                                 <span className="font-semibold">
                                   {b.rate_of_delivery_service !== null ? formatMoney(b.rate_of_delivery_service) : '—'}
@@ -639,6 +643,7 @@ function ClientsSection() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </section>
               </div>

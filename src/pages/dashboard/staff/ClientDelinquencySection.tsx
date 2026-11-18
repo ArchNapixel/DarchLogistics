@@ -172,7 +172,7 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
       {delinquent.length === 0 ? (
         <EmptyState message="No clients currently flagged." className="mt-2" />
       ) : (
-        <div className="mt-2 grid gap-3">
+        <div className="mt-2 grid grid-cols-1 gap-3">
           {delinquent.map((client) => (
             <div
               key={client.client_id}
@@ -203,7 +203,7 @@ function ClientDelinquencySection({ onChanged }: { onChanged?: () => void }) {
       {overdueRisk.length === 0 ? (
         <EmptyState message="No clients past the overdue threshold." className="mt-2" />
       ) : (
-        <div className="mt-2 grid gap-3">
+        <div className="mt-2 grid grid-cols-1 gap-3">
           {overdueRisk.map((client) => (
             <div
               key={client.client_id}

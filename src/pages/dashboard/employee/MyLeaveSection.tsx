@@ -138,7 +138,7 @@ function MyLeaveSection() {
       ) : (
         // Paid leave balance for the year (Sundays don't count; days past the
         // balance are approved as unpaid leave).
-        <section aria-label={`Leave balance for ${year}`} className="mb-4 grid gap-3 sm:grid-cols-3">
+        <section aria-label={`Leave balance for ${year}`} className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
             { label: 'Paid leave per year', value: ANNUAL_PAID_LEAVE_DAYS },
             { label: `Used in ${year}`, value: used },
@@ -159,7 +159,7 @@ function MyLeaveSection() {
 
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
         <section aria-label="My leave requests" className="card flex min-h-[calc(100dvh-19rem)] flex-col">
           <div className="flex-1 overflow-x-auto">
             {loading ? (
@@ -242,8 +242,9 @@ function MyLeaveSection() {
             }}
           >
             {formError && <p className="bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
+            {/* min-w-0: a date box may not push its column wider than half the form. */}
             <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1.5">
+              <label className="flex min-w-0 flex-col gap-1.5">
                 <span className={labelClasses}>From</span>
                 <input
                   type="date"
@@ -257,7 +258,7 @@ function MyLeaveSection() {
                   className={fieldClasses}
                 />
               </label>
-              <label className="flex flex-col gap-1.5">
+              <label className="flex min-w-0 flex-col gap-1.5">
                 <span className={labelClasses}>To</span>
                 <input
                   type="date"

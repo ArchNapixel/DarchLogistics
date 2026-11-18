@@ -108,7 +108,7 @@ function PaymentsDueTab() {
                   {open && (
                     <tr className="border-b border-slate-200 bg-slate-50">
                       <td colSpan={8} className="px-4 py-3">
-                        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
                           <div>
                             <dt className="text-xs text-slate-500">Rate / trip</dt>
                             <dd className="text-slate-900">
@@ -282,7 +282,7 @@ function Overview({
   if (pending.length === 0 && undecidedDamage === 0) return <EmptyState message="Nothing needs action right now." />
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {undecidedDamage > 0 && (
         <Link to="/dashboard/damage-charges" className="border-2 border-line-card bg-white p-4 text-left hover:border-slate-400">
           <p className="text-2xl font-bold text-primary">{undecidedDamage}</p>

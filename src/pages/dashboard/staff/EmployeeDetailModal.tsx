@@ -416,7 +416,7 @@ function PersonalInfo({ info }: { info: EditableEmployee }) {
   const show = (value: string | null) => value || '—'
   const addressLine = [info.address, info.city, info.province, info.zip_code].filter(Boolean).join(', ')
   return (
-    <div className="mt-4 grid gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+    <div className="mt-4 grid grid-cols-1 gap-3 border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
       <InfoRow label="Phone" value={show(info.phone_number)} />
       <InfoRow label="Personal email" value={show(info.email)} />
       <InfoRow label="Date of birth" value={show(info.date_of_birth)} />

@@ -108,7 +108,7 @@ function ClientReviewsSection() {
         </p>
       )}
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {reviews.map((review) => (
           <div
             key={review.review_id}

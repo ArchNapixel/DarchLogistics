@@ -1011,7 +1011,7 @@ function QuoteReviewModal({
               </p>
             </div>
           ) : (
-            <div className="grid gap-8 px-7 py-6 lg:grid-cols-[minmax(0,1fr)_436px]">
+            <div className="grid grid-cols-1 gap-8 px-7 py-6 lg:grid-cols-[minmax(0,1fr)_436px]">
               {/* LEFT: the request, read-only */}
               <div className="flex flex-col gap-6">
                 <QuoteWarnings
@@ -1607,7 +1607,8 @@ function QuoteReviewModal({
                         )}
                       </div>
                       {ourOfferAt && counterAt && (
-                        <table className="mt-4 w-full text-[14px] tabular-nums">
+                        <div className="mt-4 overflow-x-auto">
+                        <table className="w-full text-[14px] tabular-nums">
                           <thead className="text-left text-[13px] text-slate-500">
                             <tr>
                               <th className="py-1 font-medium" />
@@ -1630,6 +1631,7 @@ function QuoteReviewModal({
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       )}
                     </section>
                   )}

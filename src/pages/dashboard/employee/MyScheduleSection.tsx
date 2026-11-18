@@ -149,7 +149,7 @@ function MyScheduleSection() {
       {!employeeId ? (
         <p className="text-ink-muted">Your account isn't linked to an employee record.</p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
           <section aria-label="Upcoming trips" className="card flex min-h-[calc(100dvh-14rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {error ? (

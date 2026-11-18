@@ -76,7 +76,7 @@ function EmployeeDashboard() {
 
       {role === 'Mechanic' ? (
         // My Tasks + Recently Completed on the left, the Task Board beside them.
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
           <MyTasksSection key={tasksRefreshKey} />
           <TaskBoard onAccepted={() => setTasksRefreshKey((key) => key + 1)} />
         </div>

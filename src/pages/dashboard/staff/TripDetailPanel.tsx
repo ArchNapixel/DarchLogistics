@@ -86,7 +86,7 @@ function Info({ label, children, className = '' }: { label: string; children: Re
 // One row of the Trip Log card: label on the left, its contents on the right.
 function LogRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1 border-t border-slate-200 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-1 border-t border-slate-200 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)]">
       <span className="font-semibold text-slate-900">{label}</span>
       <div className="text-slate-700">{children}</div>
     </div>
@@ -161,7 +161,7 @@ function TripDetailPanel({
       </div>
 
       <Card title="Trip Details">
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <Info label="Route">
             {trip.pickup} → {trip.delivery}
           </Info>
@@ -198,7 +198,7 @@ function TripDetailPanel({
 
       {/* Cargo gets its own card so it's easy to compare against the quote. */}
       <Card title="Cargo Details">
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Info label="Cargo Type">
             {trip.cargo.cargo_type === 'Loose' ? 'Loose cargo' : (trip.cargo.cargo_type ?? '—')}
           </Info>

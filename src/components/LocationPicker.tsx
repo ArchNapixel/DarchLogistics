@@ -285,7 +285,7 @@ function LocationPicker({
   return (
     <fieldset
       aria-invalid={error ? true : undefined}
-      className={`col-span-full grid gap-3 border-2 bg-white p-4 sm:grid-cols-2 sm:gap-x-4 ${
+      className={`col-span-full grid grid-cols-1 gap-3 border-2 bg-white p-4 sm:grid-cols-2 sm:gap-x-4 ${
         error ? 'border-red-400' : 'border-slate-300'
       }`}
     >

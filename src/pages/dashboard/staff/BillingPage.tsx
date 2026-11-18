@@ -112,7 +112,7 @@ function BillingPage() {
 
       {shownError && <p className="mb-4 text-red-700 print:hidden">{shownError}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-[480px_minmax(0,1fr)] xl:items-start print:block">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[480px_minmax(0,1fr)] xl:items-start print:block">
         <section aria-label="Bookings" className="card flex flex-col print:hidden">
           <table className="w-full table-fixed text-left text-sm text-ink-metric">
             <colgroup>
@@ -246,7 +246,7 @@ function BillingPage() {
             </div>
           </div>
 
-          <dl className="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <dl className="mt-5 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <Detail label="Billed to" value={billing.client_name} />
             <Detail label="Booking date" value={formatDate(billing.booking_date)} />
             <Detail label="Pickup" value={billing.pickup} />
@@ -262,7 +262,33 @@ function BillingPage() {
             )}
           </dl>
 
-          <table className="mt-6 w-full text-left text-sm">
+          {/* Phone: one block per line (a 5-column table squeezes the
+              description into a thin strip there). Wider screens and print
+              keep the table below. */}
+          <ul className="mt-6 flex flex-col border-t border-slate-200 text-sm sm:hidden print:hidden">
+            {rows.length === 0 && <li className="py-3 text-ink-muted">Nothing has been billed for this booking yet.</li>}
+            {rows.map((row, i) =>
+              row.kind === 'pending' ? (
+                <li key={`m${row.trip.itinerary_id}`} className="border-b border-slate-200 py-2.5 text-slate-400">
+                  <p className="text-xs">{row.trip.date ? formatDate(row.trip.date) : '—'}</p>
+                  <p>{row.trip.description}</p>
+                </li>
+              ) : (
+                <li key={`m${i}`} className="border-b border-slate-200 py-2.5">
+                  <p className="flex justify-between gap-3">
+                    <span className="text-xs text-ink-secondary">{formatDate(row.line.date)}</span>
+                    <span className={`font-semibold tabular-nums ${row.line.kind === 'Payment' ? 'text-green-800' : 'text-ink'}`}>
+                      {row.line.kind === 'Payment' ? `Paid ${formatMoney(-row.line.amount)}` : formatMoney(row.line.amount)}
+                    </span>
+                  </p>
+                  <p className="text-ink">{row.line.description}</p>
+                  <p className="text-right text-xs text-ink-muted tabular-nums">Balance {formatMoney(row.line.balance)}</p>
+                </li>
+              ),
+            )}
+          </ul>
+
+          <table className="mt-6 hidden w-full text-left text-sm sm:table print:table">
             <thead>
               <tr>
                 <th className="px-3 py-2.5">Date</th>

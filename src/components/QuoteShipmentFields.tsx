@@ -235,7 +235,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
         return (
           <fieldset
             key={index}
-            className="col-span-full grid gap-3 border-2 border-line-card bg-white p-4 sm:grid-cols-2 sm:gap-x-4"
+            className="col-span-full grid grid-cols-1 gap-3 border-2 border-line-card bg-white p-4 sm:grid-cols-2 sm:gap-x-4"
           >
             <legend className="sr-only">Cargo line {index + 1}</legend>
             <div className="col-span-full flex items-center justify-between text-sm font-semibold text-slate-800">
@@ -329,7 +329,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
             {/* Pictures of what the client picked, so they see what
                 "Container" / "Skeletal" etc. look like. key = choice so a
                 new pick gets a fresh picture (and a fresh load check). */}
-            <div className="col-span-full grid gap-3 empty:hidden sm:grid-cols-2">
+            <div className="col-span-full grid grid-cols-1 gap-3 empty:hidden sm:grid-cols-2">
               <ChoicePicture key={line.cargoType} name={line.cargoType} />
               <ChoicePicture key={line.trailerType} name={line.trailerType} />
             </div>
@@ -369,7 +369,7 @@ export function CargoFields({ form, setField, errors }: SectionProps) {
                 )}
               </div>
               {/* Scrolls past ~4 rows so a long trip list doesn't stretch the form. */}
-              <div className="grid max-h-60 gap-2 overflow-y-auto border border-line bg-slate-50 p-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 max-h-60 gap-2 overflow-y-auto border border-line bg-slate-50 p-3 sm:grid-cols-2">
                 {line.descriptions.map((description, tripIndex) => {
                   const missing = !!lineErrors.descriptions && !description.trim()
                   return (

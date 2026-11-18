@@ -756,7 +756,7 @@ function BookingDetailModal({
   )
 
   const detailsSection = (
-    <div className="grid gap-4 border-x-2 border-b-2 border-line-card bg-white px-5 py-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 border-x-2 border-b-2 border-line-card bg-white px-5 py-4 sm:grid-cols-2">
       <SectionTitle>Route</SectionTitle>
       <InfoRow label="Pickup" value={details?.pickup ?? booking.pickup_location} pin={details?.pickup_pin} />
       <InfoRow label="Delivery" value={details?.delivery ?? booking.delivery_location} pin={details?.delivery_pin} />
@@ -798,7 +798,7 @@ function BookingDetailModal({
 
       {/* Finished bookings keep cargo + money in here (active ones show them as cards). */}
       {isClosed && (
-        <div className="col-span-full grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="col-span-full grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           {cargoCard}
           {moneyCard}
         </div>
@@ -978,7 +978,7 @@ function BookingDetailModal({
 
         {/* Active bookings: cargo + money up front. */}
         {!isClosed && !editing && (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
             {cargoCard}
             {moneyCard}
           </div>

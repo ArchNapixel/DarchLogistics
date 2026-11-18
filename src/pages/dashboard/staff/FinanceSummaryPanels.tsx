@@ -289,7 +289,7 @@ function RecordRemittanceModal({
         <p className="mt-4 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           Still due: <span className="font-semibold text-slate-900">{formatMoney(left)}</span>
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-slate-600" htmlFor="remit-amount">
               Amount paid (₱)
@@ -394,7 +394,7 @@ export function StandingStrip() {
     },
   ]
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {tiles.map((t) => (
         <Link key={t.label} to={t.to} className="card flex min-w-0 flex-col px-6 py-5 hover:border-primary">
           <span className={`text-xs font-semibold tracking-wide uppercase ${t.tagTone}`}>{t.tag}</span>

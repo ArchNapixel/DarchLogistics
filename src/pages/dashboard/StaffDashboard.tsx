@@ -800,7 +800,7 @@ function StaffDashboard() {
             <p className="flex-1 text-sm text-red-700">{revenueError ?? expensesError}</p>
           ) : (
             // Read left-to-right: Revenue | Operational, then Payroll | Maintenance.
-            <div className="grid flex-1 basis-[560px] gap-x-10 gap-y-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 flex-1 basis-[560px] gap-x-10 gap-y-4 sm:grid-cols-2">
               <MoneyBar
                 label="Total Revenue (collected)"
                 value={revenueLoading ? null : revenue}
@@ -845,16 +845,19 @@ function StaffDashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-x-6 text-sm">
             {todayDeliveryRows.length > 0 && (
-              <span className="flex items-center gap-3 font-semibold text-green-800">
+              // Wraps on a phone: narrower bars, and the label drops below them.
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-green-800">
                 <span className="flex gap-1" aria-hidden="true">
                   {todayDeliveryRows.slice(0, 10).map((r) => (
                     <span
                       key={r.itinerary_id}
-                      className={`h-2 w-7 ${isDelivered(r.status) ? 'bg-green-700' : 'bg-slate-200'}`}
+                      className={`h-2 w-5 sm:w-7 ${isDelivered(r.status) ? 'bg-green-700' : 'bg-slate-200'}`}
                     />
                   ))}
                 </span>
-                {deliveredCount} of {todayDeliveryRows.length} delivered
+                <span className="whitespace-nowrap">
+                  {deliveredCount} of {todayDeliveryRows.length} delivered
+                </span>
               </span>
             )}
             <Link to="/dashboard/dispatch" className="flex min-h-11 items-center gap-2 font-semibold text-primary hover:underline">
@@ -995,7 +998,7 @@ function StaffDashboard() {
       </section>
 
       {/* Bottom row: Fleet & Crew, Cash Advance, Clients & Bookings */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section aria-labelledby="fleet-h" className={`${CARD} flex flex-col gap-2.5 px-5 pt-3.5 pb-4`}>
           <h2 id="fleet-h" className={PANEL_TITLE}>Fleet &amp; Crew</h2>
           {hrError && <p className="text-xs text-red-700">{hrError}</p>}

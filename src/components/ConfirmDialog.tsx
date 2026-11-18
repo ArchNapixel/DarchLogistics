@@ -111,12 +111,14 @@ export function ConfirmHost() {
         aria-modal="true"
         aria-labelledby="confirm-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-white p-6 border-2 border-line-card"
+        className="flex max-h-[90dvh] w-full max-w-sm flex-col bg-white p-6 border-2 border-line-card"
       >
         <h3 id="confirm-title" className="text-lg font-bold text-slate-900">
           {pending.title ?? (pending.danger ? 'Are you sure?' : 'Please confirm')}
         </h3>
-        <p className="mt-2 text-sm text-slate-600">{pending.message}</p>
+        {/* A long message scrolls on its own so the buttons stay on screen
+            (phones); line breaks in the message are kept. */}
+        <p className="mt-2 min-h-0 overflow-y-auto text-sm whitespace-pre-line text-slate-600">{pending.message}</p>
         {pending.isPrompt && (
           <>
             <textarea

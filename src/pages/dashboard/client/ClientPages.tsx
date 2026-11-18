@@ -168,7 +168,7 @@ export function ClientProfilePage() {
   return (
     <div>
       <PageHeader title="My Profile" subtitle="Your contact details, login and review." />
-      <div className="grid gap-4 xl:grid-cols-3 xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 xl:items-start">
         {clientId && (
           <ClientProfileSection clientId={clientId} profile={profile} loading={loading} error={error} onSaved={setProfile} />
         )}

@@ -396,7 +396,7 @@ function CompleteWorkOrderModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {formError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</p>}
 
-          <div className="grid gap-x-7 gap-y-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-7 gap-y-5 lg:grid-cols-2">
             <div className="flex flex-col gap-4">
               <label className={labelClasses}>
                 <span className="flex justify-between gap-2">
@@ -422,7 +422,7 @@ function CompleteWorkOrderModal({
                 </h3>
                 {plateNumber ? (
                   <>
-                    <div className="grid gap-3.5 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                       <label className={labelClasses}>
                         <span className="flex items-baseline justify-between gap-2">
                           <span>Odometer reading (km)</span>
@@ -580,7 +580,7 @@ function CompleteWorkOrderModal({
                       {row.addingNew && !row.newItemConfirmed && (
                         <div className="flex flex-col gap-2 border border-dashed border-line-control px-3.5 py-3">
                           <span className="text-sm font-semibold text-primary">+ Add "{row.search}" as a new inventory item</span>
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <label className="flex flex-col gap-1 text-[13px] font-medium text-ink-secondary">
                               Item type
                               <select value={row.newItemType} onChange={(e) => updateRow(row.key, { newItemType: e.target.value })} className={fieldClasses}>

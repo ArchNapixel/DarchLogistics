@@ -60,7 +60,7 @@ function SwapDriverModal({
         <p className="mt-1 text-sm text-ink-secondary">
           {driverName} is planned on trip #{otherTripId} ({otherSlot}) at the same time. What happens to trip #{otherTripId}?
         </p>
-        <div className="mt-4 grid gap-3">
+        <div className="mt-4 grid grid-cols-1 gap-3">
           {option(
             'move',
             `Move trip #${otherTripId} after this one`,

@@ -138,14 +138,14 @@ function InventoryReportModal({ onClose }: { onClose: () => void }) {
         {loadingWeeks || loading ? (
           <p className="mt-4 text-slate-500">Loading...</p>
         ) : (
-          <div className="mt-4 grid gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4">
             {beforeHistory && (
               <p className="bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Stock history starts {formatDate(historyStart)}. Stock before that wasn't tracked, so this week starts at 0.
               </p>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="card px-4 py-3">
                 <p className="text-sm text-ink-secondary">Parts used (value)</p>
                 <p className="text-xl font-bold tabular-nums text-ink">{formatMoney(usedValue)}</p>

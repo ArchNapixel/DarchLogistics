@@ -136,7 +136,7 @@ function AddTrailerModal({
           </p>
         )}
 
-        <div className="mt-4 grid gap-4">
+        <div className="mt-4 grid grid-cols-1 gap-4">
           <label className={labelClasses}>
             Trailer type
             <select

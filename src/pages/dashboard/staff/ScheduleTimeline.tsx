@@ -115,10 +115,11 @@ function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props)
 
   return (
     <section aria-label="Schedule" className="card overflow-x-auto">
-      <div className="min-w-[860px]">
+      <div className="min-w-[760px] sm:min-w-[860px]">
         {/* Time axis */}
-        <div className="grid h-10 grid-cols-[240px_minmax(0,1fr)] border-b border-line">
-          <div className="flex items-center border-r border-line px-4 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+        <div className="grid h-10 grid-cols-[140px_minmax(0,1fr)] sm:grid-cols-[240px_minmax(0,1fr)] border-b border-line">
+          {/* The name column stays put while the timeline scrolls sideways (phones). */}
+          <div className="sticky left-0 z-20 flex items-center border-r border-line bg-white px-3 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase sm:px-4">
             {columnLabel}
           </div>
           <div className="relative">
@@ -145,8 +146,8 @@ function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props)
         {sections.map((section, sectionIndex) => (
           <div key={section.title || sectionIndex}>
             {section.title && (
-              <div className="grid grid-cols-[240px_minmax(0,1fr)] border-b border-line bg-slate-100">
-                <span className="px-4 py-2 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase">
+              <div className="grid grid-cols-[140px_minmax(0,1fr)] sm:grid-cols-[240px_minmax(0,1fr)] border-b border-line bg-slate-100">
+                <span className="sticky left-0 z-20 bg-slate-100 px-3 py-2 text-xs leading-4 font-semibold tracking-[0.04em] text-ink-secondary uppercase sm:px-4">
                   {section.title}
                 </span>
                 <span className="px-4 py-2 text-xs leading-4 font-medium text-ink-secondary">{section.note}</span>
@@ -156,8 +157,8 @@ function ScheduleTimeline({ sections, columnLabel, view, from, to, now }: Props)
               <div className="border-b border-slate-200 px-4 py-4 text-sm text-ink-muted">{section.empty ?? 'None on file.'}</div>
             )}
             {section.rows.map((row) => (
-              <div key={row.id} className="grid min-h-[72px] grid-cols-[240px_minmax(0,1fr)] border-b border-slate-200">
-                <div className="flex min-w-0 flex-col justify-center border-r border-line px-4 text-sm leading-5">
+              <div key={row.id} className="grid min-h-[72px] grid-cols-[140px_minmax(0,1fr)] sm:grid-cols-[240px_minmax(0,1fr)] border-b border-slate-200">
+                <div className="sticky left-0 z-20 flex min-w-0 flex-col justify-center border-r border-line bg-white px-3 text-sm leading-5 sm:px-4">
                   <span className="truncate font-semibold text-ink" title={row.label}>
                     {row.label}
                   </span>

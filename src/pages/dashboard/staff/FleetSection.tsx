@@ -463,7 +463,7 @@ function FleetSection() {
           className="mt-4"
         />
       ) : (
-        <div className={`mt-4 grid gap-4 xl:items-start ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
+        <div className={`mt-4 grid grid-cols-1 gap-4 xl:items-start ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
           <section aria-label={activeTab} className="card flex min-h-[calc(100dvh-19rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
               {activeTab === 'Trucks' ? (

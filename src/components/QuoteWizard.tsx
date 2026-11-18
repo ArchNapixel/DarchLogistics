@@ -182,7 +182,7 @@ function QuoteWizard({
   const centered = isReview && !aside
 
   return (
-    <div className={centered ? 'mx-auto w-full max-w-3xl' : 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]'}>
+    <div className={centered ? 'mx-auto w-full max-w-3xl' : 'grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]'}>
       <form onSubmit={handleSubmit} noValidate className="min-w-0">
         <nav aria-label="Quote steps" className="mb-4">
           <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -256,7 +256,7 @@ function QuoteWizard({
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {step.id === 'route' && <RouteFields {...sectionProps} recentLocations={recentLocations} />}
               {step.id === 'cargo' && <CargoFields {...sectionProps} />}
               {step.id === 'schedule' && <ScheduleFields {...sectionProps} />}

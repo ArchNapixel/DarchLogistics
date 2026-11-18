@@ -343,7 +343,7 @@ function AttendanceSection() {
 
       {error && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
       {loading ? (
         <p className="text-ink-muted">Loading attendance...</p>
       ) : employees.length === 0 ? (

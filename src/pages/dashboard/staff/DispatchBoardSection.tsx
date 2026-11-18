@@ -1148,14 +1148,14 @@ function TripPanel({
             {done ? (
               // Delivered trips are read-only here: changing the driver would
               // move the trip's pay, assigning a truck would put it back on the road.
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <PanelField label="Driver">{row.assigned_driver_name ?? '—'}</PanelField>
                 <PanelField label="Helper">{row.assigned_helper_name ?? '—'}</PanelField>
                 <PanelField label="Truck">{row.plate_number ?? '—'}</PanelField>
                 <PanelField label="Trailer">{trailerPlate ?? '—'}</PanelField>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <PanelField label="Driver">
                   <CrewSelect
                     row={row}
@@ -2552,9 +2552,27 @@ function DispatchBoardSection() {
       return
     }
     const name = (id: number) => drivers.find((d) => d.employee_id === id)?.full_name ?? `#${id}`
+    // Grouped by "from -> to" (one line each): a trip-by-trip list was a wall
+    // of text on a phone.
+    const groups = new Map<string, { from: number; to: number; trips: number[]; earn: number }>()
+    for (const m of moves) {
+      const key = `${m.from}>${m.to}`
+      const g = groups.get(key) ?? { from: m.from, to: m.to, trips: [], earn: 0 }
+      g.trips.push(m.tripId)
+      g.earn += m.earn
+      groups.set(key, g)
+    }
+    const lines = [...groups.values()].map(
+      (g) =>
+        `${name(g.from)} → ${name(g.to)}: ${g.trips.length} ${g.trips.length === 1 ? 'trip' : 'trips'}, ${formatMoney(g.earn)}\n` +
+        `   Trips ${g.trips
+          .sort((a, b) => a - b)
+          .map((t) => `#${t}`)
+          .join(', ')}`,
+    )
     const ok = await confirmDialog({
       title: `Move ${moves.length} ${moves.length === 1 ? 'trip' : 'trips'} to even out driver pay?`,
-      message: moves.map((m) => `Trip #${m.tripId}: ${name(m.from)} → ${name(m.to)} (${formatMoney(m.earn)})`).join('; '),
+      message: lines.join('\n\n'),
       confirmLabel: 'Move trips',
     })
     if (!ok) return
@@ -2974,7 +2992,7 @@ function DispatchBoardSection() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_440px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_440px]">
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <label className={FILTER_LABEL}>

@@ -130,7 +130,7 @@ function StatusRelogRequestsSection({ onChanged }: { onChanged?: () => void }) {
       {requests.length === 0 ? (
         <EmptyState message="No pending status relog requests." />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {requests.map((request) => (
             <div
               key={request.request_id}

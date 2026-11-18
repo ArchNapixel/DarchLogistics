@@ -44,7 +44,7 @@ function DuotonePhoto({ src, caption }: { src: string; caption: string }) {
 function WhatWeHaul() {
   return (
     <section id="heavy-lift" className="bg-brand-paper py-20">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-2">
+      <div className="mx-auto grid grid-cols-1 max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-2">
         <Reveal>
           <p className="text-xs font-semibold tracking-[0.2em] text-brand-steel-dark uppercase">
             What We Actually Haul

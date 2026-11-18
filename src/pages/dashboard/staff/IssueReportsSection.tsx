@@ -153,7 +153,7 @@ function IssueReportsSection({ onChanged }: { onChanged?: () => void }) {
       {reports.length === 0 ? (
         <EmptyState message="No open issue reports." />
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {reports.map((report) => (
             <div
               key={report.issue_report_id}

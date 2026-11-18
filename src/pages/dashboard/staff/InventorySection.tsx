@@ -324,7 +324,7 @@ function InventorySection() {
         }
       />
 
-      <section aria-label="Stock totals" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Stock totals" className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
             label: 'Items tracked',
@@ -433,7 +433,7 @@ function InventorySection() {
       {!loading && !error && items.length === 0 && <EmptyState message="No inventory items yet." className="mt-4" />}
 
       {!loading && !error && items.length > 0 && (
-        <div className={`mt-4 grid gap-4 xl:items-start ${pane ? 'xl:grid-cols-[minmax(0,1fr)_420px]' : ''}`}>
+        <div className={`mt-4 grid grid-cols-1 gap-4 xl:items-start ${pane ? 'xl:grid-cols-[minmax(0,1fr)_420px]' : ''}`}>
           <section aria-label="Items" className="card flex min-h-[calc(100dvh-26rem)] flex-col">
             <div className="flex-1 overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm text-ink-metric">

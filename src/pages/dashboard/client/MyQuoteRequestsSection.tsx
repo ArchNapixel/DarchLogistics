@@ -194,7 +194,7 @@ function MyQuoteRequestsSection() {
     )
 
   return (
-    <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_480px]' : ''} xl:items-start`}>
+    <div className={`grid grid-cols-1 gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_480px]' : ''} xl:items-start`}>
       <section aria-label="Your quotes" className="card flex min-w-0 flex-col pb-2">
         {quotes.length === 0 && (
           <div className="px-5 py-8 text-center">

@@ -189,7 +189,7 @@ function MechanicTasks() {
         ) : orders.length === 0 ? (
           <EmptyState message="No work orders assigned to you." hint="Accept one from the Task Board to get started." />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {orders.map((order) => (
               <article key={order.work_order_id} aria-label={`Work order ${order.work_order_number}`} className="flex flex-col gap-2 border border-line bg-white px-4 py-3.5">
                 <div className="flex items-center justify-between gap-2">

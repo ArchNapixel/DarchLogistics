@@ -180,7 +180,7 @@ function CollectionsSection() {
 
       {actionError && <p className="mb-4 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_440px] xl:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <label className={filterLabel}>

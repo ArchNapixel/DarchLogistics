@@ -56,7 +56,7 @@ function WorkOrderCompletionsSection() {
 
   return (
     <div>
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {completions.map((completion) => (
           <div
             key={completion.completion_id}

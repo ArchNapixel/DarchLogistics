@@ -444,7 +444,7 @@ function AddEmployeeModal({
           {/* 1. Personal information */}
           <section>
             <SectionTitle n={1} title="Personal information" />
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field label="First name" required>
                 <input
                   type="text"
@@ -491,7 +491,7 @@ function AddEmployeeModal({
           {/* 2. Employment */}
           <section className="mt-6 border-t border-line pt-6">
             <SectionTitle n={2} title="Employment" />
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {/* Position is picked once, when adding -- it can't be switched
                   afterwards (it also decides how they're paid). */}
               <Field
@@ -580,7 +580,7 @@ function AddEmployeeModal({
           {isEditing && position === 'Driver' && (
             <section className="mt-6 border-t border-line pt-6">
               <SectionTitle n={3} title="Driver license" />
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field label="License number" required>
                   <input type="text" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} className={fieldClasses} />
                 </Field>
@@ -627,7 +627,7 @@ function AddEmployeeModal({
             </button>
 
             {showMore && (
-              <div id="employee-more-details" className="grid gap-4 border-t border-line bg-slate-50/60 px-4 pt-4 pb-5 sm:grid-cols-6">
+              <div id="employee-more-details" className="grid grid-cols-1 gap-4 border-t border-line bg-slate-50/60 px-4 pt-4 pb-5 sm:grid-cols-6">
                 <SubHead>Personal</SubHead>
                 <Field label="Date of birth" className="sm:col-span-3">
                   <input
@@ -699,7 +699,7 @@ function AddEmployeeModal({
               <p className="mt-0.5 text-xs text-ink-muted">
                 {account ? 'Leave the password blank to keep the current one.' : 'None yet -- fill in all three to create one.'}
               </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field label="Email">
                   <input type="email" value={accountEmail} onChange={(e) => setAccountEmail(e.target.value)} autoComplete="off" className={fieldClasses} />
                 </Field>

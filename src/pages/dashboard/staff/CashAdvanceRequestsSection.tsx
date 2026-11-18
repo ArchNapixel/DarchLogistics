@@ -124,7 +124,7 @@ function CashAdvanceRequestsSection() {
       {requests.length === 0 ? (
         <EmptyState message="No pending requests." className="mt-3" />
       ) : (
-        <div className="mt-3 grid gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-3">
           {paged.rows.map((request) => (
             <div
               key={request.cash_advance_id}
