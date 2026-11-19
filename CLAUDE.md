@@ -390,8 +390,8 @@ before creating it.
   the top of `payslip.ts` still says "never auto-deducted" — stale. PayrollSection
   (`/dashboard/payroll`) lists/finalizes/marks-paid drafts and payslips.
   Employees see their own payslip history
-  (`MyPayslipSection`/`MyPayslipPage`), Dispatchers via their own
-  restricted view (`DispatcherPayslipSection`). `issuePayslip()` (now
+  (`MyPayslipSection`/`MyPayslipPage`), Dispatchers too (same page since
+  2026-11-19, `DispatcherPayslipSection` removed). `issuePayslip()` (now
   only called internally by the draft generator) isn't
   wrapped in a DB transaction — a failure partway surfaces a "needs
   manual review" error naming the created `payroll_id` instead of
@@ -407,11 +407,13 @@ before creating it.
     `loadPendingCashAdvanceRequests()`, `decideCashAdvanceRequest()`
     (race-guarded the same way `TaskBoard.tsx`'s accept is — only
     updates if still `Pending`, tells the caller if someone else
-    already decided it). Employee side (Driver/Mechanic/Helper only,
-    NOT Dispatcher): `employee/RequestCashAdvanceModal.tsx` (amount +
+    already decided it). Employee side (Driver/Mechanic/Helper, and
+    Dispatcher since 2026-11-19): `employee/RequestCashAdvanceModal.tsx` (amount +
     reason) and `employee/MyCashAdvanceRequestsSection.tsx` ("My
-    Requests" list with status badges), mounted in `MyPayslipPage.tsx`
-    only — `DispatcherPayslipSection.tsx` is untouched. Staff side:
+    Requests" list with status badges), mounted in `MyPayslipPage.tsx`.
+    **Only Admin approves / rejects or issues** (2026-11-19, migration
+    20261119050000: `cash_advances_insert_admin` / `_update_admin` =
+    `is_admin()`, replaced the `is_staff()` ones). Staff side:
     `staff/CashAdvanceRequestsSection.tsx`, a "Pending Cash Advance
     Requests" panel on the Cash Advance page with Approve/Reject (Reject
     prompts for a reason via `window.prompt`, same pattern as

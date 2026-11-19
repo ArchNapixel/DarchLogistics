@@ -1,6 +1,6 @@
 // RequestCashAdvanceForm: the "Request Cash Advance" card on My Payslips
-// (Driver/Mechanic/Helper -- not the Dispatcher's payslip page). Amount +
-// reason, inserted into cash_advances with status 'Pending' -- staff then
+// (Driver/Mechanic/Helper/Dispatcher). Amount +
+// reason, inserted into cash_advances with status 'Pending' -- Admin then
 // Approve/Reject it on the Cash Advance page (staff/CashAdvanceRequestsSection.tsx).
 // Doesn't touch the admin's direct-issue flow (IssueCashAdvanceModal.tsx),
 // which still creates an already-approved row with no request step. Also

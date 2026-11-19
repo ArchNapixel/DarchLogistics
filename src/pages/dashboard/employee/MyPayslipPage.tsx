@@ -1,9 +1,8 @@
-// MyPayslipPage: the "My Payslips" page for Driver/Mechanic/Helper (the
-// canvas's Driver Payslips board): the payslip list + selected payslip
-// (MyPayslipSection), and beside them Request Cash Advance and My Requests
-// (cash advance requests + payslip reports). Dispatchers have their own
-// page (staff/DispatcherPayslipSection.tsx) since it lives in a different
-// route tree -- it shows MyPayslipSection only.
+// MyPayslipPage: the "My Payslips" page for Driver/Mechanic/Helper and
+// Dispatcher (the canvas's Driver Payslips board): the payslip list +
+// selected payslip (MyPayslipSection), and beside them Request Cash Advance
+// and My Requests (cash advance requests + payslip reports). Employees only
+// REQUEST an advance; only Admin approves / rejects it (RLS: is_admin()).
 //
 // requestsKey is bumped after a new cash advance request or payslip report
 // so My Requests remounts (and so reloads).

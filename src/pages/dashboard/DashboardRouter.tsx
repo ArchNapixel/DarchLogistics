@@ -51,7 +51,6 @@ import CollectionsSection from './staff/CollectionsSection'
 import StatementsSection from './staff/StatementsSection'
 import MoneySummarySection from './staff/MoneySummarySection'
 import SettingsSection from './staff/SettingsSection'
-import DispatcherPayslipSection from './staff/DispatcherPayslipSection'
 import DamageChargesSection from './staff/DamageChargesSection'
 import TruckMaintenanceMonitoringSection from './staff/TruckMaintenanceMonitoringSection'
 import HistorySection from './employee/HistorySection'
@@ -270,7 +269,7 @@ function DashboardRouter() {
           <Route path="quotations" element={<QuoteRequestsSection />} />
           <Route path="attendance" element={<MyAttendanceSection />} />
           <Route path="leave" element={<MyLeaveSection />} />
-          <Route path="payslips" element={<DispatcherPayslipSection />} />
+          <Route path="payslips" element={<MyPayslipPage />} />
           <Route path="profile" element={<MyProfileSection />} />
           <Route
             path="*"
